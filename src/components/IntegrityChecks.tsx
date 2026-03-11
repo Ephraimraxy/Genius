@@ -26,11 +26,11 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
   if (!activePaperId) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 gap-6">
-        <div className="p-6 bg-slate-50 rounded-full border-2 border-dashed border-slate-200">
+        <div className="p-8 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
           <Fingerprint size={48} className="text-slate-300" />
         </div>
         <div className="text-center">
-          <p className="text-2xl font-bold text-slate-800">Integrity Scanning Offline</p>
+          <p className="text-2xl font-black text-slate-900 font-display">Integrity Scanning Offline</p>
           <p className="text-slate-500 mt-2 font-medium">Link a manuscript to initiate deep-tissue similarity auditing.</p>
         </div>
       </div>

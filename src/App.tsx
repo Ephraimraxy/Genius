@@ -184,7 +184,7 @@ export default function App() {
             </button>
 
             <button onClick={() => setActiveTab('profile')} className="flex items-center gap-2 pl-2 group">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shadow-xl transition-transform group-hover:scale-105 ${isAdmin ? 'premium-gradient shadow-[#800000]/20' : 'bg-slate-100 text-[#800000]'}`}>
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold shadow-lg transition-all group-hover:scale-110 ${isAdmin ? 'premium-gradient shadow-[#800000]/20' : 'bg-slate-100 text-[#800000]'}`}>
                 {(profile?.user?.name || profile?.user?.email)?.split(' ').map((n: string) => n[0]).join('') || 'U'}
               </div>
             </button>

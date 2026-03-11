@@ -16,14 +16,9 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
   ];
 
   const handleFormat = async () => {
-    if (!activePaperId) {
-      setError('Please upload a manuscript first.');
-      return;
-    }
-
+    if (!activePaperId) return;
     setIsFormatting(true);
     setError(null);
-
     try {
       const res = await fetch(`/api/format/${activePaperId}`, {
         method: 'POST',
@@ -33,9 +28,7 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
         },
         body: JSON.stringify({ style: selectedStyle })
       });
-
       if (!res.ok) throw new Error('Document reconstruction failed');
-
       const data = await res.json();
       setFormattedHtml(data.formattedHtml);
     } catch (err: any) {
@@ -44,6 +37,20 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
       setIsFormatting(false);
     }
   };
+
+  if (!activePaperId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 gap-6">
+        <div className="p-8 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
+          <Layout size={48} className="text-slate-300" />
+        </div>
+        <div className="text-center">
+          <p className="text-2xl font-black text-slate-900 font-display">Format Architect Offline</p>
+          <p className="text-slate-500 mt-2 font-medium">Upload a manuscript to enable neural structural alignment.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <motion.div

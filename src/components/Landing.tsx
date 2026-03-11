@@ -26,105 +26,124 @@ export default function Landing({ onStart }: LandingProps) {
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-[#800000] selection:text-white">
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-xl border-b border-slate-100 h-20">
+      <nav className="fixed top-0 w-full z-50 glass-morph hover:bg-white/50 transition-colors border-b border-white/10 h-16">
         <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 premium-gradient rounded-xl flex items-center justify-center shadow-lg shadow-[#800000]/20">
-              <BookOpen className="text-white" size={24} />
+          <div className="flex items-center gap-3 group cursor-pointer">
+            <div className="w-8 h-8 premium-gradient rounded-lg flex items-center justify-center shadow-lg shadow-[#800000]/20 group-hover:rotate-12 transition-transform">
+              <BookOpen className="text-white" size={18} />
             </div>
             <div>
-              <span className="text-xl font-black text-slate-900 tracking-tighter">GMIJ PUBLICATION</span>
-              <p className="text-[10px] font-bold text-[#800000] uppercase tracking-[0.2em] -mt-1">Research Excellence</p>
+              <span className="text-lg font-black text-slate-900 tracking-tighter">GMIJ</span>
+              <span className="text-[10px] font-bold text-[#800000] ml-2 uppercase tracking-widest hidden sm:inline">Registry</span>
             </div>
           </div>
 
-          <div className="hidden lg:flex items-center gap-10">
-            {['Home', 'About', 'Guideline', 'Publish', 'Editorial Board', 'Contact Us'].map((item) => (
-              <a key={item} href={`#${item.toLowerCase().replace(' ', '-')}`} className="text-sm font-bold text-slate-600 hover:text-[#800000] transition-colors uppercase tracking-widest px-2">
+          <div className="hidden lg:flex items-center gap-8">
+            {['About', 'Guidelines', 'Editorial', 'Contact'].map((item) => (
+              <a key={item} href={`#${item.toLowerCase()}`} className="text-[10px] font-black text-slate-500 hover:text-[#800000] transition-colors uppercase tracking-[0.2em]">
                 {item}
               </a>
             ))}
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <button 
               onClick={onStart} 
-              className="hidden sm:flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-slate-700 hover:text-[#800000] transition-colors"
+              className="px-5 py-2 text-[10px] font-black text-slate-900 hover:bg-slate-100 rounded-lg transition-colors uppercase tracking-widest"
             >
-              <LogIn size={18} />
-              SIGN IN
+              Sign In
             </button>
             <button 
               onClick={onStart}
-              className="px-6 py-2.5 premium-gradient text-white text-sm font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-transform uppercase tracking-wider"
+              className="px-6 py-2 premium-gradient text-white text-[10px] font-black rounded-lg shadow-xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.15em]"
             >
-              GENIUS MINDSPARK
+              Get Started
             </button>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative pt-40 pb-32 overflow-hidden">
+      <section className="relative min-h-[90vh] flex items-center pt-24 overflow-hidden">
         <div className="absolute inset-0 z-0">
-            <img 
-                src="/Banner/NSUK.jpg" 
-                alt="University Background" 
-                className="w-full h-full object-cover opacity-10"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-white via-white/80 to-slate-50"></div>
+          <div className="absolute inset-0 bg-[#800000]/5 z-10"></div>
+          <img 
+            src="/Banner/NSUK.jpg" 
+            alt="University Background" 
+            className="w-full h-full object-cover grayscale opacity-20 blur-[2px]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/40 to-white z-20"></div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="max-w-4xl">
+        <div className="max-w-7xl mx-auto px-6 relative z-30 w-full mb-20">
+          <div className="grid lg:grid-cols-2 gap-20 items-center">
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#800000]/5 border border-[#800000]/10 rounded-full mb-8"
+              initial={{ opacity: 0, x: -50 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.8, ease: "circOut" }}
             >
-              <div className="w-2 h-2 rounded-full bg-[#800000] animate-pulse"></div>
-              <span className="text-[10px] font-black text-[#800000] uppercase tracking-[0.2em]">Open Access Journal Registry</span>
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#800000]/10 border border-[#800000]/20 rounded-full mb-8">
+                <div className="w-1.5 h-1.5 rounded-full bg-[#800000] animate-pulse"></div>
+                <span className="text-[10px] font-black text-[#800000] uppercase tracking-[0.2em]">Neural Research Engine V2.4</span>
+              </div>
+
+              <h1 className="text-7xl lg:text-8xl font-black text-slate-900 leading-[0.95] tracking-tighter mb-8 font-display">
+                GENIUS <br />
+                <span className="text-gradient">MINDSPARK</span>
+              </h1>
+
+              <p className="text-xl text-slate-600 leading-relaxed mb-12 max-w-xl font-medium">
+                The global benchmark for multidisciplinary research. Experience neural-assisted validation, instant DOI registration, and global dissemination.
+              </p>
+
+              <div className="flex flex-wrap gap-4">
+                <button 
+                  onClick={onStart}
+                  className="px-10 py-5 premium-gradient text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-widest text-sm flex items-center gap-3 group"
+                >
+                  Publish Manuscript
+                  <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                </button>
+                <button className="px-10 py-5 bg-white border border-slate-200 text-slate-900 font-black rounded-2xl hover:bg-slate-50 transition-all uppercase tracking-widest text-sm">
+                  View Journals
+                </button>
+              </div>
             </motion.div>
 
-            <motion.h1 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="text-7xl font-black text-slate-900 leading-[1.05] tracking-tight mb-8 font-display"
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 1, delay: 0.2 }}
+              className="hidden lg:block relative"
             >
-              WELCOME TO <br />
-              <span className="text-gradient">GMIJP PORTAL</span>
-            </motion.h1>
+              <div className="glass-morph p-12 rounded-[3.5rem] border-white/20 relative z-10 overflow-hidden group">
+                <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                
+                <div className="flex items-center gap-4 mb-10">
+                  <div className="p-3 bg-[#800000] rounded-2xl text-white shadow-xl">
+                    <Shield size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900 mb-1">Authenticated Entry</h3>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Research Identity Verification</p>
+                  </div>
+                </div>
 
-            <motion.p 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="text-xl text-slate-600 leading-relaxed mb-12 max-w-2xl font-medium"
-            >
-              Genius Multidisciplinary International Journal Publication (GMIJP) is a premier platform for global researchers to share groundbreaking discoveries with neural-assisted validation.
-            </motion.p>
+                <div className="space-y-6">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="h-14 bg-white/50 border border-white/40 rounded-2xl animate-pulse"></div>
+                  ))}
+                </div>
 
-            {/* Search Bar */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="flex items-center gap-2 max-w-2xl bg-white p-2 rounded-[2rem] shadow-2xl shadow-slate-200 border border-slate-100"
-            >
-              <div className="flex-1 flex items-center px-6">
-                <Search className="text-slate-400" size={24} />
-                <input 
-                  type="text" 
-                  placeholder="Search for journal, DOI, or researcher..." 
-                  className="w-full h-14 bg-transparent outline-none border-none text-lg ml-3 font-medium placeholder:text-slate-300"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
+                <div className="mt-10 p-6 bg-slate-900 rounded-3xl text-center">
+                  <p className="text-white font-black text-lg mb-2">Ready to contribute?</p>
+                  <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Connect your workstation</p>
+                </div>
               </div>
-              <button className="hidden sm:flex h-14 px-10 items-center justify-center premium-gradient text-white font-black rounded-full shadow-lg shadow-[#800000]/30 hover:scale-105 transition-transform">
-                SEARCH
-              </button>
+
+              {/* Decorative blobs */}
+              <div className="absolute -top-20 -right-20 w-80 h-80 bg-[#800000]/10 rounded-full blur-[100px] z-0"></div>
+              <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-indigo-500/10 rounded-full blur-[100px] z-0"></div>
             </motion.div>
           </div>
         </div>
