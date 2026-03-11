@@ -328,14 +328,14 @@ async function publishToZenodo(paper: any, zenodoToken: string) {
 
     if (!uploadRes.ok) throw new Error(`Zenodo File Upload Failed: ${uploadRes.statusText}`);
 
-    // 3. Attach ScholarSync Metadata (DataCite JSON schema)
+    // 3. Attach Genius Metadata (DataCite JSON schema)
     const metadata = JSON.parse(paper.metadata);
     const zenodoMetadata = {
       metadata: {
-        title: metadata.title || 'Untitled ScholarSync Publication',
+        title: metadata.title || 'Untitled Genius Publication',
         upload_type: "publication",
         publication_type: "article",
-        description: metadata.abstract || "Published via ScholarSync AI Research Pipeline.",
+        description: metadata.abstract || "Published via Genius App Research Pipeline.",
         publication_date: new Date().toISOString().split('T')[0],
         access_right: "open",
         creators: (metadata.authors || []).map((a: string) => {
@@ -902,13 +902,13 @@ app.get('/api/papers/:id/export/bibtex', authenticateToken, async (req: any, res
   if (!paper) return res.status(404).send('Not found');
   const metadata = JSON.parse(paper.metadata);
 
-  const bibtex = `@article{scholarsync${paper.id},
+  const bibtex = `@article{genius${paper.id},
   title={${metadata.title || 'Untitled'}},
   author={${(metadata.authors || []).join(' and ')}},
-  journal={ScholarSync Open Access},
+  journal={Genius Open Access},
   issn={${process.env.JOURNAL_ISSN || '0000-0000'}},
   year={${new Date().getFullYear()}},
-  doi={${paper.doi || `10.5555/scholarsync.${paper.id}`}}
+  doi={${paper.doi || `10.5555/genius.${paper.id}`}}
 }`;
   res.header('Content-Type', 'text/plain');
   res.send(bibtex);
@@ -981,7 +981,7 @@ app.get('/api/papers/:id/export/ris', authenticateToken, async (req: any, res) =
   (metadata.authors || []).forEach((a: string) => {
     ris += `AU  - ${a}\n`;
   });
-  ris += `AB  - ${metadata.abstract || ''}\nPY  - ${new Date().getFullYear()}\nDO  - ${paper.doi || `10.5555/scholarsync.${paper.id}`}\nSN  - ${process.env.JOURNAL_ISSN || '0000-0000'}\nER  - \n`;
+  ris += `AB  - ${metadata.abstract || ''}\nPY  - ${new Date().getFullYear()}\nDO  - ${paper.doi || `10.5555/genius.${paper.id}`}\nSN  - ${process.env.JOURNAL_ISSN || '0000-0000'}\nER  - \n`;
 
   res.header('Content-Type', 'text/plain');
   res.send(ris);
@@ -1015,11 +1015,11 @@ app.get('/article/:doi(*)', async (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>${metadata.title} - ScholarSync</title>
+      <title>${metadata.title} - Genius App</title>
       <meta name="citation_title" content="${metadata.title}">
       ${(metadata.authors || []).map((a: string) => `<meta name="citation_author" content="${a}">`).join('\n      ')}
       <meta name="citation_publication_date" content="${new Date(paper.created_at).getFullYear()}">
-      <meta name="citation_journal_title" content="ScholarSync Open Access">
+      <meta name="citation_journal_title" content="Genius Open Access">
       <meta name="citation_issn" content="${process.env.JOURNAL_ISSN || '0000-0000'}">
       <meta name="citation_doi" content="${paper.doi}">
       <meta name="citation_abstract" content="${metadata.abstract}">
@@ -1061,7 +1061,7 @@ app.get('/article/:doi(*)', async (req, res) => {
       <div class="metadata">
         <p><strong>DOI:</strong> ${paper.doi}</p>
         <p><strong>Published:</strong> ${new Date(paper.created_at).toLocaleDateString()}</p>
-        <p><strong>Publisher:</strong> ScholarSync Open Access</p>
+        <p><strong>Publisher:</strong> Genius Open Access</p>
         <p><strong>ISSN:</strong> ${process.env.JOURNAL_ISSN || '0000-0000'}</p>
       </div>
     </body>

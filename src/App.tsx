@@ -93,7 +93,7 @@ export default function App() {
                 {activeTab === 'dashboard' ? 'Analytics Overview' : activeTab.replace(/([A-Z])/g, ' $1').trim()}
               </h1>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">
-                ScholarSync AI / {activeTab}
+                Genius App / {activeTab}
               </p>
             </div>
 

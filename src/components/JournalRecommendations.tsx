@@ -84,11 +84,11 @@ export default function JournalRecommendations({ activePaperId }: { activePaperI
 
         <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Manuscript Broadcast Successful</h2>
         <p className="text-xl text-slate-500 max-w-xl font-medium leading-relaxed">
-          Your research has been digitally fingerprinted, validated via Crossref, and submitted to the ScholarSync Global Network.
+          Your research has been digitally fingerprinted, validated via Registry, and submitted to the Genius Global Network.
         </p>
 
         <div className="mt-12 bg-white p-10 rounded-[3rem] shadow-2xl shadow-slate-200/50 border border-slate-100 w-full max-w-2xl text-left relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
+          <div className="absolute top-0 right-0 w-64 h-64 bg-rose-500/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10 relative z-10">
             <div>
@@ -108,7 +108,7 @@ export default function JournalRecommendations({ activePaperId }: { activePaperI
               <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center font-bold">
                 <Globe size={20} />
               </div>
-              <p className="text-xs font-bold text-slate-500">Live on Global ScholarSync Nodes</p>
+              <p className="text-xs font-bold text-slate-500">Live on Global Genius Nodes</p>
             </div>
             <button className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-sm font-bold hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20">
               Download Credentials
@@ -128,7 +128,7 @@ export default function JournalRecommendations({ activePaperId }: { activePaperI
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h2 className="text-4xl font-bold text-slate-900 tracking-tight font-display flex items-center gap-4">
-            <div className="p-2 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/20">
+            <div className="p-2 bg-rose-600 text-white rounded-2xl shadow-lg shadow-rose-600/20">
               <BookMarked size={28} />
             </div>
             Neural Journal Discovery
@@ -140,10 +140,10 @@ export default function JournalRecommendations({ activePaperId }: { activePaperI
       {/* Pre-submission Status Card */}
       <div className="bg-indigo-600 p-1 rounded-[3rem] shadow-2xl shadow-indigo-600/20">
         <div className="bg-[#0f172a] rounded-[2.8rem] p-10 flex flex-col md:flex-row gap-10 items-center justify-between overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl -mr-48 -mt-48"></div>
+          <div className="absolute top-0 right-0 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl -mr-48 -mt-48"></div>
 
           <div className="flex items-center gap-8 relative z-10">
-            <div className="w-20 h-20 bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 rounded-3xl flex items-center justify-center shrink-0">
+            <div className="w-20 h-20 bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-3xl flex items-center justify-center shrink-0">
               <ShieldCheck size={40} />
             </div>
             <div>
@@ -155,7 +155,7 @@ export default function JournalRecommendations({ activePaperId }: { activePaperI
                 <span className="text-slate-400 text-xs font-bold">Integrity Level: High</span>
               </div>
               <h3 className="text-2xl font-bold text-white tracking-tight">Pre-submission Validation Complete</h3>
-              <p className="text-slate-400 text-sm mt-1 font-medium">Semantic auditing passed with 2% similarity. Crossref references resolved.</p>
+              <p className="text-slate-400 text-sm mt-1 font-medium">Semantic auditing passed with 2% similarity. Registry references resolved.</p>
             </div>
           </div>
 

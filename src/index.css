@@ -38,11 +38,11 @@
   }
   
   .premium-gradient {
-    @apply bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-600;
+    @apply bg-gradient-to-br from-rose-500 via-rose-600 to-orange-600;
   }
 
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600;
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-rose-600 to-orange-600;
   }
 }
 

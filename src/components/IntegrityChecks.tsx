@@ -46,7 +46,7 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h2 className="text-4xl font-bold text-slate-900 tracking-tight font-display flex items-center gap-4">
-            <div className="p-2 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/20">
+            <div className="p-2 bg-rose-600 text-white rounded-2xl shadow-lg shadow-rose-600/20">
               <ShieldCheck size={28} />
             </div>
             Research Integrity Audit
@@ -58,8 +58,8 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
       {isLoading ? (
         <div className="flex flex-col items-center justify-center flex-1 py-40 text-slate-400">
           <div className="relative">
-            <div className="w-24 h-24 border-4 border-slate-100 border-t-indigo-600 rounded-full animate-spin"></div>
-            <Fingerprint className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={32} />
+            <div className="w-24 h-24 border-4 border-slate-100 border-t-rose-600 rounded-full animate-spin"></div>
+            <Fingerprint className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-rose-600" size={32} />
           </div>
           <p className="font-bold text-slate-900 mt-8 tracking-widest uppercase text-xs">Deep Tissue Scanning in Progress</p>
         </div>
@@ -72,7 +72,7 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
         <div className="flex-1 space-y-10">
           {/* Hero Section: Similarity Index */}
           <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl shadow-slate-200/50 border border-slate-100 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
+            <div className="absolute top-0 right-0 w-96 h-96 bg-rose-500/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
             
             <div className="flex flex-col md:flex-row items-center gap-12 relative z-10">
               <div className="relative shrink-0">
@@ -101,7 +101,7 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
 
               <div className="flex-1 text-center md:text-left">
                 <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-950 text-white rounded-xl text-xs font-bold uppercase tracking-widest mb-6 shadow-xl">
-                  <Zap size={14} className="text-indigo-400" /> Integrity Quotient
+                  <Zap size={14} className="text-rose-400" /> Integrity Quotient
                 </div>
                 <h3 className="text-3xl font-bold text-slate-900 mb-4 tracking-tight">
                   {report.plagiarismScore < 15 
@@ -122,7 +122,7 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
             <div className="lg:col-span-2 bg-white rounded-[3rem] shadow-xl shadow-slate-200/40 border border-slate-100 overflow-hidden">
               <div className="px-10 py-8 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                 <h3 className="text-xl font-bold text-slate-900 flex items-center gap-3">
-                  <Search size={22} className="text-indigo-600" />
+                  <Search size={22} className="text-rose-600" />
                   External Source Identification
                 </h3>
               </div>
@@ -157,7 +157,7 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
                                 <motion.div
                                   initial={{ width: 0 }}
                                   animate={{ width: `${item.similarity}%` }}
-                                  className={`h-full ${item.similarity > 20 ? 'bg-amber-500' : 'bg-indigo-600'}`}
+                                  className={`h-full ${item.similarity > 20 ? 'bg-amber-500' : 'bg-rose-600'}`}
                                   transition={{ duration: 1, delay: 0.5 + idx * 0.1 }}
                                 />
                               </div>
@@ -168,7 +168,7 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
                             <span className={`px-4 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider ${
                               item.type === 'Direct Copy' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
                               item.type === 'Paraphrasing' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                              'bg-indigo-50 text-indigo-600 border border-indigo-100'
+                              'bg-rose-50 text-rose-600 border border-rose-100'
                             }`}>
                               {item.type}
                             </span>
@@ -194,7 +194,7 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
               {/* Citation Mismatches */}
               <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 overflow-hidden">
                 <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
-                  <FileSearch className="text-indigo-600" size={20} />
+                  <FileSearch className="text-rose-600" size={20} />
                   <h3 className="font-bold text-slate-900">Structural Citation Audit</h3>
                 </div>
                 <div className="p-8">
@@ -229,7 +229,7 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
                   : 'bg-white border-slate-100 shadow-slate-200/40'
               }`}>
                 <div className="flex items-center gap-3 mb-6">
-                  <Search className={report.duplicateFound ? 'text-rose-600' : 'text-indigo-600'} size={24} />
+                  <Search className={report.duplicateFound ? 'text-rose-600' : 'text-rose-600'} size={24} />
                   <h3 className="font-bold text-slate-900">Registry Conflict Scan</h3>
                 </div>
                 
@@ -244,7 +244,7 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
                 ) : (
                   <div className="space-y-4">
                     <p className="text-sm font-bold text-emerald-700">No Parallel Submissions Detected</p>
-                    <p className="text-xs text-slate-500 leading-relaxed">Manuscript architecture is unique across the ScholarSync network and external registries.</p>
+                    <p className="text-xs text-slate-500 leading-relaxed">Manuscript architecture is unique across the Genius network and external registries.</p>
                   </div>
                 )}
               </div>

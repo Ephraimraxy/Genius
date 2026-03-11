@@ -55,10 +55,10 @@ export default function Sidebar({ activeTab, setActiveTab, isMobileMenuOpen, set
       `}>
         <div className="h-20 flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-3 text-white font-bold text-xl font-display tracking-tight">
-            <div className="w-10 h-10 premium-gradient rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <div className="w-10 h-10 premium-gradient rounded-xl flex items-center justify-center shadow-lg shadow-rose-500/20">
               <GraduationCap className="text-white" size={24} />
             </div>
-            <span>ScholarSync</span>
+            <span>Genius</span>
           </div>
           <button
             className="lg:hidden p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
@@ -92,7 +92,7 @@ export default function Sidebar({ activeTab, setActiveTab, isMobileMenuOpen, set
                 {isActive && (
                   <motion.div
                     layoutId="active-nav"
-                    className="absolute inset-0 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-600/20"
+                    className="absolute inset-0 bg-rose-500 rounded-2xl shadow-lg shadow-rose-500/20"
                     transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                   />
                 )}
@@ -111,7 +111,7 @@ export default function Sidebar({ activeTab, setActiveTab, isMobileMenuOpen, set
           onClick={() => setActiveTab('profile')}
         >
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-slate-700 flex items-center justify-center text-indigo-400 font-bold border border-slate-600 shadow-inner group-hover:scale-105 transition-transform">
+            <div className="w-11 h-11 rounded-xl bg-slate-700 flex items-center justify-center text-rose-500 font-bold border border-slate-600 shadow-inner group-hover:scale-105 transition-transform">
               {profile?.profile?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}
             </div>
             <div className="flex-1 min-w-0">
