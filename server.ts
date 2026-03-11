@@ -126,6 +126,14 @@ initDB().catch(err => {
   }
 });
 
+console.log('--- Environment Check ---');
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'PRESENT' : 'MISSING');
+if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('${{')) {
+  console.warn('WARNING: DATABASE_URL contains unresolved placeholders: ' + process.env.DATABASE_URL);
+}
+console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'PRESENT' : 'MISSING');
+console.log('-------------------------');
+
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
   try {
@@ -179,6 +187,35 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string()
+});
+
+// Diagnostics Endpoint (Obfuscated)
+app.get('/api/diag', (req, res) => {
+  const obfuscate = (str: string | undefined) => {
+    if (!str) return 'MISSING';
+    if (str.includes('://')) { // Handle URLs
+      try {
+        const url = new URL(str);
+        return `${url.protocol}//${url.username ? '***' : ''}:${url.password ? '***' : ''}@${url.host}${url.pathname}`;
+      } catch {
+        return 'INVALID_URL';
+      }
+    }
+    return str.length > 8 ? `${str.substring(0, 4)}...${str.substring(str.length - 4)}` : 'SET_BUT_SHORT';
+  };
+
+  res.json({
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      DATABASE_URL_FORMAT: obfuscate(process.env.DATABASE_URL),
+      GEMINI_API_KEY: obfuscate(process.env.GEMINI_API_KEY),
+      JWT_SECRET: obfuscate(process.env.JWT_SECRET),
+      ZENODO_ACCESS_TOKEN: obfuscate(process.env.ZENODO_ACCESS_TOKEN),
+      APP_URL: process.env.APP_URL
+    },
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.post('/api/auth/register', authLimiter, async (req, res) => {
