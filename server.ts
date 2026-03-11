@@ -2,7 +2,9 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import multer from 'multer';
 // @ts-ignore
-import pdfParse from 'pdf-parse';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 import mammoth from 'mammoth';
 import cors from 'cors';
 import { GoogleGenAI, Type } from '@google/genai';
