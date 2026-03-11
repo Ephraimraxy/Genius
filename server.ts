@@ -21,6 +21,7 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(cors());
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -117,7 +118,32 @@ async function initDB() {
   try { await pool.query('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE reviews ADD COLUMN user_id INTEGER'); } catch (e) { }
 }
-initDB().catch(console.error);
+initDB().catch(err => {
+  console.error('CRITICAL: Database initialization failed');
+  console.error('Error Details:', err.message);
+  if (err.code === 'ECONNREFUSED') {
+    console.error('HINT: Check if PostgreSQL is running and accessible at ' + (process.env.DATABASE_URL || 'localhost:5432'));
+  }
+});
+
+// Health check endpoint
+app.get('/api/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ 
+      status: 'ok', 
+      database: 'connected',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    res.status(503).json({ 
+      status: 'error', 
+      database: 'disconnected', 
+      error: error.message,
+      hint: 'Check DATABASE_URL or database service status'
+    });
+  }
+});
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-scholar-sync-key';
 
