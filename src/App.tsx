@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import Sidebar from './components/Sidebar';
 import DashboardOverview from './components/DashboardOverview';
 import SmartUpload from './components/SmartUpload';
@@ -9,22 +10,49 @@ import ProfileView from './components/ProfileView';
 import ReferenceIntelligence from './components/ReferenceIntelligence';
 import IntegrityChecks from './components/IntegrityChecks';
 import PeerReviewSimulation from './components/PeerReviewSimulation';
-import { Menu } from 'lucide-react';
+import Auth from './components/Auth';
+import { Menu, LogOut, Bell, Search } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile';
 
 export default function App() {
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activePaperId, setActivePaperId] = useState<number | null>(null);
   const [profile, setProfile] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/profile')
-      .then(res => res.json())
-      .then(data => setProfile(data))
-      .catch(err => console.error('Failed to load profile', err));
-  }, []);
+    if (token) {
+      fetch('/api/profile', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(res => {
+          if (res.status === 401 || res.status === 403) {
+            handleLogout();
+            throw new Error('Authorized session expired');
+          }
+          return res.json();
+        })
+        .then(data => setProfile(data))
+        .catch(err => console.error('Failed to load profile', err));
+    }
+  }, [token]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setToken(null);
+    setProfile(null);
+  };
+
+  const onAuthSuccess = (newToken: string, user: any) => {
+    setToken(newToken);
+  };
+
+  if (!token) {
+    return <Auth onAuthSuccess={onAuthSuccess} />;
+  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -42,43 +70,90 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
-      <Sidebar 
-        activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
+    <div className="flex h-screen bg-[#f8fafc] text-slate-900 font-sans overflow-hidden">
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
         profile={profile}
       />
-      
+
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 lg:px-8 shrink-0">
-          <div className="flex items-center gap-4">
-            <button 
-              className="lg:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-md"
+        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 h-20 flex items-center justify-between px-8 lg:px-12 shrink-0 z-10">
+          <div className="flex items-center gap-6">
+            <button
+              className="lg:hidden p-2.5 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
               onClick={() => setIsMobileMenuOpen(true)}
             >
-              <Menu size={20} />
+              <Menu size={22} />
             </button>
-            <h1 className="text-xl font-semibold text-slate-800 capitalize">
-              {activeTab === 'dashboard' ? 'Overview' : activeTab.replace(/([A-Z])/g, ' $1').trim()}
-            </h1>
-            {activePaperId && activeTab !== 'dashboard' && activeTab !== 'profile' && (
-              <span className="ml-4 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium border border-indigo-100">
-                Active Paper ID: {activePaperId}
-              </span>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 capitalize font-display tracking-tight">
+                {activeTab === 'dashboard' ? 'Analytics Overview' : activeTab.replace(/([A-Z])/g, ' $1').trim()}
+              </h1>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">
+                ScholarSync AI / {activeTab}
+              </p>
+            </div>
+
+            {activePaperId && !['dashboard', 'profile'].includes(activeTab) && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="hidden md:flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-2xl"
+              >
+                <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">
+                  Working on Paper #{activePaperId}
+                </span>
+              </motion.div>
             )}
           </div>
-          <div className="flex items-center gap-4">
-            <button onClick={() => setActiveTab('profile')} className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-medium shadow-sm hover:bg-indigo-700 transition-colors">
-              {profile?.profile?.name?.split(' ').map((n: string) => n[0]).join('') || 'DR'}
+
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center bg-slate-100 rounded-2xl px-4 py-2 mr-2 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+              <Search size={18} className="text-slate-400" />
+              <input type="text" placeholder="Search research..." className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium" />
+            </div>
+
+            <button className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all relative">
+              <Bell size={20} />
+              <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
+            </button>
+
+            <div className="w-px h-8 bg-slate-200 mx-2"></div>
+
+            <button
+              onClick={handleLogout}
+              className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+              title="Logout"
+            >
+              <LogOut size={20} />
+            </button>
+
+            <button onClick={() => setActiveTab('profile')} className="flex items-center gap-2 pl-2 group">
+              <div className="w-10 h-10 rounded-xl premium-gradient text-white flex items-center justify-center font-bold shadow-lg shadow-indigo-200 group-hover:scale-105 transition-transform">
+                {profile?.profile?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}
+              </div>
             </button>
           </div>
         </header>
-        
-        <div className="flex-1 overflow-auto p-4 lg:p-8">
-          <div className="max-w-6xl mx-auto h-full">
-            {renderContent()}
+
+        <div className="flex-1 overflow-auto p-6 lg:p-12 scroll-smooth">
+          <div className="max-w-7xl mx-auto h-full">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, x: 5 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -5 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                className="h-full"
+              >
+                {renderContent()}
+              </motion.div>
+            </AnimatePresence>
           </div>
         </div>
       </main>

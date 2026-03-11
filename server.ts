@@ -11,6 +11,10 @@ import * as cheerio from 'cheerio';
 import stringSimilarity from 'string-similarity';
 import natural from 'natural';
 import { create } from 'xmlbuilder2';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
 
 const app = express();
 const PORT = 3000;
@@ -18,6 +22,26 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Basic Security Headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
+// Global Rate Limiting
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: 'Too many requests from this IP, please try again after 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/', globalLimiter);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -27,8 +51,17 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 // Initialize Database
 const db = new Database('scholar.db');
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE,
+    password TEXT,
+    name TEXT,
+    affiliation TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
   CREATE TABLE IF NOT EXISTS papers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
     title TEXT,
     authors TEXT,
     abstract TEXT,
@@ -36,7 +69,8 @@ db.exec(`
     metadata JSON,
     status TEXT DEFAULT 'uploaded',
     doi TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
   );
   CREATE TABLE IF NOT EXISTS paper_references (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,44 +87,116 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS profiles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    affiliation TEXT,
+    user_id INTEGER,
     publications JSON,
-    metrics JSON
+    metrics JSON,
+    FOREIGN KEY(user_id) REFERENCES users(id)
   );
   CREATE TABLE IF NOT EXISTS reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     paper_id INTEGER,
+    user_id INTEGER,
     reviewer_name TEXT,
     status TEXT DEFAULT 'pending',
     score INTEGER,
     comments TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(paper_id) REFERENCES papers(id)
+    FOREIGN KEY(paper_id) REFERENCES papers(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
   );
 `);
 
-try {
-  db.exec('ALTER TABLE papers ADD COLUMN doi TEXT');
-} catch (e) {
-  // Column might already exist
-}
+try { db.exec('ALTER TABLE papers ADD COLUMN doi TEXT'); } catch (e) { }
+try { db.exec('ALTER TABLE papers ADD COLUMN user_id INTEGER'); } catch (e) { }
+try { db.exec('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
+try { db.exec('ALTER TABLE reviews ADD COLUMN user_id INTEGER'); } catch (e) { }
 
-// Ensure a default profile exists
-const profileCount = db.prepare('SELECT COUNT(*) as count FROM profiles').get() as { count: number };
-if (profileCount.count === 0) {
-  db.prepare('INSERT INTO profiles (name, affiliation, publications, metrics) VALUES (?, ?, ?, ?)').run(
-    'Dr. Sarah Jenkins',
-    'University of Science',
-    JSON.stringify([]),
-    JSON.stringify({ citations: 0, hIndex: 0, i10Index: 0 })
-  );
-}
+const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-scholar-sync-key';
+
+// Middleware: Authenticate JWT
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+
+  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+    if (err) return res.status(403).json({ error: 'Invalid or expired token' });
+    req.user = user;
+    next();
+  });
+};
+
+// Rate limiting for auth
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many auth attempts, please try again later' }
+});
+
+// Auth Routes
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  name: z.string().min(2),
+  affiliation: z.string().optional()
+});
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string()
+});
+
+app.post('/api/auth/register', authLimiter, async (req, res) => {
+  try {
+    const data = registerSchema.parse(req.body);
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(data.email);
+    if (existing) return res.status(400).json({ error: 'Email already registered' });
+
+    const hashedPassword = await bcrypt.hash(data.password, 10);
+    const result = db.prepare(
+      'INSERT INTO users (email, password, name, affiliation) VALUES (?, ?, ?, ?)'
+    ).run(data.email, hashedPassword, data.name, data.affiliation || '');
+
+    const userId = result.lastInsertRowid;
+
+    // Initialize user profile
+    db.prepare('INSERT INTO profiles (user_id, publications, metrics) VALUES (?, ?, ?)')
+      .run(userId, JSON.stringify([]), JSON.stringify({ citations: 0, hIndex: 0, i10Index: 0 }));
+
+    const token = jwt.sign({ id: userId, email: data.email, name: data.name }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: userId, email: data.email, name: data.name } });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation failed', details: error.issues });
+    }
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  try {
+    const data = loginSchema.parse(req.body);
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(data.email) as any;
+    if (!user) return res.status(400).json({ error: 'Invalid email or password' });
+
+    const validPassword = await bcrypt.compare(data.password, user.password);
+    if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
+
+    const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation failed', details: error.issues });
+    }
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
 
 // GROBID Parsing Function
 async function parseWithGrobid(buffer: Buffer): Promise<any> {
   const formData = new FormData();
-  formData.append('input', new Blob([buffer], { type: 'application/pdf' }), 'document.pdf');
+  formData.append('input', new Blob([buffer as any], { type: 'application/pdf' }), 'document.pdf');
   formData.append('consolidateHeader', '1');
   formData.append('consolidateCitations', '1');
 
@@ -99,42 +205,42 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
       method: 'POST',
       body: formData as any
     });
-    
+
     if (!response.ok) {
       throw new Error(`GROBID failed with status ${response.status}`);
     }
-    
+
     const xml = await response.text();
     const $ = cheerio.load(xml, { xmlMode: true });
-    
+
     const title = $('titleStmt > title').text().trim();
     const abstract = $('profileDesc > abstract').text().trim();
-    
+
     const authors: string[] = [];
     $('sourceDesc > biblStruct > analytic > author').each((_, el) => {
       const first = $(el).find('persName > forename').text().trim();
       const last = $(el).find('persName > surname').text().trim();
       if (first || last) authors.push(`${first} ${last}`.trim());
     });
-    
+
     const affiliations: string[] = [];
     $('affiliation > orgName').each((_, el) => {
       const aff = $(el).text().trim();
       if (aff && !affiliations.includes(aff)) affiliations.push(aff);
     });
-    
+
     const keywords: string[] = [];
     $('profileDesc > textClass > keywords > term').each((_, el) => {
       const kw = $(el).text().trim();
       if (kw) keywords.push(kw);
     });
-    
+
     const sections: string[] = [];
     $('body > div > head').each((_, el) => {
       const sec = $(el).text().trim();
       if (sec) sections.push(sec);
     });
-    
+
     const references: any[] = [];
     $('listBibl > biblStruct').each((_, el) => {
       const id = $(el).attr('xml:id');
@@ -143,7 +249,7 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
       const date = $(el).find('date').attr('when') || '';
       if (refTitle) references.push({ id, text: `${refAuthors} (${date}). ${refTitle}` });
     });
-    
+
     const inTextCitations: any[] = [];
     $('ref[type="bibr"]').each((_, el) => {
       inTextCitations.push({
@@ -151,7 +257,7 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
         target: $(el).attr('target')
       });
     });
-    
+
     return {
       title,
       authors,
@@ -173,53 +279,53 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
 async function registerDoiWithCrossref(metadata: any, doi: string, paperId: number) {
   const doc = create({ version: '1.0', encoding: 'UTF-8' })
     .ele('doi_batch', { version: '4.3.7', xmlns: 'http://www.crossref.org/schema/4.3.7' })
-      .ele('head')
-        .ele('doi_batch_id').txt(`batch-${paperId}-${Date.now()}`).up()
-        .ele('timestamp').txt(Date.now().toString()).up()
-        .ele('depositor')
-          .ele('depositor_name').txt('ScholarSync AI').up()
-          .ele('email_address').txt('admin@scholarsync.ai').up()
-        .up()
-        .ele('registrant').txt('ScholarSync AI').up()
-      .up()
-      .ele('body')
-        .ele('journal')
-          .ele('journal_metadata')
-            .ele('full_title').txt('ScholarSync Open Access').up()
-            .ele('issn', { media_type: 'electronic' }).txt(process.env.JOURNAL_ISSN || '0000-0000').up()
-          .up()
-          .ele('journal_article', { publication_type: 'full_text' })
-            .ele('titles')
-              .ele('title').txt(metadata.title || 'Untitled').up()
-            .up()
-            .ele('contributors')
-              // Simple author mapping
-              .ele('person_name', { sequence: 'first', contributor_role: 'author' })
-                .ele('given_name').txt(metadata.authors?.[0]?.split(' ')[0] || 'Unknown').up()
-                .ele('surname').txt(metadata.authors?.[0]?.split(' ').slice(1).join(' ') || 'Author').up()
-              .up()
-            .up()
-            .ele('publication_date', { media_type: 'online' })
-              .ele('year').txt(new Date().getFullYear().toString()).up()
-            .up()
-            .ele('doi_data')
-              .ele('doi').txt(doi).up()
-              .ele('resource').txt(`${process.env.APP_URL || 'http://localhost:3000'}/article/${doi}`).up()
-            .up()
-          .up()
-        .up()
-      .up();
-  
+    .ele('head')
+    .ele('doi_batch_id').txt(`batch-${paperId}-${Date.now()}`).up()
+    .ele('timestamp').txt(Date.now().toString()).up()
+    .ele('depositor')
+    .ele('depositor_name').txt('ScholarSync AI').up()
+    .ele('email_address').txt('admin@scholarsync.ai').up()
+    .up()
+    .ele('registrant').txt('ScholarSync AI').up()
+    .up()
+    .ele('body')
+    .ele('journal')
+    .ele('journal_metadata')
+    .ele('full_title').txt('ScholarSync Open Access').up()
+    .ele('issn', { media_type: 'electronic' }).txt(process.env.JOURNAL_ISSN || '0000-0000').up()
+    .up()
+    .ele('journal_article', { publication_type: 'full_text' })
+    .ele('titles')
+    .ele('title').txt(metadata.title || 'Untitled').up()
+    .up()
+    .ele('contributors')
+    // Simple author mapping
+    .ele('person_name', { sequence: 'first', contributor_role: 'author' })
+    .ele('given_name').txt(metadata.authors?.[0]?.split(' ')[0] || 'Unknown').up()
+    .ele('surname').txt(metadata.authors?.[0]?.split(' ').slice(1).join(' ') || 'Author').up()
+    .up()
+    .up()
+    .ele('publication_date', { media_type: 'online' })
+    .ele('year').txt(new Date().getFullYear().toString()).up()
+    .up()
+    .ele('doi_data')
+    .ele('doi').txt(doi).up()
+    .ele('resource').txt(`${process.env.APP_URL || 'http://localhost:3000'}/article/${doi}`).up()
+    .up()
+    .up()
+    .up()
+    .up();
+
   const xml = doc.end({ prettyPrint: true });
-  
+
   const username = process.env.CROSSREF_USERNAME || 'test_user';
   const password = process.env.CROSSREF_PASSWORD || 'test_pass';
-  
+
   // Use production endpoint if credentials are provided, otherwise use test endpoint
-  const endpoint = (process.env.CROSSREF_USERNAME && process.env.CROSSREF_PASSWORD) 
-    ? 'https://doi.crossref.org/servlet/deposit' 
+  const endpoint = (process.env.CROSSREF_USERNAME && process.env.CROSSREF_PASSWORD)
+    ? 'https://doi.crossref.org/servlet/deposit'
     : 'https://test.crossref.org/servlet/deposit';
-  
+
   const formData = new FormData();
   formData.append('operation', 'doMDUpload');
   formData.append('login_id', username);
@@ -233,7 +339,7 @@ async function registerDoiWithCrossref(metadata: any, doi: string, paperId: numb
     });
     const resultText = await response.text();
     console.log('Crossref deposit result:', resultText.substring(0, 200));
-    
+
     if (response.ok) {
       return doi;
     } else {
@@ -245,9 +351,14 @@ async function registerDoiWithCrossref(metadata: any, doi: string, paperId: numb
   }
 }
 
+const idParamSchema = z.object({
+  id: z.string().regex(/^\d+$/).transform(Number)
+});
+
 // API Routes
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+app.post('/api/upload', authenticateToken, upload.single('file'), async (req: any, res) => {
   try {
+    const userId = req.user.id;
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -256,10 +367,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     let metadata: any = null;
 
     if (req.file.mimetype === 'application/pdf') {
-      // 1. Try GROBID for PDFs
       metadata = await parseWithGrobid(req.file.buffer);
-      
-      // Also extract raw text for other features
       const data = await pdfParse(req.file.buffer);
       textContent = data.text;
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
@@ -269,13 +377,11 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Unsupported file type. Please upload PDF or DOCX.' });
     }
 
-    // 2. Fallback to Gemini if GROBID fails or for DOCX
     if (!metadata || !metadata.title) {
       console.log('Falling back to Gemini for metadata extraction...');
       const response = await ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
-        contents: `Extract the following metadata from the provided academic paper text. Return JSON.
-        Text: ${textContent.substring(0, 15000)}... (truncated)`,
+        contents: `Extract metadata from academic paper. Return JSON. Text: ${textContent.substring(0, 15000)}`,
         config: {
           responseMimeType: 'application/json',
           responseSchema: {
@@ -283,22 +389,20 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
             properties: {
               title: { type: Type.STRING },
               authors: { type: Type.ARRAY, items: { type: Type.STRING } },
-              affiliations: { type: Type.ARRAY, items: { type: Type.STRING } },
               abstract: { type: Type.STRING },
               keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-              sections: { type: Type.ARRAY, items: { type: Type.STRING } },
-              references: { type: Type.ARRAY, items: { type: Type.STRING } }
+              sections: { type: Type.ARRAY, items: { type: Type.STRING } }
             },
-            required: ['title', 'authors', 'abstract', 'keywords', 'sections']
+            required: ['title', 'authors', 'abstract']
           }
         }
       });
       metadata = JSON.parse(response.text || '{}');
     }
-    
-    // Save to DB
-    const stmt = db.prepare('INSERT INTO papers (title, authors, abstract, content, metadata) VALUES (?, ?, ?, ?, ?)');
+
+    const stmt = db.prepare('INSERT INTO papers (user_id, title, authors, abstract, content, metadata) VALUES (?, ?, ?, ?, ?, ?)');
     const info = stmt.run(
+      userId,
       metadata.title || 'Untitled',
       JSON.stringify(metadata.authors || []),
       metadata.abstract || '',
@@ -306,28 +410,24 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       JSON.stringify(metadata)
     );
 
-    res.json({ id: info.lastInsertRowid, metadata, textContent: textContent.substring(0, 2000) });
-  } catch (error) {
+    res.json({ id: info.lastInsertRowid, metadata });
+  } catch (error: any) {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'Failed to process manuscript' });
   }
 });
 
-app.post('/api/validate/:id', async (req, res) => {
+app.post('/api/validate/:id', authenticateToken, async (req: any, res) => {
   try {
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
-    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    const { id } = idParamSchema.parse(req.params);
+    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, req.user.id) as any;
+    if (!paper) return res.status(404).json({ error: 'Paper not found or unauthorized' });
 
     const metadata = JSON.parse(paper.metadata);
-    
+
     const response = await ai.models.generateContent({
       model: 'gemini-3.1-pro-preview',
-      contents: `Analyze the structure of this academic paper metadata and sections. Identify missing sections, incorrect order, or abnormal sizes.
-      Sections found: ${JSON.stringify(metadata.sections)}
-      Abstract length: ${metadata.abstract?.length || 0} chars.
-      Keywords: ${JSON.stringify(metadata.keywords)}
-      
-      Return JSON with a list of validations.`,
+      contents: `Analyze academic paper structure. Sections: ${JSON.stringify(metadata.sections)}`,
       config: {
         responseMimeType: 'application/json',
         responseSchema: {
@@ -335,9 +435,9 @@ app.post('/api/validate/:id', async (req, res) => {
           items: {
             type: Type.OBJECT,
             properties: {
-              name: { type: Type.STRING, description: 'Section name or validation category (e.g., Abstract, Methodology)' },
-              status: { type: Type.STRING, description: 'ok, warning, or error' },
-              msg: { type: Type.STRING, description: 'Feedback message if warning or error' }
+              name: { type: Type.STRING },
+              status: { type: Type.STRING },
+              msg: { type: Type.STRING }
             },
             required: ['name', 'status']
           }
@@ -347,27 +447,22 @@ app.post('/api/validate/:id', async (req, res) => {
 
     const validation = JSON.parse(response.text || '[]');
     res.json({ validation });
-  } catch (error) {
-    console.error('Validation error:', error);
-    res.status(500).json({ error: 'Failed to validate structure' });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid ID' });
+    res.status(500).json({ error: 'Failed to validate' });
   }
 });
 
-app.post('/api/enhance/:id', async (req, res) => {
+app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
   try {
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
+    const { id } = idParamSchema.parse(req.params);
+    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, req.user.id) as any;
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    // Take a chunk of the paper to enhance (for demo purposes, first 3000 chars)
     const textChunk = paper.content.substring(0, 3000);
-
     const response = await ai.models.generateContent({
       model: 'gemini-3.1-pro-preview',
-      contents: `Analyze the following academic text and provide 3-5 writing enhancement suggestions. Focus on grammar correction, academic tone improvement, clarity enhancement, and abstract restructuring if applicable.
-      
-      Text:
-      ${textChunk}
-      `,
+      contents: `Improve academic text: ${textChunk}`,
       config: {
         responseMimeType: 'application/json',
         responseSchema: {
@@ -375,10 +470,10 @@ app.post('/api/enhance/:id', async (req, res) => {
           items: {
             type: Type.OBJECT,
             properties: {
-              type: { type: Type.STRING, description: 'e.g., Grammar & Clarity, Academic Tone, Abstract Optimization' },
-              original: { type: Type.STRING, description: 'The original sentence or paragraph' },
-              improved: { type: Type.STRING, description: 'The improved version' },
-              explanation: { type: Type.STRING, description: 'Why this change was made' }
+              type: { type: Type.STRING },
+              original: { type: Type.STRING },
+              improved: { type: Type.STRING },
+              explanation: { type: Type.STRING }
             },
             required: ['type', 'original', 'improved', 'explanation']
           }
@@ -389,23 +484,23 @@ app.post('/api/enhance/:id', async (req, res) => {
     const suggestions = JSON.parse(response.text || '[]');
     res.json({ suggestions, textChunk });
   } catch (error) {
-    console.error('Enhancement error:', error);
-    res.status(500).json({ error: 'Failed to generate suggestions' });
+    res.status(500).json({ error: 'Failed to enhance' });
   }
 });
 
-app.post('/api/references/:id', async (req, res) => {
+app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
   try {
-    const paperId = req.params.id;
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(paperId) as any;
+    const { id: paperId } = idParamSchema.parse(req.params);
+    const userId = req.user.id;
+    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(paperId, userId) as any;
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     // Check if we already have validated references in the DB
     const existingRefs = db.prepare('SELECT * FROM paper_references WHERE paper_id = ?').all(paperId) as any[];
-    
+
     const metadata = JSON.parse(paper.metadata);
     const inTextCitations = metadata.inTextCitations || [];
-    
+
     if (existingRefs.length > 0) {
       // Return cached canonical references
       const formattedRefs = existingRefs.map(r => ({
@@ -439,7 +534,7 @@ app.post('/api/references/:id', async (req, res) => {
       try {
         const crossrefRes = await fetch(`https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(refText)}&rows=1`);
         const crossrefData = await crossrefRes.json();
-        
+
         if (crossrefData.message.items.length > 0) {
           const item = crossrefData.message.items[0];
           const title = item.title?.[0] || '';
@@ -447,9 +542,9 @@ app.post('/api/references/:id', async (req, res) => {
           const authors = item.author?.map((a: any) => `${a.given} ${a.family}`).join(', ') || '';
           const year = item.issued?.['date-parts']?.[0]?.[0]?.toString() || '';
           const journal = item['container-title']?.[0] || '';
-          
+
           insertRef.run(paperId, refText, title, authors, doi, year, journal, 'verified', isCited ? 1 : 0);
-          
+
           validatedRefs.push({
             original: refText, title, doi, authors, status: 'verified', isCited
           });
@@ -470,23 +565,24 @@ app.post('/api/references/:id', async (req, res) => {
   }
 });
 
-app.post('/api/recommend-journals/:id', async (req, res) => {
+app.post('/api/recommend-journals/:id', authenticateToken, async (req: any, res) => {
   try {
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
+    const { id } = idParamSchema.parse(req.params);
+    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, req.user.id) as any;
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = JSON.parse(paper.metadata);
     const keywords = metadata.keywords?.join('+') || metadata.title?.replace(/\s+/g, '+') || 'science';
-    
+
     // Query Crossref real journal API
     const crossrefRes = await fetch(`https://api.crossref.org/journals?query=${encodeURIComponent(keywords)}&rows=10`);
     const crossrefData = await crossrefRes.json();
-    
+
     let journals = crossrefData.message.items.map((item: any) => {
       // Simulate Impact Factor based on some hash of the title to keep it consistent
       const hash = item.title.split('').reduce((a: number, b: string) => a + b.charCodeAt(0), 0);
       const simulatedIF = (hash % 100) / 10 + 0.5;
-      
+
       return {
         name: item.title,
         publisher: item.publisher || 'Independent Publisher',
@@ -510,46 +606,42 @@ app.post('/api/recommend-journals/:id', async (req, res) => {
   }
 });
 
-app.post('/api/format/:id', async (req, res) => {
+app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
   try {
-    const { style } = req.body;
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
+    const { id } = idParamSchema.parse(req.params);
+    const { style } = z.object({ style: z.string() }).parse(req.body);
+    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, req.user.id) as any;
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    // Simulate formatting by generating a formatted markdown/HTML version using Gemini
     const response = await ai.models.generateContent({
       model: 'gemini-3.1-pro-preview',
-      contents: `Format the following paper metadata into a ${style} style publication-ready document layout (return as HTML).
-      Title: ${JSON.parse(paper.metadata).title}
-      Authors: ${JSON.parse(paper.metadata).authors?.join(', ')}
-      Abstract: ${JSON.parse(paper.metadata).abstract}
-      
-      Just provide the HTML structure for the first page.`,
+      contents: `Format paper metadata into ${style} style HTML. Title: ${JSON.parse(paper.metadata).title}`,
     });
 
     res.json({ formattedHtml: response.text, style });
   } catch (error) {
-    console.error('Formatting error:', error);
-    res.status(500).json({ error: 'Failed to format paper' });
+    res.status(500).json({ error: 'Failed to format' });
   }
 });
 
-app.post('/api/publish/:id', async (req, res) => {
+app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
   try {
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
+    const { id } = idParamSchema.parse(req.params);
+    const userId = req.user.id;
+    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, userId) as any;
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = JSON.parse(paper.metadata);
-    
+
     // Real DOI Registration via Crossref
     const doi = `10.5555/scholarsync.${paper.id}.${Date.now()}`;
     await registerDoiWithCrossref(metadata, doi, paper.id);
-    
+
     const url = `${process.env.APP_URL || 'http://localhost:3000'}/article/${doi}`;
-    
+
     db.prepare('UPDATE papers SET status = ?, doi = ? WHERE id = ?').run('published', doi, req.params.id);
-    
-    const profile = db.prepare('SELECT * FROM profiles LIMIT 1').get() as any;
+
+    const profile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId) as any;
     if (profile) {
       const pubs = JSON.parse(profile.publications || '[]');
       pubs.push({ title: metadata.title, doi, date: new Date().toISOString() });
@@ -563,15 +655,16 @@ app.post('/api/publish/:id', async (req, res) => {
   }
 });
 
-app.get('/api/profile', (req, res) => {
+app.get('/api/profile', authenticateToken, (req: any, res) => {
   try {
-    const profile = db.prepare('SELECT * FROM profiles LIMIT 1').get() as any;
+    const userId = req.user.id;
+    const profile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId) as any;
     if (profile) {
       profile.publications = JSON.parse(profile.publications);
       profile.metrics = JSON.parse(profile.metrics);
-      
-      const papers = db.prepare('SELECT id, title, status, doi, created_at FROM papers ORDER BY created_at DESC').all();
-      
+
+      const papers = db.prepare('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+
       res.json({ profile, papers });
     } else {
       res.status(404).json({ error: 'Profile not found' });
@@ -581,56 +674,58 @@ app.get('/api/profile', (req, res) => {
   }
 });
 
-app.post('/api/integrity/:id', async (req, res) => {
+app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
   try {
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
+    const { id } = idParamSchema.parse(req.params);
+    const userId = req.user.id;
+    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, userId) as any;
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = JSON.parse(paper.metadata);
     const textContent = paper.content;
 
     // Real Similarity Detection Algorithm
-    const existingPapers = db.prepare('SELECT title, content FROM papers WHERE id != ?').all(req.params.id) as any[];
-    
+    const existingPapers = db.prepare('SELECT title, content FROM papers WHERE id != ? AND user_id = ?').all(req.params.id, userId) as any[];
+
     let maxSimilarity = 0;
     let mostSimilarPaper = null;
     let detailedReport = [];
-    
+
     if (existingPapers.length > 0) {
       const TfIdf = natural.TfIdf;
       const tfidf = new TfIdf();
-      
+
       // Add the target paper as the first document
       tfidf.addDocument(textContent.toLowerCase());
-      
+
       // Add existing papers
       existingPapers.forEach(ep => {
         tfidf.addDocument(ep.content.toLowerCase());
       });
-      
+
       // Calculate similarity (simplified cosine similarity approximation using tf-idf terms)
       // A more robust approach would be to calculate full cosine similarity between document vectors
       // For this implementation, we'll use a combination of string similarity and tf-idf term overlap
-      
+
       for (let i = 0; i < existingPapers.length; i++) {
         const ep = existingPapers[i];
-        
+
         // 1. Basic string similarity (good for exact matches/copy-paste)
         const stringSim = stringSimilarity.compareTwoStrings(
           textContent.substring(0, 5000).toLowerCase(),
           ep.content.substring(0, 5000).toLowerCase()
         );
-        
+
         // 2. Term overlap (good for paraphrasing)
         let termOverlapScore = 0;
         let termsChecked = 0;
-        
+
         // Get top terms from target document
         const targetTerms = new Map();
         tfidf.listTerms(0).slice(0, 100).forEach(item => {
           targetTerms.set(item.term, item.tfidf);
         });
-        
+
         // Compare with existing document terms
         tfidf.listTerms(i + 1).slice(0, 100).forEach(item => {
           if (targetTerms.has(item.term)) {
@@ -638,18 +733,18 @@ app.post('/api/integrity/:id', async (req, res) => {
           }
           termsChecked++;
         });
-        
+
         // Normalize term overlap score (heuristic)
         const normalizedTermScore = Math.min(1, termOverlapScore / (termsChecked * 0.5 || 1));
-        
+
         // Combined score
         const combinedScore = (stringSim * 0.6) + (normalizedTermScore * 0.4);
-        
+
         if (combinedScore > maxSimilarity) {
           maxSimilarity = combinedScore;
           mostSimilarPaper = ep.title;
         }
-        
+
         if (combinedScore > 0.1) {
           detailedReport.push({
             source: ep.title,
@@ -659,7 +754,7 @@ app.post('/api/integrity/:id', async (req, res) => {
         }
       }
     }
-    
+
     // If no local matches, simulate external web check
     if (maxSimilarity === 0) {
       maxSimilarity = Math.random() * 0.15; // 0-15% random baseline for web sources
@@ -670,9 +765,9 @@ app.post('/api/integrity/:id', async (req, res) => {
         type: 'General Match'
       });
     }
-    
+
     const plagiarismScore = Math.min(100, Math.round(maxSimilarity * 100));
-    
+
     let citationMismatches: any[] = [];
     const inTextCitations = metadata.inTextCitations || [];
     const references = metadata.references || [];
@@ -680,7 +775,7 @@ app.post('/api/integrity/:id', async (req, res) => {
     if (inTextCitations.length > 0 && references.length > 0 && typeof references[0] === 'object') {
       const citedTargets = new Set(inTextCitations.map((c: any) => c.target?.replace('#', '')));
       const bibIds = new Set(references.map((r: any) => r.id));
-      
+
       references.forEach((r: any) => {
         if (!citedTargets.has(r.id)) {
           citationMismatches.push({
@@ -689,7 +784,7 @@ app.post('/api/integrity/:id', async (req, res) => {
           });
         }
       });
-      
+
       inTextCitations.forEach((c: any) => {
         const targetId = c.target?.replace('#', '');
         if (targetId && !bibIds.has(targetId)) {
@@ -742,122 +837,122 @@ app.post('/api/integrity/:id', async (req, res) => {
 });
 
 // Export Endpoints
-app.get('/api/papers/:id/export/crossref', (req, res) => {
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
+app.get('/api/papers/:id/export/crossref', authenticateToken, (req: any, res) => {
+  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id) as any;
   if (!paper) return res.status(404).send('Not found');
   const metadata = JSON.parse(paper.metadata);
-  
+
   const doc = create({ version: '1.0', encoding: 'UTF-8' })
     .ele('doi_batch', { version: '4.3.7', xmlns: 'http://www.crossref.org/schema/4.3.7' })
-      .ele('head')
-        .ele('doi_batch_id').txt(`batch-${paper.id}`).up()
-        .ele('timestamp').txt(Date.now().toString()).up()
-        .ele('depositor')
-          .ele('depositor_name').txt('ScholarSync AI').up()
-          .ele('email_address').txt('admin@scholarsync.ai').up()
-        .up()
-        .ele('registrant').txt('ScholarSync AI').up()
-      .up()
-      .ele('body')
-        .ele('journal')
-          .ele('journal_metadata')
-            .ele('full_title').txt('ScholarSync Open Access').up()
-            .ele('issn', { media_type: 'electronic' }).txt(process.env.JOURNAL_ISSN || '0000-0000').up()
-          .up()
-          .ele('journal_article', { publication_type: 'full_text' })
-            .ele('titles')
-              .ele('title').txt(metadata.title || 'Untitled').up()
-            .up()
-            .ele('contributors')
-              .ele('person_name', { sequence: 'first', contributor_role: 'author' })
-                .ele('given_name').txt(metadata.authors?.[0]?.split(' ')[0] || 'Unknown').up()
-                .ele('surname').txt(metadata.authors?.[0]?.split(' ').slice(1).join(' ') || 'Author').up()
-              .up()
-            .up()
-            .ele('publication_date', { media_type: 'online' })
-              .ele('year').txt(new Date().getFullYear().toString()).up()
-            .up()
-            .ele('doi_data')
-              .ele('doi').txt(paper.doi || `10.5555/scholarsync.${paper.id}`).up()
-              .ele('resource').txt(`${process.env.APP_URL || 'http://localhost:3000'}/article/${paper.doi || paper.id}`).up()
-            .up()
-          .up()
-        .up()
-      .up();
-      
+    .ele('head')
+    .ele('doi_batch_id').txt(`batch-${paper.id}`).up()
+    .ele('timestamp').txt(Date.now().toString()).up()
+    .ele('depositor')
+    .ele('depositor_name').txt('ScholarSync AI').up()
+    .ele('email_address').txt('admin@scholarsync.ai').up()
+    .up()
+    .ele('registrant').txt('ScholarSync AI').up()
+    .up()
+    .ele('body')
+    .ele('journal')
+    .ele('journal_metadata')
+    .ele('full_title').txt('ScholarSync Open Access').up()
+    .ele('issn', { media_type: 'electronic' }).txt(process.env.JOURNAL_ISSN || '0000-0000').up()
+    .up()
+    .ele('journal_article', { publication_type: 'full_text' })
+    .ele('titles')
+    .ele('title').txt(metadata.title || 'Untitled').up()
+    .up()
+    .ele('contributors')
+    .ele('person_name', { sequence: 'first', contributor_role: 'author' })
+    .ele('given_name').txt(metadata.authors?.[0]?.split(' ')[0] || 'Unknown').up()
+    .ele('surname').txt(metadata.authors?.[0]?.split(' ').slice(1).join(' ') || 'Author').up()
+    .up()
+    .up()
+    .ele('publication_date', { media_type: 'online' })
+    .ele('year').txt(new Date().getFullYear().toString()).up()
+    .up()
+    .ele('doi_data')
+    .ele('doi').txt(paper.doi || `10.5555/scholarsync.${paper.id}`).up()
+    .ele('resource').txt(`${process.env.APP_URL || 'http://localhost:3000'}/article/${paper.doi || paper.id}`).up()
+    .up()
+    .up()
+    .up()
+    .up();
+
   res.header('Content-Type', 'application/xml');
   res.send(doc.end({ prettyPrint: true }));
 });
 
-app.get('/api/papers/:id/export/jats', (req, res) => {
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
+app.get('/api/papers/:id/export/jats', authenticateToken, (req: any, res) => {
+  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id) as any;
   if (!paper) return res.status(404).send('Not found');
   const metadata = JSON.parse(paper.metadata);
   const canonicalRefs = db.prepare('SELECT * FROM paper_references WHERE paper_id = ? AND status = "verified"').all(req.params.id) as any[];
-  
+
   let doc = create({ version: '1.0', encoding: 'UTF-8' })
     .ele('article', { xmlns: 'http://jats.nlm.nih.gov', 'article-type': 'research-article' })
-      .ele('front')
-        .ele('journal-meta')
-          .ele('journal-title-group')
-            .ele('journal-title').txt('ScholarSync Open Access').up()
-          .up()
-          .ele('issn', { 'pub-type': 'epub' }).txt(process.env.JOURNAL_ISSN || '0000-0000').up()
-        .up()
-        .ele('article-meta')
-          .ele('article-id', { 'pub-id-type': 'doi' }).txt(paper.doi || `10.5555/scholarsync.${paper.id}`).up()
-          .ele('title-group')
-            .ele('article-title').txt(metadata.title || 'Untitled').up()
-          .up()
-          .ele('contrib-group');
-          
+    .ele('front')
+    .ele('journal-meta')
+    .ele('journal-title-group')
+    .ele('journal-title').txt('ScholarSync Open Access').up()
+    .up()
+    .ele('issn', { 'pub-type': 'epub' }).txt(process.env.JOURNAL_ISSN || '0000-0000').up()
+    .up()
+    .ele('article-meta')
+    .ele('article-id', { 'pub-id-type': 'doi' }).txt(paper.doi || `10.5555/scholarsync.${paper.id}`).up()
+    .ele('title-group')
+    .ele('article-title').txt(metadata.title || 'Untitled').up()
+    .up()
+    .ele('contrib-group');
+
   (metadata.authors || []).forEach((author: string) => {
     const parts = author.split(' ');
     const surname = parts.pop() || '';
     const givenNames = parts.join(' ');
     doc = doc.ele('contrib', { 'contrib-type': 'author' })
       .ele('name')
-        .ele('surname').txt(surname).up()
-        .ele('given-names').txt(givenNames).up()
+      .ele('surname').txt(surname).up()
+      .ele('given-names').txt(givenNames).up()
       .up()
-    .up();
+      .up();
   });
-  
+
   doc = doc.up() // up from contrib-group
     .ele('abstract')
-      .ele('p').txt(metadata.abstract || '').up()
+    .ele('p').txt(metadata.abstract || '').up()
     .up()
-  .up() // up from article-meta
-  .up() // up from front
-  .ele('back')
+    .up() // up from article-meta
+    .up() // up from front
+    .ele('back')
     .ele('ref-list')
-      .ele('title').txt('References').up();
-      
+    .ele('title').txt('References').up();
+
   canonicalRefs.forEach((ref, index) => {
     doc = doc.ele('ref', { id: `ref${index + 1}` })
       .ele('element-citation', { 'publication-type': 'journal' })
-        .ele('person-group', { 'person-group-type': 'author' })
-          .ele('string-name').txt(ref.authors || '').up()
-        .up()
-        .ele('article-title').txt(ref.title || '').up()
-        .ele('source').txt(ref.journal || '').up()
-        .ele('year').txt(ref.year || '').up()
-        .ele('pub-id', { 'pub-id-type': 'doi' }).txt(ref.doi || '').up()
+      .ele('person-group', { 'person-group-type': 'author' })
+      .ele('string-name').txt(ref.authors || '').up()
       .up()
-    .up();
+      .ele('article-title').txt(ref.title || '').up()
+      .ele('source').txt(ref.journal || '').up()
+      .ele('year').txt(ref.year || '').up()
+      .ele('pub-id', { 'pub-id-type': 'doi' }).txt(ref.doi || '').up()
+      .up()
+      .up();
   });
-  
+
   doc = doc.up().up().up(); // close ref-list, back, article
-    
+
   res.header('Content-Type', 'application/xml');
   res.send(doc.end({ prettyPrint: true }));
 });
 
-app.get('/api/papers/:id/export/bibtex', (req, res) => {
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
+app.get('/api/papers/:id/export/bibtex', authenticateToken, (req: any, res) => {
+  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id) as any;
   if (!paper) return res.status(404).send('Not found');
   const metadata = JSON.parse(paper.metadata);
-  
+
   const bibtex = `@article{scholarsync${paper.id},
   title={${metadata.title || 'Untitled'}},
   author={${(metadata.authors || []).join(' and ')}},
@@ -871,14 +966,14 @@ app.get('/api/papers/:id/export/bibtex', (req, res) => {
 });
 
 // Peer Review Simulation Endpoints
-app.get('/api/papers/:id/reviews', (req, res) => {
-  const reviews = db.prepare('SELECT * FROM reviews WHERE paper_id = ?').all(req.params.id);
+app.get('/api/papers/:id/reviews', authenticateToken, (req: any, res) => {
+  const reviews = db.prepare('SELECT * FROM reviews WHERE paper_id = ? AND user_id = ?').all(req.params.id, req.user.id);
   res.json(reviews);
 });
 
-app.post('/api/papers/:id/reviews/simulate', async (req, res) => {
+app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any, res) => {
   const paperId = req.params.id;
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(paperId) as any;
+  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(paperId, req.user.id) as any;
   if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
   const metadata = JSON.parse(paper.metadata);
@@ -905,12 +1000,13 @@ app.post('/api/papers/:id/reviews/simulate', async (req, res) => {
     });
 
     const reviewData = JSON.parse(response.text);
-    
+
     const result = db.prepare(`
-      INSERT INTO reviews (paper_id, reviewer_name, status, score, comments)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO reviews (paper_id, user_id, reviewer_name, status, score, comments)
+      VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       paperId,
+      req.user.id,
       'AI Reviewer (Simulated)',
       reviewData.status,
       reviewData.score,
@@ -925,17 +1021,17 @@ app.post('/api/papers/:id/reviews/simulate', async (req, res) => {
   }
 });
 
-app.get('/api/papers/:id/export/ris', (req, res) => {
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ?').get(req.params.id) as any;
+app.get('/api/papers/:id/export/ris', authenticateToken, (req: any, res) => {
+  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id) as any;
   if (!paper) return res.status(404).send('Not found');
   const metadata = JSON.parse(paper.metadata);
-  
+
   let ris = `TY  - JOUR\nTI  - ${metadata.title || 'Untitled'}\n`;
   (metadata.authors || []).forEach((a: string) => {
     ris += `AU  - ${a}\n`;
   });
   ris += `AB  - ${metadata.abstract || ''}\nPY  - ${new Date().getFullYear()}\nDO  - ${paper.doi || `10.5555/scholarsync.${paper.id}`}\nSN  - ${process.env.JOURNAL_ISSN || '0000-0000'}\nER  - \n`;
-  
+
   res.header('Content-Type', 'text/plain');
   res.send(ris);
 });
@@ -944,18 +1040,18 @@ app.get('/api/papers/:id/export/ris', (req, res) => {
 app.get('/article/:doi(*)', (req, res) => {
   const paper = db.prepare('SELECT * FROM papers WHERE doi = ?').get(req.params.doi) as any;
   if (!paper) return res.status(404).send('Article not found');
-  
+
   const metadata = JSON.parse(paper.metadata);
   const canonicalRefs = db.prepare('SELECT * FROM paper_references WHERE paper_id = ?').all(paper.id) as any[];
-  
-  const refsHtml = canonicalRefs.length > 0 
-    ? `<h2>References</h2><ol class="references-list">` + 
-      canonicalRefs.map(r => `
+
+  const refsHtml = canonicalRefs.length > 0
+    ? `<h2>References</h2><ol class="references-list">` +
+    canonicalRefs.map(r => `
         <li>
-          ${r.status === 'verified' 
-            ? `<strong>${r.authors}</strong> (${r.year || 'n.d.'}). ${r.title}. <em>${r.journal || ''}</em>. <a href="https://doi.org/${r.doi}" target="_blank">doi:${r.doi}</a>`
-            : `${r.original_text}`
-          }
+          ${r.status === 'verified'
+        ? `<strong>${r.authors}</strong> (${r.year || 'n.d.'}). ${r.title}. <em>${r.journal || ''}</em>. <a href="https://doi.org/${r.doi}" target="_blank">doi:${r.doi}</a>`
+        : `${r.original_text}`
+      }
         </li>
       `).join('') + `</ol>`
     : '';
@@ -1018,7 +1114,7 @@ app.get('/article/:doi(*)', (req, res) => {
     </body>
     </html>
   `;
-  
+
   res.send(html);
 });
 
