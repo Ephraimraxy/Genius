@@ -64,6 +64,7 @@ async function initDB() {
       password TEXT,
       name TEXT,
       affiliation TEXT,
+      role TEXT DEFAULT 'user',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS papers (
@@ -117,6 +118,20 @@ async function initDB() {
   try { await pool.query('ALTER TABLE papers ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE reviews ADD COLUMN user_id INTEGER'); } catch (e) { }
+  
+  // Upsert Default Admin
+  const adminEmail = process.env.ADMIN_EMAIL || 'admin@genius.app';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'GeniusAdmin123!';
+  const hashedPassword = await bcrypt.hash(adminPassword, 10);
+  
+  await pool.query(`
+    INSERT INTO users (email, password, name, role)
+    VALUES ($1, $2, 'Administrator', 'admin')
+    ON CONFLICT (email) DO UPDATE 
+    SET password = EXCLUDED.password, role = 'admin'
+  `, [adminEmail, hashedPassword]);
+  
+  console.log(`--- Admin Account Configured: ${adminEmail} ---`);
 }
 initDB().catch(err => {
   console.error('CRITICAL: Database initialization failed');
@@ -238,8 +253,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       [userId, JSON.stringify([]), JSON.stringify({ citations: 0, hIndex: 0, i10Index: 0 })]
     );
 
-    const token = jwt.sign({ id: userId, email: data.email, name: data.name }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: userId, email: data.email, name: data.name } });
+    const token = jwt.sign({ id: userId, email: data.email, name: data.name, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: userId, email: data.email, name: data.name, role: 'user' } });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
@@ -258,8 +273,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const validPassword = await bcrypt.compare(data.password, user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
 
-    const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });

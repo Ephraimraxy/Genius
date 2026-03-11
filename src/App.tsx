@@ -11,7 +11,8 @@ import ReferenceIntelligence from './components/ReferenceIntelligence';
 import IntegrityChecks from './components/IntegrityChecks';
 import PeerReviewSimulation from './components/PeerReviewSimulation';
 import Auth from './components/Auth';
-import { Menu, LogOut, Bell, Search } from 'lucide-react';
+import Landing from './components/Landing';
+import { Menu, LogOut, Bell, Search, ShieldCheck } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile';
 
@@ -19,8 +20,10 @@ export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [activePaperId, setActivePaperId] = useState<number | null>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [showLanding, setShowLanding] = useState(!token);
 
   useEffect(() => {
     if (token) {
@@ -30,11 +33,13 @@ export default function App() {
         .then(res => {
           if (res.status === 401 || res.status === 403) {
             handleLogout();
-            throw new Error('Authorized session expired');
+            return null;
           }
           return res.json();
         })
-        .then(data => setProfile(data))
+        .then(data => {
+          if (data) setProfile(data);
+        })
         .catch(err => console.error('Failed to load profile', err));
     }
   }, [token]);
@@ -48,11 +53,18 @@ export default function App() {
 
   const onAuthSuccess = (newToken: string, user: any) => {
     setToken(newToken);
+    setShowLanding(false);
   };
+
+  if (showLanding && !token) {
+    return <Landing onStart={() => setShowLanding(false)} />;
+  }
 
   if (!token) {
     return <Auth onAuthSuccess={onAuthSuccess} />;
   }
+
+  const isAdmin = profile?.user?.role === 'admin';
 
   const renderContent = () => {
     switch (activeTab) {
@@ -70,17 +82,19 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-[#f8fafc] text-slate-900 font-sans overflow-hidden">
+    <div className="flex h-screen bg-white text-slate-900 font-sans overflow-hidden">
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
+        isCollapsed={isSidebarCollapsed}
+        setIsCollapsed={setIsSidebarCollapsed}
         profile={profile}
       />
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 h-20 flex items-center justify-between px-8 lg:px-12 shrink-0 z-10">
+        <header className="bg-white/90 backdrop-blur-xl border-b border-slate-100 h-20 flex items-center justify-between px-8 lg:px-12 shrink-0 z-10">
           <div className="flex items-center gap-6">
             <button
               className="lg:hidden p-2.5 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
@@ -89,11 +103,12 @@ export default function App() {
               <Menu size={22} />
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 capitalize font-display tracking-tight">
-                {activeTab === 'dashboard' ? 'Analytics Overview' : activeTab.replace(/([A-Z])/g, ' $1').trim()}
+              <h1 className="text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
+                {activeTab === 'dashboard' ? (isAdmin ? 'Admin Console' : 'Analytics Overview') : activeTab.replace(/([A-Z])/g, ' $1').trim()}
+                {isAdmin && <ShieldCheck className="text-amber-500" size={24} />}
               </h1>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">
-                Genius App / {activeTab}
+                Genius Portal / {activeTab}
               </p>
             </div>
 
@@ -126,21 +141,21 @@ export default function App() {
 
             <button
               onClick={handleLogout}
-              className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+              className="p-2.5 text-slate-400 hover:text-[#800000] hover:bg-[#800000]/5 rounded-xl transition-all"
               title="Logout"
             >
               <LogOut size={20} />
             </button>
 
             <button onClick={() => setActiveTab('profile')} className="flex items-center gap-2 pl-2 group">
-              <div className="w-10 h-10 rounded-xl premium-gradient text-white flex items-center justify-center font-bold shadow-lg shadow-indigo-200 group-hover:scale-105 transition-transform">
-                {profile?.profile?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shadow-xl transition-transform group-hover:scale-105 ${isAdmin ? 'premium-gradient shadow-[#800000]/20' : 'bg-slate-100 text-[#800000]'}`}>
+                {profile?.user?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}
               </div>
             </button>
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-6 lg:p-12 scroll-smooth">
+        <div className="flex-1 overflow-auto p-6 lg:p-12 scroll-smooth bg-slate-50/30">
           <div className="max-w-7xl mx-auto h-full">
             <AnimatePresence mode="wait">
               <motion.div
