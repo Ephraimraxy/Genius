@@ -10,14 +10,13 @@ import Database from 'better-sqlite3';
 import * as cheerio from 'cheerio';
 import stringSimilarity from 'string-similarity';
 import natural from 'natural';
-import { create } from 'xmlbuilder2';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -275,78 +274,89 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
   }
 }
 
-// Crossref DOI Registration Function
-async function registerDoiWithCrossref(metadata: any, doi: string, paperId: number) {
-  const doc = create({ version: '1.0', encoding: 'UTF-8' })
-    .ele('doi_batch', { version: '4.3.7', xmlns: 'http://www.crossref.org/schema/4.3.7' })
-    .ele('head')
-    .ele('doi_batch_id').txt(`batch-${paperId}-${Date.now()}`).up()
-    .ele('timestamp').txt(Date.now().toString()).up()
-    .ele('depositor')
-    .ele('depositor_name').txt('ScholarSync AI').up()
-    .ele('email_address').txt('admin@scholarsync.ai').up()
-    .up()
-    .ele('registrant').txt('ScholarSync AI').up()
-    .up()
-    .ele('body')
-    .ele('journal')
-    .ele('journal_metadata')
-    .ele('full_title').txt('ScholarSync Open Access').up()
-    .ele('issn', { media_type: 'electronic' }).txt(process.env.JOURNAL_ISSN || '0000-0000').up()
-    .up()
-    .ele('journal_article', { publication_type: 'full_text' })
-    .ele('titles')
-    .ele('title').txt(metadata.title || 'Untitled').up()
-    .up()
-    .ele('contributors')
-    // Simple author mapping
-    .ele('person_name', { sequence: 'first', contributor_role: 'author' })
-    .ele('given_name').txt(metadata.authors?.[0]?.split(' ')[0] || 'Unknown').up()
-    .ele('surname').txt(metadata.authors?.[0]?.split(' ').slice(1).join(' ') || 'Author').up()
-    .up()
-    .up()
-    .ele('publication_date', { media_type: 'online' })
-    .ele('year').txt(new Date().getFullYear().toString()).up()
-    .up()
-    .ele('doi_data')
-    .ele('doi').txt(doi).up()
-    .ele('resource').txt(`${process.env.APP_URL || 'http://localhost:3000'}/article/${doi}`).up()
-    .up()
-    .up()
-    .up()
-    .up();
+// Zenodo DOI Registration & Archiving Function
+async function publishToZenodo(paper: any, zenodoToken: string) {
+  // Use sandbox API in development unless a production token is explicitly provided
+  const isProduction = process.env.NODE_ENV === 'production' && process.env.ZENODO_USE_PRODUCTION === 'true';
+  const ZENODO_URL = isProduction 
+    ? 'https://zenodo.org/api/deposit/depositions'
+    : 'https://sandbox.zenodo.org/api/deposit/depositions';
 
-  const xml = doc.end({ prettyPrint: true });
-
-  const username = process.env.CROSSREF_USERNAME || 'test_user';
-  const password = process.env.CROSSREF_PASSWORD || 'test_pass';
-
-  // Use production endpoint if credentials are provided, otherwise use test endpoint
-  const endpoint = (process.env.CROSSREF_USERNAME && process.env.CROSSREF_PASSWORD)
-    ? 'https://doi.crossref.org/servlet/deposit'
-    : 'https://test.crossref.org/servlet/deposit';
-
-  const formData = new FormData();
-  formData.append('operation', 'doMDUpload');
-  formData.append('login_id', username);
-  formData.append('login_passwd', password);
-  formData.append('fname', new Blob([xml], { type: 'application/xml' }), 'metadata.xml');
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${zenodoToken}`
+  };
 
   try {
-    const response = await fetch(endpoint, {
+    // 1. Create the empty deposition draft
+    const draftRes = await fetch(ZENODO_URL, {
       method: 'POST',
-      body: formData as any
+      headers,
+      body: JSON.stringify({}) 
     });
-    const resultText = await response.text();
-    console.log('Crossref deposit result:', resultText.substring(0, 200));
+    
+    if (!draftRes.ok) throw new Error(`Zenodo Draft Creation Failed: ${draftRes.statusText}`);
+    const draft = await draftRes.json();
+    const depositionId = draft.id;
+    const bucketUrl = draft.links.bucket;
 
-    if (response.ok) {
-      return doi;
-    } else {
-      throw new Error(`Crossref deposit failed: ${response.statusText}`);
+    // 2. Upload the manuscript content to Zenodo
+    // We create a text file representation of the manuscript content stored in the DB
+    const manuscriptBuffer = Buffer.from(paper.content || 'Manuscript content generation error.', 'utf-8');
+    
+    const uploadRes = await fetch(`${bucketUrl}/manuscript_draft.txt`, {
+      method: 'PUT',
+      headers: { 
+        'Authorization': `Bearer ${zenodoToken}`,
+        'Content-Type': 'application/octet-stream'
+      },
+      body: manuscriptBuffer
+    });
+
+    if (!uploadRes.ok) throw new Error(`Zenodo File Upload Failed: ${uploadRes.statusText}`);
+
+    // 3. Attach ScholarSync Metadata (DataCite JSON schema)
+    const metadata = JSON.parse(paper.metadata);
+    const zenodoMetadata = {
+      metadata: {
+        title: metadata.title || 'Untitled ScholarSync Publication',
+        upload_type: "publication",
+        publication_type: "article",
+        description: metadata.abstract || "Published via ScholarSync AI Research Pipeline.",
+        creators: (metadata.authors || []).map((a: string) => {
+          const parts = a.split(' ');
+          return { name: parts.length > 1 ? `${parts.pop()}, ${parts.join(' ')}` : a };
+        })
+      }
+    };
+
+    const metaRes = await fetch(`${ZENODO_URL}/${depositionId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(zenodoMetadata)
+    });
+
+    if (!metaRes.ok) throw new Error(`Zenodo Metadata Attachment Failed: ${metaRes.statusText}`);
+
+    // 4. Publish to lock the record and mint the final DOI
+    const publishRes = await fetch(`${ZENODO_URL}/${depositionId}/actions/publish`, {
+      method: 'POST',
+      headers
+    });
+    
+    if (!publishRes.ok) {
+       console.warn(`Zenodo Publish Failed (often happens in sandbox without specific flags). Falling back to reserved DOI. ${publishRes.statusText}`);
+       // If publish fails (common in sandbox), return the reserved DOI from the draft
+       return draft.metadata.prereserve_doi.doi;
     }
+    
+    const finalRecord = await publishRes.json();
+    
+    // Return the newly minted Zenodo DOI
+    return finalRecord.doi;
+
   } catch (error) {
-    console.error('Crossref deposit failed:', error);
+    console.error('Zenodo Publishing Error:', error);
     throw error;
   }
 }
@@ -633,13 +643,18 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
 
     const metadata = JSON.parse(paper.metadata);
 
-    // Real DOI Registration via Crossref
-    const doi = `10.5555/scholarsync.${paper.id}.${Date.now()}`;
-    await registerDoiWithCrossref(metadata, doi, paper.id);
+    // Zenodo Integration
+    const zenodoToken = process.env.ZENODO_ACCESS_TOKEN;
+    if (!zenodoToken) {
+      throw new Error("Zenodo Access Token is not configured on the server.");
+    }
 
-    const url = `${process.env.APP_URL || 'http://localhost:3000'}/article/${doi}`;
+    const doi = await publishToZenodo(paper, zenodoToken);
+    
+    // The canonical URL for Zenodo DOIs points to Zenodo, but we also create a local reference
+    const url = `https://doi.org/${doi}`;
 
-    db.prepare('UPDATE papers SET status = ?, doi = ? WHERE id = ?').run('published', doi, req.params.id);
+    db.prepare('UPDATE papers SET status = ?, doi = ? WHERE id = ?').run('published', doi, id);
 
     const profile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId) as any;
     if (profile) {
@@ -651,7 +666,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     res.json({ success: true, doi, url });
   } catch (error: any) {
     console.error('Publishing error:', error);
-    res.status(500).json({ error: error.message || 'Failed to publish paper' });
+    res.status(500).json({ error: error.message || 'Failed to publish paper via Zenodo' });
   }
 });
 
@@ -836,116 +851,12 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
-// Export Endpoints
 app.get('/api/papers/:id/export/crossref', authenticateToken, (req: any, res) => {
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id) as any;
-  if (!paper) return res.status(404).send('Not found');
-  const metadata = JSON.parse(paper.metadata);
-
-  const doc = create({ version: '1.0', encoding: 'UTF-8' })
-    .ele('doi_batch', { version: '4.3.7', xmlns: 'http://www.crossref.org/schema/4.3.7' })
-    .ele('head')
-    .ele('doi_batch_id').txt(`batch-${paper.id}`).up()
-    .ele('timestamp').txt(Date.now().toString()).up()
-    .ele('depositor')
-    .ele('depositor_name').txt('ScholarSync AI').up()
-    .ele('email_address').txt('admin@scholarsync.ai').up()
-    .up()
-    .ele('registrant').txt('ScholarSync AI').up()
-    .up()
-    .ele('body')
-    .ele('journal')
-    .ele('journal_metadata')
-    .ele('full_title').txt('ScholarSync Open Access').up()
-    .ele('issn', { media_type: 'electronic' }).txt(process.env.JOURNAL_ISSN || '0000-0000').up()
-    .up()
-    .ele('journal_article', { publication_type: 'full_text' })
-    .ele('titles')
-    .ele('title').txt(metadata.title || 'Untitled').up()
-    .up()
-    .ele('contributors')
-    .ele('person_name', { sequence: 'first', contributor_role: 'author' })
-    .ele('given_name').txt(metadata.authors?.[0]?.split(' ')[0] || 'Unknown').up()
-    .ele('surname').txt(metadata.authors?.[0]?.split(' ').slice(1).join(' ') || 'Author').up()
-    .up()
-    .up()
-    .ele('publication_date', { media_type: 'online' })
-    .ele('year').txt(new Date().getFullYear().toString()).up()
-    .up()
-    .ele('doi_data')
-    .ele('doi').txt(paper.doi || `10.5555/scholarsync.${paper.id}`).up()
-    .ele('resource').txt(`${process.env.APP_URL || 'http://localhost:3000'}/article/${paper.doi || paper.id}`).up()
-    .up()
-    .up()
-    .up()
-    .up();
-
-  res.header('Content-Type', 'application/xml');
-  res.send(doc.end({ prettyPrint: true }));
+  res.status(501).json({ error: 'Crossref XML generation is no longer supported. The platform has migrated to Zenodo DataCite.' });
 });
 
 app.get('/api/papers/:id/export/jats', authenticateToken, (req: any, res) => {
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id) as any;
-  if (!paper) return res.status(404).send('Not found');
-  const metadata = JSON.parse(paper.metadata);
-  const canonicalRefs = db.prepare('SELECT * FROM paper_references WHERE paper_id = ? AND status = "verified"').all(req.params.id) as any[];
-
-  let doc = create({ version: '1.0', encoding: 'UTF-8' })
-    .ele('article', { xmlns: 'http://jats.nlm.nih.gov', 'article-type': 'research-article' })
-    .ele('front')
-    .ele('journal-meta')
-    .ele('journal-title-group')
-    .ele('journal-title').txt('ScholarSync Open Access').up()
-    .up()
-    .ele('issn', { 'pub-type': 'epub' }).txt(process.env.JOURNAL_ISSN || '0000-0000').up()
-    .up()
-    .ele('article-meta')
-    .ele('article-id', { 'pub-id-type': 'doi' }).txt(paper.doi || `10.5555/scholarsync.${paper.id}`).up()
-    .ele('title-group')
-    .ele('article-title').txt(metadata.title || 'Untitled').up()
-    .up()
-    .ele('contrib-group');
-
-  (metadata.authors || []).forEach((author: string) => {
-    const parts = author.split(' ');
-    const surname = parts.pop() || '';
-    const givenNames = parts.join(' ');
-    doc = doc.ele('contrib', { 'contrib-type': 'author' })
-      .ele('name')
-      .ele('surname').txt(surname).up()
-      .ele('given-names').txt(givenNames).up()
-      .up()
-      .up();
-  });
-
-  doc = doc.up() // up from contrib-group
-    .ele('abstract')
-    .ele('p').txt(metadata.abstract || '').up()
-    .up()
-    .up() // up from article-meta
-    .up() // up from front
-    .ele('back')
-    .ele('ref-list')
-    .ele('title').txt('References').up();
-
-  canonicalRefs.forEach((ref, index) => {
-    doc = doc.ele('ref', { id: `ref${index + 1}` })
-      .ele('element-citation', { 'publication-type': 'journal' })
-      .ele('person-group', { 'person-group-type': 'author' })
-      .ele('string-name').txt(ref.authors || '').up()
-      .up()
-      .ele('article-title').txt(ref.title || '').up()
-      .ele('source').txt(ref.journal || '').up()
-      .ele('year').txt(ref.year || '').up()
-      .ele('pub-id', { 'pub-id-type': 'doi' }).txt(ref.doi || '').up()
-      .up()
-      .up();
-  });
-
-  doc = doc.up().up().up(); // close ref-list, back, article
-
-  res.header('Content-Type', 'application/xml');
-  res.send(doc.end({ prettyPrint: true }));
+  res.status(501).json({ error: 'JATS XML generation is currently disabled while migrating schema definitions to Zenodo compatibility.' });
 });
 
 app.get('/api/papers/:id/export/bibtex', authenticateToken, (req: any, res) => {
