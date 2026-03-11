@@ -6,7 +6,7 @@ import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import cors from 'cors';
 import { GoogleGenAI, Type } from '@google/genai';
-import Database from 'better-sqlite3';
+import { Pool } from 'pg';
 import * as cheerio from 'cheerio';
 import stringSimilarity from 'string-similarity';
 import natural from 'natural';
@@ -47,68 +47,75 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 // Initialize Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Initialize Database
-const db = new Database('scholar.db');
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE,
-    password TEXT,
-    name TEXT,
-    affiliation TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS papers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    title TEXT,
-    authors TEXT,
-    abstract TEXT,
-    content TEXT,
-    metadata JSON,
-    status TEXT DEFAULT 'uploaded',
-    doi TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-  CREATE TABLE IF NOT EXISTS paper_references (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    paper_id INTEGER,
-    original_text TEXT,
-    title TEXT,
-    authors TEXT,
-    doi TEXT,
-    year TEXT,
-    journal TEXT,
-    status TEXT,
-    is_cited BOOLEAN,
-    FOREIGN KEY(paper_id) REFERENCES papers(id)
-  );
-  CREATE TABLE IF NOT EXISTS profiles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    publications JSON,
-    metrics JSON,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-  CREATE TABLE IF NOT EXISTS reviews (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    paper_id INTEGER,
-    user_id INTEGER,
-    reviewer_name TEXT,
-    status TEXT DEFAULT 'pending',
-    score INTEGER,
-    comments TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(paper_id) REFERENCES papers(id),
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-`);
+// Initialize Database connection pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/scholar',
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
-try { db.exec('ALTER TABLE papers ADD COLUMN doi TEXT'); } catch (e) { }
-try { db.exec('ALTER TABLE papers ADD COLUMN user_id INTEGER'); } catch (e) { }
-try { db.exec('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
-try { db.exec('ALTER TABLE reviews ADD COLUMN user_id INTEGER'); } catch (e) { }
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE,
+      password TEXT,
+      name TEXT,
+      affiliation TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS papers (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      title TEXT,
+      authors TEXT,
+      abstract TEXT,
+      content TEXT,
+      metadata JSONB,
+      status TEXT DEFAULT 'uploaded',
+      doi TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS paper_references (
+      id SERIAL PRIMARY KEY,
+      paper_id INTEGER,
+      original_text TEXT,
+      title TEXT,
+      authors TEXT,
+      doi TEXT,
+      year TEXT,
+      journal TEXT,
+      status TEXT,
+      is_cited BOOLEAN,
+      FOREIGN KEY(paper_id) REFERENCES papers(id)
+    );
+    CREATE TABLE IF NOT EXISTS profiles (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      publications JSONB,
+      metrics JSONB,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS reviews (
+      id SERIAL PRIMARY KEY,
+      paper_id INTEGER,
+      user_id INTEGER,
+      reviewer_name TEXT,
+      status TEXT DEFAULT 'pending',
+      score INTEGER,
+      comments TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(paper_id) REFERENCES papers(id),
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+  `);
+  
+  try { await pool.query('ALTER TABLE papers ADD COLUMN doi TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN user_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE reviews ADD COLUMN user_id INTEGER'); } catch (e) { }
+}
+initDB().catch(console.error);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-scholar-sync-key';
 
@@ -149,19 +156,22 @@ const loginSchema = z.object({
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const data = registerSchema.parse(req.body);
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(data.email);
-    if (existing) return res.status(400).json({ error: 'Email already registered' });
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [data.email]);
+    if (existing.rows.length > 0) return res.status(400).json({ error: 'Email already registered' });
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
-    const result = db.prepare(
-      'INSERT INTO users (email, password, name, affiliation) VALUES (?, ?, ?, ?)'
-    ).run(data.email, hashedPassword, data.name, data.affiliation || '');
+    const result = await pool.query(
+      'INSERT INTO users (email, password, name, affiliation) VALUES ($1, $2, $3, $4) RETURNING id',
+      [data.email, hashedPassword, data.name, data.affiliation || '']
+    );
 
-    const userId = result.lastInsertRowid;
+    const userId = result.rows[0].id;
 
     // Initialize user profile
-    db.prepare('INSERT INTO profiles (user_id, publications, metrics) VALUES (?, ?, ?)')
-      .run(userId, JSON.stringify([]), JSON.stringify({ citations: 0, hIndex: 0, i10Index: 0 }));
+    await pool.query(
+      'INSERT INTO profiles (user_id, publications, metrics) VALUES ($1, $2, $3)',
+      [userId, JSON.stringify([]), JSON.stringify({ citations: 0, hIndex: 0, i10Index: 0 })]
+    );
 
     const token = jwt.sign({ id: userId, email: data.email, name: data.name }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { id: userId, email: data.email, name: data.name } });
@@ -176,9 +186,10 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const data = loginSchema.parse(req.body);
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(data.email) as any;
-    if (!user) return res.status(400).json({ error: 'Invalid email or password' });
-
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [data.email]);
+    if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid email or password' });
+    
+    const user = result.rows[0];
     const validPassword = await bcrypt.compare(data.password, user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
 
@@ -410,17 +421,19 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       metadata = JSON.parse(response.text || '{}');
     }
 
-    const stmt = db.prepare('INSERT INTO papers (user_id, title, authors, abstract, content, metadata) VALUES (?, ?, ?, ?, ?, ?)');
-    const info = stmt.run(
-      userId,
-      metadata.title || 'Untitled',
-      JSON.stringify(metadata.authors || []),
-      metadata.abstract || '',
-      textContent,
-      JSON.stringify(metadata)
+    const result = await pool.query(
+      'INSERT INTO papers (user_id, title, authors, abstract, content, metadata) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [
+        userId,
+        metadata.title || 'Untitled',
+        JSON.stringify(metadata.authors || []),
+        metadata.abstract || '',
+        textContent,
+        JSON.stringify(metadata)
+      ]
     );
 
-    res.json({ id: info.lastInsertRowid, metadata });
+    res.json({ id: result.rows[0].id, metadata });
   } catch (error: any) {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'Failed to process manuscript' });
@@ -430,7 +443,8 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
 app.post('/api/validate/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, req.user.id) as any;
+    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found or unauthorized' });
 
     const metadata = JSON.parse(paper.metadata);
@@ -466,7 +480,8 @@ app.post('/api/validate/:id', authenticateToken, async (req: any, res) => {
 app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, req.user.id) as any;
+    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const textChunk = paper.content.substring(0, 3000);
@@ -502,11 +517,13 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id: paperId } = idParamSchema.parse(req.params);
     const userId = req.user.id;
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(paperId, userId) as any;
+    const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [paperId, userId]);
+    const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     // Check if we already have validated references in the DB
-    const existingRefs = db.prepare('SELECT * FROM paper_references WHERE paper_id = ?').all(paperId) as any[];
+    const refsResult = await pool.query('SELECT * FROM paper_references WHERE paper_id = $1', [paperId]);
+    const existingRefs = refsResult.rows;
 
     const metadata = JSON.parse(paper.metadata);
     const inTextCitations = metadata.inTextCitations || [];
@@ -531,10 +548,10 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
 
     const citedTargets = new Set(inTextCitations.map((c: any) => c.target?.replace('#', '')));
 
-    const insertRef = db.prepare(`
+    const insertRefQuery = `
       INSERT INTO paper_references (paper_id, original_text, title, authors, doi, year, journal, status, is_cited)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `;
 
     for (const refObj of refsToProcess) {
       const refText = typeof refObj === 'string' ? refObj : refObj.text;
@@ -553,17 +570,17 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
           const year = item.issued?.['date-parts']?.[0]?.[0]?.toString() || '';
           const journal = item['container-title']?.[0] || '';
 
-          insertRef.run(paperId, refText, title, authors, doi, year, journal, 'verified', isCited ? 1 : 0);
+          await pool.query(insertRefQuery, [paperId, refText, title, authors, doi, year, journal, 'verified', isCited]);
 
           validatedRefs.push({
             original: refText, title, doi, authors, status: 'verified', isCited
           });
         } else {
-          insertRef.run(paperId, refText, '', '', '', '', '', 'not_found', isCited ? 1 : 0);
+          await pool.query(insertRefQuery, [paperId, refText, '', '', '', '', '', 'not_found', isCited]);
           validatedRefs.push({ original: refText, status: 'not_found', isCited });
         }
       } catch (e) {
-        insertRef.run(paperId, refText, '', '', '', '', '', 'error', isCited ? 1 : 0);
+        await pool.query(insertRefQuery, [paperId, refText, '', '', '', '', '', 'error', isCited]);
         validatedRefs.push({ original: refText, status: 'error', isCited });
       }
     }
@@ -578,7 +595,8 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
 app.post('/api/recommend-journals/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, req.user.id) as any;
+    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = JSON.parse(paper.metadata);
@@ -620,7 +638,8 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const { style } = z.object({ style: z.string() }).parse(req.body);
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, req.user.id) as any;
+    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const response = await ai.models.generateContent({
@@ -638,7 +657,8 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const userId = req.user.id;
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, userId) as any;
+    const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, userId]);
+    const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = JSON.parse(paper.metadata);
@@ -654,13 +674,14 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     // The canonical URL for Zenodo DOIs points to Zenodo, but we also create a local reference
     const url = `https://doi.org/${doi}`;
 
-    db.prepare('UPDATE papers SET status = ?, doi = ? WHERE id = ?').run('published', doi, id);
+    await pool.query('UPDATE papers SET status = $1, doi = $2 WHERE id = $3', ['published', doi, id]);
 
-    const profile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId) as any;
+    const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
+    const profile = profileResult.rows[0];
     if (profile) {
       const pubs = JSON.parse(profile.publications || '[]');
       pubs.push({ title: metadata.title, doi, date: new Date().toISOString() });
-      db.prepare('UPDATE profiles SET publications = ? WHERE id = ?').run(JSON.stringify(pubs), profile.id);
+      await pool.query('UPDATE profiles SET publications = $1 WHERE id = $2', [JSON.stringify(pubs), profile.id]);
     }
 
     res.json({ success: true, doi, url });
@@ -670,15 +691,17 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
-app.get('/api/profile', authenticateToken, (req: any, res) => {
+app.get('/api/profile', authenticateToken, async (req: any, res) => {
   try {
     const userId = req.user.id;
-    const profile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId) as any;
+    const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
+    const profile = profileResult.rows[0];
     if (profile) {
       profile.publications = JSON.parse(profile.publications);
       profile.metrics = JSON.parse(profile.metrics);
 
-      const papers = db.prepare('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+      const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
+      const papers = papersResult.rows;
 
       res.json({ profile, papers });
     } else {
@@ -693,14 +716,16 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const userId = req.user.id;
-    const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(id, userId) as any;
+    const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, userId]);
+    const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = JSON.parse(paper.metadata);
     const textContent = paper.content;
 
     // Real Similarity Detection Algorithm
-    const existingPapers = db.prepare('SELECT title, content FROM papers WHERE id != ? AND user_id = ?').all(req.params.id, userId) as any[];
+    const existingResult = await pool.query('SELECT title, content FROM papers WHERE id != $1 AND user_id = $2', [id, userId]);
+    const existingPapers = existingResult.rows;
 
     let maxSimilarity = 0;
     let mostSimilarPaper = null;
@@ -859,8 +884,9 @@ app.get('/api/papers/:id/export/jats', authenticateToken, (req: any, res) => {
   res.status(501).json({ error: 'JATS XML generation is currently disabled while migrating schema definitions to Zenodo compatibility.' });
 });
 
-app.get('/api/papers/:id/export/bibtex', authenticateToken, (req: any, res) => {
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id) as any;
+app.get('/api/papers/:id/export/bibtex', authenticateToken, async (req: any, res) => {
+  const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  const paper = paperResult.rows[0];
   if (!paper) return res.status(404).send('Not found');
   const metadata = JSON.parse(paper.metadata);
 
@@ -877,14 +903,15 @@ app.get('/api/papers/:id/export/bibtex', authenticateToken, (req: any, res) => {
 });
 
 // Peer Review Simulation Endpoints
-app.get('/api/papers/:id/reviews', authenticateToken, (req: any, res) => {
-  const reviews = db.prepare('SELECT * FROM reviews WHERE paper_id = ? AND user_id = ?').all(req.params.id, req.user.id);
-  res.json(reviews);
+app.get('/api/papers/:id/reviews', authenticateToken, async (req: any, res) => {
+  const reviewsResult = await pool.query('SELECT * FROM reviews WHERE paper_id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  res.json(reviewsResult.rows);
 });
 
 app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any, res) => {
   const paperId = req.params.id;
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(paperId, req.user.id) as any;
+  const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [paperId, req.user.id]);
+  const paper = paperResult.rows[0];
   if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
   const metadata = JSON.parse(paper.metadata);
@@ -912,28 +939,29 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
 
     const reviewData = JSON.parse(response.text);
 
-    const result = db.prepare(`
+    const result = await pool.query(`
       INSERT INTO reviews (paper_id, user_id, reviewer_name, status, score, comments)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+    `, [
       paperId,
       req.user.id,
       'AI Reviewer (Simulated)',
       reviewData.status,
       reviewData.score,
       reviewData.comments
-    );
+    ]);
 
-    const newReview = db.prepare('SELECT * FROM reviews WHERE id = ?').get(result.lastInsertRowid);
-    res.json(newReview);
+    const newReviewResult = await pool.query('SELECT * FROM reviews WHERE id = $1', [result.rows[0].id]);
+    res.json(newReviewResult.rows[0]);
   } catch (error) {
     console.error('Error simulating review:', error);
     res.status(500).json({ error: 'Failed to simulate review' });
   }
 });
 
-app.get('/api/papers/:id/export/ris', authenticateToken, (req: any, res) => {
-  const paper = db.prepare('SELECT * FROM papers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id) as any;
+app.get('/api/papers/:id/export/ris', authenticateToken, async (req: any, res) => {
+  const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  const paper = paperResult.rows[0];
   if (!paper) return res.status(404).send('Not found');
   const metadata = JSON.parse(paper.metadata);
 
@@ -948,12 +976,14 @@ app.get('/api/papers/:id/export/ris', authenticateToken, (req: any, res) => {
 });
 
 // Public Article Page (Google Scholar Compatible)
-app.get('/article/:doi(*)', (req, res) => {
-  const paper = db.prepare('SELECT * FROM papers WHERE doi = ?').get(req.params.doi) as any;
+app.get('/article/:doi(*)', async (req, res) => {
+  const paperResult = await pool.query('SELECT * FROM papers WHERE doi = $1', [req.params.doi]);
+  const paper = paperResult.rows[0];
   if (!paper) return res.status(404).send('Article not found');
 
   const metadata = JSON.parse(paper.metadata);
-  const canonicalRefs = db.prepare('SELECT * FROM paper_references WHERE paper_id = ?').all(paper.id) as any[];
+  const canonicalRefsResult = await pool.query('SELECT * FROM paper_references WHERE paper_id = $1', [paper.id]);
+  const canonicalRefs = canonicalRefsResult.rows;
 
   const refsHtml = canonicalRefs.length > 0
     ? `<h2>References</h2><ol class="references-list">` +
