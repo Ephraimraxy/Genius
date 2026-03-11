@@ -10,11 +10,13 @@ import ProfileView from './components/ProfileView';
 import ReferenceIntelligence from './components/ReferenceIntelligence';
 import IntegrityChecks from './components/IntegrityChecks';
 import PeerReviewSimulation from './components/PeerReviewSimulation';
+import TransactionHistory from './components/TransactionHistory';
+import ChatWidget from './components/ChatWidget';
 import Auth from './components/Auth';
 import Landing from './components/Landing';
 import { Menu, LogOut, Bell, Search, ShieldCheck } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
@@ -76,6 +78,7 @@ export default function App() {
       case 'integrity': return <IntegrityChecks activePaperId={activePaperId} />;
       case 'journals': return <JournalRecommendations activePaperId={activePaperId} />;
       case 'reviews': return <PeerReviewSimulation activePaperId={activePaperId} />;
+      case 'transactions': return <TransactionHistory profile={profile} />;
       case 'profile': return <ProfileView profile={profile} />;
       default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
     }
@@ -172,6 +175,7 @@ export default function App() {
           </div>
         </div>
       </main>
+      <ChatWidget profile={profile} />
     </div>
   );
 }

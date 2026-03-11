@@ -112,6 +112,28 @@ async function initDB() {
       FOREIGN KEY(paper_id) REFERENCES papers(id),
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
+    CREATE TABLE IF NOT EXISTS transactions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      reference TEXT UNIQUE,
+      amount INTEGER,
+      status TEXT DEFAULT 'pending',
+      type TEXT DEFAULT 'publication',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      sender_role TEXT, -- 'user', 'admin', 'ai'
+      content TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
   
   try { await pool.query('ALTER TABLE papers ADD COLUMN doi TEXT'); } catch (e) { }
@@ -130,6 +152,13 @@ async function initDB() {
     ON CONFLICT (email) DO UPDATE 
     SET password = EXCLUDED.password, role = 'admin'
   `, [adminEmail, hashedPassword]);
+  
+  // Set default pricing if not exists
+  await pool.query(`
+    INSERT INTO settings (key, value)
+    VALUES ('publication_price', '5000')
+    ON CONFLICT (key) DO NOTHING
+  `);
   
   console.log(`--- Admin Account Configured: ${adminEmail} ---`);
 }
@@ -1147,6 +1176,133 @@ app.get('/article/:doi(*)', async (req, res) => {
   `;
 
   res.send(html);
+});
+
+// Settings & Dynamic Pricing
+app.get('/api/settings/price', async (req, res) => {
+  const result = await pool.query('SELECT value FROM settings WHERE key = $1', ['publication_price']);
+  res.json({ price: parseInt(result.rows[0]?.value || '5000', 10) });
+});
+
+app.post('/api/settings/price', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  const { price } = req.body;
+  await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['publication_price', price.toString()]);
+  res.json({ success: true, price });
+});
+
+// Paystack Payment Integration
+app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => {
+  const { amount } = req.body;
+  const reference = `GEN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  
+  try {
+    const response = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: req.user.email,
+        amount: amount * 100, // Paystack expects amount in Kobo
+        reference
+      })
+    });
+    
+    const data = await response.json();
+    if (!data.status) throw new Error(data.message);
+    
+    // Create pending transaction record
+    await pool.query('INSERT INTO transactions (user_id, reference, amount, status) VALUES ($1, $2, $3, $4)', 
+      [req.user.id, reference, amount, 'pending']);
+    
+    res.json(data.data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, res) => {
+  const { reference } = req.params;
+  
+  try {
+    const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
+    });
+    
+    const data = await response.json();
+    if (data.status && data.data.status === 'success') {
+      await pool.query('UPDATE transactions SET status = $1 WHERE reference = $2', ['success', reference]);
+      res.json({ status: 'success' });
+    } else {
+      res.json({ status: 'failed' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/transactions', authenticateToken, async (req: any, res) => {
+  const query = req.user.role === 'admin' 
+    ? 'SELECT t.*, u.email as user_email FROM transactions t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC'
+    : 'SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC';
+  const params = req.user.role === 'admin' ? [] : [req.user.id];
+  
+  const result = await pool.query(query, params);
+  res.json(result.rows);
+});
+
+// AI-Powered Chat System
+app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
+  const userId = req.user.role === 'admin' ? (req.query.userId || req.user.id) : req.user.id;
+  const result = await pool.query('SELECT * FROM chat_messages WHERE user_id = $1 ORDER BY created_at ASC', [userId]);
+  res.json(result.rows);
+});
+
+app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
+  const { content, userId: targetUserId } = req.body;
+  const userId = req.user.role === 'admin' ? targetUserId : req.user.id;
+  const senderRole = req.user.role;
+  
+  // Save user/admin message
+  await pool.query('INSERT INTO chat_messages (user_id, sender_role, content) VALUES ($1, $2, $3)',
+    [userId, senderRole, content]);
+  
+  // If user sent it and it's after hours or admin is offline (simulated)
+  if (senderRole === 'user') {
+    try {
+      const chatHistoryResult = await pool.query('SELECT * FROM chat_messages WHERE user_id = $1 ORDER BY created_at DESC LIMIT 5', [userId]);
+      const history = chatHistoryResult.rows.reverse().map(m => `${m.sender_role}: ${m.content}`).join('\n');
+      
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }); // Re-initialize AI here if not globally available
+      const aiReply = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `You are a helpful and professional customer support assistant for Genius Mindspark (GMIJ Publication).
+        The admin is currently away. Please respond to the user in a nice, professional, and supportive tone.
+        
+        Chat History:
+        ${history}
+        
+        New message: ${content}
+        
+        Draft a concise response:`
+      });
+      
+      const aiContent = aiReply.text || "Thank you for reaching out! An administrator will get back to you shortly.";
+      
+      await pool.query('INSERT INTO chat_messages (user_id, sender_role, content) VALUES ($1, $2, $3)',
+        [userId, 'ai', aiContent]);
+        
+      res.json({ success: true, aiResponse: aiContent });
+    } catch (err) {
+      console.error('Error generating AI chat response:', err);
+      res.json({ success: true }); // Still return success for the user message, AI response is optional
+    }
+  } else {
+    res.json({ success: true });
+  }
 });
 
 async function startServer() {

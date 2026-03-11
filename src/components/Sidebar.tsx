@@ -49,6 +49,7 @@ export default function Sidebar({
     { id: 'integrity', label: 'Integrity Check', icon: ShieldCheck },
     { id: 'journals', label: 'Journal Match', icon: BookMarked },
     { id: 'reviews', label: 'Peer Review', icon: MessageSquare },
+    { id: 'transactions', label: 'Transactions', icon: FileText },
   ];
 
   return (

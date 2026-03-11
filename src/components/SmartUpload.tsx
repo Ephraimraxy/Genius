@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, DollarSign } from 'lucide-react';
 
 export default function SmartUpload({ onUploadComplete }: { onUploadComplete: (id: number) => void }) {
   const [isUploading, setIsUploading] = useState(false);
@@ -8,7 +8,14 @@ export default function SmartUpload({ onUploadComplete }: { onUploadComplete: (i
   const [metadata, setMetadata] = useState<any>(null);
   const [validation, setValidation] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [price, setPrice] = useState<number>(0);
+  const [isPaying, setIsPaying] = useState(false);
+  const [paperId, setPaperId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useState(() => {
+    fetch('/api/settings/price').then(res => res.json()).then(data => setPrice(data.price));
+  });
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -36,6 +43,7 @@ export default function SmartUpload({ onUploadComplete }: { onUploadComplete: (i
 
       const data = await res.json();
       setMetadata(data.metadata);
+      setPaperId(data.id);
       onUploadComplete(data.id);
 
       // Now validate structure
@@ -57,6 +65,30 @@ export default function SmartUpload({ onUploadComplete }: { onUploadComplete: (i
     } finally {
       setIsUploading(false);
       setIsValidating(false);
+    }
+  };
+
+  const handlePayment = async () => {
+    setIsPaying(true);
+    try {
+      const res = await fetch('/api/payment/initialize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ amount: price })
+      });
+      const data = await res.json();
+      if (data.authorization_url) {
+        window.location.href = data.authorization_url;
+      } else {
+        throw new Error('Could not initialize payment');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsPaying(false);
     }
   };
 
@@ -265,13 +297,29 @@ export default function SmartUpload({ onUploadComplete }: { onUploadComplete: (i
                 )}
 
                 <div className="mt-10 pt-8 border-t border-slate-100">
-                  <div className="bg-slate-900 rounded-2xl p-6 text-white text-center">
+                  <div className="bg-slate-900 rounded-2xl p-6 text-white text-center mb-6">
                     <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2">Readiness Score</p>
                     <p className="text-4xl font-bold tracking-tight">84<span className="text-indigo-400">%</span></p>
                     <div className="w-full bg-slate-800 h-1.5 rounded-full mt-4 overflow-hidden">
                       <div className="bg-indigo-500 h-full w-[84%]"></div>
                     </div>
                   </div>
+
+                  <button 
+                    onClick={handlePayment}
+                    disabled={isPaying}
+                    className="w-full py-4 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-xl shadow-[#800000]/20 flex items-center justify-center gap-3 hover:scale-[1.02] transition-all disabled:opacity-50"
+                  >
+                    {isPaying ? (
+                      <Loader2 className="animate-spin" size={20} />
+                    ) : (
+                      <>
+                        <DollarSign size={20} />
+                        Pay ₦{price.toLocaleString()} & Publish
+                      </>
+                    )}
+                  </button>
+                  <p className="text-[10px] text-slate-400 text-center mt-4 font-bold uppercase tracking-wider">Secure Payment via Paystack</p>
                 </div>
               </div>
             </div>
