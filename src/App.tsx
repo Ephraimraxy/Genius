@@ -26,6 +26,7 @@ export default function App() {
   const [activePaperId, setActivePaperId] = useState<number | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [showLanding, setShowLanding] = useState(!token);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -135,10 +136,42 @@ export default function App() {
               <input type="text" placeholder="Search research..." className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium" />
             </div>
 
-            <button className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all relative">
-              <Bell size={20} />
-              <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
-            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                className="p-2.5 text-slate-400 hover:text-[#800000] hover:bg-[#800000]/5 rounded-xl transition-all relative"
+              >
+                <Bell size={20} />
+                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
+              </button>
+              
+              <AnimatePresence>
+                {isNotificationsOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-3 w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 z-[60]"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">Alerts</h4>
+                      <span className="text-[10px] font-bold text-[#800000] bg-[#800000]/5 px-2 py-1 rounded-md">1 New</span>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="flex gap-4 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                          <Bell size={18} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-900">Welcome to Genius Portal</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">Your research journey starts here. Explore our AI features!</p>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             <div className="w-px h-8 bg-slate-200 mx-2"></div>
 
@@ -152,7 +185,7 @@ export default function App() {
 
             <button onClick={() => setActiveTab('profile')} className="flex items-center gap-2 pl-2 group">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shadow-xl transition-transform group-hover:scale-105 ${isAdmin ? 'premium-gradient shadow-[#800000]/20' : 'bg-slate-100 text-[#800000]'}`}>
-                {profile?.user?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}
+                {(profile?.user?.name || profile?.user?.email)?.split(' ').map((n: string) => n[0]).join('') || 'U'}
               </div>
             </button>
           </div>

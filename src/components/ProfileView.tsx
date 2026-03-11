@@ -12,9 +12,11 @@ export default function ProfileView({ profile }: { profile: any }) {
     </div>
   );
 
-  const { profile: userProfile, papers } = profile;
-  const metrics = userProfile.metrics || { citations: 0, hIndex: 0, i10Index: 0 };
-  const publications = userProfile.publications || [];
+  const { profile: scholarProfile, papers, user } = profile;
+  const metrics = scholarProfile?.metrics || { citations: 0, hIndex: 0, i10Index: 0 };
+  const publications = scholarProfile?.publications || [];
+  const userName = user?.name || 'Scholar';
+  const userAffiliation = user?.affiliation || 'Academic Institution';
 
   return (
     <motion.div
@@ -27,8 +29,8 @@ export default function ProfileView({ profile }: { profile: any }) {
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-3xl -mr-32 -mt-32 opacity-50"></div>
 
         <div className="relative">
-          <div className="w-32 h-32 rounded-3xl premium-gradient text-white flex items-center justify-center text-4xl font-bold shadow-2xl shadow-indigo-500/30">
-            {userProfile.name?.split(' ').map((n: string) => n[0]).join('') || 'DR'}
+          <div className="w-32 h-32 rounded-3xl premium-gradient text-white flex items-center justify-center text-4xl font-bold shadow-2xl shadow-[#800000]/30">
+            {userName.split(' ').map((n: string) => n[0]).join('') || 'U'}
           </div>
           <div className="absolute -bottom-2 -right-2 p-2 bg-white rounded-xl shadow-lg border border-slate-100">
             <Award className="text-amber-500" size={20} />
@@ -37,14 +39,14 @@ export default function ProfileView({ profile }: { profile: any }) {
 
         <div className="flex-1 text-center md:text-left relative z-10">
           <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-            <h2 className="text-4xl font-bold text-slate-900 tracking-tight font-display">{userProfile.name}</h2>
-            <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold uppercase tracking-widest border border-indigo-100 inline-block w-fit mx-auto md:mx-0">
+            <h2 className="text-4xl font-black text-slate-900 tracking-tight font-display">{userName}</h2>
+            <span className="px-3 py-1 bg-[#800000]/5 text-[#800000] rounded-full text-xs font-bold uppercase tracking-widest border border-[#800000]/10 inline-block w-fit mx-auto md:mx-0">
               Verified Researcher
             </span>
           </div>
 
           <p className="text-lg text-slate-500 flex items-center justify-center md:justify-start gap-2 font-medium">
-            <MapPin size={20} className="text-indigo-400" /> {userProfile.affiliation}
+            <MapPin size={20} className="text-[#800000]/40" /> {userAffiliation}
           </p>
 
           <div className="flex flex-wrap justify-center md:justify-start gap-3 mt-6">

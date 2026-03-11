@@ -822,7 +822,7 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       const papers = papersResult.rows;
 
-      res.json({ profile, papers });
+      res.json({ user: req.user, profile, papers });
     } else {
       res.status(404).json({ error: 'Profile not found' });
     }

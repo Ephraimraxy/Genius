@@ -182,6 +182,7 @@ export default function Sidebar({
                 <p className="text-sm font-bold text-white truncate group-hover:text-white transition-colors">
                   {profile?.user?.name || 'Loading...'}
                 </p>
+                <p className="text-[10px] text-slate-500 truncate mb-1">{profile?.user?.email}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className={`text-[10px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded-md ${isAdmin ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-700 text-slate-400'}`}>
                     {isAdmin ? 'Admin' : 'Researcher'}
