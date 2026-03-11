@@ -336,9 +336,19 @@ async function publishToZenodo(paper: any, zenodoToken: string) {
         upload_type: "publication",
         publication_type: "article",
         description: metadata.abstract || "Published via ScholarSync AI Research Pipeline.",
+        publication_date: new Date().toISOString().split('T')[0],
+        access_right: "open",
         creators: (metadata.authors || []).map((a: string) => {
-          const parts = a.split(' ');
-          return { name: parts.length > 1 ? `${parts.pop()}, ${parts.join(' ')}` : a };
+          // Zenodo prefers "Family, Given"
+          const trimmed = a.trim();
+          if (trimmed.includes(',')) return { name: trimmed }; // Already formatted
+          const parts = trimmed.split(/\s+/);
+          if (parts.length > 1) {
+            const family = parts.pop();
+            const given = parts.join(' ');
+            return { name: `${family}, ${given}` };
+          }
+          return { name: trimmed };
         })
       }
     };
