@@ -140,6 +140,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE papers ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE reviews ADD COLUMN user_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE users ADD COLUMN role TEXT DEFAULT \'user\''); } catch (e) { }
   
   // Upsert Default Admin
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@genius.app';
@@ -519,25 +520,37 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
 
     if (!metadata || !metadata.title) {
       console.log('Falling back to Gemini for metadata extraction...');
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents: `Extract metadata from academic paper. Return JSON. Text: ${textContent.substring(0, 15000)}`,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              authors: { type: Type.ARRAY, items: { type: Type.STRING } },
-              abstract: { type: Type.STRING },
-              keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-              sections: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ['title', 'authors', 'abstract']
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.1-pro-preview',
+          contents: `Extract metadata from academic paper. Return JSON. Text: ${textContent.substring(0, 15000)}`,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                authors: { type: Type.ARRAY, items: { type: Type.STRING } },
+                abstract: { type: Type.STRING },
+                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+                sections: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ['title', 'authors', 'abstract']
+            }
           }
+        });
+        metadata = JSON.parse(response.text || '{}');
+      } catch (aiError: any) {
+        console.error('Gemini Metadata Extraction Failed:', aiError.message);
+        if (aiError.message?.includes('429') || aiError.message?.includes('quota')) {
+          return res.status(429).json({ 
+            error: 'AI Services Busy', 
+            details: 'The AI engine is currently at capacity. Please try again in 1 minute, or manually enter metadata in the next step.' 
+          });
         }
-      });
-      metadata = JSON.parse(response.text || '{}');
+        // Basic fallback metadata if AI is totally down
+        metadata = { title: req.file.originalname.replace(/\.[^/.]+$/, ""), authors: ['Author'], abstract: 'Abstract pending...' };
+      }
     }
 
     const result = await pool.query(
