@@ -49,16 +49,16 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-black overflow-hidden relative">
+        <div className="min-h-screen flex items-center justify-center bg-white overflow-hidden relative">
             {/* Optimized Background Layer */}
             <div className="absolute inset-0 z-0">
                 <img 
                     src="/Banner/NSUK.jpg" 
                     alt="Background" 
-                    className="w-full h-full object-cover opacity-60 scale-105"
+                    className="w-full h-full object-cover opacity-60"
                 />
-                <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/40 to-black/80"></div>
-                <div className="absolute inset-0 backdrop-blur-[2px]"></div>
+                <div className="absolute inset-0 bg-white/20 backdrop-blur-[2px] z-20"></div>
+                <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/10 to-white z-25"></div>
             </div>
 
             <motion.div 
@@ -78,10 +78,10 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                         >
                             <Sparkles size={32} className="text-[#ff4d4d]" />
                         </motion.div>
-                        <h2 className="text-4xl font-black text-white tracking-tight font-display mb-2 drop-shadow-lg">
+                        <h2 className="text-4xl font-black text-slate-900 tracking-tight font-display mb-2">
                             {isLogin ? 'Genius Login' : 'Join Genius'}
                         </h2>
-                        <p className="text-slate-300 font-medium text-sm">
+                        <p className="text-slate-600 font-medium text-sm">
                             {isLogin
                                 ? 'Authorize to access your publication portal'
                                 : 'Scale your research with neural intelligence'}
@@ -118,7 +118,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                                             required
                                             value={name}
                                             onChange={(e) => setName(e.target.value)}
-                                            className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white/10 outline-none transition-all text-white placeholder:text-slate-500"
+                                            className="w-full pl-12 pr-4 py-4 bg-white/50 border border-white/40 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-400"
                                             placeholder="Full Name"
                                         />
                                     </div>
@@ -128,7 +128,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                                             type="text"
                                             value={affiliation}
                                             onChange={(e) => setAffiliation(e.target.value)}
-                                            className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white/10 outline-none transition-all text-white placeholder:text-slate-500"
+                                            className="w-full pl-12 pr-4 py-4 bg-white/50 border border-white/40 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-400"
                                             placeholder="Affiliation"
                                         />
                                     </div>
@@ -178,8 +178,8 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                         </motion.button>
                     </form>
 
-                    <div className="mt-8 pt-6 border-t border-white/10 text-center">
-                        <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">
+                    <div className="mt-8 pt-6 border-t border-slate-100 text-center">
+                        <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.2em]">
                             {isLogin ? "New to Genius?" : "Already Joined?"}{' '}
                             <button
                                 onClick={() => setIsLogin(!isLogin)}
@@ -193,7 +193,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                 
                 {/* Branding Footer */}
                 <div className="mt-8 text-center">
-                    <p className="text-white/40 text-[10px] font-bold uppercase tracking-[0.3em]">
+                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.3em]">
                         GMIJ Publication Portal &copy; 2026
                     </p>
                 </div>
