@@ -177,12 +177,12 @@ export default function Sidebar({
               ${isAdmin ? 'premium-gradient' : 'bg-slate-700'}
               ${isCollapsed ? 'w-10 h-10' : 'w-11 h-11'}
             `}>
-              {profile?.user?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}
+              {(profile?.user?.name || profile?.user?.email || 'U').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() || 'U'}
             </div>
             {!isCollapsed && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-white truncate group-hover:text-white transition-colors">
-                  {profile?.user?.name || 'Loading...'}
+                  {profile?.user?.name || profile?.user?.email || 'Loading...'}
                 </p>
                 <p className="text-[10px] text-slate-500 truncate mb-1">{profile?.user?.email}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">

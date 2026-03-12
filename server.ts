@@ -833,6 +833,12 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
 app.get('/api/profile', authenticateToken, async (req: any, res) => {
   try {
     const userId = req.user.id;
+
+    // Always fetch fresh user data from database (not stale JWT)
+    const userResult = await pool.query('SELECT id, email, name, affiliation, role FROM users WHERE id = $1', [userId]);
+    const freshUser = userResult.rows[0];
+    if (!freshUser) return res.status(404).json({ error: 'User not found' });
+
     const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
     const profile = profileResult.rows[0];
     if (profile) {
@@ -842,10 +848,10 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       const papers = papersResult.rows;
 
-      const responseData: any = { user: req.user, profile, papers };
+      const responseData: any = { user: freshUser, profile, papers };
 
       // If admin, include global platform stats
-      if (req.user.role === 'admin') {
+      if (freshUser.role === 'admin') {
         const totalUsersResult = await pool.query('SELECT COUNT(*) FROM users');
         const totalPapersResult = await pool.query('SELECT COUNT(*) FROM papers');
         const publishedPapersResult = await pool.query("SELECT COUNT(*) FROM papers WHERE status = 'published'");
@@ -877,7 +883,7 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
       );
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       res.json({
-        user: req.user,
+        user: freshUser,
         profile: { publications: [], metrics: { citations: 0, hIndex: 0, i10Index: 0 } },
         papers: papersResult.rows,
       });
