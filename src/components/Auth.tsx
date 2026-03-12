@@ -2,11 +2,14 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, GraduationCap, ShieldCheck } from 'lucide-react';
 
+import { ToastType } from './ToastSystem';
+
 interface AuthProps {
     onAuthSuccess: (token: string, user: any) => void;
+    addToast: (message: string, type?: ToastType) => void;
 }
 
-export default function Auth({ onAuthSuccess }: AuthProps) {
+export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -40,9 +43,11 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
 
             localStorage.setItem('token', data.token);
             localStorage.setItem('user', JSON.stringify(data.user));
+            addToast(isLogin ? `Welcome back, ${data.user.name}!` : 'Account created successfully!', 'success');
             onAuthSuccess(data.token, data.user);
         } catch (err: any) {
             setError(err.message);
+            addToast(err.message, 'error');
         } finally {
             setLoading(false);
         }

@@ -2,7 +2,15 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, DollarSign } from 'lucide-react';
 
-export default function SmartUpload({ onUploadComplete }: { onUploadComplete: (id: number) => void }) {
+import { ToastType } from './ToastSystem';
+
+export default function SmartUpload({ 
+  onUploadComplete, 
+  addToast 
+}: { 
+  onUploadComplete: (id: number) => void,
+  addToast: (message: string, type?: ToastType) => void 
+}) {
   const [isUploading, setIsUploading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [metadata, setMetadata] = useState<any>(null);
@@ -11,7 +19,36 @@ export default function SmartUpload({ onUploadComplete }: { onUploadComplete: (i
   const [price, setPrice] = useState<number>(0);
   const [isPaying, setIsPaying] = useState(false);
   const [paperId, setPaperId] = useState<number | null>(null);
+  const [hasPaid, setHasPaid] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get('reference') || params.get('trxref');
+    if (reference) {
+      const verifyPayment = async () => {
+        setIsPaying(true);
+        try {
+          const res = await fetch(`/api/payment/verify/${reference}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          });
+          const data = await res.json();
+          if (data.status === 'success') {
+            setHasPaid(true);
+            addToast('Neural Registry Unlocked. Payment Verified!', 'success');
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } else {
+            addToast('Payment verification failed. Please contact support.', 'error');
+          }
+        } catch (e) {
+          addToast('Network error during verification.', 'error');
+        } finally {
+          setIsPaying(false);
+        }
+      };
+      verifyPayment();
+    }
+  }, []);
 
   useState(() => {
     fetch('/api/settings/price').then(res => res.json()).then(data => setPrice(data.price));
@@ -59,6 +96,7 @@ export default function SmartUpload({ onUploadComplete }: { onUploadComplete: (i
       if (valRes.ok) {
         const valData = await valRes.json();
         setValidation(valData.validation);
+        addToast('Manuscript ingestion and audit complete!', 'success');
       }
     } catch (err: any) {
       setError(err.message);
@@ -115,7 +153,47 @@ export default function SmartUpload({ onUploadComplete }: { onUploadComplete: (i
       </div>
 
       <AnimatePresence mode="wait">
-        {!metadata ? (
+        {!hasPaid ? (
+          <motion.div
+            key="payment-gate"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white rounded-[3rem] border border-slate-200 p-20 shadow-2xl shadow-slate-200/50 flex flex-col items-center text-center relative overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-64 h-64 bg-[#800000]/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
+            
+            <div className="w-24 h-24 bg-[#800000]/10 rounded-3xl flex items-center justify-center mb-8 relative z-10">
+              <DollarSign className="text-[#800000] w-10 h-10" />
+            </div>
+            
+            <h3 className="text-3xl font-black text-slate-900 mb-4 tracking-tight relative z-10">Publication Fee Required</h3>
+            <p className="text-slate-500 max-w-lg mb-12 text-lg font-medium relative z-10">
+              To maintain our global neural registry and instant DOI assignment, a one-time fee is required per manuscript ingestion.
+            </p>
+
+            <div className="bg-slate-50 rounded-3xl p-8 mb-12 w-full max-w-md border border-slate-100 relative z-10">
+               <div className="flex justify-between items-center mb-4">
+                  <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Ingestion Fee</span>
+                  <span className="text-2xl font-black text-[#800000]">₦{price.toLocaleString()}</span>
+               </div>
+               <div className="h-px bg-slate-200 w-full mb-4"></div>
+               <div className="flex items-center gap-3 text-emerald-600">
+                  <CheckCircle2 size={18} />
+                  <span className="text-xs font-bold uppercase tracking-wider">Instant Portal Unlock</span>
+               </div>
+            </div>
+
+            <button
+              onClick={handlePayment}
+              disabled={isPaying}
+              className="px-12 py-5 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-[#800000]/30 hover:scale-105 transition-all flex items-center gap-4 disabled:opacity-50 relative z-10"
+            >
+              {isPaying ? <Loader2 className="animate-spin" size={20} /> : <><DollarSign size={20} /> Initialize Checkout</>}
+            </button>
+            <p className="mt-6 text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] relative z-10">Neural Authentication Secured via Paystack</p>
+          </motion.div>
+        ) : !metadata ? (
           <motion.div
             key="upload-zone"
             initial={{ opacity: 0, scale: 0.98 }}

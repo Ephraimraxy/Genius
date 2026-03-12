@@ -143,6 +143,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Date</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">DOI</th>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">ISSN</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -231,7 +232,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                     <td className="px-8 py-6">
                       {pub.doi ? (
                         <a 
-                          href={`https://doi.org/${pub.doi}`} 
+                          href={pub.doi.startsWith('10.GMIJ') ? `/article/${pub.doi}` : `https://doi.org/${pub.doi}`}
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="flex items-center gap-1 text-[10px] font-black text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-widest"
@@ -242,6 +243,11 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                       ) : (
                         <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">Not Assigned</span>
                       )}
+                    </td>
+                    <td className="px-8 py-6">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        {(pub as any).issn || 'Pending'}
+                      </span>
                     </td>
                   </motion.tr>
                 ))

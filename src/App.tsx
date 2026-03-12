@@ -15,6 +15,8 @@ import ChatWidget from './components/ChatWidget';
 import Auth from './components/Auth';
 import Landing from './components/Landing';
 import PublicationRecords from './components/PublicationRecords';
+import GlobalLoader from './components/GlobalLoader';
+import ToastSystem, { useToasts } from './components/ToastSystem';
 import { Menu, LogOut, Bell, Search, ShieldCheck } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records';
@@ -28,6 +30,8 @@ export default function App() {
   const [profile, setProfile] = useState<any>(null);
   const [showLanding, setShowLanding] = useState(!token);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(true);
+  const { toasts, addToast, removeToast } = useToasts();
 
   useEffect(() => {
     if (token) {
@@ -45,8 +49,16 @@ export default function App() {
           if (data) setProfile(data);
         })
         .catch(err => console.error('Failed to load profile', err));
+    } else {
+      setIsSyncing(false);
     }
   }, [token]);
+
+  useEffect(() => {
+    // Artificial delay for premium feel
+    const timer = setTimeout(() => setIsSyncing(false), 1500);
+    return () => clearTimeout(timer);
+  }, [profile]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -65,7 +77,7 @@ export default function App() {
   }
 
   if (!token) {
-    return <Auth onAuthSuccess={onAuthSuccess} />;
+    return <Auth onAuthSuccess={onAuthSuccess} addToast={addToast} />;
   }
 
   const isAdmin = profile?.user?.role === 'admin';
@@ -73,7 +85,7 @@ export default function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
-      case 'upload': return <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} />;
+      case 'upload': return <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} />;
       case 'formatting': return <FormattingEngine activePaperId={activePaperId} />;
       case 'writing': return <WritingAssistant activePaperId={activePaperId} />;
       case 'references': return <ReferenceIntelligence activePaperId={activePaperId} />;
@@ -211,6 +223,8 @@ export default function App() {
         </div>
       </main>
       <ChatWidget profile={profile} />
+      <GlobalLoader show={isSyncing} />
+      <ToastSystem toasts={toasts} removeToast={removeToast} />
     </div>
   );
 }
