@@ -94,7 +94,11 @@ export default function App() {
       case 'reviews': return <PeerReviewSimulation activePaperId={activePaperId} />;
       case 'transactions': return <TransactionHistory profile={profile} />;
       case 'records': return <PublicationRecords profile={profile} />;
-      case 'profile': return <ProfileView profile={profile} />;
+      case 'profile': return <ProfileView profile={profile} addToast={addToast} onProfileUpdate={() => {
+        fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } })
+          .then(res => res.json())
+          .then(data => { if (data) setProfile(data); });
+      }} />;
       default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
     }
   };

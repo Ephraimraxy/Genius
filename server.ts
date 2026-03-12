@@ -836,18 +836,93 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
     const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
     const profile = profileResult.rows[0];
     if (profile) {
-      profile.publications = JSON.parse(profile.publications);
-      profile.metrics = JSON.parse(profile.metrics);
+      profile.publications = JSON.parse(profile.publications || '[]');
+      profile.metrics = JSON.parse(profile.metrics || '{}');
 
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       const papers = papersResult.rows;
 
-      res.json({ user: req.user, profile, papers });
+      const responseData: any = { user: req.user, profile, papers };
+
+      // If admin, include global platform stats
+      if (req.user.role === 'admin') {
+        const totalUsersResult = await pool.query('SELECT COUNT(*) FROM users');
+        const totalPapersResult = await pool.query('SELECT COUNT(*) FROM papers');
+        const publishedPapersResult = await pool.query("SELECT COUNT(*) FROM papers WHERE status = 'published'");
+        const pendingReviewResult = await pool.query("SELECT COUNT(*) FROM papers WHERE status IN ('peer_review', 'integrity_check', 'formatting')");
+        const totalRevenueResult = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE status = 'success'");
+        const allPapersResult = await pool.query(`
+          SELECT p.id, p.title, p.status, p.doi, p.created_at, u.name as researcher_name, u.email as researcher_email
+          FROM papers p LEFT JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC
+        `);
+        const recentUsersResult = await pool.query('SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC LIMIT 10');
+
+        responseData.adminStats = {
+          totalUsers: parseInt(totalUsersResult.rows[0].count),
+          totalPapers: parseInt(totalPapersResult.rows[0].count),
+          publishedPapers: parseInt(publishedPapersResult.rows[0].count),
+          pendingReview: parseInt(pendingReviewResult.rows[0].count),
+          totalRevenue: parseInt(totalRevenueResult.rows[0].total),
+          allPapers: allPapersResult.rows,
+          recentUsers: recentUsersResult.rows,
+        };
+      }
+
+      res.json(responseData);
     } else {
-      res.status(404).json({ error: 'Profile not found' });
+      // Create a default profile if it doesn't exist
+      await pool.query(
+        'INSERT INTO profiles (user_id, publications, metrics) VALUES ($1, $2, $3)',
+        [userId, '[]', JSON.stringify({ citations: 0, hIndex: 0, i10Index: 0 })]
+      );
+      const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
+      res.json({
+        user: req.user,
+        profile: { publications: [], metrics: { citations: 0, hIndex: 0, i10Index: 0 } },
+        papers: papersResult.rows,
+      });
     }
   } catch (error) {
+    console.error('Profile fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// Update user profile details
+app.put('/api/profile', authenticateToken, async (req: any, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, affiliation, interests } = req.body;
+
+    // Update user table fields
+    if (name || affiliation) {
+      const updates: string[] = [];
+      const values: any[] = [];
+      let paramIdx = 1;
+
+      if (name) { updates.push(`name = $${paramIdx++}`); values.push(name); }
+      if (affiliation) { updates.push(`affiliation = $${paramIdx++}`); values.push(affiliation); }
+
+      values.push(userId);
+      await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIdx}`, values);
+    }
+
+    // Update interests in profile metrics
+    if (interests) {
+      const profileResult = await pool.query('SELECT metrics FROM profiles WHERE user_id = $1', [userId]);
+      if (profileResult.rows[0]) {
+        const metrics = JSON.parse(profileResult.rows[0].metrics || '{}');
+        metrics.interests = interests;
+        await pool.query('UPDATE profiles SET metrics = $1 WHERE user_id = $2', [JSON.stringify(metrics), userId]);
+      }
+    }
+
+    // Fetch and return updated profile
+    const updatedUser = await pool.query('SELECT id, email, name, affiliation, role FROM users WHERE id = $1', [userId]);
+    res.json({ success: true, user: updatedUser.rows[0] });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
