@@ -13,7 +13,9 @@ import {
   MapPin, 
   Phone,
   LayoutDashboard,
-  LogIn
+  LogIn,
+  GraduationCap,
+  ShieldCheck
 } from 'lucide-react';
 
 interface LandingProps {
@@ -29,7 +31,7 @@ export default function Landing({ onStart }: LandingProps) {
         <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
           <div className="flex items-center gap-3 group cursor-pointer">
             <div className="w-8 h-8 premium-gradient rounded-lg flex items-center justify-center shadow-lg shadow-[#800000]/20 group-hover:rotate-12 transition-transform">
-              <BookOpen className="text-white" size={18} />
+              <GraduationCap className="text-white" size={18} />
             </div>
             <div>
               <span className="text-lg font-black text-slate-900 tracking-tighter">GMIJ</span>
@@ -69,9 +71,10 @@ export default function Landing({ onStart }: LandingProps) {
           <img 
             src="/Banner/NSUK.jpg" 
             alt="University Background" 
-            className="w-full h-full object-cover grayscale opacity-20 blur-[2px]"
+            className="w-full h-full object-cover grayscale opacity-40"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/40 to-white z-20"></div>
+          <div className="absolute inset-0 bg-white/40 backdrop-blur-[6px] z-20"></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/20 to-white z-25"></div>
         </div>
 
         <div className="max-w-7xl mx-auto px-6 relative z-30 w-full mb-20">
@@ -115,28 +118,35 @@ export default function Landing({ onStart }: LandingProps) {
               transition={{ duration: 1, delay: 0.2 }}
               className="hidden lg:block relative"
             >
-              <div className="glass-morph p-12 rounded-[3.5rem] border-white/20 relative z-10 overflow-hidden group">
+              <div className="glass-morph p-10 rounded-[3.5rem] border-white/20 relative z-10 overflow-hidden group">
                 <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 
-                <div className="flex items-center gap-4 mb-10">
+                <div className="flex items-center gap-4 mb-8">
                   <div className="p-3 bg-[#800000] rounded-2xl text-white shadow-xl">
-                    <Shield size={24} />
+                    <ShieldCheck size={24} />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 mb-1">Authenticated Entry</h3>
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Research Identity Verification</p>
+                    <h3 className="text-lg font-black text-slate-900">Registry Status</h3>
+                    <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest">Neural AI Active</p>
                   </div>
                 </div>
 
-                <div className="space-y-6">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="h-14 bg-white/50 border border-white/40 rounded-2xl animate-pulse"></div>
+                <div className="space-y-4">
+                  {[
+                    { label: 'Integrity Audits', value: '24.1k', color: 'text-indigo-600' },
+                    { label: 'DOI Assignments', value: '18.5k', color: 'text-[#800000]' },
+                    { label: 'Peer Review Cycles', value: '12.2k', color: 'text-emerald-600' }
+                  ].map((item, i) => (
+                    <div key={i} className="p-4 bg-white/60 border border-white/40 rounded-2xl flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{item.label}</span>
+                      <span className={`text-sm font-black ${item.color}`}>{item.value}</span>
+                    </div>
                   ))}
                 </div>
 
-                <div className="mt-10 p-6 bg-slate-900 rounded-3xl text-center">
-                  <p className="text-white font-black text-lg mb-2">Ready to contribute?</p>
-                  <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Connect your workstation</p>
+                <div className="mt-8 p-5 bg-slate-900 rounded-[2rem] text-center border border-slate-700">
+                  <p className="text-white font-black text-sm mb-1 uppercase tracking-tight">System Integrity: 100%</p>
+                  <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">ISO 27001 Certified Registry</p>
                 </div>
               </div>
 
@@ -266,23 +276,53 @@ export default function Landing({ onStart }: LandingProps) {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-20">
             <h2 className="text-4xl font-black text-slate-900 mb-4 font-display">Editorial <span className="text-gradient">Board</span></h2>
-            <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-xs">Global academic leadership & excellence</p>
+            <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-xs">Distinguished Academic Oversight Committee</p>
             <div className="w-20 h-1.5 premium-gradient mx-auto rounded-full mt-6"></div>
           </div>
 
-          <div className="bg-slate-50 rounded-[3rem] p-12 lg:p-20 text-center border border-slate-100 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-[#800000]/5 rounded-full blur-3xl"></div>
-            <Users className="text-[#800000]/20 mx-auto mb-8" size={64} />
-            <h3 className="text-2xl font-black text-slate-900 mb-6 uppercase tracking-tight">Academic Oversight Committee</h3>
-            <p className="text-slate-500 font-medium leading-relaxed max-w-2xl mx-auto italic">
-              Our editorial board comprises distinguished scholars and researchers from leading global institutions. We are currently finalizing the 2026 Academic Council roster to include specialists across multidisciplinary domains.
-            </p>
-            <div className="mt-12 flex justify-center gap-4">
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="w-12 h-12 rounded-full bg-white border border-slate-100 shadow-sm flex items-center justify-center">
-                  <span className="text-[10px] font-black text-slate-400">?</span>
-                </div>
-              ))}
+          <div className="bg-white rounded-[3rem] border border-slate-100 shadow-2xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-900 text-white">
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">S/N</th>
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Full Name</th>
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Institution</th>
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Faculty / Department</th>
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Country</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[
+                    { sn: 1, name: "Prof. Yahaya A. Adadu", school: "Nasarawa State University, Keffi", dept: "Social Sciences", country: "Nigeria" },
+                    { sn: 2, name: "Prof. Francis A. Akawu", school: "Nasarawa State University, Keffi", dept: "Economics", country: "Nigeria" },
+                    { sn: 3, name: "Prof. LJ Kukwi", school: "Nasarawa State University, Keffi", dept: "Education", country: "Nigeria" },
+                    { sn: 4, name: "Prof. Saleh A Dauda, Ph.D", school: "Nasarawa State University, Keffi", dept: "Education", country: "Nigeria" },
+                    { sn: 5, name: "Prof. Dacid M Shekwolo, Ph.D", school: "Nasarawa State University, Keffi", dept: "Psychology", country: "Nigeria" },
+                    { sn: 6, name: "Dr. Danjuma Namo", school: "Nasarawa State University, Keffi", dept: "Education", country: "Nigeria" },
+                    { sn: 7, name: "Johan Adersson", school: "University of Freiburg", dept: "Banking and Finance", country: "Dutch/Switzerland" },
+                    { sn: 8, name: "Maximilian Weber", school: "University of Serbia", dept: "Physics", country: "Germany" },
+                    { sn: 9, name: "Leonardo Ferrari", school: "Amity University UEA", dept: "Accounting", country: "Italy" },
+                    { sn: 10, name: "Charlotte Dupont", school: "University of Serbia", dept: "Mathematics", country: "United Kingdom" },
+                    { sn: 11, name: "Dr. David M. Shekwolo", school: "Nigerian Defence Academy", dept: "Psychology", country: "Kaduna" },
+                    { sn: 12, name: "Assoc. Prof. Abubakar M. Tafida", school: "Nsuk", dept: "Psychology", country: "Nasarawa State" },
+                  ].map((member) => (
+                    <tr key={member.sn} className="hover:bg-slate-50 transition-colors group">
+                      <td className="px-8 py-5 text-sm font-black text-[#800000]">{member.sn}</td>
+                      <td className="px-8 py-5">
+                        <span className="text-sm font-black text-slate-900">{member.name}</span>
+                      </td>
+                      <td className="px-8 py-5 text-sm font-bold text-slate-600">{member.school}</td>
+                      <td className="px-8 py-5 text-sm font-medium text-slate-500 italic">{member.dept}</td>
+                      <td className="px-8 py-5">
+                        <span className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-500">
+                          {member.country}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -295,7 +335,7 @@ export default function Landing({ onStart }: LandingProps) {
             <div className="lg:col-span-2">
               <div className="flex items-center gap-3 mb-8">
                 <div className="w-12 h-12 premium-gradient rounded-xl flex items-center justify-center shadow-lg shadow-[#800000]/20">
-                  <BookOpen className="text-white" size={24} />
+                  <GraduationCap className="text-white" size={24} />
                 </div>
                 <span className="text-3xl font-black text-slate-900 tracking-tighter">GMIJ PUBLICATION</span>
               </div>
