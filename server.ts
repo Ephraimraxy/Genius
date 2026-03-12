@@ -1254,6 +1254,22 @@ app.get('/api/transactions', authenticateToken, async (req: any, res) => {
   res.json(result.rows);
 });
 
+app.get('/api/publications', authenticateToken, async (req: any, res) => {
+  const isAdmin = req.user.role === 'admin';
+  const query = isAdmin
+    ? `SELECT p.id, p.title, p.authors, p.status, p.doi, p.created_at, u.name as researcher_name, u.email as researcher_email 
+       FROM papers p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC`
+    : `SELECT id, title, authors, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC`;
+  const params = isAdmin ? [] : [req.user.id];
+
+  try {
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch publication history' });
+  }
+});
+
 // AI-Powered Chat System
 app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
   const userId = req.user.role === 'admin' ? (req.query.userId || req.user.id) : req.user.id;

@@ -14,9 +14,10 @@ import TransactionHistory from './components/TransactionHistory';
 import ChatWidget from './components/ChatWidget';
 import Auth from './components/Auth';
 import Landing from './components/Landing';
+import PublicationRecords from './components/PublicationRecords';
 import { Menu, LogOut, Bell, Search, ShieldCheck } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
@@ -80,6 +81,7 @@ export default function App() {
       case 'journals': return <JournalRecommendations activePaperId={activePaperId} />;
       case 'reviews': return <PeerReviewSimulation activePaperId={activePaperId} />;
       case 'transactions': return <TransactionHistory profile={profile} />;
+      case 'records': return <PublicationRecords profile={profile} />;
       case 'profile': return <ProfileView profile={profile} />;
       default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
     }

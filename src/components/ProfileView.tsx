@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { GraduationCap, MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink } from 'lucide-react';
+import { GraduationCap, MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink, User } from 'lucide-react';
 
 export default function ProfileView({ profile }: { profile: any }) {
   if (!profile) return (
@@ -38,12 +38,22 @@ export default function ProfileView({ profile }: { profile: any }) {
         </div>
 
         <div className="flex-1 text-center md:text-left relative z-10">
-          <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
+          <div className="flex flex-col md:flex-row md:items-center gap-4 mb-2">
             <h2 className="text-4xl font-black text-slate-900 tracking-tight font-display">{userName}</h2>
-            <span className="px-3 py-1 bg-[#800000]/5 text-[#800000] rounded-full text-xs font-bold uppercase tracking-widest border border-[#800000]/10 inline-block w-fit mx-auto md:mx-0">
-              Verified Researcher
-            </span>
+            <div className="flex items-center gap-2 mx-auto md:mx-0">
+              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                profile?.user?.role === 'admin' 
+                ? 'bg-amber-50 text-amber-600 border-amber-200' 
+                : 'bg-indigo-50 text-indigo-600 border-indigo-200'
+              }`}>
+                {profile?.user?.role === 'admin' ? 'System Administrator' : 'Verified Researcher'}
+              </span>
+            </div>
           </div>
+
+          <p className="text-sm font-bold text-[#800000] mb-4 flex items-center justify-center md:justify-start gap-2">
+            <User size={16} /> {user?.email}
+          </p>
 
           <p className="text-lg text-slate-500 flex items-center justify-center md:justify-start gap-2 font-medium">
             <MapPin size={20} className="text-[#800000]/40" /> {userAffiliation}

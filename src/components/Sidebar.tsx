@@ -15,7 +15,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
-  Database
+  Database,
+  History
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -49,6 +50,7 @@ export default function Sidebar({
     { id: 'integrity', label: 'Integrity Check', icon: ShieldCheck },
     { id: 'journals', label: 'Journal Match', icon: BookMarked },
     { id: 'reviews', label: 'Peer Review', icon: MessageSquare },
+    { id: 'records', label: 'Pub. Records', icon: History },
     { id: 'transactions', label: 'Transactions', icon: FileText },
   ];
 

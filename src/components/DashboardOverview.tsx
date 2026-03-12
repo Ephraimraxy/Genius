@@ -102,9 +102,10 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                   <div className="truncate">
                     <h4 className="font-bold text-slate-900 text-lg truncate">{paper.title}</h4>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-tighter
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border
                         ${paper.status === 'published' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                          'bg-indigo-50 text-indigo-700 border-indigo-200'}
+                          paper.status === 'ready' ? 'bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse' :
+                          'bg-slate-50 text-slate-500 border-slate-100'}
                       `}>
                         {paper.status}
                       </span>
@@ -117,13 +118,26 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               </div>
 
               <div className="flex items-center gap-2 self-end sm:self-center">
-                <button
-                  onClick={() => handlePaperClick(paper.id)}
-                  className="flex items-center gap-2 bg-slate-900 hover:bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-slate-200 hover:shadow-indigo-200 group"
-                >
-                  Continuue
-                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                </button>
+                {paper.status === 'ready' ? (
+                  <button
+                    onClick={() => {
+                        setActivePaperId(paper.id);
+                        onNavigate('transactions');
+                    }}
+                    className="flex items-center gap-2 premium-gradient text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-[#800000]/20 hover:scale-105"
+                  >
+                    Pay & Distribute
+                    <ArrowRight size={18} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handlePaperClick(paper.id)}
+                    className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-slate-200 group"
+                  >
+                    Continue
+                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                  </button>
+                )}
               </div>
             </motion.div>
           ))}
