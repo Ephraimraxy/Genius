@@ -93,7 +93,7 @@ export default function Landing({ onStart }: LandingProps) {
                 <span className="text-gradient">MINDSPARK</span>
               </h1>
 
-              <p className="text-xl text-slate-600 leading-relaxed mb-12 max-w-xl font-medium">
+              <p className="text-2xl text-slate-800 leading-relaxed mb-12 max-w-xl font-bold">
                 The global benchmark for multidisciplinary research. Experience neural-assisted validation, instant DOI registration, and global dissemination.
               </p>
 
@@ -157,240 +157,256 @@ export default function Landing({ onStart }: LandingProps) {
         </div>
       </section>
 
-      {/* About Us Section */}
+      {/* AboutUs Section */}
       <section id="about" className="py-32 relative overflow-hidden bg-white">
         <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="grid lg:grid-cols-2 gap-20 items-center">
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-            >
-              <h2 className="text-4xl font-black text-slate-900 mb-8 font-display">
-                Strategic <span className="text-gradient">Partnership</span> & Vision
-              </h2>
-              <p className="text-lg text-slate-600 leading-relaxed mb-8 font-medium">
-                Genius collaborates with Nasarawa State University’s Research, Measurement, and Evaluation Unit in the Department of Educational Foundation and consults global academics. Registered under CAC (No. 3591627), our team comprises highly qualified professionals from various fields dedicated to academic excellence.
-              </p>
-              
-              <div className="space-y-6">
-                <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-                  <h3 className="text-xl font-black text-slate-900 mb-3 flex items-center gap-3">
-                    <Globe className="text-[#800000]" size={20} />
-                    Our Mission
-                  </h3>
-                  <p className="text-slate-500 font-medium leading-relaxed">
-                    To provide a comprehensive and inclusive platform for learning and research, empowering scholars and professionals to achieve academic excellence and innovation across diverse fields, while fostering global collaboration and knowledge-sharing.
-                  </p>
+          <div className="glass-morph-dark rounded-[3.5rem] p-12 md:p-20 shadow-2xl border-white/20">
+            <div className="grid lg:grid-cols-2 gap-20 items-center">
+              <motion.div
+                initial={{ opacity: 0, x: -30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+              >
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#800000]/20 border border-[#800000]/30 rounded-full mb-8">
+                  <span className="text-[10px] font-black text-[#ff4d4d] uppercase tracking-[0.2em]">Institutional Profile</span>
                 </div>
                 
-                <div className="flex flex-wrap gap-2">
-                  {['Excellence', 'Inclusivity', 'Innovation', 'Collaboration', 'Integrity', 'Empowerment', 'Sustainability'].map(val => (
-                    <span key={val} className="px-4 py-2 bg-[#800000]/5 text-[#800000] text-[10px] font-black uppercase tracking-widest rounded-full border border-[#800000]/10">
-                      {val}
-                    </span>
-                  ))}
+                <h2 className="text-5xl font-black text-white leading-[0.95] tracking-tighter mb-8 font-display">
+                  Strategic <span className="text-gradient">Partnership</span> & Vision
+                </h2>
+                <p className="text-lg text-slate-300 leading-relaxed mb-8 font-medium">
+                  Genius collaborates with Nasarawa State University’s Research, Measurement, and Evaluation Unit. Registered under CAC (No. 3591627), our team comprises highly qualified professionals dedicated to academic excellence.
+                </p>
+                
+                <div className="space-y-6">
+                  <div className="p-8 bg-white/5 rounded-3xl border border-white/10 shadow-xl hover:bg-white/10 transition-all">
+                    <h3 className="text-xl font-black text-white mb-3 flex items-center gap-3">
+                      <Globe className="text-[#ff4d4d]" size={20} />
+                      Our Mission
+                    </h3>
+                    <p className="text-slate-400 font-medium leading-relaxed">
+                      To provide a comprehensive platform for learning and research, empowering scholars to achieve excellence and innovation across diverse fields.
+                    </p>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    {['Excellence', 'Inclusivity', 'Innovation', 'Collaboration', 'Integrity'].map(val => (
+                      <span key={val} className="px-4 py-2 bg-white/5 text-slate-300 text-[10px] font-black uppercase tracking-widest rounded-full border border-white/10">
+                        {val}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true }}
-              className="grid grid-cols-2 gap-6"
-            >
-              {[
-                { label: 'Published Papers', value: '2.5k+' },
-                { label: 'Global Citations', value: '850k+' },
-                { label: 'Expert Reviewers', value: '450+' },
-                { label: 'Impact Factor', value: '8.42' }
-              ].map((stat, i) => (
-                <div key={i} className="p-10 bg-slate-900 rounded-[2.5rem] text-white text-center shadow-2xl">
-                  <p className="text-4xl font-black mb-2">{stat.value}</p>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">{stat.label}</p>
-                </div>
-              ))}
-            </motion.div>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                className="grid grid-cols-2 gap-6"
+              >
+                {[
+                  { label: 'Published Papers', value: '2.5k+', color: 'text-white' },
+                  { label: 'Global Citations', value: '850k+', color: 'text-[#ff4d4d]' },
+                  { label: 'Expert Reviewers', value: '450+', color: 'text-emerald-400' },
+                  { label: 'Impact Factor', value: '8.42', color: 'text-white' }
+                ].map((stat, i) => (
+                  <div key={i} className="p-10 bg-white/5 rounded-[2.5rem] border border-white/10 text-white text-center shadow-xl hover:bg-white/10 transition-all">
+                    <p className={`text-4xl font-black mb-2 ${stat.color}`}>{stat.value}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">{stat.label}</p>
+                  </div>
+                ))}
+              </motion.div>
+            </div>
           </div>
         </div>
+        {/* Background Decorative Blob */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[#800000]/5 blur-[150px] -z-10"></div>
       </section>
 
       {/* Author Guidelines Section */}
-      <section id="guidelines" className="py-32 bg-slate-50/50 relative">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl font-black text-slate-900 mb-4 font-display">Author <span className="text-gradient">Guidelines</span></h2>
-            <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-xs">Essential steps before manuscript submission</p>
-            <div className="w-20 h-1.5 premium-gradient mx-auto rounded-full mt-6"></div>
-          </div>
-
-          <div className="grid lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-4">
-              {[
-                "Manuscript should not be more than 15 pages (including abstract, tables and references) of A4 size using 12 font size.",
-                "Each paper should be double line spaced.",
-                "Reference style: each author should use the latest reference style of his or her field.",
-                "Publisher should meet with an expert in their field for vetting before upload.",
-                "Authors should include their email and phone number.",
-                "Ensure that your document is in PDF format."
-              ].map((point, i) => (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.1 }}
-                  key={i} 
-                  className="flex items-start gap-4 p-5 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-[#800000]/5 flex items-center justify-center shrink-0 group-hover:bg-[#800000] group-hover:text-white transition-colors">
-                    <span className="text-[10px] font-black">{i + 1}</span>
-                  </div>
-                  <p className="text-slate-700 font-medium leading-relaxed italic">{point}</p>
-                </motion.div>
-              ))}
+      <section id="guidelines" className="py-32 bg-slate-50 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6 relative z-10">
+          <div className="glass-morph-dark rounded-[3.5rem] p-12 md:p-20 shadow-2xl border-white/20">
+            <div className="text-center mb-20">
+              <h2 className="text-4xl font-black text-white mb-4 font-display">Author <span className="text-gradient">Guidelines</span></h2>
+              <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-xs">Essential steps before manuscript submission</p>
+              <div className="w-20 h-1.5 premium-gradient mx-auto rounded-full mt-6"></div>
             </div>
 
-            <div className="glass-morph p-10 rounded-[2.5rem] border-[#800000]/10 flex flex-col justify-between">
-              <div>
-                <CheckCircle2 className="text-[#800000] mb-6" size={48} />
-                <h3 className="text-2xl font-black text-slate-900 mb-4">Submission Ready?</h3>
-                <p className="text-slate-500 font-medium leading-relaxed mb-8">
-                  Ensure all points are met to accelerate the peer-review process and increase publication probability.
-                </p>
+            <div className="grid lg:grid-cols-3 gap-12">
+              <div className="lg:col-span-2 space-y-4">
+                {[
+                  "Manuscript should not be more than 15 pages of A4 size using 12 font size.",
+                  "Each paper should be double line spaced.",
+                  "Reference style: use the latest reference style of your field.",
+                  "Publisher should meet with an expert for vetting before upload.",
+                  "Authors should include their email and phone number.",
+                  "Ensure that your document is in PDF format."
+                ].map((point, i) => (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.1 }}
+                    key={i} 
+                    className="flex items-start gap-4 p-6 bg-white/5 rounded-2xl border border-white/10 shadow-xl hover:bg-white/10 transition-all group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-[#800000] flex items-center justify-center shrink-0 text-white shadow-lg shadow-[#800000]/20">
+                      <span className="text-[10px] font-black">{i + 1}</span>
+                    </div>
+                    <p className="text-slate-300 font-medium leading-relaxed italic">{point}</p>
+                  </motion.div>
+                ))}
               </div>
-              <button 
-                onClick={onStart}
-                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-900/20 active:scale-95 transition-all"
-              >
-                Proceed to Upload
-              </button>
+
+              <div className="p-10 bg-white/5 rounded-[2.5rem] border border-white/10 flex flex-col justify-between hover:bg-white/10 transition-colors shadow-xl">
+                <div>
+                  <div className="w-16 h-16 rounded-2xl bg-[#800000]/20 flex items-center justify-center mb-8 border border-[#800000]/30 shadow-inner">
+                    <CheckCircle2 className="text-[#ff4d4d]" size={32} />
+                  </div>
+                  <h3 className="text-2xl font-black text-white mb-4">Submission Ready?</h3>
+                  <p className="text-slate-400 font-medium leading-relaxed mb-8">
+                    Ensure all points are met to accelerate the peer-review process and increase publication probability.
+                  </p>
+                </div>
+                <button 
+                  onClick={onStart}
+                  className="w-full py-5 premium-gradient text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-[#800000]/20 active:scale-95 transition-all border border-white/10"
+                >
+                  Proceed to Upload
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       {/* Editorial Board Section */}
-      <section id="editorial" className="py-32 bg-white">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl font-black text-slate-900 mb-4 font-display">Editorial <span className="text-gradient">Board</span></h2>
-            <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-xs">Distinguished Academic Oversight Committee</p>
-            <div className="w-20 h-1.5 premium-gradient mx-auto rounded-full mt-6"></div>
-          </div>
+      <section id="editorial" className="py-32 bg-slate-50 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6 relative z-10">
+          <div className="glass-morph-dark rounded-[3.5rem] p-12 md:p-20 shadow-2xl border-white/20">
+            <div className="text-center mb-20">
+              <h2 className="text-4xl font-black text-white mb-4 font-display">Editorial <span className="text-gradient">Board</span></h2>
+              <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-xs">Distinguished Academic Oversight Committee</p>
+              <div className="w-20 h-1.5 premium-gradient mx-auto rounded-full mt-6"></div>
+            </div>
 
-          <div className="bg-white rounded-[3rem] border border-slate-100 shadow-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-900 text-white">
-                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">S/N</th>
-                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Full Name</th>
-                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Institution</th>
-                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Faculty / Department</th>
-                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Country</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {[
-                    { sn: 1, name: "Prof. Yahaya A. Adadu", school: "Nasarawa State University, Keffi", dept: "Social Sciences", country: "Nigeria" },
-                    { sn: 2, name: "Prof. Francis A. Akawu", school: "Nasarawa State University, Keffi", dept: "Economics", country: "Nigeria" },
-                    { sn: 3, name: "Prof. LJ Kukwi", school: "Nasarawa State University, Keffi", dept: "Education", country: "Nigeria" },
-                    { sn: 4, name: "Prof. Saleh A Dauda, Ph.D", school: "Nasarawa State University, Keffi", dept: "Education", country: "Nigeria" },
-                    { sn: 5, name: "Prof. Dacid M Shekwolo, Ph.D", school: "Nasarawa State University, Keffi", dept: "Psychology", country: "Nigeria" },
-                    { sn: 6, name: "Dr. Danjuma Namo", school: "Nasarawa State University, Keffi", dept: "Education", country: "Nigeria" },
-                    { sn: 7, name: "Johan Adersson", school: "University of Freiburg", dept: "Banking and Finance", country: "Dutch/Switzerland" },
-                    { sn: 8, name: "Maximilian Weber", school: "University of Serbia", dept: "Physics", country: "Germany" },
-                    { sn: 9, name: "Leonardo Ferrari", school: "Amity University UEA", dept: "Accounting", country: "Italy" },
-                    { sn: 10, name: "Charlotte Dupont", school: "University of Serbia", dept: "Mathematics", country: "United Kingdom" },
-                    { sn: 11, name: "Dr. David M. Shekwolo", school: "Nigerian Defence Academy", dept: "Psychology", country: "Kaduna" },
-                    { sn: 12, name: "Assoc. Prof. Abubakar M. Tafida", school: "Nsuk", dept: "Psychology", country: "Nasarawa State" },
-                  ].map((member) => (
-                    <tr key={member.sn} className="hover:bg-slate-50 transition-colors group">
-                      <td className="px-8 py-5 text-sm font-black text-[#800000]">{member.sn}</td>
-                      <td className="px-8 py-5">
-                        <span className="text-sm font-black text-slate-900">{member.name}</span>
-                      </td>
-                      <td className="px-8 py-5 text-sm font-bold text-slate-600">{member.school}</td>
-                      <td className="px-8 py-5 text-sm font-medium text-slate-500 italic">{member.dept}</td>
-                      <td className="px-8 py-5">
-                        <span className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-500">
-                          {member.country}
-                        </span>
-                      </td>
+            <div className="bg-white/5 rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden backdrop-blur-md">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#800000]/40 text-white backdrop-blur-xl">
+                      <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">S/N</th>
+                      <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Full Name</th>
+                      <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Institution</th>
+                      <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Faculty / Department</th>
+                      <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Country</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {[
+                      { sn: 1, name: "Prof. Yahaya A. Adadu", school: "Nasarawa State University, Keffi", dept: "Social Sciences", country: "Nigeria" },
+                      { sn: 2, name: "Prof. Francis A. Akawu", school: "Nasarawa State University, Keffi", dept: "Economics", country: "Nigeria" },
+                      { sn: 3, name: "Prof. LJ Kukwi", school: "Nasarawa State University, Keffi", dept: "Education", country: "Nigeria" },
+                      { sn: 4, name: "Prof. Saleh A Dauda, Ph.D", school: "Nasarawa State University, Keffi", dept: "Education", country: "Nigeria" },
+                      { sn: 5, name: "Prof. Dacid M Shekwolo, Ph.D", school: "Nasarawa State University, Keffi", dept: "Psychology", country: "Nigeria" },
+                      { sn: 6, name: "Dr. Danjuma Namo", school: "Nasarawa State University, Keffi", dept: "Education", country: "Nigeria" },
+                      { sn: 7, name: "Johan Adersson", school: "University of Freiburg", dept: "Banking and Finance", country: "Dutch/Switzerland" },
+                      { sn: 8, name: "Maximilian Weber", school: "University of Serbia", dept: "Physics", country: "Germany" },
+                      { sn: 9, name: "Leonardo Ferrari", school: "Amity University UEA", dept: "Accounting", country: "Italy" },
+                      { sn: 10, name: "Charlotte Dupont", school: "University of Serbia", dept: "Mathematics", country: "United Kingdom" },
+                      { sn: 11, name: "Dr. David M. Shekwolo", school: "Nigerian Defence Academy", dept: "Psychology", country: "Kaduna" },
+                      { sn: 12, name: "Assoc. Prof. Abubakar M. Tafida", school: "Nsuk", dept: "Psychology", country: "Nasarawa State" },
+                    ].map((member) => (
+                      <tr key={member.sn} className="hover:bg-white/5 transition-colors group">
+                        <td className="px-8 py-5 text-sm font-black text-[#ff4d4d]">{member.sn}</td>
+                        <td className="px-8 py-5">
+                          <span className="text-sm font-black text-white">{member.name}</span>
+                        </td>
+                        <td className="px-8 py-5 text-sm font-bold text-slate-300">{member.school}</td>
+                        <td className="px-8 py-5 text-sm font-medium text-slate-400 italic">{member.dept}</td>
+                        <td className="px-8 py-5">
+                          <span className="px-3 py-1 bg-white/5 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-300 border border-white/10">
+                            {member.country}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       {/* Footer / Contact Section */}
-      <footer id="contact" className="bg-white border-t border-slate-100 py-32 relative overflow-hidden">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-4 gap-16 mb-20">
-            <div className="lg:col-span-2">
-              <div className="flex items-center gap-3 mb-8">
-                <div className="w-12 h-12 premium-gradient rounded-xl flex items-center justify-center shadow-lg shadow-[#800000]/20">
-                  <GraduationCap className="text-white" size={24} />
+      <footer id="contact" className="py-32 relative overflow-hidden bg-white">
+        <div className="max-w-7xl mx-auto px-6 relative z-10">
+          <div className="glass-morph-dark rounded-[3.5rem] p-12 md:p-20 shadow-2xl border-white/20">
+            <div className="grid lg:grid-cols-4 gap-16">
+              <div className="lg:col-span-2">
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-12 h-12 premium-gradient rounded-xl flex items-center justify-center shadow-lg shadow-[#800000]/20">
+                    <GraduationCap className="text-white" size={24} />
+                  </div>
+                  <span className="text-3xl font-black text-white tracking-tighter">GMIJ PUBLICATION</span>
                 </div>
-                <span className="text-3xl font-black text-slate-900 tracking-tighter">GMIJ PUBLICATION</span>
+                <p className="text-slate-400 font-medium leading-relaxed max-w-md mb-10 italic">
+                  The global benchmark for multidisciplinary research excellence. We empower authors with state-of-the-art tools for validation and dissemination.
+                </p>
+                <div className="space-y-6">
+                  <div className="flex items-center gap-4 text-slate-300 group">
+                    <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-[#ff4d4d] border border-white/10 group-hover:bg-[#800000] group-hover:text-white transition-all shadow-xl">
+                      <Phone size={18} />
+                    </div>
+                    <span className="text-sm font-black">+2348164064212</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-slate-300 group">
+                    <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-[#ff4d4d] border border-white/10 group-hover:bg-[#800000] group-hover:text-white transition-all shadow-xl">
+                      <Mail size={18} />
+                    </div>
+                    <span className="text-sm font-black">geniusmultidisciplinary@gmail.com</span>
+                  </div>
+                </div>
               </div>
-              <p className="text-slate-500 font-medium leading-relaxed max-w-md mb-10 italic">
-                The global benchmark for multidisciplinary research excellence. We empower authors with state-of-the-art tools for validation and dissemination.
+
+              <div>
+                <h4 className="text-xs font-black text-white uppercase tracking-[0.2em] mb-8">Quick Links</h4>
+                <ul className="space-y-4">
+                  <li><a href="#about" className="text-sm font-bold text-slate-500 hover:text-[#ff4d4d] transition-colors">About GMIJP</a></li>
+                  <li><a href="#guidelines" className="text-sm font-bold text-slate-500 hover:text-[#ff4d4d] transition-colors">Author Guidelines</a></li>
+                  <li><a href="#editorial" className="text-sm font-bold text-slate-500 hover:text-[#ff4d4d] transition-colors">Editorial Board</a></li>
+                  <li><a href="#contact" className="text-sm font-bold text-slate-500 hover:text-[#ff4d4d] transition-colors">Contact Support</a></li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-black text-white uppercase tracking-[0.2em] mb-8">Support & Ethics</h4>
+                <ul className="space-y-4">
+                  {['Editorial Ethics', 'Sponsorship', 'Archive Policy', 'Terms of Service'].map(item => (
+                    <li key={item}>
+                      <a href="#" className="text-sm font-bold text-slate-500 hover:text-[#ff4d4d] transition-colors">{item}</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="mt-20 pt-8 border-t border-white/10 flex flex-col md:flex-row items-center justify-between gap-6">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
+                &copy; 2026 GMIJ Publication. All rights reserved.
               </p>
-              <div className="space-y-4">
-                <div className="flex items-center gap-4 text-slate-600">
-                  <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-[#800000]">
-                    <Phone size={18} />
-                  </div>
-                  <span className="text-sm font-black">+2348164064212</span>
+              <div className="flex items-center gap-8">
+                <div className="flex items-center gap-2 text-slate-500">
+                  <Shield size={14} className="text-green-500/80" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Neural Verified</span>
                 </div>
-                <div className="flex items-center gap-4 text-slate-600">
-                  <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-[#800000]">
-                    <Mail size={18} />
-                  </div>
-                  <span className="text-sm font-black">geniusmultidisciplinary@gmail.com</span>
+                <div className="flex items-center gap-2 text-slate-500">
+                  <CheckCircle2 size={14} className="text-[#ff4d4d]" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">ISO 27001 Certified</span>
                 </div>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] mb-8">Quick Links</h4>
-              <ul className="space-y-4">
-                <li><a href="#about" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">About GMIJP</a></li>
-                <li><a href="#guidelines" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">Author Guidelines</a></li>
-                <li><a href="#editorial" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">Editorial Board</a></li>
-                <li><a href="#contact" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">Contact Support</a></li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] mb-8">Support & Ethics</h4>
-              <ul className="space-y-4">
-                {['Editorial Ethics', 'Sponsorship', 'Archive Policy', 'Terms of Service'].map(item => (
-                  <li key={item}>
-                    <a href="#" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">{item}</a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <div className="pt-8 border-t border-slate-100 flex flex-col md:row items-center justify-between gap-6">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
-              &copy; 2026 GMIJ Publication. All rights reserved.
-            </p>
-            <div className="flex items-center gap-8">
-              <div className="flex items-center gap-2 text-slate-500">
-                <Shield size={14} className="text-green-600" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Neural Verified</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-500">
-                <CheckCircle2 size={14} className="text-[#800000]" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">ISO 27001 Certified</span>
               </div>
             </div>
           </div>
