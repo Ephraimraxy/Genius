@@ -96,7 +96,7 @@
   .nav-sparkle:hover {
     color: #800000;
     transform: scale(1.05);
-    text-shadow: 0 0 10px rgba(128, 0, 0, 0.2);
+    text-shadow: 0 0 15px rgba(128, 0, 0, 0.4);
   }
 
   .nav-sparkle:hover::after {

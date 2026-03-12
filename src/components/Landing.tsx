@@ -3,7 +3,6 @@ import { motion } from 'motion/react';
 import { 
   Search, 
   ArrowRight, 
-  BookOpen, 
   Shield, 
   Globe, 
   Users, 
