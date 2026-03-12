@@ -71,10 +71,10 @@ export default function Landing({ onStart }: LandingProps) {
           <img 
             src="/Banner/NSUK.jpg" 
             alt="University Background" 
-            className="w-full h-full object-cover grayscale opacity-40"
+            className="w-full h-full object-cover opacity-60"
           />
-          <div className="absolute inset-0 bg-white/40 backdrop-blur-[6px] z-20"></div>
-          <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/20 to-white z-25"></div>
+          <div className="absolute inset-0 bg-white/20 backdrop-blur-[2px] z-20"></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/10 to-white z-25"></div>
         </div>
 
         <div className="max-w-7xl mx-auto px-6 relative z-30 w-full mb-20">
