@@ -21,7 +21,6 @@ interface LandingProps {
 }
 
 export default function Landing({ onStart }: LandingProps) {
-  const [searchQuery, setSearchQuery] = useState('');
 
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-[#800000] selection:text-white">
@@ -149,95 +148,183 @@ export default function Landing({ onStart }: LandingProps) {
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="py-24 bg-slate-900 text-white overflow-hidden relative">
-        <div className="absolute top-0 left-0 w-64 h-64 bg-[#800000]/20 rounded-full blur-3xl -ml-32 -mt-32"></div>
+      {/* About Us Section */}
+      <section id="about" className="py-32 relative overflow-hidden bg-white">
         <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-12 text-center">
-            {[
-              { label: 'Published Papers', value: '2.5k+' },
-              { label: 'Global Citations', value: '850k+' },
-              { label: 'Expert Reviewers', value: '450+' },
-              { label: 'Impact Factor', value: '8.42' }
-            ].map((stat) => (
-              <div key={stat.label}>
-                <p className="text-4xl font-black mb-2">{stat.value}</p>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">{stat.label}</p>
+          <div className="grid lg:grid-cols-2 gap-20 items-center">
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+            >
+              <h2 className="text-4xl font-black text-slate-900 mb-8 font-display">
+                Strategic <span className="text-gradient">Partnership</span> & Vision
+              </h2>
+              <p className="text-lg text-slate-600 leading-relaxed mb-8 font-medium">
+                Genius collaborates with Nasarawa State University’s Research, Measurement, and Evaluation Unit in the Department of Educational Foundation and consults global academics. Registered under CAC (No. 3591627), our team comprises highly qualified professionals from various fields dedicated to academic excellence.
+              </p>
+              
+              <div className="space-y-6">
+                <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <h3 className="text-xl font-black text-slate-900 mb-3 flex items-center gap-3">
+                    <Globe className="text-[#800000]" size={20} />
+                    Our Mission
+                  </h3>
+                  <p className="text-slate-500 font-medium leading-relaxed">
+                    To provide a comprehensive and inclusive platform for learning and research, empowering scholars and professionals to achieve academic excellence and innovation across diverse fields, while fostering global collaboration and knowledge-sharing.
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  {['Excellence', 'Inclusivity', 'Innovation', 'Collaboration', 'Integrity', 'Empowerment', 'Sustainability'].map(val => (
+                    <span key={val} className="px-4 py-2 bg-[#800000]/5 text-[#800000] text-[10px] font-black uppercase tracking-widest rounded-full border border-[#800000]/10">
+                      {val}
+                    </span>
+                  ))}
+                </div>
               </div>
-            ))}
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              className="grid grid-cols-2 gap-6"
+            >
+              {[
+                { label: 'Published Papers', value: '2.5k+' },
+                { label: 'Global Citations', value: '850k+' },
+                { label: 'Expert Reviewers', value: '450+' },
+                { label: 'Impact Factor', value: '8.42' }
+              ].map((stat, i) => (
+                <div key={i} className="p-10 bg-slate-900 rounded-[2.5rem] text-white text-center shadow-2xl">
+                  <p className="text-4xl font-black mb-2">{stat.value}</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">{stat.label}</p>
+                </div>
+              ))}
+            </motion.div>
           </div>
         </div>
       </section>
 
-      {/* Features */}
-      <section id="guideline" className="py-32 bg-slate-50/50">
+      {/* Author Guidelines Section */}
+      <section id="guidelines" className="py-32 bg-slate-50/50 relative">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-20">
-            <h2 className="text-4xl font-black text-slate-900 mb-4">Why Publish with GMIJP?</h2>
-            <div className="w-20 h-1.5 premium-gradient mx-auto rounded-full"></div>
+            <h2 className="text-4xl font-black text-slate-900 mb-4 font-display">Author <span className="text-gradient">Guidelines</span></h2>
+            <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-xs">Essential steps before manuscript submission</p>
+            <div className="w-20 h-1.5 premium-gradient mx-auto rounded-full mt-6"></div>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-12">
-            {[
-              { 
-                icon: Globe, 
-                title: 'International Reach', 
-                desc: 'Indexed by major research databases and accessible in over 120 countries.' 
-              },
-              { 
-                icon: Shield, 
-                title: 'Integrity First', 
-                desc: 'Every manuscript undergoes rigorous neural-based plagiarism and integrity checks.' 
-              },
-              { 
-                icon: FileText, 
-                title: 'Fast-Track Peer Review', 
-                desc: 'Initial decisions within 14 days thanks to our simulator-assisted review process.' 
-              }
-            ].map((feature, i) => (
-              <div key={i} className="bg-white p-10 rounded-[2.5rem] shadow-xl shadow-slate-200/60 border border-slate-100 hover:-translate-y-2 transition-transform">
-                <div className="w-14 h-14 bg-[#800000]/5 rounded-2xl flex items-center justify-center mb-8">
-                  <feature.icon className="text-[#800000]" size={28} />
-                </div>
-                <h3 className="text-xl font-black text-slate-900 mb-4">{feature.title}</h3>
-                <p className="text-slate-600 font-medium leading-relaxed">{feature.desc}</p>
+          <div className="grid lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-4">
+              {[
+                "Manuscript should not be more than 15 pages (including abstract, tables and references) of A4 size using 12 font size.",
+                "Each paper should be double line spaced.",
+                "Reference style: each author should use the latest reference style of his or her field.",
+                "Publisher should meet with an expert in their field for vetting before upload.",
+                "Authors should include their email and phone number.",
+                "Ensure that your document is in PDF format."
+              ].map((point, i) => (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1 }}
+                  key={i} 
+                  className="flex items-start gap-4 p-5 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-[#800000]/5 flex items-center justify-center shrink-0 group-hover:bg-[#800000] group-hover:text-white transition-colors">
+                    <span className="text-[10px] font-black">{i + 1}</span>
+                  </div>
+                  <p className="text-slate-700 font-medium leading-relaxed italic">{point}</p>
+                </motion.div>
+              ))}
+            </div>
+
+            <div className="glass-morph p-10 rounded-[2.5rem] border-[#800000]/10 flex flex-col justify-between">
+              <div>
+                <CheckCircle2 className="text-[#800000] mb-6" size={48} />
+                <h3 className="text-2xl font-black text-slate-900 mb-4">Submission Ready?</h3>
+                <p className="text-slate-500 font-medium leading-relaxed mb-8">
+                  Ensure all points are met to accelerate the peer-review process and increase publication probability.
+                </p>
               </div>
-            ))}
+              <button 
+                onClick={onStart}
+                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-900/20 active:scale-95 transition-all"
+              >
+                Proceed to Upload
+              </button>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer id="contact-us" className="bg-white border-t border-slate-100 py-24">
+      {/* Editorial Board Section */}
+      <section id="editorial" className="py-32 bg-white">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-4 gap-16 mb-16">
+          <div className="text-center mb-20">
+            <h2 className="text-4xl font-black text-slate-900 mb-4 font-display">Editorial <span className="text-gradient">Board</span></h2>
+            <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-xs">Global academic leadership & excellence</p>
+            <div className="w-20 h-1.5 premium-gradient mx-auto rounded-full mt-6"></div>
+          </div>
+
+          <div className="bg-slate-50 rounded-[3rem] p-12 lg:p-20 text-center border border-slate-100 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#800000]/5 rounded-full blur-3xl"></div>
+            <Users className="text-[#800000]/20 mx-auto mb-8" size={64} />
+            <h3 className="text-2xl font-black text-slate-900 mb-6 uppercase tracking-tight">Academic Oversight Committee</h3>
+            <p className="text-slate-500 font-medium leading-relaxed max-w-2xl mx-auto italic">
+              Our editorial board comprises distinguished scholars and researchers from leading global institutions. We are currently finalizing the 2026 Academic Council roster to include specialists across multidisciplinary domains.
+            </p>
+            <div className="mt-12 flex justify-center gap-4">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="w-12 h-12 rounded-full bg-white border border-slate-100 shadow-sm flex items-center justify-center">
+                  <span className="text-[10px] font-black text-slate-400">?</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer / Contact Section */}
+      <footer id="contact" className="bg-white border-t border-slate-100 py-32 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid lg:grid-cols-4 gap-16 mb-20">
             <div className="lg:col-span-2">
               <div className="flex items-center gap-3 mb-8">
-                <div className="w-10 h-10 premium-gradient rounded-xl flex items-center justify-center">
+                <div className="w-12 h-12 premium-gradient rounded-xl flex items-center justify-center shadow-lg shadow-[#800000]/20">
                   <BookOpen className="text-white" size={24} />
                 </div>
-                <span className="text-2xl font-black text-slate-900 tracking-tighter">GMIJ PUBLICATION</span>
+                <span className="text-3xl font-black text-slate-900 tracking-tighter">GMIJ PUBLICATION</span>
               </div>
-              <p className="text-slate-500 font-medium leading-relaxed max-w-md mb-8">
+              <p className="text-slate-500 font-medium leading-relaxed max-w-md mb-10 italic">
                 The global benchmark for multidisciplinary research excellence. We empower authors with state-of-the-art tools for validation and dissemination.
               </p>
-              <div className="flex gap-4">
-                {['Twitter', 'LinkedIn', 'YouTube'].map(s => (
-                  <div key={s} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:text-[#800000] hover:bg-[#800000]/5 cursor-pointer transition-colors">
-                    <span className="text-[10px] font-black uppercase tracking-tighter">{s[0]}</span>
+              <div className="space-y-4">
+                <div className="flex items-center gap-4 text-slate-600">
+                  <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-[#800000]">
+                    <Phone size={18} />
                   </div>
-                ))}
+                  <span className="text-sm font-black">+2348164064212</span>
+                </div>
+                <div className="flex items-center gap-4 text-slate-600">
+                  <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-[#800000]">
+                    <Mail size={18} />
+                  </div>
+                  <span className="text-sm font-black">geniusmultidisciplinary@gmail.com</span>
+                </div>
               </div>
             </div>
 
             <div>
               <h4 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] mb-8">Quick Links</h4>
               <ul className="space-y-4">
-                {['Author Guidelines', 'Call for Papers', 'Review Process', 'Privacy Policy'].map(item => (
-                  <li key={item}>
-                    <a href="#" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">{item}</a>
-                  </li>
-                ))}
+                <li><a href="#about" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">About GMIJP</a></li>
+                <li><a href="#guidelines" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">Author Guidelines</a></li>
+                <li><a href="#editorial" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">Editorial Board</a></li>
+                <li><a href="#contact" className="text-sm font-bold text-slate-500 hover:text-[#800000] transition-colors">Contact Support</a></li>
               </ul>
             </div>
 

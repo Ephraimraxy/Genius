@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, FileText, Download, Check, AlertCircle, FileCheck, RefreshCw, Layout } from 'lucide-react';
+import { Settings, FileText, Download, Check, AlertCircle, FileCheck, RefreshCw, Layout } from 'lucide-react'; // UI Icons
 
 export default function FormattingEngine({ activePaperId }: { activePaperId: number | null }) {
   const [selectedStyle, setSelectedStyle] = useState('ieee');

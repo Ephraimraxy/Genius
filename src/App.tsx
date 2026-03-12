@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react'; // Refined animations
 import Sidebar from './components/Sidebar';
 import DashboardOverview from './components/DashboardOverview';
 import SmartUpload from './components/SmartUpload';
