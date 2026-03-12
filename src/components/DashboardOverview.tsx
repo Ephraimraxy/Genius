@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, BookOpen, Star, TrendingUp } from 'lucide-react';
+import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, GraduationCap, Star, TrendingUp } from 'lucide-react';
 import { Tab } from '../App';
 
 export default function DashboardOverview({ onNavigate, profile, setActivePaperId }: { onNavigate: (tab: Tab) => void, profile: any, setActivePaperId: (id: number) => void }) {
@@ -27,7 +27,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
       {/* Welcome Section */}
       <div className="relative overflow-hidden premium-gradient rounded-[2rem] p-10 text-white shadow-2xl shadow-indigo-900/20">
         <div className="absolute top-0 right-0 p-8 opacity-10">
-          <BookOpen size={180} />
+          <GraduationCap size={180} />
         </div>
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="text-center md:text-left">

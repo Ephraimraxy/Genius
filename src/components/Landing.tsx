@@ -41,7 +41,7 @@ export default function Landing({ onStart }: LandingProps) {
 
           <div className="hidden lg:flex items-center gap-8">
             {['About', 'Guidelines', 'Editorial', 'Contact'].map((item) => (
-              <a key={item} href={`#${item.toLowerCase()}`} className="text-[10px] font-black text-slate-500 hover:text-[#800000] transition-colors uppercase tracking-[0.2em]">
+              <a key={item} href={`#${item.toLowerCase()}`} className="nav-sparkle text-[10px] font-black text-slate-500 hover:text-[#800000] transition-colors uppercase tracking-[0.2em]">
                 {item}
               </a>
             ))}
@@ -118,35 +118,35 @@ export default function Landing({ onStart }: LandingProps) {
               transition={{ duration: 1, delay: 0.2 }}
               className="hidden lg:block relative"
             >
-              <div className="glass-morph p-10 rounded-[3.5rem] border-white/20 relative z-10 overflow-hidden group">
-                <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div className="glass-morph-dark p-10 rounded-[3.5rem] border-white/20 relative z-10 overflow-hidden group shadow-2xl">
+                <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 
                 <div className="flex items-center gap-4 mb-8">
-                  <div className="p-3 bg-[#800000] rounded-2xl text-white shadow-xl">
+                  <div className="p-3 bg-[#800000] rounded-2xl text-white shadow-xl shadow-[#800000]/40">
                     <ShieldCheck size={24} />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900">Registry Status</h3>
-                    <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest">Neural AI Active</p>
+                    <h3 className="text-lg font-black text-white">Registry Status</h3>
+                    <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest">Neural AI Active</p>
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   {[
-                    { label: 'Integrity Audits', value: '24.1k', color: 'text-indigo-600' },
-                    { label: 'DOI Assignments', value: '18.5k', color: 'text-[#800000]' },
-                    { label: 'Peer Review Cycles', value: '12.2k', color: 'text-emerald-600' }
+                    { label: 'Integrity Audits', value: '24.1k', color: 'text-white' },
+                    { label: 'DOI Assignments', value: '18.5k', color: 'text-[#ff4d4d]' },
+                    { label: 'Peer Review Cycles', value: '12.2k', color: 'text-emerald-400' }
                   ].map((item, i) => (
-                    <div key={i} className="p-4 bg-white/60 border border-white/40 rounded-2xl flex items-center justify-between">
-                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{item.label}</span>
+                    <div key={i} className="p-4 bg-white/10 border border-white/10 rounded-2xl flex items-center justify-between hover:bg-white/20 transition-colors">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.label}</span>
                       <span className={`text-sm font-black ${item.color}`}>{item.value}</span>
                     </div>
                   ))}
                 </div>
 
-                <div className="mt-8 p-5 bg-slate-900 rounded-[2rem] text-center border border-slate-700">
+                <div className="mt-8 p-5 bg-white/5 rounded-[2rem] text-center border border-white/10">
                   <p className="text-white font-black text-sm mb-1 uppercase tracking-tight">System Integrity: 100%</p>
-                  <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">ISO 27001 Certified Registry</p>
+                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">ISO 27001 Certified Registry</p>
                 </div>
               </div>
 

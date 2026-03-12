@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { GraduationCap, MapPin, BookOpen, Quote, TrendingUp, Edit3, Award, ExternalLink } from 'lucide-react';
+import { GraduationCap, MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink } from 'lucide-react';
 
 export default function ProfileView({ profile }: { profile: any }) {
   if (!profile) return (
@@ -71,7 +71,7 @@ export default function ProfileView({ profile }: { profile: any }) {
         {[
           { label: 'Total Citations', value: metrics.citations, icon: Quote, color: 'text-indigo-600', bg: 'bg-indigo-50' },
           { label: 'h-index', value: metrics.hIndex, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'i10-index', value: metrics.i10Index, icon: BookOpen, color: 'text-blue-600', bg: 'bg-blue-50' }
+          { label: 'i10-index', value: metrics.i10Index, icon: GraduationCap, color: 'text-blue-600', bg: 'bg-blue-50' }
         ].map((item, i) => (
           <motion.div
             key={i}
@@ -105,7 +105,7 @@ export default function ProfileView({ profile }: { profile: any }) {
           {publications.length === 0 ? (
             <div className="p-20 text-center">
               <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200">
-                <BookOpen className="text-slate-300" size={32} />
+                <GraduationCap className="text-slate-300" size={32} />
               </div>
               <h4 className="text-xl font-bold text-slate-800">No publications added</h4>
               <p className="text-slate-500 mt-2 max-w-sm mx-auto">Your verified publications will appear here once they are indexed or manually added.</p>
