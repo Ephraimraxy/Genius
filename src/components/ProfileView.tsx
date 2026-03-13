@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink, User, Save, X, Mail, Building, Shield, FileText, CheckCircle2, Loader2, Plus, Trash2 } from 'lucide-react';
+import { MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink, User, Save, X, Mail, Building, Shield, FileText, CheckCircle2, Loader2, Plus, Trash2 } from 'lucide-react';
 
 export default function ProfileView({ profile, addToast, onProfileUpdate }: { profile: any, addToast?: (msg: string, type?: string) => void, onProfileUpdate?: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -241,7 +241,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           {[
             { label: 'Total Citations', value: metrics.citations, icon: Quote, color: 'text-indigo-600', bg: 'bg-indigo-50' },
             { label: 'h-index', value: metrics.hIndex, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { label: 'i10-index', value: metrics.i10Index, icon: GraduationCap, color: 'text-blue-600', bg: 'bg-blue-50' }
+            { label: 'i10-index', value: metrics.i10Index, icon: Award, color: 'text-blue-600', bg: 'bg-blue-50' }
           ].map((item, i) => (
             <motion.div
               key={i}
@@ -289,7 +289,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
         <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/30">
           <div className="flex items-center gap-3">
-            <GraduationCap className="text-indigo-600" size={24} />
+            <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 rounded-full object-contain" />
             <h3 className="text-2xl font-bold text-slate-800 font-display">
               {isAdmin ? 'Administrative Record' : 'Scientific Contributions'}
             </h3>
@@ -301,7 +301,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           {publications.length === 0 ? (
             <div className="p-20 text-center">
               <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200">
-                <GraduationCap className="text-slate-300" size={32} />
+                <img src="/gmijp-logo.png" alt="GMIJP" className="w-8 h-8 rounded-full object-contain opacity-40" />
               </div>
               <h4 className="text-xl font-bold text-slate-800">No publications yet</h4>
               <p className="text-slate-500 mt-2 max-w-sm mx-auto">

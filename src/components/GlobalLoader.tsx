@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap } from 'lucide-react';
+
 
 export default function GlobalLoader({ show, message }: { show: boolean, message?: string }) {
   return (
@@ -51,7 +51,7 @@ export default function GlobalLoader({ show, message }: { show: boolean, message
             
             {/* Center Icon */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
-              <GraduationCap size={40} className="text-[#800000]" />
+              <img src="/gmijp-logo.png" alt="GMIJP" className="w-10 h-10 rounded-full object-contain" />
             </div>
           </div>
           

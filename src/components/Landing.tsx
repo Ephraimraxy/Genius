@@ -13,7 +13,6 @@ import {
   Phone,
   LayoutDashboard,
   LogIn,
-  GraduationCap,
   ShieldCheck
 } from 'lucide-react';
 
@@ -30,7 +29,7 @@ export default function Landing({ onStart }: LandingProps) {
         <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
           <div className="flex items-center gap-3 group cursor-pointer">
             <div className="w-8 h-8 premium-gradient rounded-lg flex items-center justify-center shadow-lg shadow-[#800000]/20 group-hover:rotate-12 transition-transform">
-              <GraduationCap className="text-white" size={18} />
+              <img src="/gmijp-logo.png" alt="GMIJP" className="w-5 h-5 rounded-full object-contain" />
             </div>
             <div>
               <span className="text-lg font-black text-slate-900 tracking-tighter">GMIJ</span>
@@ -349,7 +348,7 @@ export default function Landing({ onStart }: LandingProps) {
               <div className="lg:col-span-2">
                 <div className="flex items-center gap-3 mb-8">
                   <div className="w-12 h-12 premium-gradient rounded-xl flex items-center justify-center shadow-lg shadow-[#800000]/20">
-                    <GraduationCap className="text-white" size={24} />
+                    <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 rounded-full object-contain" />
                   </div>
                   <span className="text-3xl font-black text-white tracking-tighter">GMIJ PUBLICATION</span>
                 </div>

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle2, AlertCircle, X, GraduationCap } from 'lucide-react';
+import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -49,7 +49,7 @@ export default function ToastSystem({ toasts, removeToast }: ToastSystemProps) {
               `}>
                 {toast.type === 'error' ? <AlertCircle size={24} /> : 
                  toast.type === 'success' ? <CheckCircle2 size={24} /> : 
-                 <GraduationCap size={24} />}
+                 <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 rounded-full object-contain" />}
               </div>
 
               <div className="flex-1">

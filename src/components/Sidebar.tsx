@@ -95,7 +95,7 @@ export default function Sidebar({
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shrink-0 ${
               isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : 'premium-gradient shadow-[#800000]/20'
             }`}>
-              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : <GraduationCap className="text-white" size={24} />}
+              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 rounded-full object-contain" />}
             </div>
             {!isCollapsed && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col">

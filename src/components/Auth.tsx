@@ -166,7 +166,7 @@ export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
                             animate={{ scale: 1, opacity: 1 }}
                             className="inline-flex p-4 rounded-2xl bg-[#800000]/20 mb-6 items-center justify-center border border-white/10"
                         >
-                            <GraduationCap size={32} className="text-[#ff4d4d]" />
+                            <img src="/gmijp-logo.png" alt="GMIJP" className="w-8 h-8 rounded-full object-contain" />
                         </motion.div>
                         <h2 className="text-4xl font-black text-white tracking-tight font-display mb-2 drop-shadow-lg">
                             {isLogin ? 'Genius Login' : 'Join Genius'}
