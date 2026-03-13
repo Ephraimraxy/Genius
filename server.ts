@@ -832,8 +832,14 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
 
     // Always fetch fresh user data from database (not stale JWT)
     const userResult = await pool.query('SELECT id, email, name, affiliation, role FROM users WHERE id = $1', [userId]);
-    const freshUser = userResult.rows[0];
+    let freshUser = userResult.rows[0];
     if (!freshUser) return res.status(404).json({ error: 'User not found' });
+
+    // Enforce admin role dynamically for existing sessions
+    if (freshUser.email.toLowerCase() === 'burstbrainconcept@gmail.com' && freshUser.role !== 'admin') {
+      await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [freshUser.id]);
+      freshUser.role = 'admin';
+    }
 
     const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
     const profile = profileResult.rows[0];
