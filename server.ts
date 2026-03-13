@@ -837,9 +837,20 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
 
     const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
     const profile = profileResult.rows[0];
+    
+    const safeParse = (str: string | null | undefined, fallback: any) => {
+      try {
+        if (!str || str === '[object Object]') return fallback;
+        if (typeof str === 'object') return str; // If pg already parsed it
+        return JSON.parse(str);
+      } catch (e) {
+        return fallback;
+      }
+    };
+
     if (profile) {
-      profile.publications = JSON.parse(profile.publications || '[]');
-      profile.metrics = JSON.parse(profile.metrics || '{}');
+      profile.publications = safeParse(profile.publications, []);
+      profile.metrics = safeParse(profile.metrics, { citations: 0, hIndex: 0, i10Index: 0 });
 
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       const papers = papersResult.rows;
@@ -913,7 +924,14 @@ app.put('/api/profile', authenticateToken, async (req: any, res) => {
     if (interests) {
       const profileResult = await pool.query('SELECT metrics FROM profiles WHERE user_id = $1', [userId]);
       if (profileResult.rows[0]) {
-        const metrics = JSON.parse(profileResult.rows[0].metrics || '{}');
+        let metricsStr = profileResult.rows[0].metrics;
+        let metrics: any = { citations: 0, hIndex: 0, i10Index: 0 };
+        try {
+          if (metricsStr && metricsStr !== '[object Object]') {
+             metrics = typeof metricsStr === 'object' ? metricsStr : JSON.parse(metricsStr);
+          }
+        } catch (e) {}
+        
         metrics.interests = interests;
         await pool.query('UPDATE profiles SET metrics = $1 WHERE user_id = $2', [JSON.stringify(metrics), userId]);
       }
