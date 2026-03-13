@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, GraduationCap, ShieldCheck, ArrowLeft, KeyRound, CheckCircle } from 'lucide-react';
+import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, GraduationCap, ShieldCheck, ArrowLeft, KeyRound, CheckCircle, MessageSquare, Send } from 'lucide-react';
 
 import { ToastType } from './ToastSystem';
 
@@ -19,12 +19,13 @@ export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
     const [loading, setLoading] = useState(false);
 
     // Forgot password states
-    const [forgotMode, setForgotMode] = useState<'off' | 'choose' | 'email' | 'code' | 'admin' | 'success'>('off');
+    const [forgotMode, setForgotMode] = useState<'off' | 'choose' | 'email' | 'code' | 'admin' | 'adminSent' | 'success'>('off');
     const [resetEmail, setResetEmail] = useState('');
     const [resetCode, setResetCode] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [resetLoading, setResetLoading] = useState(false);
     const [resetMessage, setResetMessage] = useState('');
+    const [contactMessage, setContactMessage] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -111,7 +112,30 @@ export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
         setResetCode('');
         setNewPassword('');
         setResetMessage('');
+        setContactMessage('');
         setError('');
+    };
+
+    const handleContactAdmin = async () => {
+        if (!resetEmail || !contactMessage) return;
+        setResetLoading(true);
+        setError('');
+        try {
+            const res = await fetch('/api/auth/contact-admin-reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: resetEmail, message: contactMessage })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setForgotMode('adminSent');
+            } else {
+                setError(data.error || 'Failed to send request');
+            }
+        } catch (err) {
+            setError('Network error. Please try again.');
+        }
+        setResetLoading(false);
     };
 
     return (
@@ -395,21 +419,59 @@ export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
                                         <ArrowLeft size={16} />
                                     </button>
                                 </div>
-                                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-2">
-                                    <p className="text-amber-300 text-xs font-bold">Lost access to your email?</p>
-                                    <p className="text-slate-400 text-xs leading-relaxed">
-                                        Contact the platform administrator to verify your identity and receive a temporary password override.
-                                    </p>
-                                    <div className="mt-3 p-3 bg-white/5 rounded-lg">
-                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Admin Email</p>
-                                        <a href="mailto:burstbrainconcept@gmail.com" className="text-[#ff4d4d] text-sm font-bold hover:underline">
-                                            burstbrainconcept@gmail.com
-                                        </a>
-                                    </div>
-                                    <p className="text-slate-500 text-[10px] mt-2">
-                                        Once the admin resets your password, return here and log in with the temporary password provided.
-                                    </p>
+                                <p className="text-slate-400 text-xs leading-relaxed">
+                                    Lost access to your email? Send a message to the platform administrator. They will verify your identity and set a temporary password for you.
+                                </p>
+                                <div className="relative group">
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <input
+                                        type="email"
+                                        value={resetEmail}
+                                        onChange={(e) => setResetEmail(e.target.value)}
+                                        className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-[#800000] outline-none text-white text-sm placeholder:text-slate-500"
+                                        placeholder="Your registered email"
+                                    />
                                 </div>
+                                <div className="relative group">
+                                    <MessageSquare className="absolute left-4 top-3 text-slate-400" size={16} />
+                                    <textarea
+                                        value={contactMessage}
+                                        onChange={(e) => setContactMessage(e.target.value)}
+                                        className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-[#800000] outline-none text-white text-sm placeholder:text-slate-500 resize-none"
+                                        placeholder="Describe your situation (e.g. I lost access to my email and need a password reset)"
+                                        rows={3}
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleContactAdmin}
+                                    disabled={resetLoading || !resetEmail || !contactMessage}
+                                    className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    {resetLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                                    Send Request to Admin
+                                </button>
+                            </motion.div>
+                        )}
+
+                        {forgotMode === 'adminSent' && (
+                            <motion.div
+                                key="adminSent"
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="mt-6 p-6 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-center space-y-3"
+                            >
+                                <CheckCircle size={36} className="text-amber-400 mx-auto" />
+                                <p className="text-amber-300 font-bold text-sm">Request Sent!</p>
+                                <p className="text-slate-400 text-xs leading-relaxed">
+                                    Your password reset request has been sent to the platform administrator. They will review it and set a temporary password for you. Check back and try logging in soon.
+                                </p>
+                                <button
+                                    onClick={exitForgotMode}
+                                    className="text-white bg-amber-600 hover:bg-amber-500 px-6 py-2 rounded-xl text-sm font-bold transition-colors"
+                                >
+                                    Back to Login
+                                </button>
                             </motion.div>
                         )}
 

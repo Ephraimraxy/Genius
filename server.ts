@@ -135,6 +135,13 @@ async function initDB() {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+    CREATE TABLE IF NOT EXISTS password_reset_requests (
+      id SERIAL PRIMARY KEY,
+      email TEXT NOT NULL,
+      message TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `);
   
   try { await pool.query('ALTER TABLE papers ADD COLUMN doi TEXT'); } catch (e) { }
@@ -411,6 +418,69 @@ app.post('/api/admin/users/:id/reset-password', authenticateToken, async (req: a
   } catch (error) {
     console.error('Admin reset password error:', error);
     res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// Public: User contacts admin for password reset (no email needed)
+app.post('/api/auth/contact-admin-reset', authLimiter, async (req, res) => {
+  try {
+    const { email, message } = req.body;
+    if (!email || !message) return res.status(400).json({ error: 'Email and message are required' });
+
+    await pool.query(
+      'INSERT INTO password_reset_requests (email, message) VALUES ($1, $2)',
+      [email.toLowerCase(), message]
+    );
+
+    // Also send an email notification to the admin
+    try {
+      await mailTransporter.sendMail({
+        from: `"Genius Portal" <${process.env.SMTP_EMAIL || 'noreply@genius.app'}>`,
+        to: 'burstbrainconcept@gmail.com',
+        subject: `Password Reset Request from ${email}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 16px;">
+            <h2 style="color: #0f172a;">Password Reset Request</h2>
+            <p style="color: #64748b;">A user has requested a password reset via the Contact Admin form:</p>
+            <div style="background: white; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; margin: 16px 0;">
+              <p style="margin: 0 0 8px 0;"><strong>Email:</strong> ${email}</p>
+              <p style="margin: 0;"><strong>Message:</strong> ${message}</p>
+            </div>
+            <p style="color: #64748b; font-size: 13px;">Log into your Admin dashboard → User Management → Edit the user to set a temporary password.</p>
+          </div>
+        `
+      });
+    } catch (emailErr) {
+      console.error('Admin notification email failed:', emailErr);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Contact admin reset error:', error);
+    res.status(500).json({ error: 'Failed to send request' });
+  }
+});
+
+// Admin: View pending password reset requests
+app.get('/api/admin/reset-requests', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query('SELECT * FROM password_reset_requests ORDER BY created_at DESC LIMIT 50');
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch reset requests' });
+  }
+});
+
+// Admin: Mark a reset request as resolved
+app.put('/api/admin/reset-requests/:id', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    await pool.query("UPDATE password_reset_requests SET status = 'resolved' WHERE id = $1", [parseInt(id)]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update request' });
   }
 });
 
