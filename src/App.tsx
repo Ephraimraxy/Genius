@@ -106,13 +106,13 @@ export default function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
-      case 'upload': return <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} />;
-      case 'formatting': return <FormattingEngine activePaperId={activePaperId} />;
-      case 'writing': return <WritingAssistant activePaperId={activePaperId} />;
-      case 'references': return <ReferenceIntelligence activePaperId={activePaperId} />;
-      case 'integrity': return <IntegrityChecks activePaperId={activePaperId} />;
-      case 'journals': return <JournalRecommendations activePaperId={activePaperId} />;
-      case 'reviews': return <PeerReviewSimulation activePaperId={activePaperId} />;
+      case 'upload': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} />;
+      case 'formatting': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <FormattingEngine activePaperId={activePaperId} />;
+      case 'writing': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <WritingAssistant activePaperId={activePaperId} />;
+      case 'references': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <ReferenceIntelligence activePaperId={activePaperId} />;
+      case 'integrity': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <IntegrityChecks activePaperId={activePaperId} />;
+      case 'journals': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <JournalRecommendations activePaperId={activePaperId} />;
+      case 'reviews': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <PeerReviewSimulation activePaperId={activePaperId} />;
       case 'transactions': return <TransactionHistory profile={profile} />;
       case 'records': return <PublicationRecords profile={profile} />;
       case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} />;
