@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Settings, DollarSign, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity } from 'lucide-react';
+import { Settings, Banknote, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity } from 'lucide-react';
 
 export default function AdminSettings() {
   const [price, setPrice] = useState<number>(5000);
@@ -77,7 +77,7 @@ export default function AdminSettings() {
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
           <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
             <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
-              <DollarSign size={20} className="text-emerald-600" /> Publication Pricing
+              <Banknote size={20} className="text-emerald-600" /> Publication Pricing
             </h3>
           </div>
           <div className="p-8 space-y-6">

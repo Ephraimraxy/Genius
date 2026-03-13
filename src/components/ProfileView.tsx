@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GraduationCap, MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink, User, Save, X, Mail, Building, Shield, FileText, CheckCircle2, Loader2, Plus, Trash2 } from 'lucide-react';
 
@@ -15,6 +15,12 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
   const [editAffiliation, setEditAffiliation] = useState(user?.affiliation || '');
   const [editInterests, setEditInterests] = useState<string[]>(metrics.interests || []);
   const [newInterest, setNewInterest] = useState('');
+
+  useEffect(() => {
+    setEditName(user?.name || '');
+    setEditAffiliation(user?.affiliation || '');
+    setEditInterests((scholarProfile?.metrics || {}).interests || []);
+  }, [user, scholarProfile]);
 
   if (!profile) return (
     <div className="flex items-center justify-center h-[60vh]">
@@ -80,7 +86,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           {/* Avatar */}
           <div className="relative">
             <div className={`w-32 h-32 rounded-3xl text-white flex items-center justify-center text-4xl font-bold shadow-2xl ${isAdmin ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] shadow-slate-900/30' : 'premium-gradient shadow-[#800000]/30'}`}>
-              {(user?.name || 'U').split(' ').map((n: string) => n[0]).join('')}
+              {(user?.name?.trim() || user?.email?.trim() || 'S').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
             </div>
             <div className="absolute -bottom-2 -right-2 p-2 bg-white rounded-xl shadow-lg border border-slate-100">
               {isAdmin ? <Shield className="text-amber-500" size={20} /> : <Award className="text-amber-500" size={20} />}
@@ -214,7 +220,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           </div>
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Email (Login)</p>
-            <p className="text-sm font-bold text-[#800000]">{user?.email}</p>
+            <p className="text-sm font-bold text-[#800000]">{user?.email || 'Missing Record'}</p>
           </div>
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Role</p>

@@ -236,7 +236,7 @@ export default function App() {
 
             <button onClick={() => setActiveTab('profile')} className="flex items-center gap-2 pl-2 group">
               <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold shadow-lg transition-all group-hover:scale-110 ${isAdmin ? 'premium-gradient shadow-[#800000]/20 text-white' : 'bg-slate-100 text-[#800000]'}`}>
-                {(profile?.user?.name || profile?.user?.email || 'U').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() || 'U'}
+                {(profile?.user?.name?.trim() || profile?.user?.email?.trim() || 'S').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
               </div>
             </button>
           </div>

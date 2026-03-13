@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, DollarSign } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight } from 'lucide-react';
 
 import { ToastType } from './ToastSystem';
 
@@ -164,7 +164,7 @@ export default function SmartUpload({
             <div className="absolute top-0 right-0 w-64 h-64 bg-[#800000]/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
             
             <div className="w-24 h-24 bg-[#800000]/10 rounded-3xl flex items-center justify-center mb-8 relative z-10">
-              <DollarSign className="text-[#800000] w-10 h-10" />
+              <span className="text-[#800000] text-5xl font-black">₦</span>
             </div>
             
             <h3 className="text-3xl font-black text-slate-900 mb-4 tracking-tight relative z-10">Publication Fee Required</h3>
@@ -189,7 +189,7 @@ export default function SmartUpload({
               disabled={isPaying}
               className="px-12 py-5 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-[#800000]/30 hover:scale-105 transition-all flex items-center gap-4 disabled:opacity-50 relative z-10"
             >
-              {isPaying ? <Loader2 className="animate-spin" size={20} /> : <><DollarSign size={20} /> Initialize Checkout</>}
+              {isPaying ? <Loader2 className="animate-spin" size={20} /> : <><span className="text-xl font-bold">₦</span> Initialize Checkout</>}
             </button>
             <p className="mt-6 text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] relative z-10">Neural Authentication Secured via Paystack</p>
           </motion.div>
@@ -392,7 +392,7 @@ export default function SmartUpload({
                       <Loader2 className="animate-spin" size={20} />
                     ) : (
                       <>
-                        <DollarSign size={20} />
+                        <span className="text-lg font-bold">₦</span>
                         Pay ₦{price.toLocaleString()} & Publish
                       </>
                     )}

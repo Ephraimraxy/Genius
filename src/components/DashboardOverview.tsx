@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, GraduationCap, TrendingUp, Users, DollarSign, ShieldCheck, Eye, User } from 'lucide-react';
+import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, GraduationCap, TrendingUp, Users, ShieldCheck, Eye, User } from 'lucide-react';
 import { Tab } from '../App';
 
 export default function DashboardOverview({ onNavigate, profile, setActivePaperId }: { onNavigate: (tab: Tab) => void, profile: any, setActivePaperId: (id: number) => void }) {

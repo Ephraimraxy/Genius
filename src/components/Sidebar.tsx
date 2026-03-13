@@ -188,14 +188,14 @@ export default function Sidebar({
               ${isAdmin ? 'bg-gradient-to-br from-amber-600 to-[#800000] border-amber-700' : 'bg-slate-700 border-slate-600'}
               ${isCollapsed ? 'w-10 h-10' : 'w-11 h-11'}
             `}>
-              {(profile?.user?.name || profile?.user?.email || 'U').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() || 'U'}
+              {(profile?.user?.name?.trim() || profile?.user?.email?.trim() || 'S').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
             </div>
             {!isCollapsed && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-white truncate group-hover:text-white transition-colors">
-                  {profile?.user?.name || profile?.user?.email || 'Loading...'}
+                  {profile?.user?.name?.trim() || profile?.user?.email?.trim() || 'Verified Scholar'}
                 </p>
-                <p className="text-[10px] text-slate-500 truncate mb-1">{profile?.user?.email}</p>
+                <p className="text-[10px] text-slate-500 truncate mb-1">{profile?.user?.email || 'Connected'}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className={`text-[10px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded-md ${isAdmin ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}`}>
                     {isAdmin ? 'Admin' : 'Researcher'}

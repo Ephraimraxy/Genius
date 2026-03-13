@@ -308,33 +308,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 });
 
-// Profile Editing
-app.put('/api/profile', authenticateToken, async (req: any, res) => {
-  try {
-    const { name, affiliation, interests } = req.body;
-    
-    // Update user table
-    if (name || affiliation !== undefined) {
-      await pool.query(
-        'UPDATE users SET name = COALESCE($1, name), affiliation = COALESCE($2, affiliation) WHERE id = $3',
-        [name, affiliation, req.user.id]
-      );
-    }
-    
-    // Update profiles table (interests inside metrics JSON)
-    if (interests && Array.isArray(interests)) {
-      const profileRes = await pool.query('SELECT metrics FROM profiles WHERE user_id = $1', [req.user.id]);
-      let metrics = profileRes.rows[0]?.metrics || { citations: 0, hIndex: 0, i10Index: 0 };
-      metrics.interests = interests;
-      
-      await pool.query('UPDATE profiles SET metrics = $1 WHERE user_id = $2', [JSON.stringify(metrics), req.user.id]);
-    }
-    
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update profile' });
-  }
-});
+
 
 // GROBID Parsing Function
 async function parseWithGrobid(buffer: Buffer): Promise<any> {
