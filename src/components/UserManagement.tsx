@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Users, Search, ShieldCheck, UserCheck, UserX, Mail, Building2, Calendar, ChevronDown, Filter, RefreshCw } from 'lucide-react';
+import { Users, Search, ShieldCheck, UserCheck, UserX, Mail, Building2, Calendar, ChevronDown, Filter, RefreshCw, Edit2, Trash2, X, MessageSquare, Save } from 'lucide-react';
 
 interface User {
   id: number;
@@ -11,12 +11,15 @@ interface User {
   created_at: string;
 }
 
-export default function UserManagement() {
+export default function UserManagement({ addToast, onOpenChat }: { addToast?: (msg: string, type?: string) => void, onOpenChat?: (userId: number) => void }) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'user' | 'admin'>('all');
-  const [changingRole, setChangingRole] = useState<number | null>(null);
+  
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState<number | null>(null);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -35,22 +38,54 @@ export default function UserManagement() {
 
   useEffect(() => { fetchUsers(); }, []);
 
-  const handleRoleChange = async (userId: number, newRole: string) => {
-    setChangingRole(userId);
+  const handleSaveEdit = async () => {
+    if (!editingUser) return;
+    setIsSaving(true);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`/api/admin/users/${userId}/role`, {
+      const res = await fetch(`/api/admin/users/${editingUser.id}`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: newRole })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          name: editingUser.name,
+          email: editingUser.email,
+          role: editingUser.role,
+          affiliation: editingUser.affiliation
+        })
       });
-      if (res.ok) {
-        setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
-      }
-    } catch (err) {
-      console.error('Failed to update role', err);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+      
+      setUsers(prev => prev.map(u => u.id === editingUser.id ? data.user : u));
+      setEditingUser(null);
+      if (addToast) addToast('User updated successfully', 'success');
+    } catch (err: any) {
+      if (addToast) addToast(err.message, 'error');
+    } finally {
+      setIsSaving(false);
     }
-    setChangingRole(null);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Are you sure you want to permanently delete this user? This action cannot be undone and will remove all their papers and data.')) return;
+    setIsDeleting(id);
+    try {
+      const res = await fetch(`/api/admin/users/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete user');
+      
+      setUsers(prev => prev.filter(u => u.id !== id));
+      if (addToast) addToast('User deleted successfully', 'success');
+    } catch (err: any) {
+      if (addToast) addToast(err.message, 'error');
+    } finally {
+      setIsDeleting(null);
+    }
   };
 
   const filtered = users.filter(u => {
@@ -146,7 +181,7 @@ export default function UserManagement() {
                 </td></tr>
               ) : filtered.map((user) => (
                 <motion.tr key={user.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                  className="hover:bg-slate-50/50 transition-colors">
+                  className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm ${user.role === 'admin' ? 'bg-gradient-to-br from-slate-900 to-[#800000] text-white' : 'bg-slate-100 text-slate-600'}`}>
@@ -172,17 +207,30 @@ export default function UserManagement() {
                     </span>
                   </td>
                   <td className="px-8 py-5">
-                    <button
-                      onClick={() => handleRoleChange(user.id, user.role === 'admin' ? 'user' : 'admin')}
-                      disabled={changingRole === user.id}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                        user.role === 'admin'
-                          ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600 border border-slate-200'
-                          : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
-                      } ${changingRole === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      {changingRole === user.id ? 'Updating...' : user.role === 'admin' ? 'Demote' : 'Promote'}
-                    </button>
+                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => onOpenChat?.(user.id)}
+                        className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                        title="Message User"
+                      >
+                        <MessageSquare size={16} />
+                      </button>
+                      <button
+                        onClick={() => setEditingUser(user)}
+                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-xl transition-all"
+                        title="Edit User"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(user.id)}
+                        disabled={isDeleting === user.id}
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all disabled:opacity-50"
+                        title="Delete User"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </motion.tr>
               ))}
@@ -190,6 +238,88 @@ export default function UserManagement() {
           </table>
         </div>
       </div>
+
+      {/* Edit User Modal */}
+      <AnimatePresence>
+        {editingUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100"
+            >
+              <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
+                  <Edit2 size={18} className="text-indigo-600" />
+                  Edit User Details
+                </h3>
+                <button onClick={() => setEditingUser(null)} className="p-2 text-slate-400 hover:bg-slate-200 rounded-xl transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Full Name</label>
+                  <input
+                    type="text"
+                    value={editingUser.name}
+                    onChange={e => setEditingUser({ ...editingUser, name: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Email Address</label>
+                  <input
+                    type="email"
+                    value={editingUser.email}
+                    onChange={e => setEditingUser({ ...editingUser, email: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Affiliation</label>
+                  <input
+                    type="text"
+                    value={editingUser.affiliation || ''}
+                    onChange={e => setEditingUser({ ...editingUser, affiliation: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Role Status</label>
+                  <select
+                    value={editingUser.role}
+                    onChange={e => setEditingUser({ ...editingUser, role: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+                  >
+                    <option value="user">Researcher</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="px-8 py-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                <button
+                  onClick={() => setEditingUser(null)}
+                  className="px-6 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={isSaving}
+                  className="px-6 py-2.5 text-sm font-bold text-white premium-gradient rounded-xl shadow-lg shadow-[#800000]/20 hover:scale-105 transition-all disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isSaving ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
+                  Save Changes
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

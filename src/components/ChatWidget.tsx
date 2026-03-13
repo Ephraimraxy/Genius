@@ -11,36 +11,61 @@ import {
   Headset
 } from 'lucide-react';
 
-export default function ChatWidget({ profile }: { profile: any }) {
+export default function ChatWidget({ profile, forcedOpenThread = null }: { profile: any, forcedOpenThread?: number | null }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
+  const [inbox, setInbox] = useState<any[]>([]);
+  const [activeThread, setActiveThread] = useState<number | null>(null);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   
   const isAdmin = profile?.user?.role === 'admin';
 
+  // Force open chat when clicking "Message User" from UserManagement
+  useEffect(() => {
+    if (forcedOpenThread) {
+      setIsOpen(true);
+      setActiveThread(forcedOpenThread);
+    }
+  }, [forcedOpenThread]);
+
+  // Handle polling based on active view
   useEffect(() => {
     if (isOpen) {
-      fetchHistory();
-      const interval = setInterval(fetchHistory, 5000); // Poll for new messages
+      fetchData();
+      const interval = setInterval(fetchData, 5000); 
       return () => clearInterval(interval);
     }
-  }, [isOpen]);
+  }, [isOpen, activeThread]);
 
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (activeThread || !isAdmin) {
+      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, activeThread, isOpen]);
 
-  const fetchHistory = async () => {
+  const fetchData = async () => {
     try {
-      const response = await fetch('/api/chat/history', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      const token = localStorage.getItem('token');
+      // If Admin and NO active thread -> Fetch Inbox
+      // If Admin and HAS active thread -> Fetch Thread
+      // If normal user -> Fetch Thread automatically
+      
+      const endpoint = (isAdmin && !activeThread) ? '/api/chat/inbox' : `/api/chat/history${activeThread ? `?userId=${activeThread}` : ''}`;
+      
+      const response = await fetch(endpoint, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      setMessages(data);
+      
+      if (isAdmin && !activeThread) {
+        setInbox(data);
+      } else {
+        setMessages(data);
+      }
     } catch (err) {
-      console.error('Failed to fetch chat history');
+      console.error('Failed to fetch chat data');
     }
   };
 
@@ -59,11 +84,14 @@ export default function ChatWidget({ profile }: { profile: any }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ content: userMessage })
+        body: JSON.stringify({ 
+          content: userMessage,
+          targetUserId: isAdmin ? activeThread : undefined
+        })
       });
       
-      const data = await response.json();
-      fetchHistory();
+      await response.json();
+      fetchData();
     } catch (err) {
       console.error('Failed to send message');
     } finally {
@@ -82,81 +110,135 @@ export default function ChatWidget({ profile }: { profile: any }) {
             className="absolute bottom-20 right-0 w-[400px] h-[600px] bg-white rounded-[2.5rem] shadow-2xl shadow-[#800000]/20 border border-slate-100 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="p-6 premium-gradient text-white flex items-center justify-between shrink-0">
+            <div className={`p-6 ${isAdmin ? 'bg-gradient-to-br from-slate-900 to-[#800000]' : 'premium-gradient'} text-white flex items-center justify-between shrink-0`}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md">
-                  <Headset size={20} />
-                </div>
+                {isAdmin && activeThread ? (
+                  <button onClick={() => setActiveThread(null)} className="p-2 hover:bg-white/10 rounded-lg transition-colors -ml-2">
+                    <X size={20} className="rotate-45" /> {/* Back icon hack */}
+                  </button>
+                ) : (
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md">
+                    {isAdmin ? <ShieldCheck size={20} /> : <Headset size={20} />}
+                  </div>
+                )}
                 <div>
-                  <h4 className="font-black text-sm tracking-tight text-white">Genius Mindspark Support</h4>
+                  <h4 className="font-black text-sm tracking-tight text-white">
+                    {isAdmin ? (activeThread ? 'User Thread' : 'Admin Inbox') : 'Genius Support'}
+                  </h4>
                   <div className="flex items-center gap-1.5 opacity-80">
                     <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
-                    <span className="text-[10px] font-bold uppercase tracking-widest">Neural AI Active</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">
+                      {isAdmin ? (activeThread ? 'Direct Message' : 'Live System') : 'Online'}
+                    </span>
                   </div>
                 </div>
               </div>
-              <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+              <button 
+                onClick={() => {
+                  setIsOpen(false);
+                  if (isAdmin) setActiveThread(null);
+                }} 
+                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              >
                 <X size={20} />
               </button>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-slate-50/50">
-              {messages.length === 0 && (
-                <div className="h-full flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-16 h-16 bg-[#800000]/5 rounded-full flex items-center justify-center text-[#800000] mb-4">
-                    <Sparkles size={32} />
+            {/* Content Area */}
+            {isAdmin && !activeThread ? (
+              // ADMIN INBOX VIEW
+              <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50">
+                {inbox.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-500">
+                    <MessageCircle size={32} className="opacity-20 mb-2" />
+                    <p className="text-sm font-medium">Inbox is empty</p>
                   </div>
-                  <h5 className="font-black text-slate-900 text-sm mb-2">Neural Intelligence Ready</h5>
-                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                    Welcome! How can we assist your research journey today? Our AI or admin will respond shortly.
-                  </p>
-                </div>
-              )}
-              
-              {messages.map((m, i) => (
-                <div key={i} className={`flex ${m.sender_role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] p-4 rounded-2xl text-xs font-medium leading-relaxed shadow-sm ${
-                    m.sender_role === 'user' 
-                      ? 'bg-[#800000] text-white rounded-tr-none' 
-                      : m.sender_role === 'ai'
-                        ? 'bg-amber-100 text-amber-900 border border-amber-200 rounded-tl-none'
-                        : 'bg-white text-slate-700 border border-slate-100 rounded-tl-none'
-                  }`}>
-                    {m.sender_role !== 'user' && (
-                      <div className="flex items-center gap-1.5 mb-1.5 opacity-60">
-                        {m.sender_role === 'ai' ? <Sparkles size={10} /> : <ShieldCheck size={10} />}
-                        <span className="text-[9px] font-black uppercase tracking-widest">
-                          {m.sender_role === 'ai' ? 'Neural AI' : 'Admin'}
-                        </span>
+                ) : (
+                  inbox.map((thread) => (
+                    <button 
+                      key={thread.user_id}
+                      onClick={() => setActiveThread(thread.user_id)}
+                      className="w-full text-left p-4 bg-white rounded-2xl border border-slate-100 hover:border-indigo-200 hover:shadow-md transition-all flex items-start gap-3"
+                    >
+                      <div className="w-10 h-10 shrink-0 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center font-bold text-sm">
+                        {thread.user_name?.[0]?.toUpperCase() || 'U'}
                       </div>
-                    )}
-                    {m.content}
-                  </div>
-                </div>
-              ))}
-              <div ref={scrollRef}></div>
-            </div>
-
-            {/* Input */}
-            <form onSubmit={handleSend} className="p-4 border-t border-slate-100 bg-white">
-              <div className="flex items-center gap-2 bg-slate-50 rounded-2xl p-2 border border-slate-100 focus-within:ring-2 focus-within:ring-[#800000]/10 transition-all">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Type a message..."
-                  className="flex-1 bg-transparent border-none outline-none px-4 text-xs font-medium text-slate-900 placeholder:text-slate-400"
-                />
-                <button 
-                  type="submit"
-                  disabled={loading || !input.trim()}
-                  className="p-3 premium-gradient text-white rounded-xl shadow-lg shadow-[#800000]/20 hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100"
-                >
-                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-bold text-slate-900 text-sm truncate">{thread.user_name || thread.user_email}</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            {new Date(thread.last_message_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 truncate font-medium">{thread.last_message}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
-            </form>
+            ) : (
+              // THREAD / CHAT VIEW
+              <>
+                <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-slate-50/50">
+                  {messages.length === 0 && (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                      <div className="w-16 h-16 bg-[#800000]/5 rounded-full flex items-center justify-center text-[#800000] mb-4">
+                        <MessageCircle size={32} />
+                      </div>
+                      <h5 className="font-black text-slate-900 text-sm mb-2">{isAdmin ? 'Start Conversation' : 'How can we help?'}</h5>
+                      <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                        {isAdmin ? 'Send a message to this user directly.' : 'Send us a message and an admin will respond shortly.'}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {messages.map((m, i) => {
+                    // Determine if the message should appear on the right side (user's own message)
+                    const isOwnMessage = isAdmin ? m.sender_role === 'admin' : m.sender_role === 'user';
+                    
+                    return (
+                      <div key={i} className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] p-4 rounded-2xl text-xs font-medium leading-relaxed shadow-sm ${
+                          isOwnMessage 
+                            ? (isAdmin ? 'bg-slate-900 text-white rounded-tr-none' : 'bg-[#800000] text-white rounded-tr-none')
+                            : 'bg-white text-slate-700 border border-slate-200 shadow-sm rounded-tl-none'
+                        }`}>
+                          {!isOwnMessage && (
+                            <div className="flex items-center gap-1.5 mb-1.5 opacity-60">
+                              {m.sender_role === 'admin' ? <ShieldCheck size={10} /> : <User size={10} />}
+                              <span className="text-[9px] font-black uppercase tracking-widest">
+                                {m.sender_role === 'admin' ? 'Admin' : m.sender_name || 'User'}
+                              </span>
+                            </div>
+                          )}
+                          {m.content}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={scrollRef}></div>
+                </div>
+
+                <form onSubmit={handleSend} className="p-4 border-t border-slate-100 bg-white shrink-0">
+                  <div className="flex items-center gap-2 bg-slate-50 rounded-2xl p-2 border border-slate-100 focus-within:ring-2 focus-within:ring-[#800000]/10 transition-all">
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Type a message..."
+                      className="flex-1 bg-transparent border-none outline-none px-4 text-xs font-medium text-slate-900 placeholder:text-slate-400"
+                    />
+                    <button 
+                      type="submit"
+                      disabled={loading || !input.trim()}
+                      className={`p-3 text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:scale-100 ${isAdmin ? 'bg-slate-900 hover:scale-105' : 'premium-gradient shadow-[#800000]/20 hover:scale-105'}`}
+                    >
+                      {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

@@ -51,6 +51,7 @@ export default function App() {
   const [showLanding, setShowLanding] = useState(!token);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
+  const [openChatUserId, setOpenChatUserId] = useState<number | null>(null);
   const { toasts, addToast, removeToast } = useToasts();
 
   useEffect(() => {
@@ -114,7 +115,7 @@ export default function App() {
       case 'reviews': return <PeerReviewSimulation activePaperId={activePaperId} />;
       case 'transactions': return <TransactionHistory profile={profile} />;
       case 'records': return <PublicationRecords profile={profile} />;
-      case 'users': return <UserManagement />;
+      case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} />;
       case 'reviewQueue': return <ReviewQueue profile={profile} />;
       case 'settings': return <AdminSettings />;
       case 'profile': return <ProfileView profile={profile} addToast={addToast} onProfileUpdate={() => {
@@ -258,7 +259,7 @@ export default function App() {
           </div>
         </div>
       </main>
-      <ChatWidget profile={profile} />
+      <ChatWidget profile={profile} forcedOpenThread={openChatUserId} />
       <GlobalLoader show={isSyncing} />
       <ToastSystem toasts={toasts} removeToast={removeToast} />
     </div>

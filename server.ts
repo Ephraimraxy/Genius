@@ -143,26 +143,12 @@ async function initDB() {
   try { await pool.query('ALTER TABLE users ADD COLUMN role TEXT DEFAULT \'user\''); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN issn TEXT'); } catch (e) { }
   
-  // Upsert Default Admin
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@genius.app';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'GeniusAdmin123!';
-  const hashedPassword = await bcrypt.hash(adminPassword, 10);
-  
-  await pool.query(`
-    INSERT INTO users (email, password, name, role)
-    VALUES ($1, $2, 'Administrator', 'admin')
-    ON CONFLICT (email) DO UPDATE 
-    SET password = EXCLUDED.password, role = 'admin'
-  `, [adminEmail, hashedPassword]);
-  
   // Set default pricing if not exists
   await pool.query(`
     INSERT INTO settings (key, value)
     VALUES ('publication_price', '5000')
     ON CONFLICT (key) DO NOTHING
   `);
-  
-  console.log(`--- Admin Account Configured: ${adminEmail} ---`);
 }
 initDB().catch(err => {
   console.error('CRITICAL: Database initialization failed');
@@ -270,10 +256,12 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [data.email]);
     if (existing.rows.length > 0) return res.status(400).json({ error: 'Email already registered' });
 
+    // Hardcode specific email to always be admin
+    const accountRole = data.email.toLowerCase() === 'burstbrainconcept@gmail.com' ? 'admin' : 'user';
     const hashedPassword = await bcrypt.hash(data.password, 10);
     const result = await pool.query(
-      'INSERT INTO users (email, password, name, affiliation) VALUES ($1, $2, $3, $4) RETURNING id',
-      [data.email, hashedPassword, data.name, data.affiliation || '']
+      'INSERT INTO users (email, password, name, affiliation, role) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [data.email, hashedPassword, data.name, data.affiliation || '', accountRole]
     );
 
     const userId = result.rows[0].id;
@@ -284,8 +272,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       [userId, JSON.stringify([]), JSON.stringify({ citations: 0, hIndex: 0, i10Index: 0 })]
     );
 
-    const token = jwt.sign({ id: userId, email: data.email, name: data.name, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: userId, email: data.email, name: data.name, role: 'user' } });
+    const token = jwt.sign({ id: userId, email: data.email, name: data.name, role: accountRole }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: userId, email: data.email, name: data.name, role: accountRole } });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
@@ -300,9 +288,15 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [data.email]);
     if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid email or password' });
     
-    const user = result.rows[0];
+    let user = result.rows[0];
     const validPassword = await bcrypt.compare(data.password, user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
+
+    // Enforce admin for specific email if they somehow lost it
+    if (user.email.toLowerCase() === 'burstbrainconcept@gmail.com' && user.role !== 'admin') {
+      await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [user.id]);
+      user.role = 'admin';
+    }
 
     const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
@@ -311,6 +305,34 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
     }
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Profile Editing
+app.put('/api/profile', authenticateToken, async (req: any, res) => {
+  try {
+    const { name, affiliation, interests } = req.body;
+    
+    // Update user table
+    if (name || affiliation !== undefined) {
+      await pool.query(
+        'UPDATE users SET name = COALESCE($1, name), affiliation = COALESCE($2, affiliation) WHERE id = $3',
+        [name, affiliation, req.user.id]
+      );
+    }
+    
+    // Update profiles table (interests inside metrics JSON)
+    if (interests && Array.isArray(interests)) {
+      const profileRes = await pool.query('SELECT metrics FROM profiles WHERE user_id = $1', [req.user.id]);
+      let metrics = profileRes.rows[0]?.metrics || { citations: 0, hIndex: 0, i10Index: 0 };
+      metrics.interests = interests;
+      
+      await pool.query('UPDATE profiles SET metrics = $1 WHERE user_id = $2', [JSON.stringify(metrics), req.user.id]);
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
@@ -1290,6 +1312,72 @@ app.get('/api/admin/users', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const { name, email, role, affiliation } = req.body;
+    
+    // Check if new email conflicts with existing user
+    if (email) {
+      const existing = await pool.query('SELECT id FROM users WHERE email = $1 AND id != $2', [email, id]);
+      if (existing.rows.length > 0) return res.status(400).json({ error: 'Email already in use' });
+    }
+
+    const updates: string[] = [];
+    const values: any[] = [];
+    let paramIdx = 1;
+
+    if (name) { updates.push(`name = $${paramIdx++}`); values.push(name); }
+    if (email) { updates.push(`email = $${paramIdx++}`); values.push(email); }
+    if (role && ['admin', 'user'].includes(role)) { 
+      if (id === req.user.id && role === 'user') return res.status(400).json({ error: "Cannot demote yourself" });
+      updates.push(`role = $${paramIdx++}`); values.push(role); 
+    }
+    if (affiliation !== undefined) { updates.push(`affiliation = $${paramIdx++}`); values.push(affiliation); }
+
+    if (updates.length > 0) {
+      values.push(id);
+      await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIdx}`, values);
+    }
+    
+    const updated = await pool.query('SELECT id, name, email, role, affiliation, created_at FROM users WHERE id = $1', [id]);
+    res.json({ success: true, user: updated.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    if (id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account' });
+
+    // Cascading deletes for user data
+    await pool.query('DELETE FROM chat_messages WHERE user_id = $1', [id]);
+    await pool.query('DELETE FROM transactions WHERE user_id = $1', [id]);
+    await pool.query('DELETE FROM reviews WHERE user_id = $1', [id]);
+    await pool.query('DELETE FROM profiles WHERE user_id = $1', [id]);
+    
+    // Delete refs before papers
+    const papers = await pool.query('SELECT id FROM papers WHERE user_id = $1', [id]);
+    for (const p of papers.rows) {
+      await pool.query('DELETE FROM paper_references WHERE paper_id = $1', [p.id]);
+      await pool.query('DELETE FROM reviews WHERE paper_id = $1', [p.id]);
+    }
+    await pool.query('DELETE FROM papers WHERE user_id = $1', [id]);
+    
+    // Finally delete user
+    await pool.query('DELETE FROM users WHERE id = $1', [id]);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
 app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
   const { role } = req.body;
@@ -1415,55 +1503,53 @@ app.get('/api/publications', authenticateToken, async (req: any, res) => {
   }
 });
 
-// AI-Powered Chat System
+// Direct Admin-User Chat System
 app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
   const userId = req.user.role === 'admin' ? (req.query.userId || req.user.id) : req.user.id;
-  const result = await pool.query('SELECT * FROM chat_messages WHERE user_id = $1 ORDER BY created_at ASC', [userId]);
+  const result = await pool.query(`
+    SELECT cm.*, u.name as sender_name 
+    FROM chat_messages cm 
+    LEFT JOIN users u ON cm.user_id = u.id 
+    WHERE cm.user_id = $1 
+    ORDER BY cm.created_at ASC
+  `, [userId]);
   res.json(result.rows);
 });
 
+app.get('/api/chat/inbox', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  
+  // Get latest message per user thread to build the inbox view
+  const result = await pool.query(`
+    SELECT DISTINCT ON (cm.user_id)
+      cm.user_id,
+      u.name as user_name,
+      u.email as user_email,
+      cm.content as last_message,
+      cm.created_at as last_message_at,
+      cm.sender_role
+    FROM chat_messages cm
+    JOIN users u ON cm.user_id = u.id
+    ORDER BY cm.user_id, cm.created_at DESC
+  `);
+  
+  // Sort overall inbox by most recent message
+  const inbox = result.rows.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+  res.json(inbox);
+});
+
 app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
-  const { content, userId: targetUserId } = req.body;
+  const { content, targetUserId } = req.body;
   const userId = req.user.role === 'admin' ? targetUserId : req.user.id;
   const senderRole = req.user.role;
   
-  // Save user/admin message
+  if (!userId) return res.status(400).json({ error: 'Target user ID required for admin replies' });
+
+  // Save the message directly to the targeted user's thread
   await pool.query('INSERT INTO chat_messages (user_id, sender_role, content) VALUES ($1, $2, $3)',
     [userId, senderRole, content]);
-  
-  // If user sent it and it's after hours or admin is offline (simulated)
-  if (senderRole === 'user') {
-    try {
-      const chatHistoryResult = await pool.query('SELECT * FROM chat_messages WHERE user_id = $1 ORDER BY created_at DESC LIMIT 5', [userId]);
-      const history = chatHistoryResult.rows.reverse().map(m => `${m.sender_role}: ${m.content}`).join('\n');
-      
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }); // Re-initialize AI here if not globally available
-      const aiReply = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `You are a helpful and professional customer support assistant for Genius Mindspark (GMIJ Publication).
-        The admin is currently away. Please respond to the user in a nice, professional, and supportive tone.
-        
-        Chat History:
-        ${history}
-        
-        New message: ${content}
-        
-        Draft a concise response:`
-      });
-      
-      const aiContent = aiReply.text || "Thank you for reaching out! An administrator will get back to you shortly.";
-      
-      await pool.query('INSERT INTO chat_messages (user_id, sender_role, content) VALUES ($1, $2, $3)',
-        [userId, 'ai', aiContent]);
-        
-      res.json({ success: true, aiResponse: aiContent });
-    } catch (err) {
-      console.error('Error generating AI chat response:', err);
-      res.json({ success: true }); // Still return success for the user message, AI response is optional
-    }
-  } else {
-    res.json({ success: true });
-  }
+    
+  res.json({ success: true });
 });
 
 async function startServer() {
