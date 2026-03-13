@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Users, Search, ShieldCheck, UserCheck, UserX, Mail, Building2, Calendar, ChevronDown, Filter, RefreshCw, Edit2, Trash2, X, MessageSquare, Save } from 'lucide-react';
+import { Users, Search, ShieldCheck, UserCheck, UserX, Mail, Building2, Calendar, ChevronDown, Filter, RefreshCw, Edit2, Trash2, X, MessageSquare, Save, KeyRound, Lock, CheckCircle } from 'lucide-react';
 
 interface User {
   id: number;
@@ -20,6 +20,9 @@ export default function UserManagement({ addToast, onOpenChat }: { addToast?: (m
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState<number | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [isResettingPw, setIsResettingPw] = useState(false);
+  const [pwResetSuccess, setPwResetSuccess] = useState('');
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -85,6 +88,31 @@ export default function UserManagement({ addToast, onOpenChat }: { addToast?: (m
       if (addToast) addToast(err.message, 'error');
     } finally {
       setIsDeleting(null);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!editingUser || resetPassword.length < 6) return;
+    setIsResettingPw(true);
+    setPwResetSuccess('');
+    try {
+      const res = await fetch(`/api/admin/users/${editingUser.id}/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ newPassword: resetPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+      setPwResetSuccess(`Password updated for ${editingUser.email}`);
+      setResetPassword('');
+      if (addToast) addToast(`Password reset for ${editingUser.email}`, 'success');
+    } catch (err: any) {
+      if (addToast) addToast(err.message, 'error');
+    } finally {
+      setIsResettingPw(false);
     }
   };
 
@@ -297,6 +325,40 @@ export default function UserManagement({ addToast, onOpenChat }: { addToast?: (m
                     <option value="user">Researcher</option>
                     <option value="admin">Administrator</option>
                   </select>
+                </div>
+
+                {/* Security / Password Reset Section */}
+                <div className="border-t border-slate-100 pt-4">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                    <KeyRound size={12} /> Security / Password Reset
+                  </label>
+                  {pwResetSuccess && (
+                    <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
+                      <CheckCircle size={14} className="text-emerald-600" />
+                      <span className="text-xs font-bold text-emerald-700">{pwResetSuccess}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                      <input
+                        type="text"
+                        value={resetPassword}
+                        onChange={e => setResetPassword(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-400 transition-all outline-none text-slate-700"
+                        placeholder="New temporary password"
+                      />
+                    </div>
+                    <button
+                      onClick={handleResetPassword}
+                      disabled={isResettingPw || resetPassword.length < 6}
+                      className="px-4 py-2.5 text-xs font-bold text-white bg-rose-600 rounded-xl hover:bg-rose-500 transition-all disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
+                    >
+                      {isResettingPw ? <RefreshCw size={12} className="animate-spin" /> : <KeyRound size={12} />}
+                      Override
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2">Min 6 characters. Share this temporary password with the user directly.</p>
                 </div>
               </div>
 

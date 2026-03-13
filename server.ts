@@ -16,6 +16,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import nodemailer from 'nodemailer';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -308,7 +309,110 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 });
 
+// ─── PASSWORD RESET SYSTEM ──────────────────────────────────────────
+const resetCodes = new Map<string, { code: string; expires: number }>();
 
+// Configure email transporter (uses Gmail App Password or any SMTP)
+const mailTransporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com',
+    pass: process.env.SMTP_PASSWORD || '' // Gmail App Password required
+  }
+});
+
+// User-facing: Request a reset code via email
+app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    const result = await pool.query('SELECT id, email, name FROM users WHERE email = $1', [email.toLowerCase()]);
+    // Always respond with success to avoid email enumeration
+    if (result.rows.length === 0) {
+      return res.json({ success: true, message: 'If an account with that email exists, a reset code has been sent.' });
+    }
+
+    const user = result.rows[0];
+    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
+    resetCodes.set(email.toLowerCase(), { code, expires: Date.now() + 15 * 60 * 1000 }); // 15 min expiry
+
+    // Attempt to send email
+    try {
+      await mailTransporter.sendMail({
+        from: `"Genius Portal" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
+        to: email,
+        subject: 'Your Genius Portal Password Reset Code',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 16px;">
+            <h2 style="color: #0f172a; margin-bottom: 10px;">Password Reset</h2>
+            <p style="color: #64748b;">Hi ${user.name || 'there'},</p>
+            <p style="color: #64748b;">Your password reset code is:</p>
+            <div style="background: #800000; color: white; font-size: 32px; font-weight: bold; text-align: center; padding: 20px; border-radius: 12px; letter-spacing: 8px; margin: 20px 0;">
+              ${code}
+            </div>
+            <p style="color: #64748b; font-size: 13px;">This code expires in 15 minutes. If you didn't request this, please ignore this email.</p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+            <p style="color: #94a3b8; font-size: 11px; text-align: center;">Genius Portal &copy; 2026</p>
+          </div>
+        `
+      });
+      res.json({ success: true, message: 'If an account with that email exists, a reset code has been sent.' });
+    } catch (emailError) {
+      console.error('Email send failed:', emailError);
+      // Still store the code so admin can relay it if needed
+      res.json({ success: true, message: 'If an account with that email exists, a reset code has been sent.', emailNote: 'Email delivery may be delayed. Contact admin if you don\'t receive it.' });
+    }
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+// User-facing: Verify code and set new password
+app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) return res.status(400).json({ error: 'All fields are required' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    const stored = resetCodes.get(email.toLowerCase());
+    if (!stored || stored.code !== code) return res.status(400).json({ error: 'Invalid reset code' });
+    if (Date.now() > stored.expires) {
+      resetCodes.delete(email.toLowerCase());
+      return res.status(400).json({ error: 'Reset code has expired. Please request a new one.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const result = await pool.query('UPDATE users SET password = $1 WHERE email = $2 RETURNING id', [hashedPassword, email.toLowerCase()]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+    resetCodes.delete(email.toLowerCase());
+    res.json({ success: true, message: 'Password reset successfully. You can now log in.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// Admin-only: Force override a user's password
+app.post('/api/admin/users/:id/reset-password', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const result = await pool.query('UPDATE users SET password = $1 WHERE id = $2 RETURNING id, email, name', [hashedPassword, parseInt(id)]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+    res.json({ success: true, message: `Password for ${result.rows[0].email} has been reset.` });
+  } catch (error) {
+    console.error('Admin reset password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
 
 // GROBID Parsing Function
 async function parseWithGrobid(buffer: Buffer): Promise<any> {

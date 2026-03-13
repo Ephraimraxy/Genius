@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, GraduationCap, ShieldCheck } from 'lucide-react';
+import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, GraduationCap, ShieldCheck, ArrowLeft, KeyRound, CheckCircle } from 'lucide-react';
 
 import { ToastType } from './ToastSystem';
 
@@ -17,6 +17,14 @@ export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
     const [affiliation, setAffiliation] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    // Forgot password states
+    const [forgotMode, setForgotMode] = useState<'off' | 'choose' | 'email' | 'code' | 'admin' | 'success'>('off');
+    const [resetEmail, setResetEmail] = useState('');
+    const [resetCode, setResetCode] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [resetLoading, setResetLoading] = useState(false);
+    const [resetMessage, setResetMessage] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -51,6 +59,59 @@ export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleRequestCode = async () => {
+        setResetLoading(true);
+        setError('');
+        try {
+            const res = await fetch('/api/auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: resetEmail })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setForgotMode('code');
+                setResetMessage('A 6-digit code has been sent to your email. Check your inbox (and spam folder).');
+            } else {
+                setError(data.error || 'Failed to send reset code');
+            }
+        } catch (err) {
+            setError('Network error. Please try again.');
+        }
+        setResetLoading(false);
+    };
+
+    const handleVerifyCode = async () => {
+        setResetLoading(true);
+        setError('');
+        try {
+            const res = await fetch('/api/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: resetEmail, code: resetCode, newPassword })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setForgotMode('success');
+                setResetMessage('Password reset successfully! You can now log in with your new password.');
+            } else {
+                setError(data.error || 'Failed to reset password');
+            }
+        } catch (err) {
+            setError('Network error. Please try again.');
+        }
+        setResetLoading(false);
+    };
+
+    const exitForgotMode = () => {
+        setForgotMode('off');
+        setResetEmail('');
+        setResetCode('');
+        setNewPassword('');
+        setResetMessage('');
+        setError('');
     };
 
     return (
@@ -183,11 +244,200 @@ export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
                         </motion.button>
                     </form>
 
+                    {/* Forgot Password Link (Login mode only) */}
+                    {isLogin && forgotMode === 'off' && (
+                        <div className="mt-4 text-center">
+                            <button
+                                onClick={() => setForgotMode('choose')}
+                                className="text-slate-400 hover:text-[#ff4d4d] text-xs font-bold transition-colors underline underline-offset-4"
+                            >
+                                Forgot Password?
+                            </button>
+                        </div>
+                    )}
+
+                    {/* ─── FORGOT PASSWORD FLOW ─── */}
+                    <AnimatePresence mode="wait">
+                        {forgotMode === 'choose' && (
+                            <motion.div
+                                key="choose"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="mt-6 p-6 bg-white/5 border border-white/10 rounded-2xl space-y-4"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-white font-bold text-sm">Reset Your Password</h3>
+                                    <button onClick={exitForgotMode} className="text-slate-400 hover:text-white transition-colors">
+                                        <ArrowLeft size={16} />
+                                    </button>
+                                </div>
+                                <p className="text-slate-400 text-xs">Choose how you'd like to reset your password:</p>
+                                <button
+                                    onClick={() => setForgotMode('email')}
+                                    className="w-full flex items-center gap-3 p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-left group"
+                                >
+                                    <div className="p-2 bg-[#800000]/20 rounded-lg"><Mail size={18} className="text-[#ff4d4d]" /></div>
+                                    <div>
+                                        <p className="text-white font-bold text-sm">Email Reset Code</p>
+                                        <p className="text-slate-500 text-[10px] font-medium">Receive a 6-digit code in your inbox</p>
+                                    </div>
+                                    <ArrowRight size={14} className="text-slate-500 ml-auto group-hover:text-white transition-colors" />
+                                </button>
+                                <button
+                                    onClick={() => setForgotMode('admin')}
+                                    className="w-full flex items-center gap-3 p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-left group"
+                                >
+                                    <div className="p-2 bg-amber-500/20 rounded-lg"><ShieldCheck size={18} className="text-amber-400" /></div>
+                                    <div>
+                                        <p className="text-white font-bold text-sm">Contact Admin</p>
+                                        <p className="text-slate-500 text-[10px] font-medium">Lost email access? Admin can reset it for you</p>
+                                    </div>
+                                    <ArrowRight size={14} className="text-slate-500 ml-auto group-hover:text-white transition-colors" />
+                                </button>
+                            </motion.div>
+                        )}
+
+                        {forgotMode === 'email' && (
+                            <motion.div
+                                key="email"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="mt-6 p-6 bg-white/5 border border-white/10 rounded-2xl space-y-4"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-white font-bold text-sm flex items-center gap-2"><KeyRound size={16} className="text-[#ff4d4d]" /> Email Reset</h3>
+                                    <button onClick={() => setForgotMode('choose')} className="text-slate-400 hover:text-white transition-colors">
+                                        <ArrowLeft size={16} />
+                                    </button>
+                                </div>
+                                <p className="text-slate-400 text-xs">Enter your registered email to receive a 6-digit reset code.</p>
+                                <div className="relative group">
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <input
+                                        type="email"
+                                        value={resetEmail}
+                                        onChange={(e) => setResetEmail(e.target.value)}
+                                        className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-[#800000] outline-none text-white text-sm placeholder:text-slate-500"
+                                        placeholder="Your email address"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleRequestCode}
+                                    disabled={resetLoading || !resetEmail}
+                                    className="w-full bg-[#800000] text-white font-bold py-3 rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {resetLoading ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
+                                    Send Reset Code
+                                </button>
+                            </motion.div>
+                        )}
+
+                        {forgotMode === 'code' && (
+                            <motion.div
+                                key="code"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="mt-6 p-6 bg-white/5 border border-white/10 rounded-2xl space-y-4"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-white font-bold text-sm flex items-center gap-2"><KeyRound size={16} className="text-[#ff4d4d]" /> Enter Reset Code</h3>
+                                    <button onClick={() => setForgotMode('email')} className="text-slate-400 hover:text-white transition-colors">
+                                        <ArrowLeft size={16} />
+                                    </button>
+                                </div>
+                                {resetMessage && <p className="text-emerald-400 text-xs font-medium bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20">{resetMessage}</p>}
+                                <div className="relative group">
+                                    <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <input
+                                        type="text"
+                                        value={resetCode}
+                                        onChange={(e) => setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                        className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-[#800000] outline-none text-white text-sm placeholder:text-slate-500 tracking-[0.3em] text-center font-bold text-lg"
+                                        placeholder="000000"
+                                        maxLength={6}
+                                    />
+                                </div>
+                                <div className="relative group">
+                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <input
+                                        type="password"
+                                        value={newPassword}
+                                        onChange={(e) => setNewPassword(e.target.value)}
+                                        className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-[#800000] outline-none text-white text-sm placeholder:text-slate-500"
+                                        placeholder="New password (min 6 characters)"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleVerifyCode}
+                                    disabled={resetLoading || resetCode.length !== 6 || newPassword.length < 6}
+                                    className="w-full bg-[#800000] text-white font-bold py-3 rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {resetLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                                    Reset Password
+                                </button>
+                            </motion.div>
+                        )}
+
+                        {forgotMode === 'admin' && (
+                            <motion.div
+                                key="admin"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="mt-6 p-6 bg-white/5 border border-white/10 rounded-2xl space-y-4"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-white font-bold text-sm flex items-center gap-2"><ShieldCheck size={16} className="text-amber-400" /> Contact Admin</h3>
+                                    <button onClick={() => setForgotMode('choose')} className="text-slate-400 hover:text-white transition-colors">
+                                        <ArrowLeft size={16} />
+                                    </button>
+                                </div>
+                                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-2">
+                                    <p className="text-amber-300 text-xs font-bold">Lost access to your email?</p>
+                                    <p className="text-slate-400 text-xs leading-relaxed">
+                                        Contact the platform administrator to verify your identity and receive a temporary password override.
+                                    </p>
+                                    <div className="mt-3 p-3 bg-white/5 rounded-lg">
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Admin Email</p>
+                                        <a href="mailto:burstbrainconcept@gmail.com" className="text-[#ff4d4d] text-sm font-bold hover:underline">
+                                            burstbrainconcept@gmail.com
+                                        </a>
+                                    </div>
+                                    <p className="text-slate-500 text-[10px] mt-2">
+                                        Once the admin resets your password, return here and log in with the temporary password provided.
+                                    </p>
+                                </div>
+                            </motion.div>
+                        )}
+
+                        {forgotMode === 'success' && (
+                            <motion.div
+                                key="success"
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="mt-6 p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-center space-y-3"
+                            >
+                                <CheckCircle size={36} className="text-emerald-400 mx-auto" />
+                                <p className="text-emerald-300 font-bold text-sm">{resetMessage}</p>
+                                <button
+                                    onClick={exitForgotMode}
+                                    className="text-white bg-emerald-600 hover:bg-emerald-500 px-6 py-2 rounded-xl text-sm font-bold transition-colors"
+                                >
+                                    Back to Login
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
                     <div className="mt-8 pt-6 border-t border-white/10 text-center">
                         <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">
                             {isLogin ? "New to Genius?" : "Already Joined?"}{' '}
                             <button
-                                onClick={() => setIsLogin(!isLogin)}
+                                onClick={() => { setIsLogin(!isLogin); exitForgotMode(); }}
                                 className="text-[#ff4d4d] hover:text-white transition-colors ml-1 font-black underline underline-offset-4"
                             >
                                 {isLogin ? 'Join Team' : 'Log In'}
