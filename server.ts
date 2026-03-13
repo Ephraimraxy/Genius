@@ -1279,6 +1279,50 @@ app.get('/article/:doi(*)', async (req, res) => {
   res.send(html);
 });
 
+// ─── ADMIN-ONLY ENDPOINTS ──────────────────────────────────────────
+app.get('/api/admin/users', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query('SELECT id, name, email, role, affiliation, created_at FROM users ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  const { role } = req.body;
+  if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    if (id === req.user.id) return res.status(400).json({ error: 'Cannot change your own role' });
+    await pool.query('UPDATE users SET role = $1 WHERE id = $2', [role, id]);
+    const updated = await pool.query('SELECT id, name, email, role, affiliation, created_at FROM users WHERE id = $1', [id]);
+    res.json({ success: true, user: updated.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update user role' });
+  }
+});
+
+app.put('/api/admin/papers/:id/status', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  const { status } = req.body;
+  const validStatuses = ['uploaded', 'formatting', 'peer_review', 'integrity_check', 'ready', 'published', 'rejected'];
+  if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    await pool.query('UPDATE papers SET status = $1 WHERE id = $2', [status, id]);
+    const updated = await pool.query(`
+      SELECT p.id, p.title, p.status, p.doi, p.created_at, u.name as researcher_name, u.email as researcher_email
+      FROM papers p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = $1
+    `, [id]);
+    res.json({ success: true, paper: updated.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update paper status' });
+  }
+});
+
 // Settings & Dynamic Pricing
 app.get('/api/settings/price', async (req, res) => {
   const result = await pool.query('SELECT value FROM settings WHERE key = $1', ['publication_price']);

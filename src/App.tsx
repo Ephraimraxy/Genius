@@ -15,11 +15,31 @@ import ChatWidget from './components/ChatWidget';
 import Auth from './components/Auth';
 import Landing from './components/Landing';
 import PublicationRecords from './components/PublicationRecords';
+import UserManagement from './components/UserManagement';
+import ReviewQueue from './components/ReviewQueue';
+import AdminSettings from './components/AdminSettings';
 import GlobalLoader from './components/GlobalLoader';
 import ToastSystem, { useToasts } from './components/ToastSystem';
 import { Menu, LogOut, Bell, Search, ShieldCheck } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings';
+
+const TAB_LABELS: Record<Tab, string> = {
+  dashboard: 'Dashboard',
+  upload: 'Smart Upload',
+  formatting: 'Formatting Engine',
+  writing: 'Writing Assistant',
+  references: 'Reference Intelligence',
+  integrity: 'Integrity Checks',
+  journals: 'Journal Match',
+  reviews: 'Peer Review',
+  profile: 'Profile',
+  transactions: 'Transactions',
+  records: 'Publication Records',
+  users: 'User Management',
+  reviewQueue: 'Review Queue',
+  settings: 'Platform Settings',
+};
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
@@ -94,6 +114,9 @@ export default function App() {
       case 'reviews': return <PeerReviewSimulation activePaperId={activePaperId} />;
       case 'transactions': return <TransactionHistory profile={profile} />;
       case 'records': return <PublicationRecords profile={profile} />;
+      case 'users': return <UserManagement />;
+      case 'reviewQueue': return <ReviewQueue profile={profile} />;
+      case 'settings': return <AdminSettings />;
       case 'profile': return <ProfileView profile={profile} addToast={addToast} onProfileUpdate={() => {
         fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } })
           .then(res => res.json())
@@ -101,6 +124,11 @@ export default function App() {
       }} />;
       default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
     }
+  };
+
+  const getHeaderTitle = () => {
+    if (activeTab === 'dashboard') return isAdmin ? 'Admin Console' : 'Analytics Overview';
+    return TAB_LABELS[activeTab] || activeTab;
   };
 
   return (
@@ -116,7 +144,9 @@ export default function App() {
       />
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-white/90 backdrop-blur-xl border-b border-slate-100 h-20 flex items-center justify-between px-8 lg:px-12 shrink-0 z-10">
+        <header className={`backdrop-blur-xl border-b h-20 flex items-center justify-between px-8 lg:px-12 shrink-0 z-10 ${
+          isAdmin ? 'bg-slate-900/[0.03] border-slate-200' : 'bg-white/90 border-slate-100'
+        }`}>
           <div className="flex items-center gap-6">
             <button
               className="lg:hidden p-2.5 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
@@ -126,15 +156,15 @@ export default function App() {
             </button>
             <div>
               <h1 className="text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
-                {activeTab === 'dashboard' ? (isAdmin ? 'Admin Console' : 'Analytics Overview') : activeTab.replace(/([A-Z])/g, ' $1').trim()}
+                {getHeaderTitle()}
                 {isAdmin && <ShieldCheck className="text-amber-500" size={24} />}
               </h1>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">
-                Genius Portal / {activeTab}
+                {isAdmin ? 'Admin Portal' : 'Genius Portal'} / {TAB_LABELS[activeTab] || activeTab}
               </p>
             </div>
 
-            {activePaperId && !['dashboard', 'profile'].includes(activeTab) && (
+            {activePaperId && !['dashboard', 'profile', 'users', 'reviewQueue', 'settings'].includes(activeTab) && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -149,10 +179,12 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center bg-slate-100 rounded-2xl px-4 py-2 mr-2 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
-              <Search size={18} className="text-slate-400" />
-              <input type="text" placeholder="Search research..." className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium" />
-            </div>
+            {!isAdmin && (
+              <div className="hidden sm:flex items-center bg-slate-100 rounded-2xl px-4 py-2 mr-2 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+                <Search size={18} className="text-slate-400" />
+                <input type="text" placeholder="Search research..." className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium" />
+              </div>
+            )}
 
             <div className="relative">
               <button 

@@ -130,6 +130,30 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
             </div>
           </div>
         </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          {[
+            { label: 'User Management', desc: 'View and manage all registered users', icon: <Users className="text-indigo-600" size={24} />, tab: 'users' as const, color: 'bg-indigo-50', border: 'border-indigo-100', hover: 'hover:border-indigo-300' },
+            { label: 'Review Queue', desc: 'Approve or reject pending manuscripts', icon: <FileText className="text-amber-600" size={24} />, tab: 'reviewQueue' as const, color: 'bg-amber-50', border: 'border-amber-100', hover: 'hover:border-amber-300' },
+            { label: 'Platform Settings', desc: 'Configure pricing and system parameters', icon: <Eye className="text-emerald-600" size={24} />, tab: 'settings' as const, color: 'bg-emerald-50', border: 'border-emerald-100', hover: 'hover:border-emerald-300' },
+          ].map((action, i) => (
+            <motion.button
+              key={i}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 + i * 0.1 }}
+              onClick={() => onNavigate(action.tab)}
+              className={`bg-white p-7 rounded-[1.5rem] shadow-sm border ${action.border} ${action.hover} transition-all text-left group`}
+            >
+              <div className={`p-4 ${action.color} rounded-2xl w-fit mb-4 group-hover:scale-110 transition-transform`}>
+                {action.icon}
+              </div>
+              <p className="text-sm font-bold text-slate-800">{action.label}</p>
+              <p className="text-xs text-slate-400 mt-1">{action.desc}</p>
+            </motion.button>
+          ))}
+        </div>
       </motion.div>
     );
   }
