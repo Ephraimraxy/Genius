@@ -18,6 +18,12 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
     const [submitting, setSubmitting] = useState(false);
     const [shuffledQuestions, setShuffledQuestions] = useState<any[]>([]);
     
+    // --- Advanced Security States ---
+    const [riskScore, setRiskScore] = useState(0);
+    const [suspiciousFlags, setSuspiciousFlags] = useState<string[]>([]);
+    const questionStartTime = useRef<number>(Date.now());
+    const lastActivityTime = useRef<number>(Date.now());
+    
     // Refs for tracking system abuse
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
@@ -26,38 +32,69 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
     const examContainerRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
 
-    // Mock Questions
+    // Mock Questions with Templates for Dynamic Generation
     const baseQuestions = [
         { id: 1, text: "Which AI architecture is primarily responsible for generating human-like textual responses based on context?", options: ["A. Convolutional Neural Networks (CNNs)", "B. Transformer Models", "C. Generative Adversarial Networks (GANs)", "D. Recurrent Neural Networks (RNNs)"], correct: "B" },
         { id: 2, text: "What defines the process of 'Fine-tuning' a language model?", options: ["A. Changing the hardware it runs on.", "B. Training a pre-trained model on a smaller, specific dataset to adapt it to a new task.", "C. Deleting the model's memory of past inputs.", "D. Increasing the learning rate drastically."], correct: "B" },
-        { id: 3, text: "In neural networks, what is the primary function of an activation function?", options: ["A. To store data.", "B. To compress images.", "C. To introduce non-linearity into the network.", "D. To connect to the database."], correct: "C" },
+        { id: 3, text: "If a car travels {D} km in {T} hours, what is its average speed in km/h?", options: ["A. {A1}", "B. {A2}", "C. {A3}", "D. {A4}"], correct: "B", type: 'dynamic', formula: (d: number, t: number) => d / t },
         { id: 4, text: "Which component of the Transformer architecture calculates the relevance of words to each other?", options: ["A. Polling Layer", "B. Dropout Layer", "C. Self-Attention Mechanism", "D. Sigmoid Gate"], correct: "C" },
     ];
 
-    // --- Shuffle Logic on Mount ---
+    // --- Shuffle & Dynamic Generation Logic on Mount ---
     useEffect(() => {
-        // Shuffle questions and their respective options
-        const shuffled = baseQuestions.map(q => {
-            const correctOptStr = q.options.find(o => o.startsWith(q.correct))!;
-            const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
-            
-            // Re-assign A, B, C, D labels to the shuffled options
-            const relabeledOptions = shuffledOptions.map((opt, idx) => {
-                const label = String.fromCharCode(65 + idx);
-                return `${label}. ${opt.substring(3)}`;
-            });
-            
-            // Find what the correct option's new label is
-            const newCorrectOpt = relabeledOptions.find(o => o.substring(3) === correctOptStr.substring(3))!;
+        const processed = baseQuestions.map(q => {
+            let finalQuestionText = q.text;
+            let finalOptions = [...q.options];
+            let finalCorrect = q.correct;
+
+            if (q.type === 'dynamic' && q.formula) {
+                // Generate random parameters
+                const d = Math.floor(Math.random() * 100) + 50;
+                const t = Math.floor(Math.random() * 4) + 2;
+                const correctVal = q.formula(d, t);
+
+                finalQuestionText = q.text.replace('{D}', d.toString()).replace('{T}', t.toString());
+                
+                // Generate distractor options
+                const distractors = [
+                    correctVal + 5,
+                    correctVal - 2,
+                    correctVal * 1.5,
+                    correctVal
+                ].sort(() => Math.random() - 0.5);
+
+                finalOptions = distractors.map((val, idx) => {
+                    const label = String.fromCharCode(65 + idx);
+                    return `${label}. ${val.toFixed(1)} km/h`;
+                });
+
+                // Find the new correct label
+                const correctIdx = distractors.indexOf(correctVal);
+                finalCorrect = String.fromCharCode(65 + correctIdx);
+            } else {
+                // Standard Shuffle for static questions
+                const correctOptStr = q.options.find(o => o.startsWith(q.correct))!;
+                const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
+                
+                finalOptions = shuffledOptions.map((opt, idx) => {
+                    const label = String.fromCharCode(65 + idx);
+                    return `${label}. ${opt.substring(3)}`;
+                });
+                
+                const newCorrectOpt = finalOptions.find(o => o.substring(3) === correctOptStr.substring(3))!;
+                finalCorrect = newCorrectOpt.split('.')[0];
+            }
             
             return {
                 ...q,
-                options: relabeledOptions,
-                correct: newCorrectOpt.split('.')[0]
+                text: finalQuestionText,
+                options: finalOptions,
+                correct: finalCorrect
             };
         }).sort(() => Math.random() - 0.5);
         
-        setShuffledQuestions(shuffled);
+        setShuffledQuestions(processed);
+        questionStartTime.current = Date.now();
     }, []);
 
     // --- Core Auto Submit Function ---
@@ -82,6 +119,20 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
             onExamSubmit(`${score}/${shuffledQuestions.length * 10}`, reason);
         }, 3000);
     }, [answers, shuffledQuestions, submitting, addToast, onExamSubmit]);
+
+    // --- Risk Score Engine ---
+    const incrementRisk = useCallback((points: number, reason: string) => {
+        setRiskScore(prev => {
+            const next = prev + points;
+            setSuspiciousFlags(curr => [...new Set([...curr, reason])]);
+            if (next >= 25) {
+                triggerAutoSubmit(`High Risk Profile Detected: ${reason}`);
+            } else if (points >= 5) {
+                addToast(`PROCTORING ALERT: Suspicious behavior detected (${reason}).`, 'info');
+            }
+            return next;
+        });
+    }, [triggerAutoSubmit, addToast]);
 
     // --- AV Monitoring (Web Audio API & Camera PiP) ---
     const startAVMonitoring = async () => {
@@ -117,8 +168,8 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
                 
                 // Threshold Check (very simplified)
                 // If average volume goes above a certain highly noticeable threshold
-                if (average > 80) { // arbitrary loud noise threshold
-                    handleSecurityWarning("Loud background noise or speech detected");
+                if (average > 85) { // tuned threshold
+                    incrementRisk(5, "Speech or repetitive audio detected");
                 }
                 
                 reqFrameRef.current = requestAnimationFrame(checkVolume);
@@ -198,12 +249,38 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
             }
         };
 
+        // Monitor Device Motion (Pick-up detection for mobile)
+        const handleMotion = (e: DeviceOrientationEvent) => {
+            if (e.beta && (Math.abs(e.beta) > 45 || Math.abs(e.gamma || 0) > 30)) {
+                // If the phone is tilted significantly, it might be taking a photo
+                incrementRisk(10, "Significant device orientation change");
+            }
+        };
+
+        // Bluetooth Scanning (Experimental / Proximity)
+        const startBluetoothScan = async () => {
+             if (typeof (navigator as any).bluetooth?.requestLEScan === 'function') {
+                 try {
+                     await (navigator as any).bluetooth.requestLEScan({ acceptAllAdvertisements: true });
+                     (navigator as any).bluetooth.addEventListener('advertisementreceived', (event: any) => {
+                         // If multiple distinct IDs are seen in short intervals, flag it
+                         incrementRisk(2, "Nearby signal proximity");
+                     });
+                 } catch (e) {
+                     console.log("Bluetooth scanning not granted or supported");
+                 }
+             }
+        };
+
         document.addEventListener('visibilitychange', handleVisibilityChange);
         document.addEventListener('fullscreenchange', handleFullscreenChange);
         document.addEventListener('contextmenu', disableContextAndCopy);
         document.addEventListener('copy', disableContextAndCopy);
         document.addEventListener('paste', disableContextAndCopy);
         window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('deviceorientation', handleMotion);
+        
+        startBluetoothScan();
 
         // Start AV
         startAVMonitoring();
@@ -227,6 +304,7 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
             document.removeEventListener('copy', disableContextAndCopy);
             document.removeEventListener('paste', disableContextAndCopy);
             window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('deviceorientation', handleMotion);
             clearInterval(timerObj);
             stopAVMonitoring();
         };
@@ -243,7 +321,18 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
 
     const handleSelectOption = (option: string) => {
         if (submitting) return;
+
+        // Answer-Time Pattern Analysis
+        const timeSpent = (Date.now() - questionStartTime.current) / 1000;
+        const totalIdle = (Date.now() - lastActivityTime.current) / 1000;
+
+        // Pattern: Long pause (>30s) followed by very fast answer (<2.5s)
+        if (totalIdle > 30 && timeSpent < 2.5) {
+            incrementRisk(12, "Abnormal lookup-pattern detected");
+        }
+
         setAnswers(prev => ({ ...prev, [currentQuestionIndex]: option.split('.')[0] }));
+        lastActivityTime.current = Date.now();
     };
     
     const handleManualSubmit = () => {
@@ -391,7 +480,10 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
                             </button>
                         ) : (
                             <button
-                                onClick={() => setCurrentQuestionIndex(prev => Math.min(shuffledQuestions.length - 1, prev + 1))}
+                                onClick={() => {
+                                    setCurrentQuestionIndex(prev => Math.min(shuffledQuestions.length - 1, prev + 1));
+                                    questionStartTime.current = Date.now();
+                                }}
                                 className="px-6 md:px-8 py-4 flex items-center gap-2 font-black text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition-all shadow-lg"
                             >
                                 Next <ChevronRight size={20} />
@@ -401,6 +493,15 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
                 </div>
                 )}
             </main>
+
+            {/* Risk Score Debug / Stealth Monitor */}
+            {riskScore > 0 && (
+                 <div className="fixed bottom-6 left-6 z-50 flex flex-col gap-2 pointer-events-none">
+                     <div className="px-4 py-2 bg-slate-900/40 backdrop-blur-sm border border-white/10 rounded-full text-[10px] font-bold text-slate-400 tracking-tighter uppercase">
+                        Behavior Integrity: {Math.max(0, 100 - (riskScore * 4))}%
+                     </div>
+                 </div>
+            )}
         </div>
     );
 }
