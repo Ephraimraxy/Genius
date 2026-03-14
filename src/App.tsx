@@ -27,7 +27,7 @@ import SecurityGuidelines from './components/SecurityGuidelines';
 import CourseManagement from './components/CourseManagement';
 import PINSetup from './components/PINSetup';
 import SubscriptionModal from './components/SubscriptionModal'; // NEW
-import { Menu, LogOut, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle } from 'lucide-react';
+import { Menu, LogOut, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines';
 
@@ -143,15 +143,43 @@ export default function App() {
                 initial={{ scale: 0.9, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden"
+                className="relative w-full max-w-5xl bg-white rounded-[2.5rem] shadow-2xl border border-white/10 overflow-hidden flex flex-col md:flex-row min-h-[500px]"
               >
-                <div className="p-8 sm:p-12">
-                  <div className="text-center mb-10">
-                    <div className="w-16 h-16 bg-[#800000]/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-100 p-3">
-                      <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain rounded-full" />
-                    </div>
-                    <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">School Portal</h2>
-                    <p className="text-slate-500 font-medium">Choose your access role to continue</p>
+                {/* Left Side: Branding (Image 1 Format) */}
+                <div className="md:w-1/2 bg-[#800000] relative overflow-hidden flex flex-col p-12 text-white">
+                   <div className="absolute inset-0 bg-slate-900/20" />
+                   <div className="absolute top-0 left-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -ml-32 -mt-32" />
+                   <div className="absolute bottom-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl -mr-40 -mb-40" />
+                   
+                   <div className="relative z-10 flex flex-col h-full justify-between">
+                     <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-white rounded-full p-2">
+                           <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain" />
+                        </div>
+                        <span className="font-black tracking-[0.2em] text-sm uppercase">Genius Academy</span>
+                     </div>
+
+                     <div className="py-20 text-center md:text-left">
+                        <div className="w-32 h-32 bg-white/10 rounded-full flex items-center justify-center mb-8 mx-auto md:mx-0 border border-white/20">
+                           <img src="/gmijp-logo.png" alt="Genius" className="w-20 h-20 object-contain brightness-0 invert" />
+                        </div>
+                        <h2 className="text-4xl font-black mb-4 tracking-tight">Academic Portal</h2>
+                        <p className="text-white/60 font-medium leading-relaxed">
+                          Secure access point for students and faculty members of the Genius Mindspark ecosystem.
+                        </p>
+                     </div>
+
+                     <div className="mt-auto border-t border-white/10 pt-8">
+                        <p className="text-[#ff4d4d] font-black uppercase tracking-[0.4em] text-[10px]">Integrity · Innovation · Excellence</p>
+                     </div>
+                   </div>
+                </div>
+
+                {/* Right Side: Selection Buttons */}
+                <div className="md:w-1/2 p-8 sm:p-12 flex flex-col justify-center bg-slate-50/50">
+                  <div className="mb-10 text-center md:text-left">
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Welcome Back</h3>
+                    <p className="text-slate-500 font-medium text-sm">Choose your access role to continue to your dashboard</p>
                   </div>
 
                   <div className="grid gap-4">
@@ -160,39 +188,42 @@ export default function App() {
                         setShowPortalSelection(false);
                         setShowStudentAuth(true);
                       }}
-                      className="group p-6 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-3xl transition-all flex items-center gap-6 text-left"
+                      className="group p-6 bg-white hover:bg-white border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 rounded-3xl transition-all flex items-center gap-6 text-left"
                     >
-                      <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm group-hover:scale-110 transition-transform">
+                      <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm group-hover:scale-110 transition-transform">
                         <GraduationCap size={28} />
                       </div>
                       <div>
-                        <p className="text-lg font-black text-indigo-900">I am a Student</p>
-                        <p className="text-sm text-indigo-600 font-medium">Access exams with Matric & PIN</p>
+                        <p className="text-lg font-black text-slate-900">Student Login</p>
+                        <p className="text-sm text-slate-500 font-medium italic">Access exams with Matric & PIN</p>
                       </div>
                     </button>
 
                     <button
                       onClick={() => {
+                        setAuthRole('lecturer');
+                        setAuthIsLogin(false);
                         setShowPortalSelection(false);
                         setShowLanding(false);
                       }}
-                      className="group p-6 bg-rose-50 hover:bg-rose-100 border border-rose-100 rounded-3xl transition-all flex items-center gap-6 text-left"
+                      className="group p-6 bg-white hover:bg-white border border-slate-100 hover:border-rose-200 hover:shadow-xl hover:shadow-rose-500/5 rounded-3xl transition-all flex items-center gap-6 text-left"
                     >
-                      <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-[#800000] shadow-sm group-hover:scale-110 transition-transform">
+                      <div className="w-14 h-14 bg-rose-50 rounded-2xl flex items-center justify-center text-[#800000] shadow-sm group-hover:scale-110 transition-transform">
                         <PlusCircle size={28} />
                       </div>
                       <div>
-                        <p className="text-lg font-black text-rose-900">I am a Lecturer</p>
-                        <p className="text-sm text-rose-600 font-medium">Create workspace & manage exams</p>
+                        <p className="text-lg font-black text-slate-900">Lecturer Workspace</p>
+                        <p className="text-sm text-slate-500 font-medium italic">Join as a new academic space creator</p>
                       </div>
                     </button>
                   </div>
 
                   <button
                     onClick={() => setShowPortalSelection(false)}
-                    className="w-full mt-8 py-4 text-slate-400 font-bold hover:text-slate-600 transition-colors uppercase tracking-widest text-xs"
+                    className="mt-8 flex items-center justify-center gap-2 text-slate-400 font-bold hover:text-slate-600 transition-colors uppercase tracking-[0.2em] text-[10px]"
                   >
-                    Back to selection
+                    <ArrowLeft size={14} />
+                    Back to Selection
                   </button>
                 </div>
               </motion.div>
