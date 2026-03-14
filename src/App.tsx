@@ -178,19 +178,19 @@ export default function App() {
                     <p className="text-slate-500 font-medium text-xs">Choose your access role to continue to your dashboard</p>
                   </div>
 
-                  <div className="grid gap-3">
+                   <div className="grid gap-2">
                     <button
                       onClick={() => {
                         setShowPortalSelection(false);
                         setShowStudentAuth(true);
                       }}
-                      className="group p-4 bg-white hover:bg-white border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
+                      className="group p-3 bg-white hover:bg-white border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
                     >
-                      <div className="w-12 h-12 flex items-center justify-center text-indigo-600 transition-transform flex-shrink-0">
-                        <GraduationCap size={24} />
+                      <div className="w-10 h-10 flex items-center justify-center text-indigo-600 transition-transform flex-shrink-0">
+                        <GraduationCap size={22} />
                       </div>
                       <div>
-                        <p className="text-base font-black text-slate-900 leading-tight">Student Login</p>
+                        <p className="text-sm font-black text-slate-900 leading-tight">Student Login</p>
                         <p className="text-[10px] text-slate-500 font-medium italic">Access exams with Matric & PIN</p>
                       </div>
                     </button>
@@ -202,13 +202,13 @@ export default function App() {
                         setShowPortalSelection(false);
                         setShowLanding(false);
                       }}
-                      className="group p-4 bg-white hover:bg-white border border-slate-100 hover:border-rose-200 hover:shadow-xl hover:shadow-rose-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
+                      className="group p-3 bg-white hover:bg-white border border-slate-100 hover:border-rose-200 hover:shadow-xl hover:shadow-rose-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
                     >
-                      <div className="w-12 h-12 flex items-center justify-center text-[#800000] transition-transform flex-shrink-0">
-                        <PlusCircle size={24} />
+                      <div className="w-10 h-10 flex items-center justify-center text-[#800000] transition-transform flex-shrink-0">
+                        <PlusCircle size={22} />
                       </div>
                       <div>
-                        <p className="text-base font-black text-slate-900 leading-tight">Lecturer Workspace</p>
+                        <p className="text-sm font-black text-slate-900 leading-tight">Lecturer Workspace</p>
                         <p className="text-[10px] text-slate-500 font-medium italic">Join as a new academic space creator</p>
                       </div>
                     </button>
@@ -216,7 +216,7 @@ export default function App() {
 
                   <button
                     onClick={() => setShowPortalSelection(false)}
-                    className="mt-6 flex items-center justify-center gap-2 text-slate-400 font-bold hover:text-[#800000] transition-colors uppercase tracking-[0.2em] text-[10px] border-t border-slate-100 pt-6"
+                    className="mt-4 flex items-center justify-center gap-2 text-slate-400 font-bold hover:text-[#800000] transition-colors uppercase tracking-[0.2em] text-[10px] border-t border-slate-100 pt-4"
                   >
                     <ArrowLeft size={14} />
                     Back to Selection

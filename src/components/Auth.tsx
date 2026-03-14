@@ -205,23 +205,23 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                             GENIUS
                         </div>
 
-                        <div className="mb-6 relative">
+                        <div className="mb-4 relative">
                              {onBackToLanding && (
                                 <button 
                                     onClick={onBackToLanding}
-                                    className="mb-6 flex items-center gap-2 text-slate-400 hover:text-[#800000] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#800000]/20 pb-1"
+                                    className="mb-4 flex items-center gap-2 text-slate-400 hover:text-[#800000] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#800000]/20 pb-1"
                                 >
                                     <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
                                     Back to Main Portal
                                 </button>
                              )}
 
-                            <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">
+                            <h3 className="text-xl font-black text-slate-900 tracking-tight mb-1">
                                 {isLogin 
                                     ? (role === 'lecturer' ? 'Lecturer Login' : 'Welcome back') 
                                     : (role === 'lecturer' ? 'Lecturer Signup' : 'Create Account')}
                             </h3>
-                            <p className="text-slate-500 font-medium text-sm italic">
+                            <p className="text-slate-500 font-medium text-xs italic">
                                 {isLogin
                                     ? (role === 'lecturer' ? 'Access your academic workspace' : 'Authorize to access your publication portal')
                                     : (role === 'lecturer' ? 'Create your workspace and manage exams' : 'Scale your research with neural intelligence')}
@@ -243,16 +243,16 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                         </AnimatePresence>
 
                         {forgotMode === 'off' ? (
-                            <form onSubmit={handleSubmit} className="space-y-6">
+                            <form onSubmit={handleSubmit} className="space-y-4">
                                 <AnimatePresence mode="popLayout">
                                     {!isLogin && (
                                         <motion.div
                                             initial={{ opacity: 0, y: -10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             exit={{ opacity: 0, y: 10 }}
-                                            className="space-y-6"
+                                            className="space-y-4"
                                         >
-                                            <div className="space-y-2">
+                                            <div className="space-y-1">
                                                 <label className="text-[10px] font-black text-rose-800 uppercase tracking-widest ml-1">Full Name</label>
                                                 <div className="relative group">
                                                     <User className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#800000] transition-colors" size={20} />
@@ -261,13 +261,13 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                         required
                                                         value={name}
                                                         onChange={(e) => setName(e.target.value)}
-                                                        className="w-full pl-14 pr-4 py-5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
+                                                        className="w-full pl-14 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
                                                         placeholder="John Doe"
                                                     />
                                                 </div>
                                             </div>
                                             
-                                            <div className="space-y-2">
+                                            <div className="space-y-1">
                                                 <label className="text-[10px] font-black text-rose-800 uppercase tracking-widest ml-1">
                                                     {isLecturerRegister ? "Workspace/Organization" : "Affiliation"}
                                                 </label>
@@ -277,7 +277,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                         type="text"
                                                         value={isLecturerRegister ? tenantName : affiliation}
                                                         onChange={(e) => isLecturerRegister ? setTenantName(e.target.value) : setAffiliation(e.target.value)}
-                                                        className="w-full pl-14 pr-4 py-5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
+                                                        className="w-full pl-14 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
                                                         placeholder={isLecturerRegister ? "e.g. Science Faculty" : "e.g. NSUK Research Unit"}
                                                         required={isLecturerRegister}
                                                     />
@@ -298,7 +298,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                     )}
                                 </AnimatePresence>
 
-                                <div className="space-y-2">
+                                <div className="space-y-1">
                                     <label className="text-[10px] font-black text-rose-800 uppercase tracking-widest ml-1">Email Address</label>
                                     <div className="relative group">
                                         <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#800000] transition-colors" size={20} />
@@ -307,13 +307,13 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                             required
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
-                                            className="w-full pl-14 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
+                                            className="w-full pl-14 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
                                             placeholder="you@genius.com"
                                         />
                                     </div>
                                 </div>
 
-                                <div className="space-y-2">
+                                <div className="space-y-1">
                                     <div className="flex justify-between items-center ml-1">
                                         <label className="text-[10px] font-black text-rose-800 uppercase tracking-widest">Password</label>
                                         {isLogin && (
@@ -333,7 +333,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                             required
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            className="w-full pl-14 pr-4 py-5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
+                                            className="w-full pl-14 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
                                             placeholder="••••••••"
                                         />
                                     </div>
@@ -344,7 +344,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                     whileTap={{ scale: 0.99 }}
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full bg-[#800000] text-white font-black py-4 rounded-2xl shadow-xl shadow-rose-900/10 hover:bg-[#600000] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                    className="w-full bg-[#800000] text-white font-black py-4 rounded-2xl shadow-xl shadow-rose-900/10 hover:bg-[#600000] transition-all disabled:opacity-50 mt-2 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
                                 >
                                     {loading ? (
                                         <Loader2 size={20} className="animate-spin" />
@@ -471,7 +471,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                             </div>
                         )}
 
-                        <div className="mt-12 pt-10 border-t border-slate-100 text-center relative z-10">
+                        <div className="mt-8 pt-6 border-t border-slate-100 text-center relative z-10">
                             <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.3em]">
                                 {isLogin 
                                     ? (role === 'lecturer' ? "Configure new workspace?" : "New research team?") 

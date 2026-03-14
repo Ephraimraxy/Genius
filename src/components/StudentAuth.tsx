@@ -116,17 +116,17 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                             GENIUS
                         </div>
 
-                        <div className="mb-6 relative">
+                        <div className="mb-4 relative">
                              <button 
                                 onClick={onBackToMain}
-                                className="mb-6 flex items-center gap-2 text-slate-400 hover:text-[#1a237e] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#1a237e]/20 pb-1"
+                                className="mb-4 flex items-center gap-2 text-slate-400 hover:text-[#1a237e] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#1a237e]/20 pb-1"
                              >
                                 <ArrowRight size={14} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
                                 Back to Main Portal
                              </button>
 
-                            <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Welcome back</h3>
-                            <p className="text-slate-500 font-medium text-sm">Login to your account below to continue to your student dashboard</p>
+                            <h3 className="text-xl font-black text-slate-900 tracking-tight mb-1">Welcome back</h3>
+                            <p className="text-slate-500 font-medium text-xs">Login to your account below to continue to your student dashboard</p>
                         </div>
 
                         <AnimatePresence mode="wait">
@@ -143,8 +143,8 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                             )}
                         </AnimatePresence>
 
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <div className="space-y-2">
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div className="space-y-1">
                                 <label className="text-[10px] font-black text-indigo-700 uppercase tracking-widest ml-1">Matriculation Number</label>
                                 <div className="relative group">
                                     <GraduationCap className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#1a237e] transition-colors" size={20} />
@@ -153,13 +153,13 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                         required
                                         value={matricNumber}
                                         onChange={(e) => formatMatricInput(e.target.value)}
-                                        className="w-full pl-14 pr-4 py-4 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono font-black tracking-widest uppercase text-sm"
+                                        className="w-full pl-14 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono font-black tracking-widest uppercase text-sm"
                                         placeholder="NSUK/SCI/YYYY/NNNN"
                                     />
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
+                            <div className="space-y-1">
                                 <label className="text-[10px] font-black text-indigo-700 uppercase tracking-widest ml-1">Secure 4-Digit PIN</label>
                                 <div className="relative group">
                                     <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#1a237e] transition-colors" size={20} />
@@ -170,7 +170,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                         inputMode="numeric"
                                         value={pin}
                                         onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                                        className="w-full pl-14 pr-4 py-4 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono text-xl tracking-[0.8em] text-center"
+                                        className="w-full pl-14 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono text-xl tracking-[0.8em] text-center"
                                         placeholder="••••"
                                     />
                                 </div>
@@ -181,7 +181,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                 whileTap={{ scale: 0.99 }}
                                 type="submit"
                                 disabled={loading}
-                                className="w-full bg-[#1a237e] text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-900/20 hover:bg-[#121858] transition-all disabled:opacity-50 mt-6 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                className="w-full bg-[#1a237e] text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-900/20 hover:bg-[#121858] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
                             >
                                 {loading ? (
                                     <Loader2 size={20} className="animate-spin" />
@@ -194,7 +194,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                             </motion.button>
                         </form>
 
-                        <div className="mt-12 p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-100/50 relative overflow-hidden group">
+                        <div className="mt-8 p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-100/50 relative overflow-hidden group">
                            <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl -mr-12 -mt-12 transition-all group-hover:bg-indigo-500/10" />
                            <p className="text-slate-500 font-bold text-[11px] leading-relaxed relative z-10 italic">
                              Lost your access PIN? Please contact the department administrator to reset your credentials. Secure academic monitoring is active.
