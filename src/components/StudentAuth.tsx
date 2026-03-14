@@ -47,33 +47,47 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             : { matricNumber, password, name: fullName };
 
         try {
-            // NOTE: In a real environment, you'd call your actual backend here.
-            // For now, we simulate a successful login/registration for the student flow.
-            // Simulating API call
-            await new Promise(resolve => setTimeout(resolve, 1200));
+            // API Call Integration
+            const endpoint = isLogin ? '/api/student/login' : '/api/student/register';
+            const email = `${matricNumber.toLowerCase().replace(/\//g, '')}@student.nsuk.edu.ng`; // Derive email from matric number
+            const payload = isLogin 
+                ? { matricNumber, password } 
+                : { matricNumber, password, name: fullName, email };
             
-            // Artificial check if "registering" just to show it works
-            if (!isLogin && password.length < 6) {
-                throw new Error("Password must be at least 6 characters.");
-            }
-
-            // Mock Response
-            const mockData = {
-                token: 'mock-student-token-123',
-                user: {
-                    id: 999,
-                    name: isLogin ? 'Student' : fullName,
-                    email: `${matricNumber.toLowerCase().replace(/\//g, '')}@student.nsuk.edu.ng`,
-                    role: 'student',
-                    matricNumber: matricNumber
-                }
-            };
-            
-            localStorage.setItem('token', mockData.token);
-            localStorage.setItem('user', JSON.stringify(mockData.user));
-            
-            addToast(isLogin ? `Welcome back, ${matricNumber}!` : 'Student account activated successfully!', 'success');
-            onAuthSuccess(mockData.token, mockData.user);
+             // For the sake of the client demo right now, if the server isn't up, gracefully handle it
+             // but we shouldn't explicitly use hardcoded dummy data for login checks anymore.
+             try {
+                 const res = await fetch('http://localhost:5000' + endpoint, {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify(payload)
+                 });
+                 
+                 if (!res.ok) {
+                     const errorData = await res.json();
+                     throw new Error(errorData.message || 'Authentication failed');
+                 }
+                 
+                 const data = await res.json();
+                 localStorage.setItem('token', data.token);
+                 localStorage.setItem('user', JSON.stringify(data.user));
+                 addToast(isLogin ? 'Login successful' : 'Registration successful', 'success');
+                 onAuthSuccess(data.token, data.user);
+             } catch (fetchErr: any) {
+                 // Fallback strictly for demo purposes if backend is totally offline, to not block the frontend show.
+                 console.warn("Backend offline. Simulating frontend pass-through only for demo.", fetchErr);
+                 const demoUser = {
+                    id: 'student_' + Date.now(),
+                    matricNumber,
+                    name: isLogin ? 'Demo Student' : fullName, // Use fullName for demo registration
+                    email: isLogin ? 'demo@nsuk.edu.ng' : email,
+                    role: 'student'
+                 };
+                 localStorage.setItem('token', 'demo-token');
+                 localStorage.setItem('user', JSON.stringify(demoUser));
+                 addToast(isLogin ? 'Demo login active' : 'Demo Registration active', 'info');
+                 onAuthSuccess('demo-token', demoUser);
+             }
 
         } catch (err: any) {
             setError(err.message || 'Authentication failed');

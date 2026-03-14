@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BookOpen, Calendar, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { ToastType, useToasts } from './ToastSystem';
@@ -15,12 +15,22 @@ export default function StudentDashboard({ profile, onNavigate, addToast }: Stud
     const [activeExamCourse, setActiveExamCourse] = useState<string | null>(null);
     const [showProctoringModal, setShowProctoringModal] = useState(false);
     
-    // Mock data for student exams
-    const [exams, setExams] = useState([
-        { id: 1, course: 'MTH 101: General Mathematics I', status: 'pending', date: 'Oct 24, 2026', duration: '60 Min', totalQuestions: 40 },
-        { id: 2, course: 'PHY 101: General Physics I', status: 'completed', score: '32/40', date: 'Oct 15, 2026', duration: '60 Min', totalQuestions: 40 },
-        { id: 3, course: 'CSC 101: Introduction to Computer Science', status: 'active', date: 'Taking Now', duration: '60 Min', totalQuestions: 4 }
-    ]);
+    // Dynamic Application State
+    const [exams, setExams] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Fetch exams (Simulated API call)
+    useEffect(() => {
+        const fetchExams = async () => {
+            // In a real app, this would be: await fetch('/api/student/exams')
+            setTimeout(() => {
+                // We'll leave it empty to show a clean state as requested
+                setExams([]); 
+                setIsLoading(false);
+            }, 800);
+        };
+        fetchExams();
+    }, []);
 
     const upcomingExams = exams.filter(e => e.status === 'pending');
     const pastExams = exams.filter(e => e.status === 'completed');
@@ -38,7 +48,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast }: Stud
             addToast('Exam submitted successfully.', 'success');
         }
         
-        // Update local mock state
+        // Update local state (in a real app this would POST to the backend and re-fetch)
         setExams(prev => prev.map(e => 
             e.course === activeExamCourse 
                 ? { ...e, status: 'completed', score, date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) } 
@@ -55,6 +65,14 @@ export default function StudentDashboard({ profile, onNavigate, addToast }: Stud
             addToast={addToast} 
             onExamSubmit={handleExamSubmit} 
         />;
+    }
+
+    if (isLoading) {
+        return (
+            <div className="flex justify-center items-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+            </div>
+        );
     }
 
     return (

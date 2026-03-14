@@ -11,6 +11,11 @@ export default function AdminCourseManagement({ addToast }: AdminCourseManagemen
     const [rosterFile, setRosterFile] = useState<File | null>(null);
     const [materialFile, setMaterialFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    
+    // Dynamic Application State
+    const [activeStudents, setActiveStudents] = useState(0);
+    const [generatedQuizzes, setGeneratedQuizzes] = useState(0);
+    const [materialsUploaded, setMaterialsUploaded] = useState(0);
 
     const handleRosterUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -31,9 +36,11 @@ export default function AdminCourseManagement({ addToast }: AdminCourseManagemen
         setIsProcessing(true);
         // Simulate parsing Excel/CSV
         setTimeout(() => {
+            const simulatedCount = Math.floor(Math.random() * 50) + 20; // Generate fake counts dynamically
             setIsProcessing(false);
             setRosterFile(null);
-            addToast('Successfully registered 142 students to the whitelist.', 'success');
+            setActiveStudents(prev => prev + simulatedCount);
+            addToast(`Successfully registered ${simulatedCount} students to the whitelist.`, 'success');
         }, 1500);
     };
 
@@ -42,9 +49,12 @@ export default function AdminCourseManagement({ addToast }: AdminCourseManagemen
         setIsProcessing(true);
         // Simulate AI Parsing Document
         setTimeout(() => {
+            const simulatedQs = Math.floor(Math.random() * 15) + 15;
             setIsProcessing(false);
             setMaterialFile(null);
-            addToast('AI generated 25 questions from the lecture material.', 'success');
+            setMaterialsUploaded(prev => prev + 1);
+            setGeneratedQuizzes(prev => prev + 1);
+            addToast(`AI generated ${simulatedQs} questions from the lecture material.`, 'success');
         }, 2500);
     };
 
@@ -131,15 +141,15 @@ export default function AdminCourseManagement({ addToast }: AdminCourseManagemen
             <div className="grid grid-cols-3 gap-4 border-t border-slate-100 pt-8">
                 <div className="p-4 bg-slate-50 rounded-2xl">
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Active Students</p>
-                    <p className="text-2xl font-black text-slate-900">142</p>
+                    <p className="text-2xl font-black text-slate-900">{activeStudents}</p>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl">
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Generated Quizzes</p>
-                    <p className="text-2xl font-black text-slate-900">4</p>
+                    <p className="text-2xl font-black text-slate-900">{generatedQuizzes}</p>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl">
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Materials Uploaded</p>
-                    <p className="text-2xl font-black text-slate-900">12</p>
+                    <p className="text-2xl font-black text-slate-900">{materialsUploaded}</p>
                 </div>
             </div>
         </div>
