@@ -41,20 +41,23 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
 
           {/* Centered Desktop Nav */}
           <div className="hidden lg:flex items-center gap-4">
-            {['Home', 'Pages', 'Blog', 'Portfolio', 'Shop'].map((item, i) => (
+            {['About', 'Guidelines', 'Editorial', 'Contact'].map((item, i) => (
               <React.Fragment key={item}>
-                <a href="#" className="text-[11px] font-black text-slate-500 hover:text-[#800000] transition-colors uppercase tracking-[0.2em]">
+                <a href={`#${item.toLowerCase()}`} className="text-[11px] font-black text-slate-500 hover:text-[#800000] transition-colors uppercase tracking-[0.2em]">
                   {item}
                 </a>
-                {i < 4 && <span className="text-[#800000] font-black">•</span>}
+                {i < 3 && <span className="text-[#800000] font-black">•</span>}
               </React.Fragment>
             ))}
           </div>
 
           {/* Actions */}
           <div className="flex items-center gap-6">
-            <button className="text-slate-400 hover:text-slate-900 transition-colors">
-              <Search size={20} />
+            <button 
+              onClick={onStudentPortal} 
+              className="px-5 py-2 text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-lg transition-colors uppercase tracking-widest hidden sm:block shadow-sm"
+            >
+              Student Portal
             </button>
             <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
             <div className="flex items-center gap-3">
@@ -92,14 +95,14 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8 }}
               >
-                <h2 className="text-[1.1rem] font-black text-[#800000] uppercase tracking-[0.4em] mb-6">Expert Execution</h2>
+                <h2 className="text-[1.1rem] font-black text-[#800000] uppercase tracking-[0.4em] mb-6">Neural Research Environment</h2>
                 <h1 className="text-6xl md:text-8xl font-black text-slate-900 leading-[1.05] tracking-tight mb-8 font-display">
                   GENIUS <span className="text-[#800000]">MINDSPARK</span> <br/>
                   <span className="text-slate-800">MULTIDISCIPLINARY</span>
                 </h1>
 
                 <p className="text-xl text-slate-600 leading-relaxed mb-12 max-w-2xl font-medium">
-                  The global benchmark for research excellence. Transform your ideas from start to finish with neural-assisted validation, instant DOI registration, and professional dissemination.
+                  The global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation, instant DOI registration, and global dissemination.
                 </p>
 
                 {/* Simplified Search Bar Interface */}
@@ -107,31 +110,34 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
                   <div className="bg-white rounded-2xl shadow-2xl p-2 flex items-center border border-slate-100 group-hover:border-[#800000]/30 transition-all">
                     <input 
                       type="text" 
-                      placeholder="Search all services and journals..." 
+                      placeholder="Search for articles, DOIs or journals..." 
                       className="flex-1 bg-transparent px-6 py-3 text-slate-600 font-medium outline-none"
                     />
                     <button className="p-3 text-slate-300 hover:text-slate-600">
-                      <XCircle size={20} />
+                      <Search size={20} />
                     </button>
-                    <button className="bg-[#800000] p-4 rounded-xl text-white shadow-lg shadow-[#800000]/30 hover:scale-105 transition-all">
-                      <Search size={24} />
+                    <button onClick={onStart} className="bg-[#800000] p-4 rounded-xl text-white shadow-lg shadow-[#800000]/30 hover:scale-105 transition-all">
+                      <ArrowRight size={24} />
                     </button>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-8">
-                  <div className="flex items-center gap-4 group cursor-pointer">
-                    <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-xl border border-slate-100 group-hover:scale-110 transition-all">
-                       <Play size={20} fill="#800000" className="text-[#800000] ml-1" />
-                    </div>
-                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] group-hover:text-slate-900 transition-colors">Video Showcase</span>
-                  </div>
-
                   <button 
                     onClick={onStart}
                     className="px-10 py-5 bg-[#800000] text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[11px] border border-white/10"
                   >
-                    Learn More
+                    Get Started
+                  </button>
+
+                  <button 
+                    onClick={() => document.getElementById('about')?.scrollIntoView({ behavior: 'smooth' })}
+                    className="flex items-center gap-4 group cursor-pointer"
+                  >
+                    <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-xl border border-slate-100 group-hover:scale-110 transition-all">
+                       <Play size={20} fill="#800000" className="text-[#800000] ml-1" />
+                    </div>
+                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] group-hover:text-slate-900 transition-colors">Learn More</span>
                   </button>
                 </div>
               </motion.div>
