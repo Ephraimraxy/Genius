@@ -65,7 +65,13 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
             <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
             <div className="flex items-center gap-3">
                <button onClick={onStart} className="text-[11px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-900">Sign In</button>
-               <button onClick={onStart} className="px-6 py-3 bg-[#800000] text-white text-[10px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest">Register</button>
+               <button 
+                 onClick={onStart} 
+                 className="px-6 py-3 bg-[#800000] text-white text-[10px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest flex items-center gap-2"
+               >
+                 <PlusCircle size={14} />
+                 Lecturer Workspace
+               </button>
             </div>
           </div>
         </div>
@@ -128,9 +134,10 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
                 <div className="flex items-center gap-8">
                   <button 
                     onClick={onStart}
-                    className="px-10 py-5 bg-[#800000] text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[11px] border border-white/10"
+                    className="px-10 py-5 bg-[#800000] text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[11px] border border-white/10 flex items-center gap-3"
                   >
-                    Get Started
+                    <PlusCircle size={18} />
+                    Setup Workspace
                   </button>
 
                   <button 
@@ -140,7 +147,7 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
                     <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-xl border border-slate-100 group-hover:scale-110 transition-all">
                        <Play size={20} fill="#800000" className="text-[#800000] ml-1" />
                     </div>
-                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] group-hover:text-slate-900 transition-colors">Learn More</span>
+                    <span className="text-[11px] font-black text-white/60 uppercase tracking-[0.2em] group-hover:text-white transition-colors">Explore Features</span>
                   </button>
                 </div>
               </motion.div>
