@@ -29,14 +29,17 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-[#800000] selection:text-white">
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 h-20">
+      <nav className="fixed top-0 w-full z-50 bg-white/95 backdrop-blur-md border-b border-slate-100 h-24 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 flex items-center justify-center transition-transform hover:scale-110">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 flex items-center justify-center transition-transform hover:scale-110 drop-shadow-sm">
               <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
             </div>
-            <span className="text-xl font-black text-slate-900 tracking-tighter uppercase">Genius</span>
+            <div className="flex flex-col">
+              <span className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Genius</span>
+              <span className="text-[10px] font-bold text-[#800000] tracking-[0.3em] uppercase mt-1">Research Portal</span>
+            </div>
           </div>
 
           {/* Centered Desktop Nav */}
@@ -95,10 +98,10 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8 }}
               >
-                <h2 className="text-[1.1rem] font-black text-[#ff4d4d] uppercase tracking-[0.4em] mb-6 drop-shadow-sm">Neural Research Environment</h2>
-                <h1 className="text-6xl md:text-8xl font-black text-white leading-[1.05] tracking-tight mb-8 font-display drop-shadow-lg">
+                <h2 className="text-[1.2rem] font-black text-[#ff4d4d] uppercase tracking-[0.4em] mb-8 drop-shadow-md">Neural Research Environment</h2>
+                <h1 className="text-7xl md:text-9xl font-black text-white leading-[1.0] tracking-tight mb-8 font-display drop-shadow-2xl">
                   GENIUS <span className="text-[#ff4d4d]">MINDSPARK</span> <br/>
-                  <span className="text-white/90">MULTIDISCIPLINARY</span>
+                  <span className="text-white">MULTIDISCIPLINARY</span>
                 </h1>
 
                 <p className="text-xl text-white/80 leading-relaxed mb-12 max-w-2xl font-medium drop-shadow-md">
