@@ -49,7 +49,10 @@ export default function ToastSystem({ toasts, removeToast }: ToastSystemProps) {
               `}>
                 {toast.type === 'error' ? <AlertCircle size={24} /> : 
                  toast.type === 'success' ? <CheckCircle2 size={24} /> : 
-                 <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 rounded-full object-contain" />}
+                 <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center p-0.5 shrink-0 overflow-hidden">
+                   <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
+                 </div>
+}
               </div>
 
               <div className="flex-1">

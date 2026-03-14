@@ -74,7 +74,9 @@ export default function PINSetup({ onBackToLanding, addToast }: PINSetupProps) {
       >
         <div className="flex flex-col items-center text-center mb-10">
           <div className="w-16 h-16 md:w-20 md:h-20 bg-[#800000]/5 rounded-3xl flex items-center justify-center mb-5 md:mb-6 shadow-sm border border-[#800000]/10">
-            <img src="/gmijp-logo.png" alt="GMIJP Logo" className="w-10 h-10 md:w-12 md:h-12 object-contain" />
+            <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center p-3 shadow-xl border border-slate-100 overflow-hidden mb-4">
+              <img src="/gmijp-logo.png" alt="GMIJP Logo" className="w-full h-full object-contain" />
+            </div>
           </div>
           <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight mb-2">Secure Entry</h2>
           <p className="text-slate-500 font-medium text-sm px-4 leading-relaxed">

@@ -24,7 +24,7 @@ export default function GeniusLogo({ size = 24, className = '' }: GeniusLogoProp
 
   return (
     <div 
-      className={`relative rounded-full overflow-hidden ${className}`}
+      className={`relative rounded-full overflow-hidden bg-white shadow-sm flex items-center justify-center ${className}`}
       style={{ width: size, height: size, minWidth: size, minHeight: size }}
     >
       {isLoading && (

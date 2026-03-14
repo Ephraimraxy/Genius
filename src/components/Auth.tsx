@@ -176,7 +176,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                            animate={{ scale: 1, opacity: 1 }}
                            className="mb-8"
                          >
-                            <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-[1.5rem]" />
+                            <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-4" />
                          </motion.div>
 
                          <div className="mb-8">

@@ -156,7 +156,7 @@ export default function App() {
                         initial={{ scale: 0.9, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                       >
-                         <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full" />
+                         <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-3" />
                       </motion.div>
 
                       <div className="mb-8">
@@ -333,7 +333,11 @@ export default function App() {
             <div className={`w-10 h-10 rounded-full flex lg:hidden items-center justify-center shadow-lg shrink-0 ${
               isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : isStudent ? 'bg-indigo-600 shadow-indigo-600/30' : 'premium-gradient shadow-[#800000]/20'
             }`}>
-              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : <img src="/gmijp-logo.png" alt="Logo" className="w-6 h-6 rounded-full object-contain" />}
+              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : (
+                <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center p-0.5 shadow-sm overflow-hidden">
+                  <img src="/gmijp-logo.png" alt="Logo" className="w-full h-full object-contain" />
+                </div>
+              )}
             </div>
             <div>
               <h1 className="text-lg sm:text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
@@ -459,7 +463,9 @@ export default function App() {
               <div className="p-6 md:p-10">
                 <div className="text-center mb-8 md:mb-10">
                   <div className="w-14 h-14 md:w-16 md:h-16 bg-[#800000]/5 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6 border border-slate-100 p-2.5 md:p-3">
-                    <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain rounded-full" />
+                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white flex items-center justify-center p-2 shadow-lg border border-slate-100 shrink-0 overflow-hidden">
+                      <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain" />
+                    </div>
                   </div>
                   <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight mb-2">School Portal</h2>
                   <p className="text-slate-500 font-medium text-xs md:text-sm">Choose your access role to continue</p>

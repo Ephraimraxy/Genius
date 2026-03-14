@@ -205,7 +205,9 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
             
             {/* Branding */}
              <div className="mt-12 flex items-center justify-center opacity-50">
-                <img src="/gmijp-logo.png" alt="Genius Portal" className="h-8 w-auto grayscale" />
+                <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center p-1.5 shadow-sm border border-slate-100 overflow-hidden">
+                  <img src="/gmijp-logo.png" alt="Genius Portal" className="w-full h-full object-contain" />
+                </div>
             </div>
 
             {/* Proctoring Warning Modal Overlay */}

@@ -216,9 +216,9 @@ export default function Sidebar({
         <div className={`h-20 flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between px-8'}`}>
           <div className="flex items-center gap-3 text-white font-bold text-xl font-display tracking-tight">
             <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-lg shrink-0 ${
-              isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : 'premium-gradient shadow-[#800000]/20'
+              isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : 'bg-white shadow-[#800000]/20 p-1.5'
             }`}>
-              {isAdmin ? <ShieldCheck className="text-white" size={20} /> : <img src="/gmijp-logo.png" alt="GMIJP" className="w-5 h-5 md:w-6 md:h-6 rounded-full object-contain" />}
+              {isAdmin ? <ShieldCheck className="text-white" size={20} /> : <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full rounded-full object-contain" />}
             </div>
             {!isCollapsed && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col">

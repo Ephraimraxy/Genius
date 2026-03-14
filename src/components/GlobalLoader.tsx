@@ -51,7 +51,9 @@ export default function GlobalLoader({ show, message }: { show: boolean, message
             
             {/* Center Icon */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
-              <img src="/gmijp-logo.png" alt="GMIJP" className="w-10 h-10 rounded-full object-contain" />
+              <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center p-3 shadow-xl border border-slate-100 overflow-hidden relative z-10">
+                <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
+              </div>
             </div>
           </div>
           

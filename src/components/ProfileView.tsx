@@ -289,7 +289,9 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
         <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/30">
           <div className="flex items-center gap-3">
-            <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 rounded-full object-contain" />
+            <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center p-1 shrink-0 shadow-sm border border-slate-100 overflow-hidden">
+              <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
+            </div>
             <h3 className="text-2xl font-bold text-slate-800 font-display">
               {isAdmin ? 'Administrative Record' : 'Scientific Contributions'}
             </h3>
@@ -301,7 +303,9 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           {publications.length === 0 ? (
             <div className="p-20 text-center">
               <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200">
-                <img src="/gmijp-logo.png" alt="GMIJP" className="w-8 h-8 rounded-full object-contain opacity-40" />
+                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-1.5 shrink-0 opacity-40 shadow-sm border border-slate-100 overflow-hidden">
+                  <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
+                </div>
               </div>
               <h4 className="text-xl font-bold text-slate-800">No publications yet</h4>
               <p className="text-slate-500 mt-2 max-w-sm mx-auto">

@@ -204,7 +204,9 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
       {/* Welcome Section */}
       <div className="relative overflow-hidden premium-gradient rounded-[1.5rem] md:rounded-[2rem] p-6 md:p-10 text-white shadow-2xl shadow-indigo-900/20">
         <div className="absolute top-0 right-0 p-8 opacity-10">
-          <img src="/gmijp-logo.png" alt="GMIJP" className="w-44 h-44 rounded-full object-contain opacity-60" />
+          <div className="w-44 h-44 rounded-full bg-white flex items-center justify-center p-8 shadow-2xl border border-dashed border-slate-200 overflow-hidden opacity-40">
+            <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
+          </div>
         </div>
         <div className="relative z-10 flex flex-col md:flex-row items-start sm:items-center justify-between gap-8">
           <div className="text-center sm:text-left flex-1 border-r border-white/10 pr-0 sm:pr-8">
