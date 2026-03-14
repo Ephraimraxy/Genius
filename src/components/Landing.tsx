@@ -11,9 +11,12 @@ import {
   Mail, 
   MapPin, 
   Phone,
-  LayoutDashboard,
-  LogIn,
-  ShieldCheck
+  ShieldCheck,
+  Video,
+  Play,
+  XCircle,
+  PlusCircle,
+  Gem
 } from 'lucide-react';
 
 interface LandingProps {
@@ -26,45 +29,38 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-[#800000] selection:text-white">
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 glass-morph hover:bg-white/50 transition-colors border-b border-white/10 h-16">
+      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 h-20">
         <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
-          <div className="flex items-center gap-3 group cursor-pointer">
-            <div className="w-8 h-8 premium-gradient rounded-lg flex items-center justify-center shadow-lg shadow-[#800000]/20 group-hover:rotate-12 transition-transform">
-              <img src="/gmijp-logo.png" alt="GMIJP" className="w-5 h-5 rounded-full object-contain" />
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#800000] rounded-xl flex items-center justify-center shadow-lg shadow-[#800000]/20">
+              <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 object-contain invert brightness-200" />
             </div>
-            <div>
-              <span className="text-lg font-black text-slate-900 tracking-tighter">GMIJ</span>
-              <span className="text-[10px] font-bold text-[#800000] ml-2 uppercase tracking-widest hidden sm:inline">Registry</span>
-            </div>
+            <span className="text-xl font-black text-slate-900 tracking-tighter uppercase">Genius</span>
           </div>
 
-          <div className="hidden lg:flex items-center gap-8">
-            {['About', 'Guidelines', 'Editorial', 'Contact'].map((item) => (
-              <a key={item} href={`#${item.toLowerCase()}`} className="nav-sparkle text-[10px] font-black text-slate-500 hover:text-[#800000] transition-colors uppercase tracking-[0.2em]">
-                {item}
-              </a>
+          {/* Centered Desktop Nav */}
+          <div className="hidden lg:flex items-center gap-4">
+            {['Home', 'Pages', 'Blog', 'Portfolio', 'Shop'].map((item, i) => (
+              <React.Fragment key={item}>
+                <a href="#" className="text-[11px] font-black text-slate-500 hover:text-[#800000] transition-colors uppercase tracking-[0.2em]">
+                  {item}
+                </a>
+                {i < 4 && <span className="text-[#800000] font-black">•</span>}
+              </React.Fragment>
             ))}
           </div>
 
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={onStudentPortal} 
-              className="px-5 py-2 text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-lg transition-colors uppercase tracking-widest hidden sm:block shadow-sm"
-            >
-              Student Portal
+          {/* Actions */}
+          <div className="flex items-center gap-6">
+            <button className="text-slate-400 hover:text-slate-900 transition-colors">
+              <Search size={20} />
             </button>
-            <button 
-              onClick={onStart} 
-              className="px-5 py-2 text-[10px] font-black text-slate-900 hover:bg-slate-100 rounded-lg transition-colors uppercase tracking-widest"
-            >
-              Sign In
-            </button>
-            <button 
-              onClick={onStart}
-              className="px-6 py-2 premium-gradient text-white text-[10px] font-black rounded-lg shadow-xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.15em]"
-            >
-              Get Started
-            </button>
+            <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
+            <div className="flex items-center gap-3">
+               <button onClick={onStart} className="text-[11px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-900">Sign In</button>
+               <button onClick={onStart} className="px-6 py-3 bg-[#800000] text-white text-[10px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest">Register</button>
+            </div>
           </div>
         </div>
       </nav>
@@ -89,85 +85,95 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
           <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 to-[#800000]/40 z-[5] -z-10" />
           <div className="absolute inset-0 bg-white/20 backdrop-blur-[2px] z-20"></div>
           <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/10 to-white z-25"></div>
+        </div>        <div className="max-w-7xl mx-auto px-6 relative z-30 w-full">
+           <div className="max-w-3xl">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8 }}
+              >
+                <h2 className="text-[1.1rem] font-black text-[#800000] uppercase tracking-[0.4em] mb-6">Expert Execution</h2>
+                <h1 className="text-6xl md:text-8xl font-black text-slate-900 leading-[1.05] tracking-tight mb-8 font-display">
+                  GENIUS <span className="text-[#800000]">MINDSPARK</span> <br/>
+                  <span className="text-slate-800">MULTIDISCIPLINARY</span>
+                </h1>
+
+                <p className="text-xl text-slate-600 leading-relaxed mb-12 max-w-2xl font-medium">
+                  The global benchmark for research excellence. Transform your ideas from start to finish with neural-assisted validation, instant DOI registration, and professional dissemination.
+                </p>
+
+                {/* Simplified Search Bar Interface */}
+                <div className="relative max-w-xl mb-12 group">
+                  <div className="bg-white rounded-2xl shadow-2xl p-2 flex items-center border border-slate-100 group-hover:border-[#800000]/30 transition-all">
+                    <input 
+                      type="text" 
+                      placeholder="Search all services and journals..." 
+                      className="flex-1 bg-transparent px-6 py-3 text-slate-600 font-medium outline-none"
+                    />
+                    <button className="p-3 text-slate-300 hover:text-slate-600">
+                      <XCircle size={20} />
+                    </button>
+                    <button className="bg-[#800000] p-4 rounded-xl text-white shadow-lg shadow-[#800000]/30 hover:scale-105 transition-all">
+                      <Search size={24} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-8">
+                  <div className="flex items-center gap-4 group cursor-pointer">
+                    <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-xl border border-slate-100 group-hover:scale-110 transition-all">
+                       <Play size={20} fill="#800000" className="text-[#800000] ml-1" />
+                    </div>
+                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] group-hover:text-slate-900 transition-colors">Video Showcase</span>
+                  </div>
+
+                  <button 
+                    onClick={onStart}
+                    className="px-10 py-5 bg-[#800000] text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[11px] border border-white/10"
+                  >
+                    Learn More
+                  </button>
+                </div>
+              </motion.div>
+           </div>
         </div>
+      </section>
 
-        <div className="max-w-7xl mx-auto px-6 relative z-30 w-full mb-20">
-          <div className="grid lg:grid-cols-2 gap-20 items-center">
-            <motion.div
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8, ease: "circOut" }}
-            >
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#800000]/10 border border-[#800000]/20 rounded-full mb-8">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#800000] animate-pulse"></div>
-                <span className="text-[10px] font-black text-[#800000] uppercase tracking-[0.2em]">Neural Research Engine V2.4</span>
-              </div>
+      {/* NEW: Lecturer & Workspace Promotion Section (Addresses User request) */}
+      <section className="py-20 bg-slate-50 border-y border-slate-100">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="bg-white rounded-[3rem] p-12 shadow-2xl shadow-slate-200 border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-12 relative overflow-hidden">
+             <div className="absolute top-0 right-0 p-8 opacity-5">
+                <Gem size={120} className="text-[#800000]" />
+             </div>
+             
+             <div className="relative z-10 text-center md:text-left">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100 mb-6">
+                   <ShieldCheck size={14} />
+                   <span className="text-[10px] font-black uppercase tracking-widest">Lecturer Workspace</span>
+                </div>
+                <h3 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Need a Private Portal?</h3>
+                <p className="text-slate-500 font-medium max-w-md leading-relaxed">
+                   Are you a lecturer or researcher? Register to create your isolated workspace, manage students, upload rosters, and automate assessments. 
+                </p>
+             </div>
 
-              <h1 className="text-7xl lg:text-8xl font-black text-slate-900 leading-[0.95] tracking-tighter mb-8 font-display">
-                GENIUS <br />
-                <span className="text-gradient">MINDSPARK</span>
-              </h1>
-
-              <p className="text-2xl text-slate-800 leading-relaxed mb-12 max-w-xl font-bold">
-                The global benchmark for multidisciplinary research. Experience neural-assisted validation, instant DOI registration, and global dissemination.
-              </p>
-
-              <div className="flex flex-wrap gap-4">
+             <div className="flex flex-col sm:flex-row gap-4 relative z-10">
+                <button 
+                  onClick={onStudentPortal}
+                  className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:scale-105 transition-all flex items-center gap-3"
+                >
+                   <Users size={18} />
+                   Student Portal
+                </button>
                 <button 
                   onClick={onStart}
-                  className="px-10 py-5 premium-gradient text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-widest text-sm flex items-center gap-3 group"
+                  className="px-8 py-4 bg-[#800000] text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all flex items-center gap-3"
                 >
-                  Publish Manuscript
-                  <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                   <PlusCircle size={18} />
+                   Create Workspace
                 </button>
-                <button className="px-10 py-5 bg-white border border-slate-200 text-slate-900 font-black rounded-2xl hover:bg-slate-50 transition-all uppercase tracking-widest text-sm">
-                  View Journals
-                </button>
-              </div>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1, delay: 0.2 }}
-              className="hidden lg:block relative"
-            >
-              <div className="glass-morph-dark p-10 rounded-[3.5rem] border-white/20 relative z-10 overflow-hidden group shadow-2xl">
-                <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="p-3 bg-[#800000] rounded-2xl text-white shadow-xl shadow-[#800000]/40">
-                    <ShieldCheck size={24} />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black text-white">Registry Status</h3>
-                    <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest">Neural AI Active</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  {[
-                    { label: 'Integrity Audits', value: '24.1k', color: 'text-white' },
-                    { label: 'DOI Assignments', value: '18.5k', color: 'text-[#ff4d4d]' },
-                    { label: 'Peer Review Cycles', value: '12.2k', color: 'text-emerald-400' }
-                  ].map((item, i) => (
-                    <div key={i} className="p-4 bg-white/10 border border-white/10 rounded-2xl flex items-center justify-between hover:bg-white/20 transition-colors">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.label}</span>
-                      <span className={`text-sm font-black ${item.color}`}>{item.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-8 p-5 bg-white/5 rounded-[2rem] text-center border border-white/10">
-                  <p className="text-white font-black text-sm mb-1 uppercase tracking-tight">System Integrity: 100%</p>
-                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">ISO 27001 Certified Registry</p>
-                </div>
-              </div>
-
-              {/* Decorative blobs */}
-              <div className="absolute -top-20 -right-20 w-80 h-80 bg-[#800000]/10 rounded-full blur-[100px] z-0"></div>
-              <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-indigo-500/10 rounded-full blur-[100px] z-0"></div>
-            </motion.div>
+             </div>
           </div>
         </div>
       </section>
