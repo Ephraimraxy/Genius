@@ -35,10 +35,10 @@ interface SidebarProps {
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
   profile?: any;
-  adminViewMode?: 'publication' | 'student';
-  setAdminViewMode?: (mode: 'publication' | 'student') => void;
-  adminSimulateRole?: 'none' | 'researcher' | 'student';
-  setAdminSimulateRole?: (mode: 'none' | 'researcher' | 'student') => void;
+  adminViewMode?: 'publication' | 'student' | 'lecturer';
+  setAdminViewMode?: (mode: 'publication' | 'student' | 'lecturer') => void;
+  adminSimulateRole?: 'none' | 'researcher' | 'student' | 'lecturer';
+  setAdminSimulateRole?: (mode: 'none' | 'researcher' | 'student' | 'lecturer') => void;
 }
 
 export default function Sidebar({ 
@@ -105,7 +105,9 @@ export default function Sidebar({
   // Determine active navigation list based on user role or simulation (for Super Admin)
   let effectiveRole = userRole;
   if (isSuperAdmin && adminSimulateRole && adminSimulateRole !== 'none') {
-    effectiveRole = adminSimulateRole === 'researcher' ? 'user' : 'student';
+    if (adminSimulateRole === 'researcher') effectiveRole = 'user';
+    else if (adminSimulateRole === 'lecturer') effectiveRole = 'tenant_admin';
+    else if (adminSimulateRole === 'student') effectiveRole = 'student';
   }
 
   let navItems = researcherNavItems;
@@ -150,6 +152,14 @@ export default function Sidebar({
             >
               Mng Stdnt
             </button>
+            <button
+                onClick={() => { setAdminViewMode('lecturer'); setAdminSimulateRole('none'); setActiveTab('dashboard'); }}
+                className={`flex-none flex items-center justify-center gap-1.5 py-1 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all ${
+                  adminViewMode === 'lecturer' && adminSimulateRole === 'none' ? 'bg-[#800000] text-white' : 'border border-slate-700 text-slate-400'
+                }`}
+            >
+              Mng Lctr
+            </button>
 
             <div className="w-px h-4 bg-slate-700 mx-1"></div>
 
@@ -161,14 +171,22 @@ export default function Sidebar({
             >
                Sim: Rsrch
             </button>
-            <button
-                onClick={() => { setAdminSimulateRole('student'); setActiveTab('dashboard'); }}
-                className={`flex-none flex items-center justify-center gap-1.5 py-1 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all ${
-                  adminSimulateRole === 'student' ? 'bg-rose-600 text-white' : 'border border-slate-700 text-slate-400'
-                }`}
-            >
-               Sim: Stdnt
-            </button>
+             <button
+                 onClick={() => { setAdminSimulateRole('lecturer'); setActiveTab('dashboard'); }}
+                 className={`flex-none flex items-center justify-center gap-1.5 py-1 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all ${
+                   adminSimulateRole === 'lecturer' ? 'bg-indigo-600 text-white' : 'border border-slate-700 text-slate-400'
+                 }`}
+             >
+                Sim: Lctr
+             </button>
+             <button
+                 onClick={() => { setAdminSimulateRole('student'); setActiveTab('dashboard'); }}
+                 className={`flex-none flex items-center justify-center gap-1.5 py-1 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all ${
+                   adminSimulateRole === 'student' ? 'bg-rose-600 text-white' : 'border border-slate-700 text-slate-400'
+                 }`}
+             >
+                Sim: Stdnt
+             </button>
           </div>
         )}
 
@@ -319,6 +337,14 @@ export default function Sidebar({
                   >
                     Student
                   </button>
+                  <button
+                    onClick={() => { setAdminViewMode('lecturer'); setAdminSimulateRole('none'); setActiveTab('dashboard'); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                      adminViewMode === 'lecturer' && adminSimulateRole === 'none' ? 'bg-[#800000] text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                    }`}
+                  >
+                    Lecturer
+                  </button>
                 </div>
               </div>
               
@@ -332,6 +358,14 @@ export default function Sidebar({
                     }`}
                   >
                     Researcher
+                  </button>
+                  <button
+                    onClick={() => { setAdminSimulateRole('lecturer'); setActiveTab('dashboard'); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                      adminSimulateRole === 'lecturer' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                    }`}
+                  >
+                    Lecturer
                   </button>
                   <button
                     onClick={() => { setAdminSimulateRole('student'); setActiveTab('dashboard'); }}

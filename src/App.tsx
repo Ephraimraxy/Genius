@@ -65,8 +65,8 @@ export default function App() {
   const [showPortalSelection, setShowPortalSelection] = useState(false);
   const [authRole, setAuthRole] = useState<'researcher' | 'lecturer'>('researcher');
   const [authIsLogin, setAuthIsLogin] = useState(true);
-  const [adminViewMode, setAdminViewMode] = useState<'publication' | 'student'>('publication');
-  const [adminSimulateRole, setAdminSimulateRole] = useState<'none' | 'researcher' | 'student'>('none');
+  const [adminViewMode, setAdminViewMode] = useState<'publication' | 'student' | 'lecturer'>('publication');
+  const [adminSimulateRole, setAdminSimulateRole] = useState<'none' | 'researcher' | 'student' | 'lecturer'>('none');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
   const [openChatUserId, setOpenChatUserId] = useState<number | null>(null);
@@ -240,10 +240,11 @@ export default function App() {
 
   const role = profile?.user?.role;
   const isSuperAdmin = role === 'super_admin' || role === 'admin';
-  const isLecturer = role === 'tenant_admin';
+  const isLecturer = role === 'tenant_admin' || (isSuperAdmin && adminSimulateRole === 'lecturer') || (isSuperAdmin && adminViewMode === 'lecturer');
   const isAdmin = isSuperAdmin || isLecturer;
   const isStudent = role === 'student' || (isSuperAdmin && adminSimulateRole === 'student');
   const isSimulatingResearcher = isSuperAdmin && adminSimulateRole === 'researcher';
+  const isStudentViewMode = isSuperAdmin && adminViewMode === 'student';
 
   const renderContent = () => {
     // Student View (Real or Simulated)
@@ -253,8 +254,8 @@ export default function App() {
         return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} />;
     }
 
-    // Lecturer View
-    if (isLecturer && activeTab !== 'profile') {
+    // Lecturer View (includes Super Admin in Student/Lecturer Manage Mode or Simulate Lecturer)
+    if ((isLecturer || isStudentViewMode) && activeTab !== 'profile') {
         switch (activeTab) {
             case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
             case 'courseManagement': return <CourseManagement addToast={addToast} token={token} />;
@@ -278,6 +279,7 @@ export default function App() {
       case 'transactions': return <TransactionHistory profile={profile} />;
       case 'records': return <PublicationRecords profile={profile} />;
       case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} />;
+      case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
       case 'reviewQueue': return <ReviewQueue profile={profile} />;
       case 'settings': return <AdminSettings />;
       case 'profile': return <ProfileView profile={profile} addToast={addToast} onProfileUpdate={() => {
