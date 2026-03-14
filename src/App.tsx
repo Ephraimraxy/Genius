@@ -22,10 +22,11 @@ import GlobalLoader from './components/GlobalLoader';
 import ToastSystem, { useToasts } from './components/ToastSystem';
 import StudentAuth from './components/StudentAuth'; // NEW
 import StudentDashboard from './components/StudentDashboard'; // NEW
+import StudentPerformance from './components/StudentPerformance'; // NEW
 import CourseManagement from './components/CourseManagement'; // NEW
 import { Menu, LogOut, Bell, Search, ShieldCheck, GraduationCap } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -42,7 +43,10 @@ const TAB_LABELS: Record<Tab, string> = {
   users: 'User Management',
   reviewQueue: 'Review Queue',
   settings: 'Platform Settings',
-  courseManagement: 'Course Management'
+  courseManagement: 'Course Management',
+  tests: 'Tests & Quizzes',
+  assignments: 'Assignments',
+  performance: 'Performance Tracking'
 };
 
 export default function App() {
@@ -118,9 +122,12 @@ export default function App() {
   const isSimulatingResearcher = isAdmin && adminSimulateRole === 'researcher';
 
   const renderContent = () => {
-    // If student is logged in (or simulated), restrict them only to Student Dashboard
+    // If student is logged in (or simulated), restrict them only to Student Dashboard related views
     if (isStudent && activeTab !== 'profile') {
-        return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} />;
+        if (activeTab === 'performance') {
+            return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
+        }
+        return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} />;
     }
 
     switch (activeTab) {
@@ -143,7 +150,7 @@ export default function App() {
           .then(res => res.json())
           .then(data => { if (data) setProfile(data); });
       }} />;
-      default: return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} />;
+      default: return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} />;
     }
   };
 

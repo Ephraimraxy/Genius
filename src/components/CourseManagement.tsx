@@ -11,6 +11,7 @@ export default function AdminCourseManagement({ addToast }: AdminCourseManagemen
     const [rosterFile, setRosterFile] = useState<File | null>(null);
     const [materialFile, setMaterialFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [assessmentType, setAssessmentType] = useState<'exam' | 'test' | 'assignment'>('exam');
     
     // Dynamic Application State
     const [activeStudents, setActiveStudents] = useState(0);
@@ -110,8 +111,23 @@ export default function AdminCourseManagement({ addToast }: AdminCourseManagemen
                     <div className="w-12 h-12 bg-amber-50 text-amber-600 flex items-center justify-center rounded-2xl mb-6 relative z-10">
                         <BrainCircuit size={24} />
                     </div>
-                    <h3 className="text-xl font-black text-slate-900 mb-2 relative z-10">AI Quiz Generator</h3>
-                    <p className="text-sm text-slate-500 mb-6 relative z-10">Upload PDF lecture notes. Neural AI will automatically extract context and set MCQs.</p>
+                    <h3 className="text-xl font-black text-slate-900 mb-2 relative z-10">AI Assessment Builder</h3>
+                    <p className="text-sm text-slate-500 mb-6 relative z-10">Upload PDF lecture notes. Neural AI will automatically extract context and set MCQs or Tasks.</p>
+
+                    {/* Type Selector */}
+                    <div className="flex p-1 bg-slate-100 rounded-2xl mb-6 relative z-10 border border-slate-200 shadow-inner">
+                        {(['exam', 'test', 'assignment'] as const).map((type) => (
+                            <button
+                                key={type}
+                                onClick={() => setAssessmentType(type)}
+                                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                                    assessmentType === type ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                            >
+                                {type}
+                            </button>
+                        ))}
+                    </div>
                     
                     <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center hover:bg-slate-50 transition-colors relative cursor-pointer z-10">
                         <input 
@@ -132,7 +148,7 @@ export default function AdminCourseManagement({ addToast }: AdminCourseManagemen
                         disabled={!materialFile || isProcessing}
                         className="w-full mt-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-colors flex justify-center items-center gap-2 relative z-10 shadow-lg shadow-amber-500/20"
                     >
-                        <BrainCircuit size={18} /> Generate Exam Questions
+                        <BrainCircuit size={18} /> Generate {assessmentType.toUpperCase()}
                     </button>
                 </div>
             </div>

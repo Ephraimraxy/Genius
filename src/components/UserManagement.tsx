@@ -102,7 +102,7 @@ export default function UserManagement({ addToast, onOpenChat }: { addToast?: (m
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ newPassword: resetPassword })
+        body: JSON.stringify({ newPassword: resetPassword.trim() })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to reset password');

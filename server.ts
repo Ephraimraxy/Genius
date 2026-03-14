@@ -293,11 +293,12 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const data = loginSchema.parse(req.body);
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [data.email]);
+    const email = data.email.toLowerCase().trim();
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid email or password' });
     
     let user = result.rows[0];
-    const validPassword = await bcrypt.compare(data.password, user.password);
+    const validPassword = await bcrypt.compare(data.password.trim(), user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
 
     // Enforce admin for specific email if they somehow lost it

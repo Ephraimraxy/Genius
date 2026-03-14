@@ -19,9 +19,11 @@ import {
   Users,
   ClipboardList,
   BookOpen,
-  CheckSquare,
   CreditCard,
-  FileUp
+  FileUp,
+  BarChart3,
+  Trophy,
+  ClipboardCheck
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -98,7 +100,10 @@ export default function Sidebar({
 
   // ─── STUDENT NAV ─────────────────────────────────────────
   const studentNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
-    { id: 'dashboard', label: 'My Exams', icon: BookOpen, section: 'Course Work' },
+    { id: 'dashboard', label: 'Exams', icon: BookOpen, section: 'Course Work' },
+    { id: 'tests', label: 'Tests', icon: ClipboardCheck },
+    { id: 'assignments', label: 'Assignments', icon: FileUp },
+    { id: 'performance', label: 'Performance', icon: BarChart3, section: 'Records' },
   ];
 
   const navItems = effectiveRole === 'student' ? studentNavItems 

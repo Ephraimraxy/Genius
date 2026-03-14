@@ -9,9 +9,10 @@ interface StudentDashboardProps {
     profile: any;
     onNavigate: (tab: any) => void;
     addToast: (msg: string, type: ToastType) => void;
+    view: string;
 }
 
-export default function StudentDashboard({ profile, onNavigate, addToast }: StudentDashboardProps) {
+export default function StudentDashboard({ profile, onNavigate, addToast, view }: StudentDashboardProps) {
     const [activeExamCourse, setActiveExamCourse] = useState<string | null>(null);
     const [showProctoringModal, setShowProctoringModal] = useState(false);
     
@@ -22,19 +23,37 @@ export default function StudentDashboard({ profile, onNavigate, addToast }: Stud
     // Fetch exams (Simulated API call)
     useEffect(() => {
         const fetchExams = async () => {
-            // In a real app, this would be: await fetch('/api/student/exams')
+            // In a real app, this would be: await fetch(`/api/student/${view}`)
             setTimeout(() => {
-                // We'll leave it empty to show a clean state as requested
-                setExams([]); 
+                // Generate some categorized dummy data
+                const mockExams = [
+                    { id: 1, course: 'Advanced Physics (PHY401)', status: 'active', duration: '3 Hours', date: 'Today', totalQuestions: 50, type: 'exam' },
+                    { id: 2, course: 'Quantum Mechanics (PHY405)', status: 'pending', duration: '2.5 Hours', date: 'Oct 20, 2026', totalQuestions: 40, type: 'exam' },
+                    { id: 3, course: 'Classical Mechanics', status: 'completed', score: '82/100', date: 'Sep 12, 2025', type: 'exam' }
+                ];
+                const mockTests = [
+                    { id: 4, course: 'Calculus III (MAT301)', status: 'active', duration: '45 Mins', date: 'Today', totalQuestions: 20, type: 'test' },
+                    { id: 5, course: 'Linear Algebra', status: 'completed', score: '18/20', date: 'Sep 28, 2025', type: 'test' }
+                ];
+                const mockAssignments = [
+                    { id: 6, course: 'Lab Report: Optics', status: 'pending', duration: 'Due in 2 days', date: 'Oct 15, 2026', totalQuestions: 'N/A', type: 'assignment' },
+                    { id: 7, course: 'Research Proposal', status: 'completed', score: 'Grade: A', date: 'Aug 10, 2025', type: 'assignment' }
+                ];
+
+                const allData = [...mockExams, ...mockTests, ...mockAssignments];
+                setExams(allData); 
                 setIsLoading(false);
             }, 800);
         };
         fetchExams();
-    }, []);
+    }, [view]); // Refetch when view changes
 
-    const upcomingExams = exams.filter(e => e.status === 'pending');
-    const pastExams = exams.filter(e => e.status === 'completed');
-    const activeExams = exams.filter(e => e.status === 'active');
+    // Filter based on BOTH status AND view type
+    const activeType = view === 'dashboard' ? 'exam' : view === 'tests' ? 'test' : 'assignment';
+    
+    const upcomingExams = exams.filter(e => e.status === 'pending' && e.type === activeType);
+    const pastExams = exams.filter(e => e.status === 'completed' && e.type === activeType);
+    const activeExams = exams.filter(e => e.status === 'active' && e.type === activeType);
 
     const handleStartExamClick = (courseName: string) => {
         setActiveExamCourse(courseName);
@@ -103,10 +122,10 @@ export default function StudentDashboard({ profile, onNavigate, addToast }: Stud
                             <AlertCircle size={24} className="animate-pulse" />
                         </div>
                         <div>
-                            <h3 className="text-xl font-black mb-1">Active Exam Available</h3>
+                            <h3 className="text-xl font-black mb-1">Active {activeType.toUpperCase()} Available</h3>
                             <p className="text-red-100 font-medium">{activeExams[0].course}</p>
                             <p className="text-sm font-bold mt-2 opacity-80 uppercase tracking-widest flex items-center gap-2">
-                                <Clock size={14} /> Duration: {activeExams[0].duration}
+                                <Clock size={14} /> {activeType === 'assignment' ? 'Deadline' : 'Duration'}: {activeExams[0].duration}
                             </p>
                         </div>
                     </div>
@@ -114,21 +133,21 @@ export default function StudentDashboard({ profile, onNavigate, addToast }: Stud
                         onClick={() => handleStartExamClick(activeExams[0].course)}
                         className="w-full md:w-auto px-8 py-4 bg-white text-rose-600 font-black rounded-xl shadow-lg hover:bg-slate-50 transition-colors uppercase tracking-[0.1em]"
                     >
-                        Start Exam Now
+                        {activeType === 'assignment' ? 'Open Assignment' : 'Start Now'}
                     </button>
                 </motion.div>
             )}
 
             <div className="grid lg:grid-cols-2 gap-8">
-                {/* Upcoming Exams */}
+                {/* Upcoming Assessments */}
                 <div className="space-y-4">
                     <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                        <Calendar className="text-indigo-500" /> Upcoming Assessments
+                        <Calendar className="text-indigo-500" /> Upcoming {view === 'dashboard' ? 'Exams' : view === 'tests' ? 'Tests' : 'Assignments'}
                     </h3>
                     {upcomingExams.length === 0 ? (
                         <div className="p-8 bg-slate-50 border border-slate-100 rounded-[2rem] text-center">
                             <BookOpen size={48} className="mx-auto text-slate-300 mb-4" />
-                            <p className="text-slate-500 font-medium">No upcoming exams scheduled.</p>
+                            <p className="text-slate-500 font-medium">No {activeType}s scheduled.</p>
                         </div>
                     ) : (
                         upcomingExams.map(exam => (
