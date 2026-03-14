@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, GraduationCap, ShieldCheck, ArrowLeft, KeyRound, CheckCircle, MessageSquare, Send } from 'lucide-react';
+import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, ShieldCheck, ArrowLeft, KeyRound, CheckCircle, MessageSquare, Send } from 'lucide-react';
 
 import { ToastType } from './ToastSystem';
 
@@ -18,6 +18,8 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding }: AuthP
     const [affiliation, setAffiliation] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [isLecturerRegister, setIsLecturerRegister] = useState(false);
+    const [tenantName, setTenantName] = useState('');
 
     // Forgot password states
     const [forgotMode, setForgotMode] = useState<'off' | 'choose' | 'email' | 'code' | 'admin' | 'adminSent' | 'success'>('off');
@@ -33,10 +35,15 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding }: AuthP
         setError('');
         setLoading(true);
 
-        const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+        const endpoint = isLogin 
+            ? '/api/auth/login' 
+            : (isLecturerRegister ? '/api/auth/lecturer/register' : '/api/auth/register');
+        
         const body = isLogin
             ? { email, password }
-            : { email, password, name, affiliation };
+            : (isLecturerRegister 
+                ? { email, password, name, tenantName }
+                : { email, password, name, affiliation });
 
         try {
             const response = await fetch(endpoint, {
@@ -234,11 +241,22 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding }: AuthP
                                         <Building className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#ff4d4d] transition-colors" size={18} />
                                         <input
                                             type="text"
-                                            value={affiliation}
-                                            onChange={(e) => setAffiliation(e.target.value)}
+                                            value={isLecturerRegister ? tenantName : affiliation}
+                                            onChange={(e) => isLecturerRegister ? setTenantName(e.target.value) : setAffiliation(e.target.value)}
                                             className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white/10 outline-none transition-all text-white placeholder:text-slate-500"
-                                            placeholder="Affiliation"
+                                            placeholder={isLecturerRegister ? "Workspace/Organization Name" : "Affiliation"}
+                                            required={isLecturerRegister}
                                         />
+                                    </div>
+                                    <div className="flex items-center gap-2 px-1 pb-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsLecturerRegister(!isLecturerRegister)}
+                                            className={`p-1.5 rounded-lg border transition-all ${isLecturerRegister ? 'bg-[#800000]/20 border-[#800000] text-white' : 'border-white/10 text-slate-500'}`}
+                                        >
+                                            <ShieldCheck size={16} />
+                                        </button>
+                                        <span className="text-xs font-bold text-slate-300">Create Lecturer/Workspace Account</span>
                                     </div>
                                 </motion.div>
                             )}

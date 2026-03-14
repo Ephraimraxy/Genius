@@ -66,7 +66,69 @@ async function initDB() {
       name TEXT,
       affiliation TEXT,
       role TEXT DEFAULT 'user',
+      tenant_id INTEGER,
+      matric_number TEXT,
+      level TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS tenants (
+      id SERIAL PRIMARY KEY,
+      name TEXT UNIQUE,
+      owner_name TEXT,
+      owner_email TEXT,
+      plan TEXT DEFAULT 'starter',
+      status TEXT DEFAULT 'active',
+      is_subscribed BOOLEAN DEFAULT FALSE, -- NEW: Pay-to-play for lecturers
+      subscription_price INTEGER DEFAULT 0, -- NEW: Flexible price set by Super Admin
+      subscription_expiry TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS exams (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER,
+      title TEXT,
+      description TEXT,
+      duration INTEGER, -- in minutes
+      type TEXT, -- 'exam', 'test', 'assignment'
+      status TEXT DEFAULT 'active',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(tenant_id) REFERENCES tenants(id)
+    );
+    CREATE TABLE IF NOT EXISTS questions (
+      id SERIAL PRIMARY KEY,
+      exam_id INTEGER,
+      text TEXT,
+      options JSONB,
+      correct_answer TEXT,
+      type TEXT DEFAULT 'static', -- 'static', 'dynamic'
+      formula JSONB,
+      points INTEGER DEFAULT 10,
+      FOREIGN KEY(exam_id) REFERENCES exams(id)
+    );
+    CREATE TABLE IF NOT EXISTS exam_results (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      exam_id INTEGER,
+      score TEXT,
+      risk_score INTEGER DEFAULT 0,
+      violations JSONB DEFAULT '[]',
+      submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(exam_id) REFERENCES exams(id)
+    );
+    CREATE TABLE IF NOT EXISTS students_roster (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER,
+      matric_number TEXT,
+      name TEXT,
+      email TEXT,
+      course TEXT,
+      pin_hash TEXT, -- NEW: Hashed 4-digit PIN
+      setup_token TEXT, -- NEW: Temporary token for PIN setup via email
+      token_expires TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, matric_number),
+      FOREIGN KEY(tenant_id) REFERENCES tenants(id)
     );
     CREATE TABLE IF NOT EXISTS papers (
       id SERIAL PRIMARY KEY,
@@ -149,7 +211,18 @@ async function initDB() {
   try { await pool.query('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE reviews ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE users ADD COLUMN role TEXT DEFAULT \'user\''); } catch (e) { }
+  try { await pool.query('ALTER TABLE users ADD COLUMN tenant_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE users ADD COLUMN matric_number TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE users ADD COLUMN level TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN tenant_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE chat_messages ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN issn TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE students_roster ADD COLUMN pin_hash TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE students_roster ADD COLUMN setup_token TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE students_roster ADD COLUMN token_expires TIMESTAMP'); } catch (e) { }
+  try { await pool.query('ALTER TABLE tenants ADD COLUMN is_subscribed BOOLEAN DEFAULT FALSE'); } catch (e) { }
+  try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_price INTEGER DEFAULT 0'); } catch (e) { }
+  try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
   
   // Set default pricing if not exists
   await pool.query(`
@@ -205,8 +278,24 @@ const authenticateToken = (req: any, res: any, next: any) => {
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
     if (err) return res.status(403).json({ error: 'Invalid or expired token' });
     req.user = user;
+    req.tenant_id = user.tenant_id;
     next();
   });
+};
+
+// Middleware: Check Tenant Subscription
+const checkSubscription = async (req: any, res: any, next: any) => {
+  if (req.user.role === 'super_admin') return next();
+  if (req.user.role === 'tenant_admin') {
+    const result = await pool.query('SELECT is_subscribed FROM tenants WHERE id = $1', [req.tenant_id]);
+    if (!result.rows[0]?.is_subscribed) {
+      return res.status(402).json({ 
+        error: 'Subscription required', 
+        message: 'Your lecturer account requires an active subscription. Please complete payment to access your workspace.' 
+      });
+    }
+  }
+  next();
 };
 
 // Rate limiting for auth
@@ -265,11 +354,11 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (existing.rows.length > 0) return res.status(400).json({ error: 'Email already registered' });
 
     // Hardcode specific email to always be admin
-    const accountRole = data.email.toLowerCase() === 'burstbrainconcept@gmail.com' ? 'admin' : 'user';
+    const accountRole = data.email.toLowerCase() === 'burstbrainconcept@gmail.com' ? 'super_admin' : 'user';
     const hashedPassword = await bcrypt.hash(data.password, 10);
     const result = await pool.query(
-      'INSERT INTO users (email, password, name, affiliation, role) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [data.email, hashedPassword, data.name, data.affiliation || '', accountRole]
+      'INSERT INTO users (email, password, name, affiliation, role, tenant_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [data.email, hashedPassword, data.name, data.affiliation || '', accountRole, null]
     );
 
     const userId = result.rows[0].id;
@@ -280,13 +369,79 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       [userId, JSON.stringify([]), JSON.stringify({ citations: 0, hIndex: 0, i10Index: 0 })]
     );
 
-    const token = jwt.sign({ id: userId, email: data.email, name: data.name, role: accountRole }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: userId, email: data.email, name: data.name, role: accountRole } });
+    const token = jwt.sign({ id: userId, email: data.email, name: data.name, role: accountRole, tenant_id: null }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: userId, email: data.email, name: data.name, role: accountRole, tenant_id: null } });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
     }
     res.status(400).json({ error: error.message });
+  }
+});
+
+// Lecturer/Tenant Admin Registration (Creates Tenant + Admin)
+app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
+  try {
+    const { email, password, name, tenantName } = req.body;
+    if (!email || !password || !name || !tenantName) return res.status(400).json({ error: 'All fields are required' });
+
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existingUser.rows.length > 0) return res.status(400).json({ error: 'Email already registered' });
+
+    const existingTenant = await pool.query('SELECT id FROM tenants WHERE name = $1', [tenantName]);
+    if (existingTenant.rows.length > 0) return res.status(400).json({ error: 'Tenant name already taken' });
+
+    // 1. Create Tenant
+    const tenantResult = await pool.query(
+      'INSERT INTO tenants (name, owner_name, owner_email) VALUES ($1, $2, $3) RETURNING id',
+      [tenantName, name, email]
+    );
+    const tenantId = tenantResult.rows[0].id;
+
+    // 2. Create Tenant Admin User
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const userResult = await pool.query(
+      'INSERT INTO users (email, password, name, role, tenant_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [email, hashedPassword, name, 'tenant_admin', tenantId]
+    );
+    const userId = userResult.rows[0].id;
+
+    const token = jwt.sign({ id: userId, email, name, role: 'tenant_admin', tenant_id: tenantId }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: userId, email, name, role: 'tenant_admin', tenant_id: tenantId, tenantName } });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Student Login (Matric Number + PIN + Optional Tenant ID/Context)
+app.post('/api/auth/student/login', authLimiter, async (req, res) => {
+  try {
+    const { matricNumber, pin, tenantId } = req.body;
+    if (!matricNumber || !pin) return res.status(400).json({ error: 'Matric number and 4-digit PIN required' });
+
+    // 1. Find user (Student)
+    let query = 'SELECT * FROM users WHERE matric_number = $1 AND role = \'student\'';
+    let params = [matricNumber];
+    if (tenantId) {
+        query += ' AND tenant_id = $2';
+        params.push(tenantId);
+    }
+
+    const result = await pool.query(query, params);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid matric number or PIN' });
+    
+    const user = result.rows[0];
+
+    // 2. Validate PIN (which is stored in the password field for students)
+    const validPin = await bcrypt.compare(pin, user.password);
+    if (!validPin) return res.status(401).json({ error: 'Invalid matric number or PIN' });
+
+    // 3. Generate Token
+    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: 'student', tenant_id: user.tenant_id }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: 'student', tenant_id: user.tenant_id, matricNumber: user.matric_number } });
+  } catch (error: any) {
+    console.error('Student login error:', error);
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
@@ -307,8 +462,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       user.role = 'admin';
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id } });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
@@ -1006,18 +1161,28 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
     const userId = req.user.id;
 
     // Always fetch fresh user data from database (not stale JWT)
-    const userResult = await pool.query('SELECT id, email, name, affiliation, role FROM users WHERE id = $1', [userId]);
+    const userResult = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number, level FROM users WHERE id = $1', [userId]);
     let freshUser = userResult.rows[0];
     if (!freshUser) return res.status(404).json({ error: 'User not found' });
 
     // Enforce admin role dynamically for existing sessions
-    if (freshUser.email.toLowerCase() === 'burstbrainconcept@gmail.com' && freshUser.role !== 'admin') {
-      await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [freshUser.id]);
-      freshUser.role = 'admin';
+    if (freshUser.email.toLowerCase() === 'burstbrainconcept@gmail.com' && freshUser.role !== 'super_admin') {
+      await pool.query("UPDATE users SET role = 'super_admin' WHERE id = $1", [freshUser.id]);
+      freshUser.role = 'super_admin';
     }
 
     const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
     const profile = profileResult.rows[0];
+
+    let tenant = null;
+    if (freshUser.tenant_id) {
+        const tenantResult = await pool.query('SELECT * FROM tenants WHERE id = $1', [freshUser.tenant_id]);
+        tenant = tenantResult.rows[0];
+    }
+
+    // Fetch subscription price for UI
+    const pricingResult = await pool.query('SELECT value FROM settings WHERE key = \'lecturer_subscription_price\'');
+    const subscriptionPrice = parseInt(pricingResult.rows[0]?.value || '15000');
     
     const safeParse = (str: string | null | undefined, fallback: any) => {
       try {
@@ -1036,18 +1201,23 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       const papers = papersResult.rows;
 
-      const responseData: any = { user: freshUser, profile, papers };
+      const responseData: any = { user: freshUser, profile, papers, tenant, subscriptionPrice };
 
-      // If admin, include global platform stats
-      if (freshUser.role === 'admin') {
+      // If super_admin, include global platform stats
+      if (freshUser.role === 'super_admin') {
+        const totalTenantsResult = await pool.query('SELECT COUNT(*) FROM tenants');
         const totalUsersResult = await pool.query('SELECT COUNT(*) FROM users');
         const totalPapersResult = await pool.query('SELECT COUNT(*) FROM papers');
+        const totalResultsResult = await pool.query('SELECT COUNT(*) FROM exam_results');
         const publishedPapersResult = await pool.query("SELECT COUNT(*) FROM papers WHERE status = 'published'");
         const pendingReviewResult = await pool.query("SELECT COUNT(*) FROM papers WHERE status IN ('peer_review', 'integrity_check', 'formatting')");
         const totalRevenueResult = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE status = 'success'");
         const allPapersResult = await pool.query(`
-          SELECT p.id, p.title, p.status, p.doi, p.created_at, u.name as researcher_name, u.email as researcher_email
-          FROM papers p LEFT JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC
+          SELECT p.id, p.title, p.status, p.doi, p.created_at, u.name as researcher_name, u.email as researcher_email, t.name as tenant_name
+          FROM papers p 
+          LEFT JOIN users u ON p.user_id = u.id 
+          LEFT JOIN tenants t ON p.tenant_id = t.id
+          ORDER BY p.created_at DESC
         `);
         const recentUsersResult = await pool.query('SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC LIMIT 10');
 
@@ -1074,6 +1244,8 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
         user: freshUser,
         profile: { publications: [], metrics: { citations: 0, hIndex: 0, i10Index: 0 } },
         papers: papersResult.rows,
+        tenant,
+        subscriptionPrice
       });
     }
   } catch (error) {
@@ -1597,31 +1769,37 @@ app.post('/api/settings/price', authenticateToken, async (req: any, res) => {
   res.json({ success: true, price });
 });
 
-// Paystack Payment Integration
+// PaymentPoint Integration (Replaces Paystack for multi-tenant SaaS)
 app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => {
-  const { amount } = req.body;
-  const reference = `GEN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const { amount, type } = req.body; // type: 'subscription' or 'other'
+  const reference = `GMIJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    const response = await fetch('https://api.paystack.co/transaction/initialize', {
+    // PaymentPoint expects similar structure but on their endpoint
+    const response = await fetch('https://api.paymentpoint.io/v1/initialize', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        'Authorization': `Bearer ${process.env.PAYMENTPOINT_SECRET_KEY || 'pp_test_123'}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         email: req.user.email,
-        amount: amount * 100, // Paystack expects amount in Kobo
-        reference
+        amount: amount * 100, 
+        reference,
+        callback_url: `${process.env.APP_URL}/payment/verify`,
+        metadata: {
+          user_id: req.user.id,
+          tenant_id: req.tenant_id,
+          type
+        }
       })
     });
     
     const data = await response.json();
     if (!data.status) throw new Error(data.message);
     
-    // Create pending transaction record
-    await pool.query('INSERT INTO transactions (user_id, reference, amount, status) VALUES ($1, $2, $3, $4)', 
-      [req.user.id, reference, amount, 'pending']);
+    await pool.query('INSERT INTO transactions (user_id, tenant_id, reference, amount, status) VALUES ($1, $2, $3, $4, $5)', 
+      [req.user.id, req.tenant_id, reference, amount, 'pending']);
     
     res.json(data.data);
   } catch (err: any) {
@@ -1633,14 +1811,24 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
   const { reference } = req.params;
   
   try {
-    const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+    const response = await fetch(`https://api.paymentpoint.io/v1/verify/${reference}`, {
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
+      headers: { 'Authorization': `Bearer ${process.env.PAYMENTPOINT_SECRET_KEY || 'pp_test_123'}` }
     });
     
     const data = await response.json();
     if (data.status && data.data.status === 'success') {
+      const metadata = data.data.metadata;
+      
       await pool.query('UPDATE transactions SET status = $1 WHERE reference = $2', ['success', reference]);
+      
+      // If it was a subscription payment, update the tenant status
+      if (metadata.type === 'subscription') {
+        const expiry = new Date();
+        expiry.setFullYear(expiry.getFullYear() + 1); // 1 year subscription
+        await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, metadata.tenant_id]);
+      }
+      
       res.json({ status: 'success' });
     } else {
       res.json({ status: 'failed' });
@@ -1651,10 +1839,17 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
 });
 
 app.get('/api/transactions', authenticateToken, async (req: any, res) => {
-  const query = req.user.role === 'admin' 
-    ? 'SELECT t.*, u.email as user_email FROM transactions t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC'
-    : 'SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC';
-  const params = req.user.role === 'admin' ? [] : [req.user.id];
+  let query, params;
+  if (req.user.role === 'super_admin') {
+     query = 'SELECT t.*, u.email as user_email, tn.name as tenant_name FROM transactions t JOIN users u ON t.user_id = u.id LEFT JOIN tenants tn ON t.tenant_id = tn.id ORDER BY t.created_at DESC';
+     params = [];
+  } else if (req.user.role === 'tenant_admin') {
+     query = 'SELECT * FROM transactions WHERE tenant_id = $1 ORDER BY created_at DESC';
+     params = [req.tenant_id];
+  } else {
+     query = 'SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC';
+     params = [req.user.id];
+  }
   
   const result = await pool.query(query, params);
   res.json(result.rows);
@@ -1724,6 +1919,209 @@ app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
     
   res.json({ success: true });
 });
+
+// ─── MULTI-TENANT ACADEMIC ENDPOINTS ────────────────────────────────
+// Lecturer: Get student roster
+app.get('/api/courses/roster', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query('SELECT * FROM students_roster WHERE tenant_id = $1 ORDER BY name ASC', [req.tenant_id]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch roster' });
+  }
+});
+
+// Lecturer: Add student to roster with PIN setup invitation
+app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { matricNumber, name, email, course } = req.body;
+    if (!matricNumber || !email || !name) return res.status(400).json({ error: 'Matric Number, Name, and Email are required.' });
+
+    // 1. Check if student already in roster for this tenant
+    const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+    if (existing.rows.length > 0) return res.status(400).json({ error: 'Student already in your roster.' });
+
+    // 2. Generate secure setup token
+    const setupToken = require('crypto').randomBytes(32).toString('hex');
+    const tokenExpires = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+
+    // 3. Add to roster
+    await pool.query(
+      'INSERT INTO students_roster (tenant_id, matric_number, name, email, course, setup_token, token_expires) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [req.tenant_id, matricNumber, name, email, course || '', setupToken, tokenExpires]
+    );
+
+    // 4. Send Onboarding Email
+    try {
+      const setupLink = `${process.env.APP_URL || 'http://localhost:3000'}/setup-pin?token=${setupToken}&matric=${matricNumber}`;
+      await mailTransporter.sendMail({
+        from: `"Genius Portal" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
+        to: email,
+        subject: 'Secure Your Student Portal Access',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 16px;">
+            <h2 style="color: #0f172a;">Welcome to Genius Portal</h2>
+            <p style="color: #64748b;">Hi ${name},</p>
+            <p style="color: #64748b;">Your lecturer has added you to the course roster. To access your exams and assignments, you must first set up your 4-digit Secure PIN.</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${setupLink}" style="background: #800000; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Set Up Your PIN</a>
+            </div>
+            <p style="color: #64748b; font-size: 13px;">Matric Number: <strong>${matricNumber}</strong></p>
+            <p style="color: #94a3b8; font-size: 11px;">This link will expire in 48 hours. If you did not expect this, please contact your lecturer.</p>
+          </div>
+        `
+      });
+    } catch (emailErr) {
+      console.error('Onboarding email failed:', emailErr);
+    }
+
+    res.json({ success: true, message: 'Student added and invitation sent.' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Student: Set PIN using Invitation Token
+app.post('/api/student/setup-pin', async (req, res) => {
+  try {
+    const { token, matric, pin } = req.body;
+    if (!token || !matric || !pin) return res.status(400).json({ error: 'Token, Matric, and PIN are required.' });
+    if (!/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 digits.' });
+
+    // 1. Verify Token
+    const result = await pool.query(
+      'SELECT * FROM students_roster WHERE setup_token = $1 AND matric_number = $2 AND token_expires > NOW()',
+      [token, matric]
+    );
+
+    if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid or expired setup token.' });
+    const student = result.rows[0];
+
+    // 2. Hash PIN and Update Roster
+    const hashedPin = await bcrypt.hash(pin, 10);
+    await pool.query(
+      'UPDATE students_roster SET pin_hash = $1, setup_token = NULL, token_expires = NULL WHERE id = $2',
+      [hashedPin, student.id]
+    );
+
+    // 3. Ensure User account exists
+    const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matric, student.tenant_id]);
+    if (userCheck.rows.length === 0) {
+      await pool.query(
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number) VALUES ($1, $2, $3, $4, $5, $6)',
+        [student.email, student.name, hashedPin, 'student', student.tenant_id, matric]
+      );
+    } else {
+      await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPin, userCheck.rows[0].id]);
+    }
+
+    res.json({ success: true, message: 'PIN set successfully. You can now log in.' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Lecturer: Create Exam
+app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { title, description, duration, type } = req.body;
+    const result = await pool.query(
+      'INSERT INTO exams (tenant_id, title, description, duration, type) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [req.tenant_id, title, description, duration, type]
+    );
+    res.json({ id: result.rows[0].id });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create exam' });
+  }
+});
+
+// Lecturer: Add Question to Exam
+app.post('/api/exams/:id/questions', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const { text, options, correct_answer, type, formula, points } = req.body;
+    
+    // Verify exam belongs to tenant
+    const examCheck = await pool.query('SELECT id FROM exams WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    if (examCheck.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
+
+    await pool.query(
+      'INSERT INTO questions (exam_id, text, options, correct_answer, type, formula, points) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, text, JSON.stringify(options), correct_answer, type, JSON.stringify(formula), points]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add question' });
+  }
+});
+
+// Student: Get Assessments
+app.get('/api/student/assessments', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    // Fetch active assessments for the student's tenant
+    const result = await pool.query(
+      'SELECT id, title, description, duration, type, created_at FROM exams WHERE tenant_id = $1 AND status = \'active\' ORDER BY created_at DESC',
+      [req.tenant_id]
+    );
+    
+    // Also include results for past assessments
+    const resultsResult = await pool.query(
+      'SELECT exam_id, score, risk_score, submitted_at FROM exam_results WHERE user_id = $1',
+      [req.user.id]
+    );
+    
+    const resultsMap: Record<number, any> = {};
+    resultsResult.rows.forEach(r => { resultsMap[r.exam_id] = r; });
+
+    const assessments = result.rows.map(exam => ({
+      ...exam,
+      status: resultsMap[exam.id] ? 'completed' : 'active',
+      result: resultsMap[exam.id] || null
+    }));
+
+    res.json(assessments);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch assessments' });
+  }
+});
+
+// Student: Get Exam Details & Questions
+app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const examResult = await pool.query('SELECT * FROM exams WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    if (examResult.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
+
+    const questionsResult = await pool.query('SELECT id, text, options, type, formula, points FROM questions WHERE exam_id = $1', [id]);
+    
+    res.json({
+      exam: examResult.rows[0],
+      questions: questionsResult.rows
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch exam data' });
+  }
+});
+
+// ─── SaaS MONETIZATION & SUBSCRIPTIONS ─────────────────────────────
+// Super Admin: Set Lecturer Subscription Price
+app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { price } = req.body;
+    await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['lecturer_subscription_price', price.toString()]);
+    res.json({ success: true, price });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update pricing' });
+  }
+});
+
+// (CheckSubscription is now defined at the top of the file)
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

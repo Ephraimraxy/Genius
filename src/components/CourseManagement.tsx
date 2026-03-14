@@ -5,13 +5,15 @@ import { ToastType } from './ToastSystem';
 
 interface AdminCourseManagementProps {
     addToast: (msg: string, type: ToastType) => void;
+    token: string | null;
 }
 
-export default function AdminCourseManagement({ addToast }: AdminCourseManagementProps) {
+export default function AdminCourseManagement({ addToast, token }: AdminCourseManagementProps) {
     const [rosterFile, setRosterFile] = useState<File | null>(null);
     const [materialFile, setMaterialFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [assessmentType, setAssessmentType] = useState<'exam' | 'test' | 'assignment'>('exam');
+    const [examTitle, setExamTitle] = useState('');
     
     // Dynamic Application State
     const [activeStudents, setActiveStudents] = useState(0);
@@ -33,30 +35,92 @@ export default function AdminCourseManagement({ addToast }: AdminCourseManagemen
     };
 
     const handleSaveRoster = async () => {
-        if (!rosterFile) return;
+        if (!rosterFile || !token) return;
         setIsProcessing(true);
-        // Simulate parsing Excel/CSV
-        setTimeout(() => {
-            const simulatedCount = Math.floor(Math.random() * 50) + 20; // Generate fake counts dynamically
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const text = e.target?.result as string;
+            const matricNumbers = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            
+            try {
+                const res = await fetch('/api/courses/roster', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ courseId: 'default', students: matricNumbers.map(m => ({ matricNumber: m, name: `Student ${m}`, email: `${m}@student.edu`, password: 'password123' })) })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setActiveStudents(prev => prev + matricNumbers.length);
+                    addToast(`Successfully registered ${matricNumbers.length} students to the whitelist.`, 'success');
+                } else {
+                    addToast(data.error || 'Failed to update roster', 'error');
+                }
+            } catch (err) {
+                addToast('Network error updating roster', 'error');
+            }
             setIsProcessing(false);
             setRosterFile(null);
-            setActiveStudents(prev => prev + simulatedCount);
-            addToast(`Successfully registered ${simulatedCount} students to the whitelist.`, 'success');
-        }, 1500);
+        };
+        reader.readAsText(rosterFile);
     };
 
     const handleGenerateAIQuiz = async () => {
-        if (!materialFile) return;
+        if (!materialFile || !token || !examTitle) {
+            addToast('Please provide an exam title and select a material', 'error');
+            return;
+        }
         setIsProcessing(true);
-        // Simulate AI Parsing Document
-        setTimeout(() => {
-            const simulatedQs = Math.floor(Math.random() * 15) + 15;
-            setIsProcessing(false);
-            setMaterialFile(null);
-            setMaterialsUploaded(prev => prev + 1);
-            setGeneratedQuizzes(prev => prev + 1);
-            addToast(`AI generated ${simulatedQs} questions from the lecture material.`, 'success');
-        }, 2500);
+        try {
+            // First, create the exam
+            const examRes = await fetch('/api/exams', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ 
+                    title: examTitle, 
+                    type: assessmentType,
+                    duration: 60
+                })
+            });
+            const examData = await examRes.json();
+            
+            if (examData.success) {
+                // In a real scenario, we'd upload the file and have AI process it.
+                // For now, we simulate the "AI Processing" resulting in questions
+                const questions = Array.from({ length: 5 }).map((_, i) => ({
+                    question: `AI Generated Question ${i+1} about the uploaded material...`,
+                    options: ['Option A', 'Option B', 'Option C', 'Option D'],
+                    correctAnswer: 'Option A'
+                }));
+
+                for (const q of questions) {
+                    await fetch(`/api/exams/${examData.id}/questions`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(q)
+                    });
+                }
+
+                setMaterialsUploaded(prev => prev + 1);
+                setGeneratedQuizzes(prev => prev + 1);
+                addToast(`AI successfully generated ${examTitle} with ${questions.length} questions.`, 'success');
+                setExamTitle('');
+                setMaterialFile(null);
+            } else {
+                addToast(examData.error || 'Failed to create exam', 'error');
+            }
+        } catch (err) {
+            addToast('Error during AI generation', 'error');
+        }
+        setIsProcessing(false);
     };
 
     return (
@@ -112,7 +176,17 @@ export default function AdminCourseManagement({ addToast }: AdminCourseManagemen
                         <BrainCircuit size={24} />
                     </div>
                     <h3 className="text-xl font-black text-slate-900 mb-2 relative z-10">AI Assessment Builder</h3>
-                    <p className="text-sm text-slate-500 mb-6 relative z-10">Upload PDF lecture notes. Neural AI will automatically extract context and set MCQs or Tasks.</p>
+                    <p className="text-sm text-slate-500 mb-4 relative z-10">Upload PDF lecture notes. Neural AI will automatically extract context and set MCQs or Tasks.</p>
+
+                    <div className="relative mb-4 z-10">
+                        <input
+                            type="text"
+                            placeholder="Exam/Test Title"
+                            value={examTitle}
+                            onChange={(e) => setExamTitle(e.target.value)}
+                            className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500/20 font-bold"
+                        />
+                    </div>
 
                     {/* Type Selector */}
                     <div className="flex p-1 bg-slate-100 rounded-2xl mb-6 relative z-10 border border-slate-200 shadow-inner">

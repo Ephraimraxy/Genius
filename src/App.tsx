@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react'; // Refined animations
+import { motion, AnimatePresence } from 'motion/react'; 
 import Sidebar from './components/Sidebar';
 import DashboardOverview from './components/DashboardOverview';
 import SmartUpload from './components/SmartUpload';
@@ -20,12 +20,14 @@ import ReviewQueue from './components/ReviewQueue';
 import AdminSettings from './components/AdminSettings';
 import GlobalLoader from './components/GlobalLoader';
 import ToastSystem, { useToasts } from './components/ToastSystem';
-import StudentAuth from './components/StudentAuth'; // NEW
-import StudentDashboard from './components/StudentDashboard'; // NEW
-import StudentPerformance from './components/StudentPerformance'; // NEW
-import SecurityGuidelines from './components/SecurityGuidelines'; // NEW
-import CourseManagement from './components/CourseManagement'; // NEW
-import { Menu, LogOut, Bell, Search, ShieldCheck, GraduationCap } from 'lucide-react';
+import StudentAuth from './components/StudentAuth';
+import StudentDashboard from './components/StudentDashboard';
+import StudentPerformance from './components/StudentPerformance';
+import SecurityGuidelines from './components/SecurityGuidelines';
+import CourseManagement from './components/CourseManagement';
+import PINSetup from './components/PINSetup';
+import SubscriptionModal from './components/SubscriptionModal'; // NEW
+import { Menu, LogOut, Bell, Search, ShieldCheck } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines';
 
@@ -59,13 +61,20 @@ export default function App() {
   const [activePaperId, setActivePaperId] = useState<number | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [showLanding, setShowLanding] = useState(!token);
-  const [showStudentAuth, setShowStudentAuth] = useState(false); // NEW
-  const [adminViewMode, setAdminViewMode] = useState<'publication' | 'student'>('publication'); // Management Mode Toggle
-  const [adminSimulateRole, setAdminSimulateRole] = useState<'none' | 'researcher' | 'student'>('none'); // Simulation Toggle
+  const [showStudentAuth, setShowStudentAuth] = useState(false);
+  const [adminViewMode, setAdminViewMode] = useState<'publication' | 'student'>('publication');
+  const [adminSimulateRole, setAdminSimulateRole] = useState<'none' | 'researcher' | 'student'>('none');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
   const [openChatUserId, setOpenChatUserId] = useState<number | null>(null);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const { toasts, addToast, removeToast } = useToasts();
+
+  useEffect(() => {
+    const handleLocationChange = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -89,7 +98,6 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    // Artificial delay for premium feel
     const timer = setTimeout(() => setIsSyncing(false), 1500);
     return () => clearTimeout(timer);
   }, [profile]);
@@ -107,6 +115,10 @@ export default function App() {
     setShowStudentAuth(false);
   };
 
+  if (currentPath === '/setup-pin') {
+    return <PINSetup onBackToLanding={() => { window.history.pushState({}, '', '/'); setCurrentPath('/'); setShowLanding(true); }} addToast={addToast} />;
+  }
+
   if (showLanding && !token && !showStudentAuth) {
     return <Landing onStart={() => setShowLanding(false)} onStudentPortal={() => setShowStudentAuth(true)} />;
   }
@@ -119,25 +131,36 @@ export default function App() {
     return <Auth onAuthSuccess={onAuthSuccess} addToast={addToast} onBackToLanding={() => setShowLanding(true)} />;
   }
 
-  const isAdmin = profile?.user?.role === 'admin';
-  const isStudent = profile?.user?.role === 'student' || (isAdmin && adminSimulateRole === 'student'); 
-  const isSimulatingResearcher = isAdmin && adminSimulateRole === 'researcher';
+  const role = profile?.user?.role;
+  const isSuperAdmin = role === 'super_admin' || role === 'admin';
+  const isLecturer = role === 'tenant_admin';
+  const isAdmin = isSuperAdmin || isLecturer;
+  const isStudent = role === 'student' || (isSuperAdmin && adminSimulateRole === 'student');
+  const isSimulatingResearcher = isSuperAdmin && adminSimulateRole === 'researcher';
 
   const renderContent = () => {
-    // If student is logged in (or simulated), restrict them only to Student Dashboard related views
+    // Student View (Real or Simulated)
     if (isStudent && activeTab !== 'profile') {
-        if (activeTab === 'performance') {
-            return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
-        }
-        if (activeTab === 'guidelines') {
-            return <SecurityGuidelines onNavigate={setActiveTab} />;
-        }
-        return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} />;
+        if (activeTab === 'performance') return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
+        if (activeTab === 'guidelines') return <SecurityGuidelines onNavigate={setActiveTab} />;
+        return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} />;
     }
 
+    // Lecturer View
+    if (isLecturer && activeTab !== 'profile') {
+        switch (activeTab) {
+            case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
+            case 'courseManagement': return <CourseManagement addToast={addToast} token={token} />;
+            case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} />;
+            case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
+            default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
+        }
+    }
+
+    // Super Admin & Researcher View
     switch (activeTab) {
       case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
-      case 'courseManagement': return <CourseManagement addToast={addToast} />;
+      case 'courseManagement': return <CourseManagement addToast={addToast} token={token} />;
       case 'upload': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} />;
       case 'formatting': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <FormattingEngine activePaperId={activePaperId} />;
       case 'writing': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <WritingAssistant activePaperId={activePaperId} />;
@@ -155,7 +178,7 @@ export default function App() {
           .then(res => res.json())
           .then(data => { if (data) setProfile(data); });
       }} />;
-      default: return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} />;
+      default: return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} />;
     }
   };
 
@@ -168,14 +191,27 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-white text-slate-900 font-sans overflow-hidden">
+      {/* Subscription Overlay for Lecturers */}
+      {profile?.user?.role === 'tenant_admin' && !profile?.tenant?.is_subscribed && (
+        <SubscriptionModal
+          profile={profile}
+          onSuccess={() => {
+            fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } })
+              .then(res => res.json())
+              .then(data => setProfile(data));
+          }}
+          addToast={addToast}
+        />
+      )}
+
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        profile={profile}
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
-        profile={profile}
         adminViewMode={adminViewMode}
         setAdminViewMode={setAdminViewMode}
         adminSimulateRole={adminSimulateRole}
@@ -190,7 +226,7 @@ export default function App() {
             <div className={`w-10 h-10 rounded-xl flex lg:hidden items-center justify-center shadow-lg shrink-0 ${
               isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : isStudent ? 'bg-indigo-600 shadow-indigo-600/30' : 'premium-gradient shadow-[#800000]/20'
             }`}>
-              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : isStudent ? <GraduationCap className="text-white" size={22} /> : <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 rounded-full object-contain" />}
+              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : <img src="/gmijp-logo.png" alt="Logo" className="w-6 h-6 object-contain" />}
             </div>
             <div>
               <h1 className="text-lg sm:text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
@@ -296,9 +332,10 @@ export default function App() {
           </div>
         </div>
       </main>
-      <ChatWidget profile={profile} forcedOpenThread={openChatUserId} />
-      <GlobalLoader show={isSyncing} />
+
+      <ChatWidget profile={profile} />
       <ToastSystem toasts={toasts} removeToast={removeToast} />
+      <GlobalLoader show={isSyncing} />
     </div>
   );
 }

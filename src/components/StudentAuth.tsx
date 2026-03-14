@@ -15,10 +15,8 @@ interface StudentAuthProps {
 }
 
 export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: StudentAuthProps) {
-    const [isLogin, setIsLogin] = useState(true);
     const [matricNumber, setMatricNumber] = useState('');
-    const [password, setPassword] = useState('');
-    const [fullName, setFullName] = useState('');
+    const [pin, setPin] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -35,59 +33,31 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
         setError('');
 
         if (!MATRIC_REGEX.test(matricNumber)) {
-            setError('Invalid Matriculation Format. Expected: NSUK/DEP/YYYY/NNNN (e.g., NSUK/SCI/2021/1054)');
+            setError('Invalid Matriculation Format. Expected: NSUK/DEP/YYYY/NNNN');
+            return;
+        }
+
+        if (!/^\d{4}$/.test(pin)) {
+            setError('PIN must be exactly 4 digits.');
             return;
         }
 
         setLoading(true);
 
-        const endpoint = isLogin ? '/api/student/login' : '/api/student/register';
-        const body = isLogin
-            ? { matricNumber, password }
-            : { matricNumber, password, name: fullName };
-
         try {
-            // API Call Integration
-            const endpoint = isLogin ? '/api/student/login' : '/api/student/register';
-            const email = `${matricNumber.toLowerCase().replace(/\//g, '')}@student.nsuk.edu.ng`; // Derive email from matric number
-            const payload = isLogin 
-                ? { matricNumber, password } 
-                : { matricNumber, password, name: fullName, email };
-            
-             // For the sake of the client demo right now, if the server isn't up, gracefully handle it
-             // but we shouldn't explicitly use hardcoded dummy data for login checks anymore.
-             try {
-                 const res = await fetch('http://localhost:5000' + endpoint, {
-                     method: 'POST',
-                     headers: { 'Content-Type': 'application/json' },
-                     body: JSON.stringify(payload)
-                 });
-                 
-                 if (!res.ok) {
-                     const errorData = await res.json();
-                     throw new Error(errorData.message || 'Authentication failed');
-                 }
-                 
-                 const data = await res.json();
-                 localStorage.setItem('token', data.token);
-                 localStorage.setItem('user', JSON.stringify(data.user));
-                 addToast(isLogin ? 'Login successful' : 'Registration successful', 'success');
-                 onAuthSuccess(data.token, data.user);
-             } catch (fetchErr: any) {
-                 // Fallback strictly for demo purposes if backend is totally offline, to not block the frontend show.
-                 console.warn("Backend offline. Simulating frontend pass-through only for demo.", fetchErr);
-                 const demoUser = {
-                    id: 'student_' + Date.now(),
-                    matricNumber,
-                    name: isLogin ? 'Demo Student' : fullName, // Use fullName for demo registration
-                    email: isLogin ? 'demo@nsuk.edu.ng' : email,
-                    role: 'student'
-                 };
-                 localStorage.setItem('token', 'demo-token');
-                 localStorage.setItem('user', JSON.stringify(demoUser));
-                 addToast(isLogin ? 'Demo login active' : 'Demo Registration active', 'info');
-                 onAuthSuccess('demo-token', demoUser);
-             }
+            const res = await fetch('/api/auth/student/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ matricNumber, pin })
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Login failed');
+
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            addToast('Login successful', 'success');
+            onAuthSuccess(data.token, data.user);
 
         } catch (err: any) {
             setError(err.message || 'Authentication failed');
@@ -131,20 +101,12 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                     <div className="absolute bottom-0 left-0 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl -ml-20 -mb-20"></div>
                     
                     <div className="text-center mb-10 relative">
-                        <motion.div 
-                            initial={{ scale: 0.5, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="inline-flex p-4 rounded-2xl bg-indigo-500/20 mb-6 items-center justify-center border border-white/20 shadow-inner"
-                        >
-                            <GraduationCap size={32} className="text-indigo-300" />
-                        </motion.div>
+                            <img src="/gmijp-logo.png" alt="Logo" className="w-8 h-8 object-contain" />
                         <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight font-display mb-2 drop-shadow-md">
                             Student Portal
                         </h2>
                         <p className="text-indigo-200/80 font-medium text-sm">
-                            {isLogin
-                                ? 'Enter your Matric Number to access tests'
-                                : 'Activate your account with your Matric Number'}
+                            Enter your Matric Number and 4-digit PIN to access your assessments.
                         </p>
                     </div>
 
@@ -163,28 +125,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                     </AnimatePresence>
 
                     <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
-                        <AnimatePresence mode="popLayout">
-                            {!isLogin && (
-                                <motion.div
-                                    initial={{ opacity: 0, x: -20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: 20 }}
-                                    className="space-y-4"
-                                >
-                                    <div className="relative group">
-                                        <UserCircle className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-300/50 group-focus-within:text-indigo-400 transition-colors" size={18} />
-                                        <input
-                                            type="text"
-                                            required
-                                            value={fullName}
-                                            onChange={(e) => setFullName(e.target.value)}
-                                            className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-white placeholder:text-indigo-200/50 font-medium"
-                                            placeholder="Full Name as on School Record"
-                                        />
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+
 
                         <div className="relative group">
                             <GraduationCap className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-300/50 group-focus-within:text-indigo-400 transition-colors" size={18} />
@@ -203,10 +144,12 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                             <input
                                 type="password"
                                 required
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-white placeholder:text-indigo-200/50 font-medium"
-                                placeholder={isLogin ? "Password" : "Create Password (min 6 chars)"}
+                                maxLength={4}
+                                inputMode="numeric"
+                                value={pin}
+                                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                                className="w-full pl-12 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-white placeholder:text-indigo-200/50 font-mono text-xl tracking-[0.5em] text-center"
+                                placeholder="••••"
                             />
                         </div>
 
@@ -221,7 +164,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                 <Loader2 size={20} className="animate-spin" />
                             ) : (
                                 <>
-                                    <span>{isLogin ? 'Access Portal' : 'Activate Account'}</span>
+                                    <span>Access Portal</span>
                                     <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                                 </>
                             )}
@@ -230,13 +173,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
 
                     <div className="mt-8 pt-6 border-t border-white/10 text-center relative z-10">
                         <p className="text-indigo-200/70 font-bold text-[10px] uppercase tracking-[0.2em]">
-                            {isLogin ? "First time logging in?" : "Already activated?"}{' '}
-                            <button
-                                onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                                className="text-white hover:text-indigo-300 transition-colors ml-1 font-black underline underline-offset-4"
-                            >
-                                {isLogin ? 'Activate Account' : 'Log In'}
-                            </button>
+                            Lost your PIN or need access? Contact your course lecturer to receive a secure activation link via email.
                         </p>
                     </div>
                 </div>

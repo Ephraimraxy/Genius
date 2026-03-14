@@ -10,9 +10,11 @@ interface StudentDashboardProps {
     onNavigate: (tab: any) => void;
     addToast: (msg: string, type: ToastType) => void;
     view: string;
+    token: string | null;
 }
 
-export default function StudentDashboard({ profile, onNavigate, addToast, view }: StudentDashboardProps) {
+export default function StudentDashboard({ profile, onNavigate, addToast, view, token }: StudentDashboardProps) {
+    const [activeExamId, setActiveExamId] = useState<number | null>(null);
     const [activeExamCourse, setActiveExamCourse] = useState<string | null>(null);
     const [showProctoringModal, setShowProctoringModal] = useState(false);
     
@@ -23,44 +25,28 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view }
     // Unified Data Management (Genius Real-System Pattern)
     useEffect(() => {
         const syncDashboardData = async () => {
+            if (!token) return;
             setIsLoading(true);
             try {
-                // Simulate Secure Network Latency
-                await new Promise(resolve => setTimeout(resolve, 1200));
+                const res = await fetch('/api/student/assessments', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
                 
-                // This data structure simulates what would be returned from the Genius API
-                const geniusApiResponse = {
-                    exams: [
-                        { id: 1, course: 'Advanced Physics (PHY401)', status: 'active', duration: '3 Hours', date: 'Today', totalQuestions: 50, type: 'exam' },
-                        { id: 2, course: 'Quantum Mechanics (PHY405)', status: 'pending', duration: '2.5 Hours', date: 'Oct 20, 2026', totalQuestions: 40, type: 'exam' },
-                        { id: 3, course: 'Classical Mechanics', status: 'completed', score: '82/100', date: 'Sep 12, 2025', type: 'exam' }
-                    ],
-                    tests: [
-                        { id: 4, course: 'Calculus III (MAT301)', status: 'active', duration: '45 Mins', date: 'Today', totalQuestions: 20, type: 'test' },
-                        { id: 5, course: 'Linear Algebra', status: 'completed', score: '18/20', date: 'Sep 28, 2025', type: 'test' }
-                    ],
-                    assignments: [
-                        { id: 6, course: 'Lab Report: Optics', status: 'pending', duration: 'Due in 2 days', date: 'Oct 15, 2026', totalQuestions: 'N/A', type: 'assignment' },
-                        { id: 7, course: 'Research Proposal', status: 'completed', score: 'Grade: A', date: 'Aug 10, 2025', type: 'assignment' }
-                    ]
-                };
-
-                const allData = [
-                    ...geniusApiResponse.exams, 
-                    ...geniusApiResponse.tests, 
-                    ...geniusApiResponse.assignments
-                ];
-
-                setExams(allData);
+                if (data.success) {
+                    setExams(data.assessments);
+                } else {
+                    addToast("Failed to sync Genius records.", "error");
+                }
             } catch (err) {
-                addToast("Failed to sync Genius records.", "error");
+                addToast("Network error syncing records.", "error");
             } finally {
                 setIsLoading(false);
             }
         };
 
         syncDashboardData();
-    }, [view]); // Sync when view context changes // Refetch when view changes
+    }, [view, token]); // Sync when view context changes // Refetch when view changes
 
     // Filter based on BOTH status AND view type
     const activeType = view === 'dashboard' ? 'exam' : view === 'tests' ? 'test' : 'assignment';
@@ -69,7 +55,8 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view }
     const pastExams = exams.filter(e => e.status === 'completed' && e.type === activeType);
     const activeExams = exams.filter(e => e.status === 'active' && e.type === activeType);
 
-    const handleStartExamClick = (courseName: string) => {
+    const handleStartExamClick = (examId: number, courseName: string) => {
+        setActiveExamId(examId);
         setActiveExamCourse(courseName);
         setShowProctoringModal(true);
     };
@@ -88,15 +75,18 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view }
                 : e
         ));
         
+        setActiveExamId(null);
         setActiveExamCourse(null);
     };
 
-    if (activeExamCourse && !showProctoringModal) {
+    if (activeExamId && activeExamCourse && !showProctoringModal) {
         return <ActiveExamSession 
+            examId={activeExamId}
             courseName={activeExamCourse}
-            matricNumber={profile.matricNumber}
+            matricNumber={profile?.user?.matricNumber || 'GUEST'}
             addToast={addToast} 
-            onExamSubmit={handleExamSubmit} 
+            onExamSubmit={handleExamSubmit}
+            token={token}
         />;
     }
 
@@ -144,7 +134,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view }
                         </div>
                     </div>
                     <button 
-                        onClick={() => handleStartExamClick(activeExams[0].course)}
+                        onClick={() => handleStartExamClick(activeExams[0].id, activeExams[0].course)}
                         className="w-full md:w-auto px-8 py-4 bg-white text-rose-600 font-black rounded-xl shadow-lg hover:bg-slate-50 transition-colors uppercase tracking-[0.1em]"
                     >
                         {activeType === 'assignment' ? 'Open Assignment' : 'Start Now'}

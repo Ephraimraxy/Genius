@@ -4,13 +4,15 @@ import { AlertCircle, Clock, Save, ShieldAlert, CheckCircle2, ChevronRight, Chev
 import { ToastType } from './ToastSystem';
 
 interface ActiveExamSessionProps {
+    examId: number;
     courseName: string;
     matricNumber: string;
     addToast: (msg: string, type: ToastType) => void;
     onExamSubmit: (score: string, reason?: string) => void;
+    token: string | null;
 }
 
-export default function ActiveExamSession({ courseName, matricNumber, addToast, onExamSubmit }: ActiveExamSessionProps) {
+export default function ActiveExamSession({ examId, courseName, matricNumber, addToast, onExamSubmit, token }: ActiveExamSessionProps) {
     const [timeLeft, setTimeLeft] = useState(3600); // 60 mins in seconds
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -35,73 +37,41 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
     // --- Fetch & Initialization Logic ---
     useEffect(() => {
         const initializeExam = async () => {
-            // Simulated API fetch for exam questions
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            const baseQuestions = [
-                { id: 1, text: "Which AI architecture is primarily responsible for generating human-like textual responses based on context?", options: ["A. Convolutional Neural Networks (CNNs)", "B. Transformer Models", "C. Generative Adversarial Networks (GANs)", "D. Recurrent Neural Networks (RNNs)"], correct: "B" },
-                { id: 2, text: "What defines the process of 'Fine-tuning' a language model?", options: ["A. Changing the hardware it runs on.", "B. Training a pre-trained model on a smaller, specific dataset to adapt it to a new task.", "C. Deleting the model's memory of past inputs.", "D. Increasing the learning rate drastically."], correct: "B" },
-                { id: 3, text: "If a car travels {D} km in {T} hours, what is its average speed in km/h?", options: ["A. {A1}", "B. {A2}", "C. {A3}", "D. {A4}"], correct: "B", type: 'dynamic', formula: (d: number, t: number) => d / t },
-                { id: 4, text: "Which component of the Transformer architecture calculates the relevance of words to each other?", options: ["A. Polling Layer", "B. Dropout Layer", "C. Self-Attention Mechanism", "D. Sigmoid Gate"], correct: "C" },
-            ];
-
-            const processed = baseQuestions.map(q => {
-                let finalQuestionText = q.text;
-                let finalOptions = [...q.options];
-                let finalCorrect = q.correct;
-
-                if (q.type === 'dynamic' && q.formula) {
-                    // Generate random parameters
-                    const d = Math.floor(Math.random() * 100) + 50;
-                    const t = Math.floor(Math.random() * 4) + 2;
-                    const correctVal = q.formula(d, t);
-
-                    finalQuestionText = q.text.replace('{D}', d.toString()).replace('{T}', t.toString());
-                    
-                    // Generate distractor options
-                    const distractors = [
-                        correctVal + 5,
-                        correctVal - 2,
-                        correctVal * 1.5,
-                        correctVal
-                    ].sort(() => Math.random() - 0.5);
-
-                    finalOptions = distractors.map((val, idx) => {
-                        const label = String.fromCharCode(65 + idx);
-                        return `${label}. ${val.toFixed(1)} km/h`;
-                    });
-
-                    // Find the new correct label
-                    const correctIdx = distractors.indexOf(correctVal);
-                    finalCorrect = String.fromCharCode(65 + correctIdx);
-                } else {
-                    // Standard Shuffle for static questions
-                    const correctOptStr = q.options.find(o => o.startsWith(q.correct))!;
-                    const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
-                    
-                    finalOptions = shuffledOptions.map((opt, idx) => {
-                        const label = String.fromCharCode(65 + idx);
-                        return `${label}. ${opt.substring(3)}`;
-                    });
-                    
-                    const newCorrectOpt = finalOptions.find(o => o.substring(3) === correctOptStr.substring(3))!;
-                    finalCorrect = newCorrectOpt.split('.')[0];
-                }
+            if (!token) return;
+            try {
+                const res = await fetch(`/api/exams/${examId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
                 
-                return {
-                    ...q,
-                    text: finalQuestionText,
-                    options: finalOptions,
-                    correct: finalCorrect
-                };
-            }).sort(() => Math.random() - 0.5);
-            
-            setShuffledQuestions(processed);
+                if (data.success && data.exam) {
+                    const questions = data.exam.questions || [];
+                    const processed = questions.map((q: any) => {
+                        // Ensure options are handled (the API returns JSON array)
+                        const rawOptions = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
+                        const shuffled = [...rawOptions].sort(() => Math.random() - 0.5);
+                        
+                        return {
+                            id: q.id,
+                            text: q.question_text,
+                            options: shuffled,
+                            correct: q.correct_answer // Hidden from frontend mostly
+                        };
+                    }).sort(() => Math.random() - 0.5);
+
+                    setShuffledQuestions(processed);
+                    if (data.exam.duration) setTimeLeft(data.exam.duration * 60);
+                } else {
+                    addToast("Failed to load exam questions.", "error");
+                }
+            } catch (err) {
+                addToast("Network error loading exam.", "error");
+            }
             questionStartTime.current = Date.now();
         };
 
         initializeExam();
-    }, []);
+    }, [examId, token]);
 
     // --- Core Auto Submit Function ---
     const triggerAutoSubmit = useCallback((reason: string) => {
@@ -115,11 +85,35 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
             document.exitFullscreen().catch(err => console.error(err));
         }
 
-        // Calculate current score
+        // Calculate current score & submit to API
         let score = 0;
+        const submissionPayload: any[] = [];
         shuffledQuestions.forEach((q, index) => {
-            if (answers[index] === q.correct) score += 10;
+            const isCorrect = answers[index] === q.correct;
+            if (isCorrect) score += 10;
+            submissionPayload.push({
+                questionId: q.id,
+                answer: answers[index] || ''
+            });
         });
+
+        const submitToApi = async () => {
+            if (!token) return;
+            try {
+                await fetch(`/api/exams/${examId}/submit`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ answers: submissionPayload })
+                });
+            } catch (err) {
+                console.error("Failed to submit results to API", err);
+            }
+        };
+
+        submitToApi();
         
         setTimeout(() => {
             onExamSubmit(`${score}/${shuffledQuestions.length * 10}`, reason);

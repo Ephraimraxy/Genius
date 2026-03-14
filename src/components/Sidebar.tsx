@@ -7,8 +7,7 @@ import {
   PenTool,
   BookMarked,
   X,
-  GraduationCap,
-  Library,
+  Library, // GraduationCap was removed, Library remains
   ShieldCheck,
   MessageSquare,
   ChevronRight,
@@ -55,37 +54,32 @@ export default function Sidebar({
   adminSimulateRole,
   setAdminSimulateRole
 }: SidebarProps) {
-  const isAdmin = profile?.user?.role === 'admin';
-  const isStudent = profile?.user?.role === 'student';
+  const userRole = profile?.user?.role;
+  const isSuperAdmin = userRole === 'super_admin' || userRole === 'admin';
+  const isLecturer = userRole === 'tenant_admin';
+  const isStudent = userRole === 'student';
+  const isAdmin = isSuperAdmin || isLecturer;
 
-  // ─── ADMIN NAV (PUBLICATION MODE) ─────────────────────────
-  const adminPublicationNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
-    { id: 'dashboard', label: 'Journal Center', icon: LayoutDashboard, section: 'Overview' },
-    { id: 'users', label: 'User Management', icon: Users, section: 'Administration' },
-    { id: 'reviewQueue', label: 'Review Queue', icon: ClipboardList },
+  // ─── SUPER ADMIN NAV (Genius Platform) ──────────────────────────
+  const superAdminNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
+    { id: 'dashboard', label: 'Platform Stats', icon: LayoutDashboard, section: 'Overview' },
+    { id: 'users', label: 'Tenant Directory', icon: Users, section: 'SaaS Management' },
+    { id: 'reviewQueue', label: 'Global Reviews', icon: ClipboardList },
     { id: 'records', label: 'All Publications', icon: History },
-    { id: 'transactions', label: 'Revenue & Billing', icon: FileText },
-    { id: 'settings', label: 'Platform Settings', icon: Settings, section: 'System' },
+    { id: 'transactions', label: 'Global Revenue', icon: FileText },
+    { id: 'settings', label: 'System Settings', icon: Settings, section: 'Core' },
   ];
 
-  // ─── ADMIN NAV (STUDENT MANAGE MODE) ──────────────────────
-  const adminStudentNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
-    { id: 'dashboard', label: 'Platform Usage', icon: LayoutDashboard, section: 'Overview' },
-    { id: 'courseManagement', label: 'Course Management', icon: GraduationCap, section: 'Academics' },
-    { id: 'users', label: 'Student Directory', icon: Users },
-    { id: 'settings', label: 'Platform Settings', icon: Settings, section: 'System' },
+  // ─── LECTURER NAV (Academic Workspace) ──────────────────────
+  const lecturerNavItems: { id: Tab; label: string; icon: React.ComponentType<any> | React.ReactNode; section?: string }[] = [
+    { id: 'dashboard', label: 'Workspace Stats', icon: LayoutDashboard, section: 'Overview' },
+    { id: 'courseManagement', label: 'Course & Quiz', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-4 h-4 object-contain" />, section: 'Academic' },
+    { id: 'users', label: 'Student Roster', icon: Users },
+    { id: 'performance', label: 'Class Analytics', icon: BarChart3 },
+    { id: 'settings', label: 'Workspace Settings', icon: Settings, section: 'Settings' },
   ];
 
-  const role = profile?.user?.role; // Get the actual role
-
-  // Determine active navigation list based on actual role OR simulated role for Admin
-  let effectiveRole = role;
-  if (role === 'admin') {
-      if (adminSimulateRole === 'student') effectiveRole = 'student';
-      if (adminSimulateRole === 'researcher') effectiveRole = 'user'; // 'user' is the default researcher role
-  }
-
-  // ─── RESEARCHER NAV ──────────────────────────────────────
+  // ─── RESEARCHER NAV (Journal Center) ──────────────────────
   const researcherNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard, section: 'Research Hub' },
     { id: 'upload', label: 'Smart Upload', icon: FileUp, section: 'Manuscript Pipeline' },
@@ -99,7 +93,7 @@ export default function Sidebar({
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
   ];
 
-  // ─── STUDENT NAV ─────────────────────────────────────────
+  // ─── STUDENT NAV (Student Center) ─────────────────────────
   const studentNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
     { id: 'dashboard', label: 'Exams', icon: BookOpen, section: 'Course Work' },
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },
@@ -108,10 +102,22 @@ export default function Sidebar({
     { id: 'guidelines', label: 'Guidelines', icon: Info },
   ];
 
-  const navItems = effectiveRole === 'student' ? studentNavItems 
-                 : isAdmin && adminSimulateRole === 'none' 
-                    ? (adminViewMode === 'student' ? adminStudentNavItems : adminPublicationNavItems) 
-                    : researcherNavItems;
+  // Determine active navigation list based on user role or simulation (for Super Admin)
+  let effectiveRole = userRole;
+  if (isSuperAdmin && adminSimulateRole && adminSimulateRole !== 'none') {
+    effectiveRole = adminSimulateRole === 'researcher' ? 'user' : 'student';
+  }
+
+  let navItems = researcherNavItems;
+  if (isSuperAdmin && adminSimulateRole === 'none') {
+    navItems = adminViewMode === 'student' ? lecturerNavItems : superAdminNavItems;
+  } else if (effectiveRole === 'student' || isStudent) {
+    navItems = studentNavItems;
+  } else if (isLecturer && effectiveRole === 'tenant_admin') {
+    navItems = lecturerNavItems;
+  }
+
+
 
   // Group items by section
   let currentSection = '';
