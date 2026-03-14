@@ -248,23 +248,26 @@ export default function Sidebar({
 
       {/* View Toggle For Admin */}
       {isAdmin && !isCollapsed && setAdminViewMode && (
-          <div className="mx-4 mt-auto mb-2 p-1 bg-slate-800/50 rounded-xl flex items-center border border-slate-700/50 shrink-0 shadow-inner">
-            <button
-                onClick={() => { setAdminViewMode('publication'); setActiveTab('dashboard'); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
-                  adminViewMode === 'publication' ? 'bg-[#800000] text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
-                }`}
-            >
-              <LayoutDashboard size={14} /> Journal
-            </button>
-            <button
-                onClick={() => { setAdminViewMode('student'); setActiveTab('courseManagement'); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
-                  adminViewMode === 'student' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
-                }`}
-            >
-              <GraduationCap size={14} /> Student
-            </button>
+          <div className="mx-4 mt-auto mb-2">
+            <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1 px-1">Admin View Mode:</div>
+            <div className="p-1 bg-slate-800/50 rounded-xl flex items-center border border-slate-700/50 shrink-0 shadow-inner">
+              <button
+                  onClick={() => { setAdminViewMode('publication'); setActiveTab('dashboard'); }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                    adminViewMode === 'publication' ? 'bg-[#800000] text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                  }`}
+              >
+                <LayoutDashboard size={14} /> Publications App
+              </button>
+              <button
+                  onClick={() => { setAdminViewMode('student'); setActiveTab('courseManagement'); }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                    adminViewMode === 'student' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                  }`}
+              >
+                <GraduationCap size={14} /> Student Portal
+              </button>
+            </div>
           </div>
       )}
 
