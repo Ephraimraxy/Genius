@@ -98,13 +98,13 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8 }}
               >
-                <h2 className="text-[1.2rem] font-black text-[#ff4d4d] uppercase tracking-[0.4em] mb-8 drop-shadow-md">Neural Research Environment</h2>
-                <h1 className="text-7xl md:text-9xl font-black text-white leading-[1.0] tracking-tight mb-8 font-display drop-shadow-2xl">
-                  GENIUS <span className="text-[#ff4d4d]">MINDSPARK</span> <br/>
-                  <span className="text-white">MULTIDISCIPLINARY</span>
+                <h2 className="text-[1rem] font-bold text-[#ff4d4d] uppercase tracking-[0.6em] mb-8 drop-shadow-sm font-sans">Neural Research Environment</h2>
+                <h1 className="text-5xl md:text-7xl font-black text-white leading-tight tracking-tight mb-8 font-display drop-shadow-2xl">
+                  GENIUS <span className="text-[#ff4d4d] italic font-serif">MINDSPARK</span> <br/>
+                  <span className="text-white font-sans tracking-[-0.02em]">MULTIDISCIPLINARY</span>
                 </h1>
 
-                <p className="text-xl text-white/80 leading-relaxed mb-12 max-w-2xl font-medium drop-shadow-md">
+                <p className="text-lg text-white/80 leading-relaxed mb-12 max-w-2xl font-medium drop-shadow-md">
                   The global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation, instant DOI registration, and global dissemination.
                 </p>
 
