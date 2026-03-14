@@ -61,9 +61,11 @@ async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
-      email TEXT UNIQUE,
+      email TEXT,
       password TEXT,
       name TEXT,
+      role TEXT DEFAULT 'user',
+      UNIQUE(email, role),
       affiliation TEXT,
       role TEXT DEFAULT 'user',
       tenant_id INTEGER,
@@ -224,6 +226,12 @@ async function initDB() {
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
   
+  // Migration: Drop global email uniqueness and add role-scoped uniqueness
+  try {
+    await pool.query('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key');
+    await pool.query('ALTER TABLE users ADD CONSTRAINT users_email_role_key UNIQUE (email, role)');
+  } catch (e) { }
+  
   // Set default pricing if not exists
   await pool.query(`
     INSERT INTO settings (key, value)
@@ -350,8 +358,8 @@ app.get('/api/diag', (req, res) => {
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const data = registerSchema.parse(req.body);
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [data.email]);
-    if (existing.rows.length > 0) return res.status(400).json({ error: 'Email already registered' });
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1 AND role = $2', [data.email, 'user']);
+    if (existing.rows.length > 0) return res.status(400).json({ error: 'An account with this email already exists in the Research portal' });
 
     // Hardcode specific email to always be admin
     const accountRole = data.email.toLowerCase() === 'burstbrainconcept@gmail.com' ? 'super_admin' : 'user';
@@ -385,8 +393,9 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
     const { email, password, name, tenantName } = req.body;
     if (!email || !password || !name || !tenantName) return res.status(400).json({ error: 'All fields are required' });
 
-    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (existingUser.rows.length > 0) return res.status(400).json({ error: 'Email already registered' });
+    const role = 'tenant_admin';
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1 AND role = $2', [email, role]);
+    if (existingUser.rows.length > 0) return res.status(400).json({ error: 'This email is already associated with an Academic Workspace' });
 
     const existingTenant = await pool.query('SELECT id FROM tenants WHERE name = $1', [tenantName]);
     if (existingTenant.rows.length > 0) return res.status(400).json({ error: 'Tenant name already taken' });
@@ -448,9 +457,18 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const data = loginSchema.parse(req.body);
+    const { role } = req.body; // Optional: helps disambiguate if multiple roles share email
     const email = data.email.toLowerCase().trim();
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid email or password' });
+    
+    let query = 'SELECT * FROM users WHERE email = $1';
+    let params = [email];
+    if (role) {
+      query += ' AND role = $2';
+      params.push(role);
+    }
+    
+    const result = await pool.query(query, params);
+    if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid email or password for the selected portal' });
     
     let user = result.rows[0];
     const validPassword = await bcrypt.compare(data.password.trim(), user.password);
