@@ -76,16 +76,16 @@ export default function SecurityGuidelines({ onNavigate }: SecurityGuidelinesPro
 
     return (
         <div className="max-w-5xl mx-auto pb-20">
-            <header className="mb-12">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-rose-600 text-white rounded-lg">
-                        <ShieldAlert size={20} />
+            <header className="mb-8 md:mb-12">
+                <div className="flex items-center gap-3 mb-3 md:mb-4">
+                    <div className="p-1.5 md:p-2 bg-rose-600 text-white rounded-lg">
+                        <ShieldAlert size={18} />
                     </div>
-                    <span className="text-xs font-black uppercase tracking-[0.2em] text-rose-600">Integrity & Security</span>
+                    <span className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-rose-600">Integrity & Security</span>
                 </div>
-                <h1 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Security Guidelines</h1>
-                <p className="text-lg text-slate-500 font-medium max-w-2xl leading-relaxed">
-                    The Genius Portal uses advanced Behavioral Intelligence to ensure a fair and secure testing environment for everyone. Please review these protocols carefully.
+                <h1 className="text-2xl md:text-4xl font-black text-slate-900 mb-3 md:mb-4 tracking-tight">Security Guidelines</h1>
+                <p className="text-base md:text-lg text-slate-500 font-medium max-w-2xl leading-relaxed">
+                    The Genius Portal uses advanced Behavioral Intelligence to ensure a fair and secure testing environment.
                 </p>
             </header>
 
@@ -96,7 +96,7 @@ export default function SecurityGuidelines({ onNavigate }: SecurityGuidelinesPro
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.05 }}
-                        className="p-6 bg-white border border-slate-100 rounded-[2rem] shadow-sm hover:shadow-md transition-all group"
+                        className="p-5 md:p-6 bg-white border border-slate-100 rounded-[1.5rem] md:rounded-[2rem] shadow-sm hover:shadow-md transition-all group"
                     >
                         <div className={`w-12 h-12 ${protocol.bg} ${protocol.color} rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform`}>
                             <protocol.icon size={24} />
@@ -109,11 +109,11 @@ export default function SecurityGuidelines({ onNavigate }: SecurityGuidelinesPro
                 ))}
             </div>
 
-            <div className="bg-slate-900 rounded-[3rem] p-8 md:p-12 text-white relative overflow-hidden">
+            <div className="bg-slate-900 rounded-[2rem] md:rounded-[3rem] p-6 md:p-12 text-white relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl -mr-32 -mt-32"></div>
                 <div className="relative z-10 flex flex-col md:flex-row items-center gap-10">
                     <div className="flex-1 text-center md:text-left">
-                        <h2 className="text-3xl font-black mb-6">Deep-AI Proctoring (DeepProct)</h2>
+                        <h2 className="text-2xl md:text-3xl font-black mb-4 md:mb-6">Deep-AI Proctoring (DeepProct)</h2>
                         <div className="space-y-4">
                             <div className="flex items-start gap-4">
                                 <CheckCircle2 className="text-emerald-400 shrink-0 mt-1" size={18} />

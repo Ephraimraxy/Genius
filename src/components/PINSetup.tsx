@@ -70,13 +70,13 @@ export default function PINSetup({ onBackToLanding, addToast }: PINSetupProps) {
       <motion.div
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-md bg-white/90 backdrop-blur-3xl rounded-[2.5rem] shadow-2xl border border-white/50 p-8 sm:p-12 relative z-10"
+        className="w-full max-w-md bg-white/90 backdrop-blur-3xl rounded-[2rem] md:rounded-[2.5rem] shadow-2xl border border-white/50 p-6 md:p-10 relative z-10"
       >
         <div className="flex flex-col items-center text-center mb-10">
-          <div className="w-20 h-20 bg-[#800000]/5 rounded-3xl flex items-center justify-center mb-6 shadow-sm border border-[#800000]/10">
-            <img src="/gmijp-logo.png" alt="GMIJP Logo" className="w-12 h-12 object-contain" />
+          <div className="w-16 h-16 md:w-20 md:h-20 bg-[#800000]/5 rounded-3xl flex items-center justify-center mb-5 md:mb-6 shadow-sm border border-[#800000]/10">
+            <img src="/gmijp-logo.png" alt="GMIJP Logo" className="w-10 h-10 md:w-12 md:h-12 object-contain" />
           </div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">Secure Entry</h2>
+          <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight mb-2">Secure Entry</h2>
           <p className="text-slate-500 font-medium text-sm px-4 leading-relaxed">
             Set up your personal 4-digit access PIN to protect your academic records.
           </p>

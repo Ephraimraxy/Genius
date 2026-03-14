@@ -100,8 +100,8 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
 
     return (
         <div className="space-y-8 pb-12">
-            <header className="mb-8">
-                <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">
+            <header className="mb-6 md:mb-8">
+                <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight mb-1 md:mb-2">
                     Welcome, {profile?.user?.name || 'Student'}
                 </h2>
                 <div className="flex items-center gap-2">
@@ -121,21 +121,21 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                     animate={{ opacity: 1, y: 0 }}
                     className="p-6 bg-gradient-to-r from-red-500 to-rose-600 rounded-[2rem] shadow-xl text-white flex flex-col md:flex-row items-center justify-between gap-6"
                 >
-                    <div className="flex items-start gap-4">
-                        <div className="p-3 bg-white/20 rounded-xl mt-1">
-                            <AlertCircle size={24} className="animate-pulse" />
+                    <div className="flex items-start gap-4 flex-1">
+                        <div className="p-2.5 bg-white/20 rounded-xl mt-1 shrink-0">
+                            <AlertCircle size={20} className="animate-pulse" />
                         </div>
-                        <div>
-                            <h3 className="text-xl font-black mb-1">Active {activeType.toUpperCase()} Available</h3>
-                            <p className="text-red-100 font-medium">{activeExams[0].course}</p>
-                            <p className="text-sm font-bold mt-2 opacity-80 uppercase tracking-widest flex items-center gap-2">
-                                <Clock size={14} /> {activeType === 'assignment' ? 'Deadline' : 'Duration'}: {activeExams[0].duration}
+                        <div className="min-w-0">
+                            <h3 className="text-lg md:text-xl font-black mb-0.5 md:mb-1 truncate">Active {activeType.toUpperCase()} Available</h3>
+                            <p className="text-red-100 font-medium text-sm md:text-base truncate">{activeExams[0].course}</p>
+                            <p className="text-[10px] md:text-xs font-bold mt-1.5 md:mt-2 opacity-80 uppercase tracking-widest flex items-center gap-2">
+                                <Clock size={12} /> {activeType === 'assignment' ? 'Deadline' : 'Duration'}: {activeExams[0].duration}
                             </p>
                         </div>
                     </div>
                     <button 
                         onClick={() => handleStartExamClick(activeExams[0].id, activeExams[0].course)}
-                        className="w-full md:w-auto px-8 py-4 bg-white text-rose-600 font-black rounded-xl shadow-lg hover:bg-slate-50 transition-colors uppercase tracking-[0.1em]"
+                        className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-white text-rose-600 font-black rounded-xl shadow-lg hover:bg-slate-50 transition-colors uppercase tracking-[0.1em] text-xs md:text-sm"
                     >
                         {activeType === 'assignment' ? 'Open Assignment' : 'Start Now'}
                     </button>
@@ -155,7 +155,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                         </div>
                     ) : (
                         upcomingExams.map(exam => (
-                            <div key={exam.id} className="p-6 bg-white border border-slate-200 rounded-[2rem] shadow-sm hover:shadow-md transition-all group">
+                            <div key={exam.id} className="p-5 md:p-6 bg-white border border-slate-200 rounded-[1.5rem] md:rounded-[2rem] shadow-sm hover:shadow-md transition-all group">
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
                                         <BookOpen size={20} />
@@ -186,7 +186,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                         </div>
                     ) : (
                         pastExams.map(exam => (
-                            <div key={exam.id} className="p-6 bg-white border border-slate-200 rounded-[2rem] shadow-sm hover:shadow-md transition-all">
+                             <div key={exam.id} className="p-5 md:p-6 bg-white border border-slate-200 rounded-[1.5rem] md:rounded-[2rem] shadow-sm hover:shadow-md transition-all">
                                 <div className="flex justify-between items-start mb-4">
                                     <div>
                                         <h4 className="text-lg font-bold text-slate-900">{exam.course}</h4>

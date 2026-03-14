@@ -211,19 +211,19 @@ export default function Sidebar({
         hidden lg:flex flex-col inset-y-0 left-0 z-50 shrink-0
         ${isAdmin ? 'bg-[#0a0f1e]' : 'bg-[#0f172a]'} text-slate-400 border-r ${isAdmin ? 'border-amber-900/20' : 'border-slate-800/50'}
         transition-all duration-300 ease-in-out
-        ${isCollapsed ? 'w-24' : 'w-72'}
+        ${isCollapsed ? 'w-20' : 'w-64'}
       `}>
         <div className={`h-20 flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between px-8'}`}>
           <div className="flex items-center gap-3 text-white font-bold text-xl font-display tracking-tight">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg shrink-0 ${
+            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-lg shrink-0 ${
               isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : 'premium-gradient shadow-[#800000]/20'
             }`}>
-              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 rounded-full object-contain" />}
+              {isAdmin ? <ShieldCheck className="text-white" size={20} /> : <img src="/gmijp-logo.png" alt="GMIJP" className="w-5 h-5 md:w-6 md:h-6 rounded-full object-contain" />}
             </div>
             {!isCollapsed && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col">
-                <span className="leading-tight">Genius</span>
-                {isAdmin && <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.25em] -mt-0.5">Admin</span>}
+                <span className="leading-tight text-lg">Genius</span>
+                {isAdmin && <span className="text-[8px] font-black text-amber-500 uppercase tracking-[0.25em] -mt-0.5">Admin</span>}
               </motion.div>
             )}
           </div>
@@ -265,7 +265,7 @@ export default function Sidebar({
                     setIsMobileMenuOpen(false);
                   }}
                   className={`
-                    w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all relative group
+                    w-full flex items-center gap-3 px-3 md:px-4 py-2.5 rounded-xl md:rounded-2xl text-sm font-semibold transition-all relative group
                     ${isCollapsed ? 'justify-center' : ''}
                     ${isActive
                       ? 'text-white'

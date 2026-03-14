@@ -53,9 +53,9 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
 
     return (
         <div className="space-y-8 pb-12">
-            <header className="mb-8">
-                <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">Academic Excellence</h2>
-                <p className="text-slate-500 font-medium">Detailed tracking of your scores, grades, and overall performance.</p>
+            <header className="mb-6 md:mb-8">
+                <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight mb-1 md:mb-2">Academic Excellence</h2>
+                <p className="text-slate-500 font-medium text-sm md:text-base">Detailed tracking of your scores, grades, and overall performance.</p>
             </header>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -67,7 +67,7 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ delay: i * 0.1 }}
-                            className="p-6 bg-white border border-slate-200 rounded-[2rem] shadow-sm hover:shadow-md transition-all"
+                            className="p-4 md:p-6 bg-white border border-slate-200 rounded-[1.5rem] md:rounded-[2rem] shadow-sm hover:shadow-md transition-all"
                         >
                             <div className={`w-10 h-10 ${stat.bg} ${stat.color} rounded-xl flex items-center justify-center mb-4`}>
                                 <Icon size={20} />
@@ -81,7 +81,7 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
 
             <div className="grid lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 space-y-6">
-                    <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-2xl">
+                    <div className="bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 text-white relative overflow-hidden shadow-2xl">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl -mr-20 -mt-20"></div>
                         <div className="relative z-10">
                             <div className="flex items-center gap-2 text-indigo-400 font-black uppercase tracking-[0.2em] text-[10px] mb-4">
@@ -96,8 +96,8 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                         </div>
                     </div>
 
-                    <div className="bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm">
-                        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
+                    <div className="bg-white border border-slate-200 rounded-[2rem] md:rounded-[2.5rem] overflow-hidden shadow-sm">
+                        <div className="px-5 md:px-8 py-4 md:py-6 border-b border-slate-100 flex items-center justify-between">
                             <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                                 <BarChart3 className="text-indigo-500" /> Recent Grades
                             </h3>
@@ -143,7 +143,7 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                 </div>
 
                 <div className="space-y-6">
-                    <div className="p-8 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-[2.5rem] shadow-xl text-white">
+                    <div className="p-6 md:p-8 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-[2rem] md:rounded-[2.5rem] shadow-xl text-white">
                         <h3 className="text-xl font-black mb-6">Grading System</h3>
                         <div className="space-y-4">
                             {[
@@ -174,7 +174,7 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                         </div>
                     </div>
 
-                    <div className="p-8 bg-white border border-slate-200 rounded-[2.5rem] shadow-sm">
+                    <div className="p-6 md:p-8 bg-white border border-slate-200 rounded-[2rem] md:rounded-[2.5rem] shadow-sm">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Top Skills</h3>
                             <ChevronRight size={16} className="text-slate-400" />

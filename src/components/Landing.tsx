@@ -29,16 +29,16 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-[#800000] selection:text-white">
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-white/95 backdrop-blur-md border-b border-slate-100 h-24 shadow-sm">
+      <nav className="fixed top-0 w-full z-50 bg-white/95 backdrop-blur-md border-b border-slate-100 h-16 md:h-20 shadow-sm transition-all">
         <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full flex items-center justify-center transition-transform hover:scale-110 drop-shadow-sm border border-slate-100 overflow-hidden bg-white p-2">
+          <div className="flex items-center gap-2 md:gap-4">
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 drop-shadow-sm border border-slate-100 overflow-hidden bg-white p-1.5">
               <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain rounded-full" />
             </div>
             <div className="flex flex-col">
-              <span className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Genius</span>
-              <span className="text-[10px] font-bold text-[#800000] tracking-[0.3em] uppercase mt-1">Research Portal</span>
+              <span className="text-xl md:text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Genius</span>
+              <span className="text-[8px] md:text-[10px] font-bold text-[#800000] tracking-[0.3em] uppercase mt-0.5 md:mt-1">Research Portal</span>
             </div>
           </div>
 
@@ -101,8 +101,8 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8 }}
               >
-                <h2 className="text-[1rem] font-bold text-[#ff4d4d] uppercase tracking-[0.6em] mb-8 drop-shadow-sm font-sans">Neural Research Environment</h2>
-                <h1 className="text-5xl md:text-7xl font-black text-white leading-tight tracking-tight mb-8 font-display drop-shadow-2xl">
+                <h2 className="text-[0.75rem] md:text-[1rem] font-bold text-[#ff4d4d] uppercase tracking-[0.3em] md:tracking-[0.6em] mb-4 md:mb-8 drop-shadow-sm font-sans">Neural Research Environment</h2>
+                <h1 className="text-3xl sm:text-4xl md:text-7xl font-black text-white leading-tight tracking-tight mb-4 md:mb-8 font-display drop-shadow-2xl">
                   GENIUS <span className="text-[#ff4d4d] italic font-serif">MINDSPARK</span> <br/>
                   <span className="text-white font-sans tracking-[-0.02em]">MULTIDISCIPLINARY</span>
                 </h1>
@@ -128,10 +128,10 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                   </div>
                 </div>
 
-                <div className="flex items-center gap-8">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-8">
                   <button 
                     onClick={onSchoolPortal}
-                    className="px-10 py-5 bg-[#800000] text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[11px] border border-white/10 flex items-center gap-3"
+                    className="px-6 md:px-10 py-4 md:py-5 bg-[#800000] text-white font-black rounded-xl md:rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[10px] md:text-[11px] border border-white/10 flex items-center justify-center gap-3"
                   >
                     <Users size={18} />
                     Enter School Portal
@@ -201,8 +201,7 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#800000]/5 border border-[#800000]/10 rounded-full mb-8">
                 <span className="text-[10px] font-black text-[#800000] uppercase tracking-[0.2em]">Institutional Profile</span>
               </div>
-              
-              <h2 className="text-5xl font-black text-slate-900 leading-[0.95] tracking-tighter mb-8 font-display">
+              <h2 className="text-3xl md:text-5xl font-black text-slate-900 leading-[1.1] md:leading-[0.95] tracking-tighter mb-6 md:mb-8 font-display">
                 Strategic <span className="text-[#800000]">Partnership</span> & Vision
               </h2>
               <p className="text-lg text-slate-600 leading-relaxed mb-10 font-medium">
@@ -263,8 +262,8 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row items-end justify-between mb-16 gap-8">
             <div className="max-w-2xl">
-              <h2 className="text-4xl font-black text-slate-900 mb-6 font-display">Author <span className="text-[#800000]">Guidelines</span></h2>
-              <p className="text-slate-500 font-medium leading-relaxed">
+              <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-4 md:mb-6 font-display">Author <span className="text-[#800000]">Guidelines</span></h2>
+              <p className="text-sm md:text-slate-500 font-medium leading-relaxed">
                 Please review these essential steps before manuscript submission to ensure rapid processing and academic integrity.
               </p>
             </div>
@@ -321,9 +320,9 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
       {/* Editorial Board Section */}
       <section id="editorial" className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-black text-slate-900 mb-4 font-display">Editorial <span className="text-[#800000]">Board</span></h2>
-            <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">Academic Oversight Committee</p>
+          <div className="text-center mb-10 md:mb-16">
+            <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-4 font-display">Editorial <span className="text-[#800000]">Board</span></h2>
+            <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[8px] md:text-[10px]">Academic Oversight Committee</p>
           </div>
 
           <div className="bg-white rounded-[2rem] border border-slate-100 shadow-2xl shadow-slate-200/50 overflow-hidden">
@@ -375,8 +374,8 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
       </section>
 
       {/* Footer / Contact Section */}
-      <footer id="contact" className="py-24 bg-slate-900 text-white relative overflow-hidden">
-        <div className="max-w-7xl mx-auto px-6 border-b border-white/10 pb-20">
+      <footer id="contact" className="py-16 md:py-24 bg-slate-900 text-white relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6 border-b border-white/10 pb-12 md:pb-20">
           <div className="grid lg:grid-cols-4 gap-16">
             <div className="lg:col-span-2">
               <div className="flex items-center gap-4 mb-8">

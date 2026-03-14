@@ -125,8 +125,8 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
 
     return (
         <div className="space-y-8 max-w-5xl">
-            <header className="mb-8">
-                <h2 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+            <header className="mb-6 md:mb-8">
+                <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
                     Course & Quiz Management <ShieldCheck className="text-amber-500" />
                 </h2>
                 <p className="text-slate-500 font-medium">Whitelist students and generate AI quizzes from lecture notes.</p>
@@ -134,7 +134,7 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
 
             <div className="grid md:grid-cols-2 gap-8">
                 {/* Roster Management Card */}
-                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+                <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm">
                     <div className="w-12 h-12 bg-indigo-50 text-indigo-600 flex items-center justify-center rounded-2xl mb-6">
                         <Users size={24} />
                     </div>
@@ -169,7 +169,7 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                 </div>
 
                 {/* AI Quiz Generation Card */}
-                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm relative overflow-hidden">
+                <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
                     
                     <div className="w-12 h-12 bg-amber-50 text-amber-600 flex items-center justify-center rounded-2xl mb-6 relative z-10">

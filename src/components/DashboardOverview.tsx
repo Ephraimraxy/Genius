@@ -44,18 +44,18 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
     return (
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
         {/* Admin Welcome */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] rounded-[2rem] p-10 text-white shadow-2xl">
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] rounded-[1.5rem] md:rounded-[2rem] p-6 md:p-10 text-white shadow-2xl">
           <div className="absolute top-0 right-0 p-8 opacity-10"><ShieldCheck size={180} /></div>
           <div className="relative z-10 flex flex-col md:flex-row items-start sm:items-center justify-between gap-8">
             <div className="text-center sm:text-left flex-1 border-r border-white/10 pr-0 sm:pr-8 hidden sm:block">
               <div className="flex items-center gap-3 mb-3 justify-center sm:justify-start">
                 <span className="px-3 py-1 bg-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-widest rounded-lg border border-amber-500/30">Administrator</span>
               </div>
-              <h2 className="text-4xl font-bold font-display mb-3 tracking-tight">
+              <h2 className="text-2xl md:text-4xl font-bold font-display mb-2 md:mb-3 tracking-tight">
                 Platform Control Center
               </h2>
-              <p className="text-slate-300 text-lg max-w-xl font-medium">
-                Welcome, <span className="text-white font-bold">{profile?.user?.name || 'Admin'}</span>. You have <span className="text-amber-300 font-bold">{adminStats.pendingReview} manuscripts</span> awaiting review and <span className="text-emerald-300 font-bold">{adminStats.totalUsers} registered researchers</span>.
+              <p className="text-slate-300 text-base md:text-lg max-w-xl font-medium leading-relaxed">
+                Welcome, <span className="text-white font-bold">{profile?.user?.name || 'Admin'}</span>. You have <span className="text-amber-300 font-bold">{adminStats.pendingReview} manuscripts</span> awaiting review.
               </p>
             </div>
             
@@ -83,7 +83,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1 }}
-              className={`min-w-[85vw] sm:min-w-0 snap-center bg-white p-7 rounded-[1.5rem] shadow-sm border ${stat.border} hover:shadow-md transition-all group`}
+              className={`min-w-[80vw] sm:min-w-0 snap-center bg-white p-5 md:p-7 rounded-[1.25rem] md:rounded-[1.5rem] shadow-sm border ${stat.border} hover:shadow-md transition-all group`}
             >
               <div className={`p-4 ${stat.color} rounded-2xl w-fit mb-4 group-hover:scale-110 transition-transform`}>
                 {stat.icon}
@@ -98,9 +98,9 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
         <div className="flex flex-col lg:grid lg:grid-cols-5 gap-6 lg:gap-8">
           {/* Recent Users */}
           <div className="lg:col-span-2 bg-white rounded-[1.5rem] sm:rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col max-h-[500px] lg:max-h-none">
-            <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-slate-100 bg-slate-50/50 shrink-0">
-              <h3 className="text-base sm:text-lg font-bold text-slate-800 font-display flex items-center gap-2">
-                <Users size={20} className="text-indigo-600" /> Recent Signups
+            <div className="px-5 md:px-6 py-4 md:py-5 border-b border-slate-100 bg-slate-50/50 shrink-0">
+              <h3 className="text-sm md:text-lg font-bold text-slate-800 font-display flex items-center gap-2">
+                <Users size={18} className="text-indigo-600" /> Recent Signups
               </h3>
             </div>
             <div className="divide-y divide-slate-100 overflow-y-auto custom-scrollbar flex-1">
@@ -202,17 +202,17 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
       className="space-y-8 pb-12"
     >
       {/* Welcome Section */}
-      <div className="relative overflow-hidden premium-gradient rounded-[2rem] p-10 text-white shadow-2xl shadow-indigo-900/20">
+      <div className="relative overflow-hidden premium-gradient rounded-[1.5rem] md:rounded-[2rem] p-6 md:p-10 text-white shadow-2xl shadow-indigo-900/20">
         <div className="absolute top-0 right-0 p-8 opacity-10">
           <img src="/gmijp-logo.png" alt="GMIJP" className="w-44 h-44 rounded-full object-contain opacity-60" />
         </div>
         <div className="relative z-10 flex flex-col md:flex-row items-start sm:items-center justify-between gap-8">
           <div className="text-center sm:text-left flex-1 border-r border-white/10 pr-0 sm:pr-8">
-            <h2 className="text-4xl font-bold font-display mb-3 tracking-tight">
+            <h2 className="text-2xl md:text-4xl font-bold font-display mb-2 md:mb-3 tracking-tight">
               Welcome back, {profile?.profile?.name || profile?.user?.name?.split(' ')[0] || 'Researcher'}
             </h2>
-            <p className="text-indigo-100 text-lg max-w-xl font-medium">
-              Your research factory is running. You have <span className="text-white font-bold">{papers.filter((p: any) => p.status !== 'published').length} manuscripts</span> waiting for refinement.
+            <p className="text-indigo-100 text-base md:text-lg max-w-xl font-medium leading-relaxed">
+              Your research factory is running. You have <span className="text-white font-bold">{papers.filter((p: any) => p.status !== 'published').length} manuscripts</span> waiting.
             </p>
           </div>
           <div className="flex flex-col items-center sm:items-end justify-center w-full sm:w-auto shrink-0 gap-6">
@@ -238,7 +238,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className="bg-white p-7 rounded-[1.5rem] shadow-sm border border-slate-200 hover:shadow-md transition-all group"
+            className="bg-white p-5 md:p-7 rounded-[1.25rem] md:rounded-[1.5rem] shadow-sm border border-slate-200 hover:shadow-md transition-all group"
           >
             <div className={`p-4 ${stat.color} rounded-2xl w-fit mb-4 group-hover:scale-110 transition-transform`}>
               {stat.icon}
@@ -253,9 +253,9 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
 
       {/* Recent Papers */}
       <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
-        <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <h3 className="text-xl font-bold text-slate-800 font-display">My Research Pipeline</h3>
-          <button onClick={() => onNavigate('records')} className="text-indigo-600 text-sm font-bold hover:underline">View Full History</button>
+        <div className="px-5 md:px-8 py-4 md:py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <h3 className="text-lg md:text-xl font-bold text-slate-800 font-display">My Research Pipeline</h3>
+          <button onClick={() => onNavigate('records')} className="text-indigo-600 text-xs md:text-sm font-bold hover:underline">View History</button>
         </div>
         <div className="divide-y divide-slate-100">
           {papers.length === 0 ? (
@@ -272,7 +272,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 + (idx * 0.05) }}
-              className="p-8 hover:bg-slate-50/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-6"
+              className="p-5 md:p-8 hover:bg-slate-50/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 md:gap-6"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-4 mb-2">

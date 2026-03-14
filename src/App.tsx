@@ -322,7 +322,7 @@ export default function App() {
       />
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className={`backdrop-blur-xl border-b h-20 flex items-center justify-between px-4 lg:px-12 shrink-0 z-10 ${
+        <header className={`backdrop-blur-xl border-b h-16 md:h-20 flex items-center justify-between px-4 md:px-8 lg:px-10 shrink-0 z-10 transition-all ${
           isAdmin ? 'bg-slate-900/[0.03] border-slate-200' : 'bg-white/90 border-slate-100'
         }`}>
           <div className="flex items-center gap-4 lg:gap-6">
@@ -418,7 +418,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-4 lg:p-12 pb-32 lg:pb-12 scroll-smooth bg-slate-50/30">
+        <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 pb-32 md:pb-8 scroll-smooth bg-slate-50/30">
           <div className="max-w-7xl mx-auto h-full">
             <AnimatePresence mode="wait">
               <motion.div
@@ -450,15 +450,15 @@ export default function App() {
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden"
+              className="relative w-full max-w-lg bg-white rounded-[2rem] md:rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden"
             >
-              <div className="p-8 sm:p-12">
-                <div className="text-center mb-10">
-                  <div className="w-16 h-16 bg-[#800000]/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-100 p-3">
+              <div className="p-6 md:p-10">
+                <div className="text-center mb-8 md:mb-10">
+                  <div className="w-14 h-14 md:w-16 md:h-16 bg-[#800000]/5 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6 border border-slate-100 p-2.5 md:p-3">
                     <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain rounded-full" />
                   </div>
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">School Portal</h2>
-                  <p className="text-slate-500 font-medium">Choose your access role to continue</p>
+                  <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight mb-2">School Portal</h2>
+                  <p className="text-slate-500 font-medium text-xs md:text-sm">Choose your access role to continue</p>
                 </div>
 
                 <div className="grid gap-4">
