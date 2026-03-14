@@ -8,17 +8,19 @@ interface AuthProps {
     onAuthSuccess: (token: string, user: any) => void;
     addToast: (message: string, type?: ToastType) => void;
     onBackToLanding?: () => void;
+    role?: 'researcher' | 'lecturer';
+    initialIsLogin?: boolean;
 }
 
-export default function Auth({ onAuthSuccess, addToast, onBackToLanding }: AuthProps) {
-    const [isLogin, setIsLogin] = useState(true);
+export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 'researcher', initialIsLogin = true }: AuthProps) {
+    const [isLogin, setIsLogin] = useState(initialIsLogin);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
     const [affiliation, setAffiliation] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const [isLecturerRegister, setIsLecturerRegister] = useState(false);
+    const [isLecturerRegister, setIsLecturerRegister] = useState(role === 'lecturer');
     const [tenantName, setTenantName] = useState('');
 
     // Forgot password states
@@ -194,12 +196,14 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding }: AuthP
                             <img src="/gmijp-logo.png" alt="GMIJP" className="w-8 h-8 rounded-full object-contain" />
                         </motion.div>
                         <h2 className="text-4xl font-black text-white tracking-tight font-display mb-2 drop-shadow-lg">
-                            {isLogin ? 'Genius Login' : 'Join Genius'}
+                            {isLogin 
+                                ? (role === 'lecturer' ? 'Lecturer Login' : 'Genius Login') 
+                                : (role === 'lecturer' ? 'Lecturer Signup' : 'Join Genius')}
                         </h2>
                         <p className="text-slate-300 font-medium text-sm">
                             {isLogin
-                                ? 'Authorize to access your publication portal'
-                                : 'Scale your research with neural intelligence'}
+                                ? (role === 'lecturer' ? 'Access your academic workspace' : 'Authorize to access your publication portal')
+                                : (role === 'lecturer' ? 'Create your workspace and manage exams' : 'Scale your research with neural intelligence')}
                         </p>
                     </div>
 
@@ -533,12 +537,16 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding }: AuthP
 
                     <div className="mt-8 pt-6 border-t border-white/10 text-center">
                         <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">
-                            {isLogin ? "New to Genius?" : "Already Joined?"}{' '}
+                            {isLogin 
+                                ? (role === 'lecturer' ? "No Workspace yet?" : "New to Genius?") 
+                                : "Already Joined?"}{' '}
                             <button
                                 onClick={() => { setIsLogin(!isLogin); exitForgotMode(); }}
                                 className="text-[#ff4d4d] hover:text-white transition-colors ml-1 font-black underline underline-offset-4"
                             >
-                                {isLogin ? 'Join Team' : 'Log In'}
+                                {isLogin 
+                                    ? (role === 'lecturer' ? 'Create Space' : 'Join Team') 
+                                    : 'Log In'}
                             </button>
                         </p>
                     </div>
@@ -547,7 +555,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding }: AuthP
                 {/* Branding Footer */}
                 <div className="mt-8 text-center">
                     <p className="text-white/40 text-[10px] font-bold uppercase tracking-[0.3em]">
-                        GMIJ Publication Portal &copy; 2026
+                        {role === 'lecturer' ? 'Academic Workspace Management' : 'GMIJ Publication Portal'} &copy; 2026
                     </p>
                 </div>
             </motion.div>

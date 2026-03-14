@@ -63,6 +63,8 @@ export default function App() {
   const [showLanding, setShowLanding] = useState(!token);
   const [showStudentAuth, setShowStudentAuth] = useState(false);
   const [showPortalSelection, setShowPortalSelection] = useState(false);
+  const [authRole, setAuthRole] = useState<'researcher' | 'lecturer'>('researcher');
+  const [authIsLogin, setAuthIsLogin] = useState(true);
   const [adminViewMode, setAdminViewMode] = useState<'publication' | 'student'>('publication');
   const [adminSimulateRole, setAdminSimulateRole] = useState<'none' | 'researcher' | 'student'>('none');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -123,7 +125,10 @@ export default function App() {
   if (showLanding && !token && !showStudentAuth) {
     return (
       <>
-        <Landing onPublicationHub={() => setShowLanding(false)} onSchoolPortal={() => setShowPortalSelection(true)} />
+        <Landing 
+            onPublicationHub={() => { setAuthRole('researcher'); setAuthIsLogin(true); setShowLanding(false); }} 
+            onSchoolPortal={() => setShowPortalSelection(true)} 
+        />
         <AnimatePresence>
           {showPortalSelection && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -203,7 +208,7 @@ export default function App() {
   }
 
   if (!token) {
-    return <Auth onAuthSuccess={onAuthSuccess} addToast={addToast} onBackToLanding={() => setShowLanding(true)} />;
+    return <Auth onAuthSuccess={onAuthSuccess} addToast={addToast} onBackToLanding={() => setShowLanding(true)} role={authRole} initialIsLogin={authIsLogin} />;
   }
 
   const role = profile?.user?.role;
@@ -452,6 +457,8 @@ export default function App() {
 
                   <button
                     onClick={() => {
+                      setAuthRole('lecturer');
+                      setAuthIsLogin(false);
                       setShowPortalSelection(false);
                       setShowLanding(false);
                     }}
