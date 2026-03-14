@@ -18,6 +18,10 @@ import {
   History,
   Users,
   ClipboardList,
+  BookOpen,
+  CheckSquare,
+  CreditCard,
+  FileUp
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -31,6 +35,8 @@ interface SidebarProps {
   profile?: any;
   adminViewMode?: 'publication' | 'student';
   setAdminViewMode?: (mode: 'publication' | 'student') => void;
+  adminSimulateRole?: 'none' | 'researcher' | 'student';
+  setAdminSimulateRole?: (mode: 'none' | 'researcher' | 'student') => void;
 }
 
 export default function Sidebar({ 
@@ -42,7 +48,9 @@ export default function Sidebar({
   setIsCollapsed, 
   profile,
   adminViewMode,
-  setAdminViewMode
+  setAdminViewMode,
+  adminSimulateRole,
+  setAdminSimulateRole
 }: SidebarProps) {
   const isAdmin = profile?.user?.role === 'admin';
   const isStudent = profile?.user?.role === 'student';
@@ -60,15 +68,24 @@ export default function Sidebar({
   // ─── ADMIN NAV (STUDENT MANAGE MODE) ──────────────────────
   const adminStudentNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
     { id: 'dashboard', label: 'Platform Usage', icon: LayoutDashboard, section: 'Overview' },
-    { id: 'courseManagement', label: 'Course Management', icon: UploadCloud, section: 'Academics' },
+    { id: 'courseManagement', label: 'Course Management', icon: GraduationCap, section: 'Academics' },
     { id: 'users', label: 'Student Directory', icon: Users },
     { id: 'settings', label: 'Platform Settings', icon: Settings, section: 'System' },
   ];
 
+  const role = profile?.user?.role; // Get the actual role
+
+  // Determine active navigation list based on actual role OR simulated role for Admin
+  let effectiveRole = role;
+  if (role === 'admin') {
+      if (adminSimulateRole === 'student') effectiveRole = 'student';
+      if (adminSimulateRole === 'researcher') effectiveRole = 'user'; // 'user' is the default researcher role
+  }
+
   // ─── RESEARCHER NAV ──────────────────────────────────────
   const researcherNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'Research Hub' },
-    { id: 'upload', label: 'Smart Upload', icon: UploadCloud, section: 'Manuscript Pipeline' },
+    { id: 'dashboard', label: 'Overview', icon: LayoutDashboard, section: 'Research Hub' },
+    { id: 'upload', label: 'Smart Upload', icon: FileUp, section: 'Manuscript Pipeline' },
     { id: 'formatting', label: 'Formatting', icon: FileText },
     { id: 'writing', label: 'Writing Assistant', icon: PenTool },
     { id: 'references', label: 'Reference Intel', icon: Library },
@@ -76,16 +93,16 @@ export default function Sidebar({
     { id: 'journals', label: 'Journal Match', icon: BookMarked, section: 'Publishing' },
     { id: 'reviews', label: 'Peer Review', icon: MessageSquare },
     { id: 'records', label: 'Pub. Records', icon: History },
-    { id: 'transactions', label: 'Transactions', icon: FileText },
+    { id: 'transactions', label: 'Transactions', icon: CreditCard },
   ];
 
   // ─── STUDENT NAV ─────────────────────────────────────────
   const studentNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
-    { id: 'dashboard', label: 'Assessments', icon: BookMarked, section: 'Course Work' },
+    { id: 'dashboard', label: 'My Exams', icon: BookOpen, section: 'Course Work' },
   ];
 
-  const navItems = isStudent ? studentNavItems 
-                 : isAdmin 
+  const navItems = effectiveRole === 'student' ? studentNavItems 
+                 : isAdmin && adminSimulateRole === 'none' 
                     ? (adminViewMode === 'student' ? adminStudentNavItems : adminPublicationNavItems) 
                     : researcherNavItems;
 
@@ -100,23 +117,44 @@ export default function Sidebar({
         ${isAdmin ? 'bg-[#0a0f1e] border-amber-900/20' : 'bg-[#0f172a] border-slate-800/50'} 
         border-t transition-all pt-1 shadow-2xl
       `} style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        {isAdmin && setAdminViewMode && (
-          <div className="flex items-center p-2 bg-slate-900/80 border-b border-slate-700/50 gap-2">
+        {isAdmin && setAdminViewMode && setAdminSimulateRole && (
+          <div className="flex items-center p-2 bg-slate-900/80 border-b border-slate-700/50 gap-2 overflow-x-auto whitespace-nowrap hide-scrollbar">
+            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest pl-1 mr-2">Mode:</span>
+            
             <button
-                onClick={() => { setAdminViewMode('publication'); setActiveTab('dashboard'); }}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all whitespace-nowrap ${
-                  adminViewMode === 'publication' ? 'bg-[#800000] text-white shadow-sm' : 'text-slate-400 hover:text-slate-300'
+                onClick={() => { setAdminViewMode('publication'); setAdminSimulateRole('none'); setActiveTab('dashboard'); }}
+                className={`flex-none flex items-center justify-center gap-1.5 py-1 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all ${
+                  adminViewMode === 'publication' && adminSimulateRole === 'none' ? 'bg-[#800000] text-white' : 'border border-slate-700 text-slate-400'
                 }`}
             >
-              <LayoutDashboard size={12} /> Journal View
+              Mng Jrnl
             </button>
             <button
-                onClick={() => { setAdminViewMode('student'); setActiveTab('courseManagement'); }}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all whitespace-nowrap ${
-                  adminViewMode === 'student' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-300'
+                onClick={() => { setAdminViewMode('student'); setAdminSimulateRole('none'); setActiveTab('dashboard'); }}
+                className={`flex-none flex items-center justify-center gap-1.5 py-1 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all ${
+                  adminViewMode === 'student' && adminSimulateRole === 'none' ? 'bg-[#800000] text-white' : 'border border-slate-700 text-slate-400'
                 }`}
             >
-              <GraduationCap size={12} /> Student View
+              Mng Stdnt
+            </button>
+
+            <div className="w-px h-4 bg-slate-700 mx-1"></div>
+
+            <button
+                onClick={() => { setAdminSimulateRole('researcher'); setActiveTab('dashboard'); }}
+                className={`flex-none flex items-center justify-center gap-1.5 py-1 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all ${
+                  adminSimulateRole === 'researcher' ? 'bg-emerald-600 text-white' : 'border border-slate-700 text-slate-400'
+                }`}
+            >
+               Sim: Rsrch
+            </button>
+            <button
+                onClick={() => { setAdminSimulateRole('student'); setActiveTab('dashboard'); }}
+                className={`flex-none flex items-center justify-center gap-1.5 py-1 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all ${
+                  adminSimulateRole === 'student' ? 'bg-rose-600 text-white' : 'border border-slate-700 text-slate-400'
+                }`}
+            >
+               Sim: Stdnt
             </button>
           </div>
         )}
@@ -246,28 +284,52 @@ export default function Sidebar({
           })}
         </nav>
 
-      {/* View Toggle For Admin */}
-      {isAdmin && !isCollapsed && setAdminViewMode && (
-          <div className="mx-4 mt-auto mb-2">
-            <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1 px-1">Admin View Mode:</div>
-            <div className="p-1 bg-slate-800/50 rounded-xl flex items-center border border-slate-700/50 shrink-0 shadow-inner">
-              <button
-                  onClick={() => { setAdminViewMode('publication'); setActiveTab('dashboard'); }}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
-                    adminViewMode === 'publication' ? 'bg-[#800000] text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
-                  }`}
-              >
-                <LayoutDashboard size={14} /> Publications App
-              </button>
-              <button
-                  onClick={() => { setAdminViewMode('student'); setActiveTab('courseManagement'); }}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
-                    adminViewMode === 'student' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
-                  }`}
-              >
-                <GraduationCap size={14} /> Student Portal
-              </button>
-            </div>
+      {/* View Toggle For Admin (Desktop/Collapsed overlay) */}
+      {isAdmin && !isCollapsed && setAdminViewMode && setAdminSimulateRole && (
+          <div className="mx-4 mt-auto mb-2 space-y-3">
+             <div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-[#eab308] mb-1 px-1">Manage Mode:</div>
+                <div className="p-1 bg-slate-800/50 rounded-xl flex items-center border border-slate-700/50 shrink-0 shadow-inner">
+                  <button
+                    onClick={() => { setAdminViewMode('publication'); setAdminSimulateRole('none'); setActiveTab('dashboard'); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                      adminViewMode === 'publication' && adminSimulateRole === 'none' ? 'bg-[#800000] text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                    }`}
+                  >
+                    Journal
+                  </button>
+                  <button
+                    onClick={() => { setAdminViewMode('student'); setAdminSimulateRole('none'); setActiveTab('dashboard'); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                      adminViewMode === 'student' && adminSimulateRole === 'none' ? 'bg-[#800000] text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                    }`}
+                  >
+                    Student
+                  </button>
+                </div>
+              </div>
+              
+              <div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-emerald-500 mb-1 px-1">Simulate Role As:</div>
+                <div className="p-1 bg-slate-800/50 rounded-xl flex items-center border border-slate-700/50 shrink-0 shadow-inner">
+                  <button
+                    onClick={() => { setAdminSimulateRole('researcher'); setActiveTab('dashboard'); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                      adminSimulateRole === 'researcher' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                    }`}
+                  >
+                    Researcher
+                  </button>
+                  <button
+                    onClick={() => { setAdminSimulateRole('student'); setActiveTab('dashboard'); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                      adminSimulateRole === 'student' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                    }`}
+                  >
+                    Student
+                  </button>
+                </div>
+              </div>
           </div>
       )}
 

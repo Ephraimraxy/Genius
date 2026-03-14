@@ -54,7 +54,8 @@ export default function App() {
   const [profile, setProfile] = useState<any>(null);
   const [showLanding, setShowLanding] = useState(!token);
   const [showStudentAuth, setShowStudentAuth] = useState(false); // NEW
-  const [adminViewMode, setAdminViewMode] = useState<'publication' | 'student'>('publication'); // NEW TOGGLE
+  const [adminViewMode, setAdminViewMode] = useState<'publication' | 'student'>('publication'); // Management Mode Toggle
+  const [adminSimulateRole, setAdminSimulateRole] = useState<'none' | 'researcher' | 'student'>('none'); // Simulation Toggle
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
   const [openChatUserId, setOpenChatUserId] = useState<number | null>(null);
@@ -113,10 +114,11 @@ export default function App() {
   }
 
   const isAdmin = profile?.user?.role === 'admin';
-  const isStudent = profile?.user?.role === 'student'; // Determine if logged in user is student
+  const isStudent = profile?.user?.role === 'student' || (isAdmin && adminSimulateRole === 'student'); 
+  const isSimulatingResearcher = isAdmin && adminSimulateRole === 'researcher';
 
   const renderContent = () => {
-    // If student is logged in, restrict them only to Student Dashboard
+    // If student is logged in (or simulated), restrict them only to Student Dashboard
     if (isStudent && activeTab !== 'profile') {
         return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} />;
     }
@@ -124,13 +126,13 @@ export default function App() {
     switch (activeTab) {
       case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
       case 'courseManagement': return <CourseManagement addToast={addToast} />;
-      case 'upload': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} />;
-      case 'formatting': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <FormattingEngine activePaperId={activePaperId} />;
-      case 'writing': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <WritingAssistant activePaperId={activePaperId} />;
-      case 'references': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <ReferenceIntelligence activePaperId={activePaperId} />;
-      case 'integrity': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <IntegrityChecks activePaperId={activePaperId} />;
-      case 'journals': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <JournalRecommendations activePaperId={activePaperId} />;
-      case 'reviews': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <PeerReviewSimulation activePaperId={activePaperId} />;
+      case 'upload': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} />;
+      case 'formatting': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <FormattingEngine activePaperId={activePaperId} />;
+      case 'writing': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <WritingAssistant activePaperId={activePaperId} />;
+      case 'references': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <ReferenceIntelligence activePaperId={activePaperId} />;
+      case 'integrity': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <IntegrityChecks activePaperId={activePaperId} />;
+      case 'journals': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <JournalRecommendations activePaperId={activePaperId} />;
+      case 'reviews': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <PeerReviewSimulation activePaperId={activePaperId} />;
       case 'transactions': return <TransactionHistory profile={profile} />;
       case 'records': return <PublicationRecords profile={profile} />;
       case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} />;
@@ -141,7 +143,7 @@ export default function App() {
           .then(res => res.json())
           .then(data => { if (data) setProfile(data); });
       }} />;
-      default: return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} />;
+      default: return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} />;
     }
   };
 
@@ -162,8 +164,10 @@ export default function App() {
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
         profile={profile}
-        adminViewMode={adminViewMode} // Pass down
-        setAdminViewMode={setAdminViewMode} // Pass down
+        adminViewMode={adminViewMode}
+        setAdminViewMode={setAdminViewMode}
+        adminSimulateRole={adminSimulateRole}
+        setAdminSimulateRole={setAdminSimulateRole}
       />
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
@@ -182,7 +186,7 @@ export default function App() {
                 {isAdmin && <ShieldCheck className="text-amber-500 hidden sm:block" size={24} />}
               </h1>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">
-                {isStudent ? 'Student Assessment' : isAdmin ? `Admin / ${adminViewMode === 'publication' ? 'Journal' : 'Student'} View` : 'Genius Portal'} / {TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab}
+                {isStudent ? 'Student Assessment' : isAdmin && !isSimulatingResearcher ? `Admin / ${adminViewMode === 'publication' ? 'Journal' : 'Student'} View` : isSimulatingResearcher ? 'Simulated Researcher' : 'Genius Portal'} / {TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab}
               </p>
             </div>
 
