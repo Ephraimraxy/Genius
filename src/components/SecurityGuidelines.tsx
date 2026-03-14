@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ShieldAlert, Brain, Smartphone, Bluetooth, Clock, Lock, Eye, Volume2, AlertCircle, ChevronRight, CheckCircle2 } from 'lucide-react';
 
@@ -7,50 +7,72 @@ interface SecurityGuidelinesProps {
 }
 
 export default function SecurityGuidelines({ onNavigate }: SecurityGuidelinesProps) {
-    const protocols = [
-        {
-            title: "Behavioral AI Monitoring",
-            icon: Brain,
-            description: "Our neural engine monitors gaze, head movement, and environmental anomalies. Suspicious patterns increase your Risk Score.",
-            color: "text-indigo-600",
-            bg: "bg-indigo-50"
-        },
-        {
-            title: "Dynamic Questions",
-            icon: Lock,
-            description: "Questions use variable parameters. Every student receives a unique version, making answer-sharing and searching ineffective.",
-            color: "text-emerald-600",
-            bg: "bg-emerald-50"
-        },
-        {
-            title: "Motion Detection",
-            icon: Smartphone,
-            description: "On mobile devices, gyroscopic sensors detect if the phone is being moved or tilted to take photos of the screen.",
-            color: "text-rose-600",
-            bg: "bg-rose-50"
-        },
-        {
-            title: "Answer-Time Analytics",
-            icon: Clock,
-            description: "Sudden fast answers after long idle periods are flagged as potential external lookups using secondary devices.",
-            color: "text-amber-600",
-            bg: "bg-amber-50"
-        },
-        {
-            title: "Environment Lockdown",
-            icon: ShieldAlert,
-            description: "Exiting full-screen mode, switching tabs, or attempting to use unauthorized shortcuts results in immediate failure.",
-            color: "text-slate-900",
-            bg: "bg-slate-100"
-        },
-        {
-            title: "Signal Proximity",
-            icon: Bluetooth,
-            description: "The system scans for nearby Bluetooth and wireless frequencies to detect the presence of unauthorized secondary phones.",
-            color: "text-blue-600",
-            bg: "bg-blue-50"
-        }
-    ];
+    const [protocols, setProtocols] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchGuidelines = async () => {
+            setIsLoading(true);
+            setTimeout(() => {
+                const fetchedProtocols = [
+                    {
+                        title: "Behavioral AI Monitoring",
+                        icon: Brain,
+                        description: "Our neural engine monitors gaze, head movement, and environmental anomalies. Suspicious patterns increase your Risk Score.",
+                        color: "text-indigo-600",
+                        bg: "bg-indigo-50"
+                    },
+                    {
+                        title: "Dynamic Questions",
+                        icon: Lock,
+                        description: "Questions use variable parameters. Every student receives a unique version, making answer-sharing and searching ineffective.",
+                        color: "text-emerald-600",
+                        bg: "bg-emerald-50"
+                    },
+                    {
+                        title: "Motion Detection",
+                        icon: Smartphone,
+                        description: "On mobile devices, gyroscopic sensors detect if the phone is being moved or tilted to take photos of the screen.",
+                        color: "text-rose-600",
+                        bg: "bg-rose-50"
+                    },
+                    {
+                        title: "Answer-Time Analytics",
+                        icon: Clock,
+                        description: "Sudden fast answers after long idle periods are flagged as potential external lookups using secondary devices.",
+                        color: "text-amber-600",
+                        bg: "bg-amber-50"
+                    },
+                    {
+                        title: "Environment Lockdown",
+                        icon: ShieldAlert,
+                        description: "Exiting full-screen mode, switching tabs, or attempting to use unauthorized shortcuts results in immediate failure.",
+                        color: "text-slate-900",
+                        bg: "bg-slate-100"
+                    },
+                    {
+                        title: "Signal Proximity",
+                        icon: Bluetooth,
+                        description: "The system scans for nearby Bluetooth and wireless frequencies to detect the presence of unauthorized secondary phones.",
+                        color: "text-blue-600",
+                        bg: "bg-blue-50"
+                    }
+                ];
+                setProtocols(fetchedProtocols);
+                setIsLoading(false);
+            }, 800);
+        };
+        fetchGuidelines();
+    }, []);
+
+    if (isLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-64 gap-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600"></div>
+                <p className="text-slate-500 font-bold animate-pulse uppercase tracking-widest text-xs">Loading Security Standards...</p>
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-5xl mx-auto pb-20">

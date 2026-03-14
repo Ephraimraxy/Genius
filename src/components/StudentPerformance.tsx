@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { BarChart3, TrendingUp, Trophy, Award, BookOpen, Clock, ChevronRight } from 'lucide-react';
 
@@ -8,20 +8,48 @@ interface StudentPerformanceProps {
 }
 
 export default function StudentPerformance({ profile, onNavigate }: StudentPerformanceProps) {
-    const records = [
-        { id: 1, course: 'Advanced Physics (PHY401)', type: 'Exam', score: 88, grade: 'A', date: 'Sept 2025' },
-        { id: 2, course: 'Quantum Mechanics (PHY405)', type: 'Test', score: 92, grade: 'A+', date: 'Aug 2025' },
-        { id: 3, course: 'Linear Algebra', type: 'Test', score: 76, grade: 'B', date: 'July 2025' },
-        { id: 4, course: 'Lab Report: Optics', type: 'Assignment', score: 95, grade: 'A+', date: 'June 2025' },
-        { id: 5, course: 'Classical Mechanics', type: 'Exam', score: 82, grade: 'A', date: 'May 2025' },
-    ];
+    const [records, setRecords] = useState<any[]>([]);
+    const [stats, setStats] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const stats = [
-        { label: 'CGPA', value: '3.82', icon: Trophy, color: 'text-amber-600', bg: 'bg-amber-50' },
-        { label: 'Courses Passed', value: '12', icon: BookOpen, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-        { label: 'Global Rank', value: '#4', icon: Award, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-        { label: 'Total Credits', value: '36', icon: Clock, color: 'text-rose-600', bg: 'bg-rose-50' },
-    ];
+    useEffect(() => {
+        // Simulated API fetch for academic records
+        const fetchPerformanceData = async () => {
+            setIsLoading(true);
+            setTimeout(() => {
+                // In a real system, these would come from the backend database
+                const fetchedRecords = [
+                    { id: 1, course: 'Advanced Physics (PHY401)', type: 'Exam', score: 88, grade: 'A', date: 'Sept 2025' },
+                    { id: 2, course: 'Quantum Mechanics (PHY405)', type: 'Test', score: 92, grade: 'A+', date: 'Aug 2025' },
+                    { id: 3, course: 'Linear Algebra', type: 'Test', score: 76, grade: 'B', date: 'July 2025' },
+                    { id: 4, course: 'Lab Report: Optics', type: 'Assignment', score: 95, grade: 'A+', date: 'June 2025' },
+                    { id: 5, course: 'Classical Mechanics', type: 'Exam', score: 82, grade: 'A', date: 'May 2025' },
+                ];
+
+                const fetchedStats = [
+                    { label: 'CGPA', value: '3.82', icon: Trophy, color: 'text-amber-600', bg: 'bg-amber-50' },
+                    { label: 'Courses Passed', value: '12', icon: BookOpen, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                    { label: 'Global Rank', value: '#4', icon: Award, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                    { label: 'Total Credits', value: '36', icon: Clock, color: 'text-rose-600', bg: 'bg-rose-50' },
+                ];
+
+                setRecords(fetchedRecords);
+                setStats(fetchedStats);
+                setIsLoading(false);
+            }, 1000);
+        };
+
+        fetchPerformanceData();
+    }, []);
+
+    if (isLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-64 gap-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+                <p className="text-slate-500 font-bold animate-pulse uppercase tracking-widest text-xs">Syncing Genius Records...</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-8 pb-12">

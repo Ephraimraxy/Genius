@@ -20,33 +20,47 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view }
     const [exams, setExams] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Fetch exams (Simulated API call)
+    // Unified Data Management (Genius Real-System Pattern)
     useEffect(() => {
-        const fetchExams = async () => {
-            // In a real app, this would be: await fetch(`/api/student/${view}`)
-            setTimeout(() => {
-                // Generate some categorized dummy data
-                const mockExams = [
-                    { id: 1, course: 'Advanced Physics (PHY401)', status: 'active', duration: '3 Hours', date: 'Today', totalQuestions: 50, type: 'exam' },
-                    { id: 2, course: 'Quantum Mechanics (PHY405)', status: 'pending', duration: '2.5 Hours', date: 'Oct 20, 2026', totalQuestions: 40, type: 'exam' },
-                    { id: 3, course: 'Classical Mechanics', status: 'completed', score: '82/100', date: 'Sep 12, 2025', type: 'exam' }
-                ];
-                const mockTests = [
-                    { id: 4, course: 'Calculus III (MAT301)', status: 'active', duration: '45 Mins', date: 'Today', totalQuestions: 20, type: 'test' },
-                    { id: 5, course: 'Linear Algebra', status: 'completed', score: '18/20', date: 'Sep 28, 2025', type: 'test' }
-                ];
-                const mockAssignments = [
-                    { id: 6, course: 'Lab Report: Optics', status: 'pending', duration: 'Due in 2 days', date: 'Oct 15, 2026', totalQuestions: 'N/A', type: 'assignment' },
-                    { id: 7, course: 'Research Proposal', status: 'completed', score: 'Grade: A', date: 'Aug 10, 2025', type: 'assignment' }
+        const syncDashboardData = async () => {
+            setIsLoading(true);
+            try {
+                // Simulate Secure Network Latency
+                await new Promise(resolve => setTimeout(resolve, 1200));
+                
+                // This data structure simulates what would be returned from the Genius API
+                const geniusApiResponse = {
+                    exams: [
+                        { id: 1, course: 'Advanced Physics (PHY401)', status: 'active', duration: '3 Hours', date: 'Today', totalQuestions: 50, type: 'exam' },
+                        { id: 2, course: 'Quantum Mechanics (PHY405)', status: 'pending', duration: '2.5 Hours', date: 'Oct 20, 2026', totalQuestions: 40, type: 'exam' },
+                        { id: 3, course: 'Classical Mechanics', status: 'completed', score: '82/100', date: 'Sep 12, 2025', type: 'exam' }
+                    ],
+                    tests: [
+                        { id: 4, course: 'Calculus III (MAT301)', status: 'active', duration: '45 Mins', date: 'Today', totalQuestions: 20, type: 'test' },
+                        { id: 5, course: 'Linear Algebra', status: 'completed', score: '18/20', date: 'Sep 28, 2025', type: 'test' }
+                    ],
+                    assignments: [
+                        { id: 6, course: 'Lab Report: Optics', status: 'pending', duration: 'Due in 2 days', date: 'Oct 15, 2026', totalQuestions: 'N/A', type: 'assignment' },
+                        { id: 7, course: 'Research Proposal', status: 'completed', score: 'Grade: A', date: 'Aug 10, 2025', type: 'assignment' }
+                    ]
+                };
+
+                const allData = [
+                    ...geniusApiResponse.exams, 
+                    ...geniusApiResponse.tests, 
+                    ...geniusApiResponse.assignments
                 ];
 
-                const allData = [...mockExams, ...mockTests, ...mockAssignments];
-                setExams(allData); 
+                setExams(allData);
+            } catch (err) {
+                addToast("Failed to sync Genius records.", "error");
+            } finally {
                 setIsLoading(false);
-            }, 800);
+            }
         };
-        fetchExams();
-    }, [view]); // Refetch when view changes
+
+        syncDashboardData();
+    }, [view]); // Sync when view context changes // Refetch when view changes
 
     // Filter based on BOTH status AND view type
     const activeType = view === 'dashboard' ? 'exam' : view === 'tests' ? 'test' : 'assignment';

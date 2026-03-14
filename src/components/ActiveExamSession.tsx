@@ -32,69 +32,75 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
     const examContainerRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
 
-    // Mock Questions with Templates for Dynamic Generation
-    const baseQuestions = [
-        { id: 1, text: "Which AI architecture is primarily responsible for generating human-like textual responses based on context?", options: ["A. Convolutional Neural Networks (CNNs)", "B. Transformer Models", "C. Generative Adversarial Networks (GANs)", "D. Recurrent Neural Networks (RNNs)"], correct: "B" },
-        { id: 2, text: "What defines the process of 'Fine-tuning' a language model?", options: ["A. Changing the hardware it runs on.", "B. Training a pre-trained model on a smaller, specific dataset to adapt it to a new task.", "C. Deleting the model's memory of past inputs.", "D. Increasing the learning rate drastically."], correct: "B" },
-        { id: 3, text: "If a car travels {D} km in {T} hours, what is its average speed in km/h?", options: ["A. {A1}", "B. {A2}", "C. {A3}", "D. {A4}"], correct: "B", type: 'dynamic', formula: (d: number, t: number) => d / t },
-        { id: 4, text: "Which component of the Transformer architecture calculates the relevance of words to each other?", options: ["A. Polling Layer", "B. Dropout Layer", "C. Self-Attention Mechanism", "D. Sigmoid Gate"], correct: "C" },
-    ];
-
-    // --- Shuffle & Dynamic Generation Logic on Mount ---
+    // --- Fetch & Initialization Logic ---
     useEffect(() => {
-        const processed = baseQuestions.map(q => {
-            let finalQuestionText = q.text;
-            let finalOptions = [...q.options];
-            let finalCorrect = q.correct;
+        const initializeExam = async () => {
+            // Simulated API fetch for exam questions
+            await new Promise(resolve => setTimeout(resolve, 1500));
 
-            if (q.type === 'dynamic' && q.formula) {
-                // Generate random parameters
-                const d = Math.floor(Math.random() * 100) + 50;
-                const t = Math.floor(Math.random() * 4) + 2;
-                const correctVal = q.formula(d, t);
+            const baseQuestions = [
+                { id: 1, text: "Which AI architecture is primarily responsible for generating human-like textual responses based on context?", options: ["A. Convolutional Neural Networks (CNNs)", "B. Transformer Models", "C. Generative Adversarial Networks (GANs)", "D. Recurrent Neural Networks (RNNs)"], correct: "B" },
+                { id: 2, text: "What defines the process of 'Fine-tuning' a language model?", options: ["A. Changing the hardware it runs on.", "B. Training a pre-trained model on a smaller, specific dataset to adapt it to a new task.", "C. Deleting the model's memory of past inputs.", "D. Increasing the learning rate drastically."], correct: "B" },
+                { id: 3, text: "If a car travels {D} km in {T} hours, what is its average speed in km/h?", options: ["A. {A1}", "B. {A2}", "C. {A3}", "D. {A4}"], correct: "B", type: 'dynamic', formula: (d: number, t: number) => d / t },
+                { id: 4, text: "Which component of the Transformer architecture calculates the relevance of words to each other?", options: ["A. Polling Layer", "B. Dropout Layer", "C. Self-Attention Mechanism", "D. Sigmoid Gate"], correct: "C" },
+            ];
 
-                finalQuestionText = q.text.replace('{D}', d.toString()).replace('{T}', t.toString());
+            const processed = baseQuestions.map(q => {
+                let finalQuestionText = q.text;
+                let finalOptions = [...q.options];
+                let finalCorrect = q.correct;
+
+                if (q.type === 'dynamic' && q.formula) {
+                    // Generate random parameters
+                    const d = Math.floor(Math.random() * 100) + 50;
+                    const t = Math.floor(Math.random() * 4) + 2;
+                    const correctVal = q.formula(d, t);
+
+                    finalQuestionText = q.text.replace('{D}', d.toString()).replace('{T}', t.toString());
+                    
+                    // Generate distractor options
+                    const distractors = [
+                        correctVal + 5,
+                        correctVal - 2,
+                        correctVal * 1.5,
+                        correctVal
+                    ].sort(() => Math.random() - 0.5);
+
+                    finalOptions = distractors.map((val, idx) => {
+                        const label = String.fromCharCode(65 + idx);
+                        return `${label}. ${val.toFixed(1)} km/h`;
+                    });
+
+                    // Find the new correct label
+                    const correctIdx = distractors.indexOf(correctVal);
+                    finalCorrect = String.fromCharCode(65 + correctIdx);
+                } else {
+                    // Standard Shuffle for static questions
+                    const correctOptStr = q.options.find(o => o.startsWith(q.correct))!;
+                    const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
+                    
+                    finalOptions = shuffledOptions.map((opt, idx) => {
+                        const label = String.fromCharCode(65 + idx);
+                        return `${label}. ${opt.substring(3)}`;
+                    });
+                    
+                    const newCorrectOpt = finalOptions.find(o => o.substring(3) === correctOptStr.substring(3))!;
+                    finalCorrect = newCorrectOpt.split('.')[0];
+                }
                 
-                // Generate distractor options
-                const distractors = [
-                    correctVal + 5,
-                    correctVal - 2,
-                    correctVal * 1.5,
-                    correctVal
-                ].sort(() => Math.random() - 0.5);
-
-                finalOptions = distractors.map((val, idx) => {
-                    const label = String.fromCharCode(65 + idx);
-                    return `${label}. ${val.toFixed(1)} km/h`;
-                });
-
-                // Find the new correct label
-                const correctIdx = distractors.indexOf(correctVal);
-                finalCorrect = String.fromCharCode(65 + correctIdx);
-            } else {
-                // Standard Shuffle for static questions
-                const correctOptStr = q.options.find(o => o.startsWith(q.correct))!;
-                const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
-                
-                finalOptions = shuffledOptions.map((opt, idx) => {
-                    const label = String.fromCharCode(65 + idx);
-                    return `${label}. ${opt.substring(3)}`;
-                });
-                
-                const newCorrectOpt = finalOptions.find(o => o.substring(3) === correctOptStr.substring(3))!;
-                finalCorrect = newCorrectOpt.split('.')[0];
-            }
+                return {
+                    ...q,
+                    text: finalQuestionText,
+                    options: finalOptions,
+                    correct: finalCorrect
+                };
+            }).sort(() => Math.random() - 0.5);
             
-            return {
-                ...q,
-                text: finalQuestionText,
-                options: finalOptions,
-                correct: finalCorrect
-            };
-        }).sort(() => Math.random() - 0.5);
-        
-        setShuffledQuestions(processed);
-        questionStartTime.current = Date.now();
+            setShuffledQuestions(processed);
+            questionStartTime.current = Date.now();
+        };
+
+        initializeExam();
     }, []);
 
     // --- Core Auto Submit Function ---
@@ -384,6 +390,15 @@ export default function ActiveExamSession({ courseName, matricNumber, addToast, 
                     <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" /> REC
                 </div>
             </div>
+
+            {/* Loading Overlay */}
+            {shuffledQuestions.length === 0 && (
+                <div className="absolute inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center p-6">
+                    <ShieldAlert size={64} className="text-rose-500 mb-6 animate-pulse" />
+                    <h2 className="text-2xl font-black text-white mb-2 uppercase tracking-tight">Securing Session...</h2>
+                    <p className="text-slate-400 font-medium text-center">Configuring Deep-AI proctoring environment</p>
+                </div>
+            )}
 
             {/* Submitting Overlay */}
             <AnimatePresence>
