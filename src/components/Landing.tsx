@@ -20,11 +20,11 @@ import {
 } from 'lucide-react';
 
 interface LandingProps {
-  onStart: () => void;
-  onStudentPortal: () => void;
+  onPublicationHub: () => void;
+  onSchoolPortal: () => void;
 }
 
-export default function Landing({ onStart, onStudentPortal }: LandingProps) {
+export default function Landing({ onPublicationHub, onSchoolPortal }: LandingProps) {
 
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-[#800000] selection:text-white">
@@ -57,20 +57,20 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
           {/* Actions */}
           <div className="flex items-center gap-6">
             <button 
-              onClick={onStudentPortal} 
+              onClick={onSchoolPortal} 
               className="px-5 py-2 text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-lg transition-colors uppercase tracking-widest hidden sm:block shadow-sm"
             >
-              Student Portal
+              School Portal
             </button>
             <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
             <div className="flex items-center gap-3">
-               <button onClick={onStart} className="text-[11px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-900">Sign In</button>
+               <button onClick={onPublicationHub} className="text-[11px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-900">Sign In</button>
                <button 
-                 onClick={onStart} 
+                 onClick={onPublicationHub} 
                  className="px-6 py-3 bg-[#800000] text-white text-[10px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest flex items-center gap-2"
                >
                  <PlusCircle size={14} />
-                 Lecturer Workspace
+                 Publication Hub
                </button>
             </div>
           </div>
@@ -125,7 +125,7 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
                     <button className="p-3 text-slate-300 hover:text-slate-600">
                       <Search size={20} />
                     </button>
-                    <button onClick={onStart} className="bg-[#800000] p-4 rounded-xl text-white shadow-lg shadow-[#800000]/30 hover:scale-105 transition-all">
+                    <button onClick={onPublicationHub} className="bg-[#800000] p-4 rounded-xl text-white shadow-lg shadow-[#800000]/30 hover:scale-105 transition-all">
                       <ArrowRight size={24} />
                     </button>
                   </div>
@@ -133,21 +133,21 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
 
                 <div className="flex items-center gap-8">
                   <button 
-                    onClick={onStart}
+                    onClick={onSchoolPortal}
                     className="px-10 py-5 bg-[#800000] text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[11px] border border-white/10 flex items-center gap-3"
                   >
-                    <PlusCircle size={18} />
-                    Setup Workspace
+                    <Users size={18} />
+                    Enter School Portal
                   </button>
 
                   <button 
-                    onClick={() => document.getElementById('about')?.scrollIntoView({ behavior: 'smooth' })}
+                    onClick={onPublicationHub}
                     className="flex items-center gap-4 group cursor-pointer"
                   >
-                    <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-xl border border-slate-100 group-hover:scale-110 transition-all">
-                       <Play size={20} fill="#800000" className="text-[#800000] ml-1" />
+                    <div className="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center shadow-xl border border-white/20 group-hover:scale-110 transition-all">
+                       <FileText size={20} className="text-[#ff4d4d]" />
                     </div>
-                    <span className="text-[11px] font-black text-white/60 uppercase tracking-[0.2em] group-hover:text-white transition-colors">Explore Features</span>
+                    <span className="text-[11px] font-black text-white/80 uppercase tracking-[0.2em] group-hover:text-white transition-colors">Publication Hub</span>
                   </button>
                 </div>
               </motion.div>
@@ -176,14 +176,14 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
 
              <div className="flex flex-col sm:flex-row gap-4 relative z-10">
                 <button 
-                  onClick={onStudentPortal}
+                  onClick={onSchoolPortal}
                   className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:scale-105 transition-all flex items-center gap-3"
                 >
                    <Users size={18} />
                    Student Portal
                 </button>
                 <button 
-                  onClick={onStart}
+                  onClick={onSchoolPortal}
                   className="px-8 py-4 bg-[#800000] text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all flex items-center gap-3"
                 >
                    <PlusCircle size={18} />
@@ -311,7 +311,7 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
                 </p>
               </div>
               <button 
-                onClick={onStart}
+                onClick={onPublicationHub}
                 className="w-full py-4 bg-[#800000] text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-[#800000]/20 hover:scale-[1.02] transition-all"
               >
                 Proceed to Upload
