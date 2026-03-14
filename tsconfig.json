@@ -22,9 +22,8 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "types": [
-      "node",
-      "bcryptjs"
+    "typeRoots": [
+      "./node_modules/@types"
     ]
   }
 }
