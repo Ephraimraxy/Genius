@@ -159,40 +159,41 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                    <div className="absolute top-0 right-0 w-96 h-96 bg-[#ff4d4d]/10 rounded-full blur-[100px] -mr-48 -mt-48" />
                    <div className="absolute bottom-0 left-0 w-80 h-80 bg-slate-900/40 rounded-full blur-[120px] -ml-40 -mb-40" />
                    
-                   <div className="relative z-10 flex flex-col h-full">
-                     <div className="flex items-center gap-4 mb-16">
-                        <img src="/gmijp-logo.png" alt="Genius" className="w-12 h-12 object-contain" />
-                        <div>
-                           <h1 className="font-black tracking-[0.2em] text-sm uppercase mb-0.5">Genius Mindspark</h1>
-                           <div className="h-0.5 w-12 bg-[#ff4d4d]" />
-                        </div>
-                     </div>
+                   <div className="relative z-10 flex flex-col h-full text-center">
+                      <div className="flex-1 flex flex-col items-center justify-center">
+                         <motion.div
+                           initial={{ scale: 0.9, opacity: 0 }}
+                           animate={{ scale: 1, opacity: 1 }}
+                           className="mb-8"
+                         >
+                            <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-[1.5rem]" />
+                         </motion.div>
 
-                     <div className="py-8">
-                        <img src="/gmijp-logo.png" alt="Genius" className="w-16 h-16 object-contain brightness-0 invert opacity-40 mb-6" />
-                        
-                        <h2 className="text-3xl font-black mb-4 tracking-tight leading-[1.1]">
-                            {role === 'lecturer' ? 'Academic' : 'Neural'} <br/>
-                            <span className="text-white/40">{role === 'lecturer' ? 'Workspace' : 'Research'}</span>
-                        </h2>
-                        
-                        <p className="text-rose-100/60 font-medium leading-relaxed max-w-sm text-base">
-                          {role === 'lecturer' 
-                            ? 'Configure your institutional space, manage grading systems, and oversee secure assessments for your students.' 
-                            : 'Global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation.'}
-                        </p>
-                     </div>
+                         <div className="mb-8">
+                            <h1 className="font-black tracking-[0.2em] text-xs uppercase mb-2 opacity-50">Genius Mindspark</h1>
+                            <div className="h-0.5 w-12 bg-[#ff4d4d] mx-auto" />
+                         </div>
+                         
+                         <h2 className="text-4xl font-black mb-6 tracking-tight leading-[1.1]">
+                             {role === 'lecturer' ? 'Academic' : 'Neural'} <br/>
+                             <span className="text-white/40">{role === 'lecturer' ? 'Workspace' : 'Research'}</span>
+                         </h2>
+                         
+                         <p className="text-rose-100/60 font-medium leading-relaxed max-w-sm text-base mx-auto">
+                           {role === 'lecturer' 
+                             ? 'Configure your institutional space, manage grading systems, and oversee secure assessments for your students.' 
+                             : 'Global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation.'}
+                         </p>
+                      </div>
 
-                     <div className="mt-auto pt-6 border-t border-white/10">
-                        <div className="space-y-4">
-                           <div className="flex items-center gap-3">
-                              <ShieldCheck size={14} className="text-rose-400" />
-                              <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-tight">
-                                Secured by GMIJ <br/> Neural Encryption
-                              </p>
-                           </div>
-                        </div>
-                     </div>
+                      <div className="mt-auto pt-6 border-t border-white/10">
+                         <div className="flex items-center justify-center gap-3">
+                            <ShieldCheck size={14} className="text-rose-400" />
+                            <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-tight">
+                              Secured by GMIJ <br/> Neural Encryption
+                            </p>
+                         </div>
+                      </div>
                    </div>
                 </div>
 

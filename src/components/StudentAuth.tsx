@@ -78,31 +78,33 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                    <div className="absolute top-0 left-0 w-80 h-80 bg-blue-400/10 rounded-full blur-[100px] -ml-40 -mt-40" />
                    <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px] -mr-48 -mb-48" />
                    
-                   <div className="relative z-10 flex flex-col h-full">
-                     <div className="flex items-center gap-4 mb-20">
-                        <img src="/gmijp-logo.png" alt="Genius" className="w-12 h-12 object-contain" />
-                        <div>
-                           <h1 className="font-black tracking-[0.2em] text-sm uppercase mb-0.5">Genius Academy</h1>
-                           <div className="h-0.5 w-12 bg-[#ff4d4d]" />
-                        </div>
-                     </div>
+                   <div className="relative z-10 flex flex-col h-full text-center">
+                      <div className="flex-1 flex flex-col items-center justify-center">
+                         <motion.div
+                           initial={{ scale: 0.9, opacity: 0 }}
+                           animate={{ scale: 1, opacity: 1 }}
+                           className="mb-8"
+                         >
+                            <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-[1.5rem]" />
+                         </motion.div>
 
-                     <div className="py-8">
-                        <img src="/gmijp-logo.png" alt="Genius" className="w-20 h-20 object-contain brightness-0 invert opacity-40 mb-6" />
-                        <h2 className="text-4xl font-black mb-4 tracking-tight leading-[1.1]">Student <br/><span className="text-white/40">Portal</span></h2>
-                        <p className="text-blue-100/60 font-medium leading-relaxed max-w-sm text-base">
-                          Welcome to your secure academic gateway. Manage your assessments and academic performance from a single centralized dashboard.
-                        </p>
-                     </div>
+                         <div className="mb-8">
+                            <h1 className="font-black tracking-[0.2em] text-xs uppercase mb-2 opacity-50">Genius Academy</h1>
+                            <div className="h-0.5 w-12 bg-[#ff4d4d] mx-auto" />
+                         </div>
 
-                     <div className="mt-auto pt-6 flex items-center justify-between">
-                        <div className="space-y-1">
-                           <p className="text-white/30 text-[9px] font-bold uppercase tracking-widest">Digital Learning Ecosystem &copy; 2026</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                           <ShieldCheck size={14} className="text-blue-400" />
-                        </div>
-                     </div>
+                         <h2 className="text-4xl font-black mb-6 tracking-tight leading-[1.1]">Student <br/><span className="text-white/40">Portal</span></h2>
+                         <p className="text-blue-100/60 font-medium leading-relaxed max-w-sm text-base mx-auto">
+                           Welcome to your secure academic gateway. Manage your assessments and academic performance from a single centralized dashboard.
+                         </p>
+                      </div>
+
+                      <div className="mt-auto pt-6 flex items-center justify-center border-t border-white/10">
+                         <div className="flex flex-col items-center gap-2">
+                            <p className="text-white/30 text-[9px] font-bold uppercase tracking-widest">Digital Learning Ecosystem &copy; 2026</p>
+                            <ShieldCheck size={14} className="text-blue-400" />
+                         </div>
+                      </div>
                    </div>
                 </div>
 

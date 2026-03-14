@@ -151,19 +151,23 @@ export default function App() {
                    <div className="absolute top-0 left-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -ml-32 -mt-32" />
                    <div className="absolute bottom-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl -mr-40 -mb-40" />
                    
-                   <div className="relative z-10 flex flex-col h-full">
-                     <div className="flex items-center gap-3 mb-10">
-                        <img src="/gmijp-logo.png" alt="Genius" className="w-12 h-12 object-contain rounded-full shadow-lg" />
-                        <span className="font-black tracking-[0.2em] text-sm uppercase">Genius Academy</span>
-                     </div>
+                   <div className="relative z-10 flex flex-col items-center justify-center h-full text-center">
+                      <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                      >
+                         <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full" />
+                      </motion.div>
 
-                     <div className="py-8 text-center md:text-left">
-                        <img src="/gmijp-logo.png" alt="Genius" className="w-20 h-20 object-contain brightness-0 invert opacity-60 mb-6 mx-auto md:mx-0" />
-                        <h2 className="text-3xl font-black mb-4 tracking-tight">Academic Portal</h2>
-                        <p className="text-white/60 font-medium leading-relaxed max-w-sm">
-                          Secure access point for students and faculty members of the Genius Mindspark ecosystem.
-                        </p>
-                     </div>
+                      <div className="mb-8">
+                         <span className="font-black tracking-[0.2em] text-[10px] md:text-xs uppercase opacity-50">Genius Academy</span>
+                         <div className="h-0.5 w-12 bg-[#ff4d4d] mx-auto mt-2" />
+                      </div>
+
+                      <h2 className="text-3xl md:text-4xl font-black mb-4 tracking-tight">Academic Portal</h2>
+                      <p className="text-white/60 font-medium leading-relaxed max-w-sm mx-auto text-sm md:text-base px-4">
+                        Secure access point for students and faculty members of the Genius Mindspark ecosystem.
+                      </p>
                    </div>
                 </div>
 
