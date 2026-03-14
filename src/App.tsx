@@ -202,9 +202,9 @@ export default function App() {
                         setShowPortalSelection(false);
                         setShowLanding(false);
                       }}
-                      className="group p-3 bg-white hover:bg-white border border-slate-100 hover:border-rose-200 hover:shadow-xl hover:shadow-rose-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
+                      className="group p-3 bg-white hover:bg-white border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
                     >
-                      <div className="w-10 h-10 flex items-center justify-center text-[#800000] transition-transform flex-shrink-0">
+                      <div className="w-10 h-10 flex items-center justify-center text-indigo-600 transition-transform flex-shrink-0">
                         <PlusCircle size={22} />
                       </div>
                       <div>
