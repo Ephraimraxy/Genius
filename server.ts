@@ -525,8 +525,11 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
         to: email,
         subject: 'Your Genius Portal Password Reset Code',
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 16px;">
-            <h2 style="color: #0f172a; margin-bottom: 10px;">Password Reset</h2>
+            <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 16px;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <img src="/gmijp-logo.png" alt="Genius" style="width: 60px; height: 60px; border-radius: 50%; background: white; padding: 5px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" />
+              </div>
+              <h2 style="color: #0f172a; margin-bottom: 10px;">Password Reset</h2>
             <p style="color: #64748b;">Hi ${user.name || 'there'},</p>
             <p style="color: #64748b;">Your password reset code is:</p>
             <div style="background: #800000; color: white; font-size: 32px; font-weight: bold; text-align: center; padding: 20px; border-radius: 12px; letter-spacing: 8px; margin: 20px 0;">
@@ -614,6 +617,9 @@ app.post('/api/auth/contact-admin-reset', authLimiter, async (req, res) => {
         subject: `Password Reset Request from ${email}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 16px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <img src="/gmijp-logo.png" alt="Genius" style="width: 60px; height: 60px; border-radius: 50%; background: white; padding: 5px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" />
+            </div>
             <h2 style="color: #0f172a;">Password Reset Request</h2>
             <p style="color: #64748b;">A user has requested a password reset via the Contact Admin form:</p>
             <div style="background: white; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; margin: 16px 0;">

@@ -35,17 +35,19 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   // ─── ADMIN DASHBOARD ─────────────────────────────────────────────
   if (isAdmin && adminStats && viewMode === 'admin') {
     const platformStats = [
-      { label: 'Registered Users', value: adminStats.totalUsers, icon: <Users className="text-indigo-600" size={24} />, color: 'bg-indigo-50', border: 'border-indigo-100' },
-      { label: 'Total Manuscripts', value: adminStats.totalPapers, icon: <FileText className="text-blue-600" size={24} />, color: 'bg-blue-50', border: 'border-blue-100' },
-      { label: 'Published Papers', value: adminStats.publishedPapers, icon: <CheckCircle className="text-emerald-600" size={24} />, color: 'bg-emerald-50', border: 'border-emerald-100' },
-      { label: 'Pending Review', value: adminStats.pendingReview, icon: <AlertCircle className="text-amber-600" size={24} />, color: 'bg-amber-50', border: 'border-amber-100' },
+      { label: 'Registered Users', value: adminStats.totalUsers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-indigo-50', border: 'border-indigo-100' },
+      { label: 'Total Manuscripts', value: adminStats.totalPapers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-blue-50', border: 'border-blue-100' },
+      { label: 'Published Papers', value: adminStats.publishedPapers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-emerald-50', border: 'border-emerald-100' },
+      { label: 'Pending Review', value: adminStats.pendingReview, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-amber-50', border: 'border-amber-100' },
     ];
 
     return (
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
         {/* Admin Welcome */}
         <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] rounded-[1.5rem] md:rounded-[2rem] p-6 md:p-10 text-white shadow-2xl">
-          <div className="absolute top-0 right-0 p-8 opacity-10"><ShieldCheck size={180} /></div>
+          <div className="absolute top-0 right-0 p-8 opacity-10">
+            <img src="/gmijp-logo.png" alt="Branding" className="w-48 h-48 md:w-64 md:h-64 object-contain rounded-full bg-white/5 p-4" />
+          </div>
           <div className="relative z-10 flex flex-col md:flex-row items-start sm:items-center justify-between gap-8">
             <div className="text-center sm:text-left flex-1 border-r border-white/10 pr-0 sm:pr-8 hidden sm:block">
               <div className="flex items-center gap-3 mb-3 justify-center sm:justify-start">
@@ -107,8 +109,12 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               {adminStats.recentUsers?.map((user: any) => (
                 <div key={user.id} className="px-5 sm:px-8 py-4 sm:py-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
                   <div className="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
-                    <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm shadow-sm shrink-0 ${user.role === 'admin' ? 'premium-gradient text-white' : 'bg-slate-100 text-slate-600'}`}>
-                      {user.name?.[0] || 'U'}
+                    <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm shadow-sm shrink-0 overflow-hidden ${user.role === 'admin' ? 'premium-gradient' : 'bg-white border border-slate-100'}`}>
+                      {user.role === 'admin' ? (
+                         <span className="text-white">{(user.name?.[0] || 'U')}</span>
+                      ) : (
+                         <img src="/gmijp-logo.png" alt="Logo" className="w-5 h-5 object-contain" />
+                      )}
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">{user.name || 'Unknown'}</p>

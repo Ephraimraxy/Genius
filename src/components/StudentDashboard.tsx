@@ -150,15 +150,15 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                     </h3>
                     {upcomingExams.length === 0 ? (
                         <div className="p-8 bg-slate-50 border border-slate-100 rounded-[2rem] text-center">
-                            <BookOpen size={48} className="mx-auto text-slate-300 mb-4" />
+                            <img src="/gmijp-logo.png" alt="Genius" className="mx-auto w-16 h-16 object-contain mb-4 opacity-40 bg-white rounded-full p-2 shadow-sm" />
                             <p className="text-slate-500 font-medium">No {activeType}s scheduled.</p>
                         </div>
                     ) : (
                         upcomingExams.map(exam => (
                             <div key={exam.id} className="p-5 md:p-6 bg-white border border-slate-200 rounded-[1.5rem] md:rounded-[2rem] shadow-sm hover:shadow-md transition-all group">
                                 <div className="flex justify-between items-start mb-4">
-                                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                                        <BookOpen size={20} />
+                                    <div className="p-3 bg-white border border-indigo-100 text-indigo-600 rounded-xl group-hover:border-indigo-600 transition-colors shadow-sm">
+                                        <img src="/gmijp-logo.png" alt="Logo" className="w-5 h-5 object-contain" />
                                     </div>
                                     <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest rounded-lg">
                                         Pending
