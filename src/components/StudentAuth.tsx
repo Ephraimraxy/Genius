@@ -72,70 +72,59 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             {/* Split Screen Layout Container */}
             <div className="flex flex-col md:flex-row w-full h-screen overflow-hidden relative z-10">
                 
-                {/* Left Side: Branding (Image 1 Format) */}
-                <div className="md:w-[45%] bg-[#1a237e] relative overflow-hidden flex flex-col p-12 text-white shadow-2xl z-20">
+                {/* Left Side: Branding (Refined Spacing) */}
+                <div className="hidden md:flex md:w-[45%] bg-[#1a237e] relative overflow-hidden flex-col p-8 text-white shadow-2xl z-20">
                    <div className="absolute inset-0 bg-slate-900/30" />
                    <div className="absolute top-0 left-0 w-80 h-80 bg-blue-400/10 rounded-full blur-[100px] -ml-40 -mt-40" />
                    <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px] -mr-48 -mb-48" />
                    
-                   <div className="relative z-10 flex flex-col h-full justify-between">
-                     <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-white rounded-full p-2.5 shadow-xl">
-                           <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain" />
-                        </div>
+                   <div className="relative z-10 flex flex-col h-full">
+                     <div className="flex items-center gap-4 mb-20">
+                        <img src="/gmijp-logo.png" alt="Genius" className="w-12 h-12 object-contain" />
                         <div>
                            <h1 className="font-black tracking-[0.2em] text-sm uppercase mb-0.5">Genius Academy</h1>
                            <div className="h-0.5 w-12 bg-[#ff4d4d]" />
                         </div>
                      </div>
 
-                     <div className="py-20">
-                        <motion.div
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="w-32 h-32 bg-white/5 rounded-full flex items-center justify-center mb-10 border border-white/10 p-6 backdrop-blur-sm"
-                        >
-                           <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain brightness-0 invert opacity-40" />
-                        </motion.div>
-                        <h2 className="text-5xl font-black mb-6 tracking-tight leading-[1.1]">Student <br/><span className="text-white/40">Portal</span></h2>
-                        <p className="text-blue-100/60 font-medium leading-relaxed max-w-sm text-lg">
+                     <div className="py-8">
+                        <img src="/gmijp-logo.png" alt="Genius" className="w-20 h-20 object-contain brightness-0 invert opacity-40 mb-6" />
+                        <h2 className="text-4xl font-black mb-4 tracking-tight leading-[1.1]">Student <br/><span className="text-white/40">Portal</span></h2>
+                        <p className="text-blue-100/60 font-medium leading-relaxed max-w-sm text-base">
                           Welcome to your secure academic gateway. Manage your assessments and academic performance from a single centralized dashboard.
                         </p>
                      </div>
 
-                     <div className="mt-auto border-t border-white/10 pt-10 flex items-center justify-between">
+                     <div className="mt-auto pt-6 flex items-center justify-between">
                         <div className="space-y-1">
-                           <p className="text-[#ff4d4d] font-black uppercase tracking-[0.4em] text-[10px]">Integrity · Innovation · Excellence</p>
                            <p className="text-white/30 text-[9px] font-bold uppercase tracking-widest">Digital Learning Ecosystem &copy; 2026</p>
                         </div>
                         <div className="flex items-center gap-3">
-                           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/10">
-                              <ShieldCheck size={14} className="text-blue-400" />
-                           </div>
+                           <ShieldCheck size={14} className="text-blue-400" />
                         </div>
                      </div>
                    </div>
                 </div>
 
                 {/* Right Side: Login Form */}
-                <div className="md:w-[55%] p-8 sm:p-20 flex flex-col justify-center bg-slate-50 relative z-10">
-                    <div className="max-w-md w-full mx-auto relative">
-                        {/* Static Background Text (Image 1 Aesthetic) */}
+                <div className="w-full md:w-[55%] p-6 sm:p-10 flex flex-col justify-center bg-slate-50 relative z-10">
+                    <div className="max-w-md w-full mx-auto relative px-4">
+                        {/* Static Background Text */}
                         <div className="absolute -top-32 -right-32 text-slate-100 text-9xl font-black select-none pointer-events-none rotate-12 opacity-50">
                             GENIUS
                         </div>
 
-                        <div className="mb-12 relative">
+                        <div className="mb-6 relative">
                              <button 
                                 onClick={onBackToMain}
-                                className="mb-12 flex items-center gap-2 text-slate-400 hover:text-[#1a237e] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#1a237e]/20 pb-1"
+                                className="mb-6 flex items-center gap-2 text-slate-400 hover:text-[#1a237e] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#1a237e]/20 pb-1"
                              >
                                 <ArrowRight size={14} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
                                 Back to Main Portal
                              </button>
 
-                            <h3 className="text-4xl font-black text-slate-900 tracking-tight mb-3">Welcome back</h3>
-                            <p className="text-slate-500 font-medium">Login to your account below to continue to your student dashboard</p>
+                            <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Welcome back</h3>
+                            <p className="text-slate-500 font-medium text-sm">Login to your account below to continue to your student dashboard</p>
                         </div>
 
                         <AnimatePresence mode="wait">
@@ -162,7 +151,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                         required
                                         value={matricNumber}
                                         onChange={(e) => formatMatricInput(e.target.value)}
-                                        className="w-full pl-14 pr-4 py-5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono font-black tracking-widest uppercase text-sm"
+                                        className="w-full pl-14 pr-4 py-4 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono font-black tracking-widest uppercase text-sm"
                                         placeholder="NSUK/SCI/YYYY/NNNN"
                                     />
                                 </div>
@@ -179,7 +168,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                         inputMode="numeric"
                                         value={pin}
                                         onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                                        className="w-full pl-14 pr-4 py-5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono text-xl tracking-[0.8em] text-center"
+                                        className="w-full pl-14 pr-4 py-4 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono text-xl tracking-[0.8em] text-center"
                                         placeholder="••••"
                                     />
                                 </div>
@@ -190,7 +179,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                 whileTap={{ scale: 0.99 }}
                                 type="submit"
                                 disabled={loading}
-                                className="w-full bg-[#1a237e] text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-900/20 hover:bg-[#121858] transition-all disabled:opacity-50 mt-6 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                className="w-full bg-[#1a237e] text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-900/20 hover:bg-[#121858] transition-all disabled:opacity-50 mt-6 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
                             >
                                 {loading ? (
                                     <Loader2 size={20} className="animate-spin" />

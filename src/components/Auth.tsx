@@ -153,85 +153,74 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
             {/* Split Screen Layout Container */}
             <div className="flex flex-col md:flex-row w-full h-screen overflow-hidden relative z-10">
                 
-                {/* Left Side: Branding (Structural Concept from Image 2) */}
-                <div className="md:w-[40%] bg-[#800000] relative overflow-hidden flex flex-col p-12 text-white shadow-2xl z-20">
+                {/* Left Side: Branding (Refined Spacing) */}
+                <div className="hidden md:flex md:w-[40%] bg-[#800000] relative overflow-hidden flex-col p-8 text-white shadow-2xl z-20">
                    <div className="absolute inset-0 bg-slate-900/40" />
                    <div className="absolute top-0 right-0 w-96 h-96 bg-[#ff4d4d]/10 rounded-full blur-[100px] -mr-48 -mt-48" />
                    <div className="absolute bottom-0 left-0 w-80 h-80 bg-slate-900/40 rounded-full blur-[120px] -ml-40 -mb-40" />
                    
-                   <div className="relative z-10 flex flex-col h-full justify-between">
-                     <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-white rounded-full p-2.5 shadow-2xl">
-                           <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain" />
-                        </div>
+                   <div className="relative z-10 flex flex-col h-full">
+                     <div className="flex items-center gap-4 mb-16">
+                        <img src="/gmijp-logo.png" alt="Genius" className="w-12 h-12 object-contain" />
                         <div>
                            <h1 className="font-black tracking-[0.2em] text-sm uppercase mb-0.5">Genius Mindspark</h1>
                            <div className="h-0.5 w-12 bg-[#ff4d4d]" />
                         </div>
                      </div>
 
-                     <div className="py-20">
-                        <motion.div
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center mb-10 border border-white/10 p-5 backdrop-blur-sm"
-                        >
-                           <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain brightness-0 invert opacity-40" />
-                        </motion.div>
+                     <div className="py-8">
+                        <img src="/gmijp-logo.png" alt="Genius" className="w-16 h-16 object-contain brightness-0 invert opacity-40 mb-6" />
                         
-                        <h2 className="text-5xl font-black mb-6 tracking-tight leading-[1.1]">
+                        <h2 className="text-3xl font-black mb-4 tracking-tight leading-[1.1]">
                             {role === 'lecturer' ? 'Academic' : 'Neural'} <br/>
                             <span className="text-white/40">{role === 'lecturer' ? 'Workspace' : 'Research'}</span>
                         </h2>
                         
-                        <p className="text-rose-100/60 font-medium leading-relaxed max-w-sm text-lg">
+                        <p className="text-rose-100/60 font-medium leading-relaxed max-w-sm text-base">
                           {role === 'lecturer' 
                             ? 'Configure your institutional space, manage grading systems, and oversee secure assessments for your students.' 
-                            : 'Global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation and instant DOI registration.'}
+                            : 'Global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation.'}
                         </p>
                      </div>
 
-                     <div className="mt-auto border-t border-white/10 pt-10">
+                     <div className="mt-auto pt-6 border-t border-white/10">
                         <div className="space-y-4">
                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
-                                 <ShieldCheck size={18} className="text-rose-400" />
-                              </div>
-                              <p className="text-[11px] font-bold text-white/50 uppercase tracking-widest leading-tight">
+                              <ShieldCheck size={14} className="text-rose-400" />
+                              <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-tight">
                                 Secured by GMIJ <br/> Neural Encryption
                               </p>
                            </div>
-                           <p className="text-[#ff4d4d] font-black uppercase tracking-[0.4em] text-[10px]">Integrity · Innovation · Excellence</p>
                         </div>
                      </div>
                    </div>
                 </div>
 
                 {/* Right Side: Action Area */}
-                <div className="md:w-[60%] p-8 sm:p-20 flex flex-col justify-center bg-white relative z-10 overflow-y-auto">
-                    <div className="max-w-md w-full mx-auto relative">
+                <div className="w-full md:w-[60%] p-6 sm:p-10 flex flex-col justify-center bg-white relative z-10 overflow-y-auto">
+                    <div className="max-w-md w-full mx-auto relative px-4">
                         {/* Static Background Pattern */}
-                        <div className="absolute -top-32 -right-32 text-slate-50 text-9xl font-black select-none pointer-events-none rotate-6 opacity-30">
+                        <div className="absolute -top-32 -right-32 text-slate-50 text-8xl font-black select-none pointer-events-none rotate-6 opacity-20">
                             GENIUS
                         </div>
 
-                        <div className="mb-12 relative">
+                        <div className="mb-6 relative">
                              {onBackToLanding && (
                                 <button 
                                     onClick={onBackToLanding}
-                                    className="mb-12 flex items-center gap-2 text-slate-400 hover:text-[#800000] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#800000]/20 pb-1"
+                                    className="mb-6 flex items-center gap-2 text-slate-400 hover:text-[#800000] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#800000]/20 pb-1"
                                 >
                                     <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
                                     Back to Main Portal
                                 </button>
                              )}
 
-                            <h3 className="text-4xl font-black text-slate-900 tracking-tight mb-3">
+                            <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">
                                 {isLogin 
                                     ? (role === 'lecturer' ? 'Lecturer Login' : 'Welcome back') 
                                     : (role === 'lecturer' ? 'Lecturer Signup' : 'Create Account')}
                             </h3>
-                            <p className="text-slate-500 font-medium italic">
+                            <p className="text-slate-500 font-medium text-sm italic">
                                 {isLogin
                                     ? (role === 'lecturer' ? 'Access your academic workspace' : 'Authorize to access your publication portal')
                                     : (role === 'lecturer' ? 'Create your workspace and manage exams' : 'Scale your research with neural intelligence')}
@@ -244,7 +233,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                     initial={{ opacity: 0, scale: 0.95 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, scale: 0.95 }}
-                                    className="mb-8 p-5 bg-rose-50 border border-rose-100/50 text-rose-600 rounded-2xl text-xs font-black flex items-center gap-3 shadow-sm"
+                                    className="mb-6 p-4 bg-rose-50 border border-rose-100/50 text-rose-600 rounded-2xl text-xs font-black flex items-center gap-3 shadow-sm"
                                 >
                                     <div className="p-1.5 bg-[#800000] rounded-lg text-white"><ShieldCheck size={14} /></div>
                                     <span>{error}</span>
@@ -317,7 +306,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                             required
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
-                                            className="w-full pl-14 pr-4 py-5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
+                                            className="w-full pl-14 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#800000] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold"
                                             placeholder="you@genius.com"
                                         />
                                     </div>
@@ -354,7 +343,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                     whileTap={{ scale: 0.99 }}
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full bg-[#800000] text-white font-black py-5 rounded-2xl shadow-xl shadow-rose-900/10 hover:bg-[#600000] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                    className="w-full bg-[#800000] text-white font-black py-4 rounded-2xl shadow-xl shadow-rose-900/10 hover:bg-[#600000] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
                                 >
                                     {loading ? (
                                         <Loader2 size={20} className="animate-spin" />
