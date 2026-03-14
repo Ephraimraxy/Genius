@@ -121,7 +121,81 @@ export default function App() {
   }
 
   if (showLanding && !token && !showStudentAuth) {
-    return <Landing onPublicationHub={() => setShowLanding(false)} onSchoolPortal={() => setShowPortalSelection(true)} />;
+    return (
+      <>
+        <Landing onPublicationHub={() => setShowLanding(false)} onSchoolPortal={() => setShowPortalSelection(true)} />
+        <AnimatePresence>
+          {showPortalSelection && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowPortalSelection(false)}
+                className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+              />
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden"
+              >
+                <div className="p-8 sm:p-12">
+                  <div className="text-center mb-10">
+                    <div className="w-16 h-16 bg-[#800000]/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-100 p-3">
+                      <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain rounded-full" />
+                    </div>
+                    <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">School Portal</h2>
+                    <p className="text-slate-500 font-medium">Choose your access role to continue</p>
+                  </div>
+
+                  <div className="grid gap-4">
+                    <button
+                      onClick={() => {
+                        setShowPortalSelection(false);
+                        setShowStudentAuth(true);
+                      }}
+                      className="group p-6 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-3xl transition-all flex items-center gap-6 text-left"
+                    >
+                      <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm group-hover:scale-110 transition-transform">
+                        <GraduationCap size={28} />
+                      </div>
+                      <div>
+                        <p className="text-lg font-black text-indigo-900">I am a Student</p>
+                        <p className="text-sm text-indigo-600 font-medium">Access exams with Matric & PIN</p>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowPortalSelection(false);
+                        setShowLanding(false);
+                      }}
+                      className="group p-6 bg-rose-50 hover:bg-rose-100 border border-rose-100 rounded-3xl transition-all flex items-center gap-6 text-left"
+                    >
+                      <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-[#800000] shadow-sm group-hover:scale-110 transition-transform">
+                        <PlusCircle size={28} />
+                      </div>
+                      <div>
+                        <p className="text-lg font-black text-rose-900">I am a Lecturer</p>
+                        <p className="text-sm text-rose-600 font-medium">Create workspace & manage exams</p>
+                      </div>
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => setShowPortalSelection(false)}
+                    className="w-full mt-8 py-4 text-slate-400 font-bold hover:text-slate-600 transition-colors uppercase tracking-widest text-xs"
+                  >
+                    Back to selection
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </>
+    );
   }
 
   if (showStudentAuth && !token) {
@@ -224,10 +298,10 @@ export default function App() {
           isAdmin ? 'bg-slate-900/[0.03] border-slate-200' : 'bg-white/90 border-slate-100'
         }`}>
           <div className="flex items-center gap-4 lg:gap-6">
-            <div className={`w-10 h-10 rounded-xl flex lg:hidden items-center justify-center shadow-lg shrink-0 ${
+            <div className={`w-10 h-10 rounded-full flex lg:hidden items-center justify-center shadow-lg shrink-0 ${
               isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : isStudent ? 'bg-indigo-600 shadow-indigo-600/30' : 'premium-gradient shadow-[#800000]/20'
             }`}>
-              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : <img src="/gmijp-logo.png" alt="Logo" className="w-6 h-6 object-contain" />}
+              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : <img src="/gmijp-logo.png" alt="Logo" className="w-6 h-6 rounded-full object-contain" />}
             </div>
             <div>
               <h1 className="text-lg sm:text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
@@ -352,8 +426,8 @@ export default function App() {
             >
               <div className="p-8 sm:p-12">
                 <div className="text-center mb-10">
-                  <div className="w-16 h-16 bg-[#800000]/5 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                    <img src="/gmijp-logo.png" alt="Genius" className="w-10 h-10 object-contain" />
+                  <div className="w-16 h-16 bg-[#800000]/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-100 p-3">
+                    <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain rounded-full" />
                   </div>
                   <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">School Portal</h2>
                   <p className="text-slate-500 font-medium">Choose your access role to continue</p>

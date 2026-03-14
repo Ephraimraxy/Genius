@@ -101,7 +101,9 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                     <div className="absolute bottom-0 left-0 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl -ml-20 -mb-20"></div>
                     
                     <div className="text-center mb-10 relative">
-                            <img src="/gmijp-logo.png" alt="Logo" className="w-8 h-8 object-contain" />
+                        <div className="inline-flex p-4 rounded-full bg-indigo-500/20 mb-6 items-center justify-center border border-white/10 mx-auto">
+                            <img src="/gmijp-logo.png" alt="Logo" className="w-8 h-8 rounded-full object-contain" />
+                        </div>
                         <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight font-display mb-2 drop-shadow-md">
                             Student Portal
                         </h2>

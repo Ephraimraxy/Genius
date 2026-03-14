@@ -189,7 +189,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding }: AuthP
                         <motion.div 
                             initial={{ scale: 0.5, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
-                            className="inline-flex p-4 rounded-2xl bg-[#800000]/20 mb-6 items-center justify-center border border-white/10"
+                            className="inline-flex p-4 rounded-full bg-[#800000]/20 mb-6 items-center justify-center border border-white/10"
                         >
                             <img src="/gmijp-logo.png" alt="GMIJP" className="w-8 h-8 rounded-full object-contain" />
                         </motion.div>

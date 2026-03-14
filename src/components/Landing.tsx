@@ -33,8 +33,8 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
         <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 flex items-center justify-center transition-transform hover:scale-110 drop-shadow-sm">
-              <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
+            <div className="w-14 h-14 rounded-full flex items-center justify-center transition-transform hover:scale-110 drop-shadow-sm border border-slate-100 overflow-hidden bg-white p-2">
+              <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain rounded-full" />
             </div>
             <div className="flex flex-col">
               <span className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Genius</span>
@@ -58,21 +58,19 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
           <div className="flex items-center gap-6">
             <button 
               onClick={onSchoolPortal} 
-              className="px-5 py-2 text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-lg transition-colors uppercase tracking-widest hidden sm:block shadow-sm"
+              className="px-6 py-3 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-xl transition-all uppercase tracking-widest hidden sm:flex items-center gap-2 shadow-sm"
             >
+              <Users size={16} />
               School Portal
             </button>
             <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
-            <div className="flex items-center gap-3">
-               <button onClick={onPublicationHub} className="text-[11px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-900">Sign In</button>
-               <button 
-                 onClick={onPublicationHub} 
-                 className="px-6 py-3 bg-[#800000] text-white text-[10px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest flex items-center gap-2"
-               >
-                 <PlusCircle size={14} />
-                 Publication Hub
-               </button>
-            </div>
+            <button 
+              onClick={onPublicationHub} 
+              className="px-6 py-3 bg-[#800000] text-white text-[11px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest flex items-center gap-2"
+            >
+              <PlusCircle size={16} />
+              Publication Hub
+            </button>
           </div>
         </div>
       </nav>
@@ -94,9 +92,8 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 to-[#800000]/40 z-[5] -z-10" />
-          <div className="absolute inset-0 bg-white/20 backdrop-blur-[2px] z-20"></div>
-          <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/10 to-white z-25"></div>
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px] z-10" />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 via-transparent to-slate-900/40 z-20" />
         </div>        <div className="max-w-7xl mx-auto px-6 relative z-30 w-full">
            <div className="max-w-3xl">
               <motion.div
@@ -383,8 +380,8 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
           <div className="grid lg:grid-cols-4 gap-16">
             <div className="lg:col-span-2">
               <div className="flex items-center gap-4 mb-8">
-                <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg">
-                  <img src="/gmijp-logo.png" alt="GMIJP" className="w-8 h-8 object-contain" />
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg">
+                  <img src="/gmijp-logo.png" alt="GMIJP" className="w-8 h-8 rounded-full object-contain" />
                 </div>
                 <span className="text-2xl font-black tracking-tighter uppercase">Genius Publication</span>
               </div>
