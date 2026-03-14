@@ -23,10 +23,11 @@ import ToastSystem, { useToasts } from './components/ToastSystem';
 import StudentAuth from './components/StudentAuth'; // NEW
 import StudentDashboard from './components/StudentDashboard'; // NEW
 import StudentPerformance from './components/StudentPerformance'; // NEW
+import SecurityGuidelines from './components/SecurityGuidelines'; // NEW
 import CourseManagement from './components/CourseManagement'; // NEW
 import { Menu, LogOut, Bell, Search, ShieldCheck, GraduationCap } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -46,7 +47,8 @@ const TAB_LABELS: Record<Tab, string> = {
   courseManagement: 'Course Management',
   tests: 'Tests & Quizzes',
   assignments: 'Assignments',
-  performance: 'Performance Tracking'
+  performance: 'Performance Tracking',
+  guidelines: 'Security Guidelines'
 };
 
 export default function App() {
@@ -126,6 +128,9 @@ export default function App() {
     if (isStudent && activeTab !== 'profile') {
         if (activeTab === 'performance') {
             return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
+        }
+        if (activeTab === 'guidelines') {
+            return <SecurityGuidelines onNavigate={setActiveTab} />;
         }
         return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} />;
     }

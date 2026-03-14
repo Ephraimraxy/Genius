@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AlertTriangle, Mic, Maximize, ShieldAlert, CheckCircle2, PlayCircle, Loader2, Camera } from 'lucide-react';
+import { AlertTriangle, Mic, Maximize, ShieldAlert, CheckCircle2, PlayCircle, Loader2, Camera, Smartphone, Bluetooth, Brain, Activity, Clock } from 'lucide-react';
 
 interface ExamProctoringModalProps {
     courseName: string;
@@ -88,35 +88,54 @@ export default function ExamProctoringModal({ courseName, onStartExam, onCancel 
                             className="space-y-6"
                         >
                             <div className="bg-rose-50 border border-rose-100 rounded-2xl p-6">
-                                <h3 className="text-rose-800 font-black mb-4 flex items-center gap-2 uppercase tracking-wide text-sm">
-                                    <AlertTriangle size={18} /> Important Rules
+                                <h3 className="text-rose-800 font-black mb-4 flex items-center gap-2 uppercase tracking-wide text-xs">
+                                    <ShieldAlert size={18} /> Deep-AI Security Protocols
                                 </h3>
-                                <ul className="space-y-3">
-                                    <li className="flex items-start gap-3">
+                                <div className="grid sm:grid-cols-2 gap-4">
+                                    <div className="flex items-start gap-3 p-3 bg-white/50 rounded-xl border border-rose-100">
+                                        <Brain size={20} className="text-rose-600 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-[11px] font-black text-slate-900 uppercase tracking-wider mb-1">Behavioral Risk Scoring</p>
+                                            <p className="text-[10px] font-medium text-slate-500 leading-relaxed">Neural AI monitors gaze, speech, and patterns. High risk scores trigger auto-submission.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start gap-3 p-3 bg-white/50 rounded-xl border border-rose-100">
+                                        <Smartphone size={20} className="text-rose-600 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-[11px] font-black text-slate-900 uppercase tracking-wider mb-1">Motion & Orientation</p>
+                                            <p className="text-[10px] font-medium text-slate-500 leading-relaxed">Gyroscopic sensors detect if the device is picked up or tilted to photograph questions.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start gap-3 p-3 bg-white/50 rounded-xl border border-rose-100">
+                                        <Clock size={20} className="text-rose-600 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-[11px] font-black text-slate-900 uppercase tracking-wider mb-1">Answer-Time Analytics</p>
+                                            <p className="text-[10px] font-medium text-slate-500 leading-relaxed">Suspiciously fast answers after long idle periods (external lookup) are flagged.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start gap-3 p-3 bg-white/50 rounded-xl border border-rose-100">
+                                        <Bluetooth size={20} className="text-rose-600 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-[11px] font-black text-slate-900 uppercase tracking-wider mb-1">Proximity Scanning</p>
+                                            <p className="text-[10px] font-medium text-slate-500 leading-relaxed">Bluetooth signals are monitored to detect nearby secondary devices/smartphones.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 space-y-3 pt-4 border-t border-rose-100">
+                                    <div className="flex items-start gap-3">
                                         <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-2 shrink-0"></div>
-                                        <p className="text-sm font-bold text-slate-700 leading-relaxed">
-                                            Do not minimize this window or switch tabs. Doing so will result in an <span className="text-rose-600">automatic submission</span>.
+                                        <p className="text-xs font-bold text-slate-700 leading-relaxed italic">
+                                            Questions are <span className="text-rose-600">Dynamic & Parameterized</span>. Sharing answers or searching online will result in incorrect results due to unique student variables.
                                         </p>
-                                    </li>
-                                    <li className="flex items-start gap-3">
+                                    </div>
+                                    <div className="flex items-start gap-3">
                                         <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-2 shrink-0"></div>
-                                        <p className="text-sm font-bold text-slate-700 leading-relaxed">
-                                            The exam requires <span className="text-rose-600">Full-Screen Mode</span>. Pressing ESC to exit full-screen will auto-submit your exam.
+                                        <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                                            <span className="text-rose-600">Environment Lockdown:</span> Switching tabs, exits from fullscreen, or keyboard shortcuts result in immediate failure.
                                         </p>
-                                    </li>
-                                    <li className="flex items-start gap-3">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-2 shrink-0"></div>
-                                        <p className="text-sm font-bold text-slate-700 leading-relaxed">
-                                            <span className="text-rose-600">Audio/Video Proctoring</span> is active. You will be recorded. High background noise or leaving the frame will be detected and flagged.
-                                        </p>
-                                    </li>
-                                    <li className="flex items-start gap-3">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-2 shrink-0"></div>
-                                        <p className="text-sm font-bold text-slate-700 leading-relaxed">
-                                            Keyboard shortcuts and Right-Click are <span className="text-rose-600">strictly disabled</span>. The screen will be dynamically watermarked.
-                                        </p>
-                                    </li>
-                                </ul>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="flex justify-end gap-3 mt-8">

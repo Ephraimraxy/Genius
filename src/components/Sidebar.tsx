@@ -23,7 +23,8 @@ import {
   FileUp,
   BarChart3,
   Trophy,
-  ClipboardCheck
+  ClipboardCheck,
+  Info
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -104,6 +105,7 @@ export default function Sidebar({
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },
     { id: 'assignments', label: 'Assignments', icon: FileUp },
     { id: 'performance', label: 'Performance', icon: BarChart3, section: 'Records' },
+    { id: 'guidelines', label: 'Guidelines', icon: Info },
   ];
 
   const navItems = effectiveRole === 'student' ? studentNavItems 
