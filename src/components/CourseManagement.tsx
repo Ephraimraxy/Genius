@@ -127,7 +127,7 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
         <div className="space-y-8 max-w-5xl">
             <header className="mb-6 md:mb-8">
                 <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-                    Course & Quiz Management <ShieldCheck className="text-amber-500" />
+                    Course & Quiz Management <img src="/gmijp-logo.png" alt="Logo" className="w-8 h-8 object-contain" />
                 </h2>
                 <p className="text-slate-500 font-medium">Whitelist students and generate AI quizzes from lecture notes.</p>
             </header>
@@ -135,8 +135,8 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
             <div className="grid md:grid-cols-2 gap-8">
                 {/* Roster Management Card */}
                 <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm">
-                    <div className="w-12 h-12 bg-indigo-50 text-indigo-600 flex items-center justify-center rounded-2xl mb-6">
-                        <Users size={24} />
+                    <div className="w-12 h-12 bg-white border border-indigo-100 flex items-center justify-center rounded-2xl mb-6 shadow-sm">
+                        <img src="/gmijp-logo.png" alt="Logo" className="w-6 h-6 object-contain" />
                     </div>
                     <h3 className="text-xl font-black text-slate-900 mb-2">Student Whitelist</h3>
                     <p className="text-sm text-slate-500 mb-6">Upload a CSV or Excel file containing student Matriculation Numbers to strictly control portal access.</p>
@@ -172,8 +172,8 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                 <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
                     
-                    <div className="w-12 h-12 bg-amber-50 text-amber-600 flex items-center justify-center rounded-2xl mb-6 relative z-10">
-                        <BrainCircuit size={24} />
+                    <div className="w-12 h-12 bg-white border border-amber-100 flex items-center justify-center rounded-2xl mb-6 relative z-10 shadow-sm">
+                        <img src="/gmijp-logo.png" alt="Logo" className="w-6 h-6 object-contain" />
                     </div>
                     <h3 className="text-xl font-black text-slate-900 mb-2 relative z-10">AI Assessment Builder</h3>
                     <p className="text-sm text-slate-500 mb-4 relative z-10">Upload PDF lecture notes. Neural AI will automatically extract context and set MCQs or Tasks.</p>

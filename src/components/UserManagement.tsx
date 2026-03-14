@@ -132,7 +132,9 @@ export default function UserManagement({ addToast, onOpenChat }: { addToast?: (m
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
       {/* Header */}
       <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] rounded-[2rem] p-10 text-white shadow-2xl">
-        <div className="absolute top-0 right-0 p-8 opacity-10"><Users size={180} /></div>
+        <div className="absolute top-0 right-0 p-8 opacity-10">
+          <img src="/gmijp-logo.png" alt="Branding" className="w-48 h-48 md:w-64 md:h-64 object-contain rounded-full bg-white/5 p-4" />
+        </div>
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-3">
             <span className="px-3 py-1 bg-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-widest rounded-lg border border-amber-500/30">Admin Only</span>
@@ -147,9 +149,9 @@ export default function UserManagement({ addToast, onOpenChat }: { addToast?: (m
       {/* Stats Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         {[
-          { label: 'Total Users', value: stats.total, icon: <Users className="text-indigo-600" size={22} />, color: 'bg-indigo-50', border: 'border-indigo-100' },
-          { label: 'Administrators', value: stats.admins, icon: <ShieldCheck className="text-amber-600" size={22} />, color: 'bg-amber-50', border: 'border-amber-100' },
-          { label: 'Researchers', value: stats.researchers, icon: <UserCheck className="text-emerald-600" size={22} />, color: 'bg-emerald-50', border: 'border-emerald-100' },
+          { label: 'Total Users', value: stats.total, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-indigo-50', border: 'border-indigo-100' },
+          { label: 'Administrators', value: stats.admins, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-amber-50', border: 'border-amber-100' },
+          { label: 'Researchers', value: stats.researchers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-emerald-50', border: 'border-emerald-100' },
         ].map((stat, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
             className={`bg-white p-6 rounded-[1.5rem] shadow-sm border ${stat.border} hover:shadow-md transition-all`}>
@@ -212,8 +214,12 @@ export default function UserManagement({ addToast, onOpenChat }: { addToast?: (m
                   className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm ${user.role === 'admin' ? 'bg-gradient-to-br from-slate-900 to-[#800000] text-white' : 'bg-slate-100 text-slate-600'}`}>
-                        {user.name?.[0]?.toUpperCase() || 'U'}
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm overflow-hidden ${user.role === 'admin' ? 'bg-gradient-to-br from-slate-900 to-[#800000] text-white' : 'bg-white border border-slate-100'}`}>
+                        {user.role === 'admin' ? (
+                           user.name?.[0]?.toUpperCase() || 'A'
+                        ) : (
+                           <img src="/gmijp-logo.png" alt="Logo" className="w-5 h-5 object-contain" />
+                        )}
                       </div>
                       <span className="text-sm font-bold text-slate-900">{user.name || 'Unknown'}</span>
                     </div>

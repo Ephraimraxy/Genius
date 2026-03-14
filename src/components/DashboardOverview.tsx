@@ -3,13 +3,22 @@ import { motion } from 'motion/react';
 import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, TrendingUp, Users, ShieldCheck, Eye, User, ToggleLeft, ToggleRight } from 'lucide-react';
 import { Tab } from '../App';
 
-export default function DashboardOverview({ onNavigate, profile, setActivePaperId }: { onNavigate: (tab: Tab) => void, profile: any, setActivePaperId: (id: number) => void }) {
+export default function DashboardOverview({ onNavigate, profile, setActivePaperId, viewMode: activeViewMode, simulateRole }: { 
+  onNavigate: (tab: Tab) => void, 
+  profile: any, 
+  setActivePaperId: (id: number) => void,
+  viewMode?: 'publication' | 'student' | 'lecturer',
+  simulateRole?: 'none' | 'researcher' | 'student' | 'lecturer'
+}) {
   const papers = profile?.papers || [];
-  const isAdmin = profile?.user?.role === 'admin';
+  const userRole = profile?.user?.role;
+  const isSuperAdmin = userRole === 'super_admin' || userRole === 'admin';
+  const isLecturer = userRole === 'tenant_admin' || simulateRole === 'lecturer' || activeViewMode === 'lecturer' || activeViewMode === 'student';
+  const isAdmin = isSuperAdmin || isLecturer;
   const adminStats = profile?.adminStats;
 
   // Added toggle for Admin to view User Dashboard
-  const [viewMode, setViewMode] = useState<'admin' | 'user'>(isAdmin ? 'admin' : 'user');
+  const [viewMode, setViewMode] = useState<'admin' | 'user'>(isSuperAdmin && activeViewMode === 'publication' ? 'admin' : 'user');
 
   const handlePaperClick = (id: number) => {
     setActivePaperId(id);
@@ -32,8 +41,8 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
     );
   }
 
-  // ─── ADMIN DASHBOARD ─────────────────────────────────────────────
-  if (isAdmin && adminStats && viewMode === 'admin') {
+  // ─── ADMIN DASHBOARD (Super Admin in Publication Mode) ──────────────────────────
+  if (isSuperAdmin && activeViewMode === 'publication' && adminStats && viewMode === 'admin') {
     const platformStats = [
       { label: 'Registered Users', value: adminStats.totalUsers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-indigo-50', border: 'border-indigo-100' },
       { label: 'Total Manuscripts', value: adminStats.totalPapers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-blue-50', border: 'border-blue-100' },
@@ -188,6 +197,49 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               <p className="text-xs text-slate-400 mt-1">{action.desc}</p>
             </motion.button>
           ))}
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ─── LECTURER / ACADEMIC DASHBOARD ─────────────────────────────────────────────
+  if ((isLecturer && viewMode === 'user') || (isSuperAdmin && (activeViewMode === 'student' || activeViewMode === 'lecturer'))) {
+    const lecturerStats = [
+      { label: 'Active Students', value: profile?.lecturerStats?.totalStudents || 0, icon: <Users size={20} className="text-indigo-600" />, color: 'bg-indigo-50' },
+      { label: 'Generated Quizzes', value: profile?.lecturerStats?.totalExams || 0, icon: <FileText size={20} className="text-blue-600" />, color: 'bg-blue-50' },
+      { label: 'Materials Uploaded', value: profile?.lecturerStats?.totalMaterials || 0, icon: <CheckCircle size={20} className="text-emerald-600" />, color: 'bg-emerald-50' },
+    ];
+
+    return (
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
+        <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-[2rem] p-10 text-white shadow-2xl relative overflow-hidden">
+           <div className="absolute top-0 right-0 p-8 opacity-10">
+             <img src="/gmijp-logo.png" className="w-64 h-64 object-contain rounded-full bg-white/5 p-4" alt="" />
+           </div>
+           <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
+              <div>
+                <span className="px-3 py-1 bg-indigo-500/20 text-indigo-300 text-[10px] font-black uppercase tracking-widest rounded-lg border border-indigo-500/30 mb-3 inline-block">Lecturer Workspace</span>
+                <h2 className="text-4xl font-bold font-display mb-2">Academic Dashboard</h2>
+                <p className="text-indigo-200 text-lg font-medium">Manage your courses, students and AI-generated assessments.</p>
+              </div>
+              <TopRightToggle />
+           </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           {lecturerStats.map((stat, i) => (
+             <div key={i} className="bg-white p-6 rounded-[1.5rem] border border-slate-100 shadow-sm">
+                <div className={`w-12 h-12 ${stat.color} rounded-xl flex items-center justify-center mb-4`}>{stat.icon}</div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{stat.label}</p>
+                <p className="text-3xl font-bold text-slate-900 mt-1">{stat.value}</p>
+             </div>
+           ))}
+        </div>
+
+        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8 text-center">
+            <img src="/gmijp-logo.png" className="w-16 h-16 mx-auto mb-4 opacity-50 bg-slate-50 rounded-full p-2 shadow-sm" alt="Logo" />
+            <h3 className="text-xl font-bold text-slate-900">Workspace Active</h3>
+            <p className="text-slate-500 mt-2">Use the navigation menu to manage students or create new assessments.</p>
         </div>
       </motion.div>
     );

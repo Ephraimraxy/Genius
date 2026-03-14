@@ -112,7 +112,7 @@ export default function Sidebar({
 
   let navItems = researcherNavItems;
   if (isSuperAdmin && adminSimulateRole === 'none') {
-    navItems = adminViewMode === 'student' ? lecturerNavItems : superAdminNavItems;
+    navItems = (adminViewMode === 'student' || adminViewMode === 'lecturer') ? lecturerNavItems : superAdminNavItems;
   } else if (effectiveRole === 'student' || isStudent) {
     navItems = studentNavItems;
   } else if (isLecturer && effectiveRole === 'tenant_admin') {
@@ -207,7 +207,7 @@ export default function Sidebar({
                   <motion.div
                     layoutId="mobile-active-nav"
                     className={`absolute inset-0 rounded-xl ${
-                      isAdmin ? (adminViewMode === 'student' ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-gradient-to-r from-amber-900/80 to-[#800000] shadow-lg shadow-amber-900/20') : isStudent ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-[#800000] shadow-lg shadow-[#800000]/20'
+                      (isStudent || adminViewMode === 'student' || adminViewMode === 'lecturer' || adminSimulateRole === 'lecturer') ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-[#800000] shadow-lg shadow-[#800000]/20'
                     }`}
                     transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                   />
@@ -233,10 +233,8 @@ export default function Sidebar({
       `}>
         <div className={`h-20 flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between px-8'}`}>
           <div className="flex items-center gap-3 text-white font-bold text-xl font-display tracking-tight">
-            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-lg shrink-0 ${
-              isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : 'bg-white shadow-[#800000]/20 p-1.5'
-            }`}>
-              {isAdmin ? <ShieldCheck className="text-white" size={20} /> : <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full rounded-full object-contain" />}
+            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-lg shrink-0 bg-white shadow-slate-200 p-1.5`}>
+              <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full rounded-full object-contain" />
             </div>
             {!isCollapsed && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col">

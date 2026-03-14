@@ -257,25 +257,25 @@ export default function App() {
     // Lecturer View (includes Super Admin in Student/Lecturer Manage Mode or Simulate Lecturer)
     if ((isLecturer || isStudentViewMode) && activeTab !== 'profile') {
         switch (activeTab) {
-            case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
+            case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} />;
             case 'courseManagement': return <CourseManagement addToast={addToast} token={token} />;
             case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} />;
             case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
-            default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
+            default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} />;
         }
     }
 
     // Super Admin & Researcher View
     switch (activeTab) {
-      case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
+      case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} />;
       case 'courseManagement': return <CourseManagement addToast={addToast} token={token} />;
-      case 'upload': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} />;
-      case 'formatting': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <FormattingEngine activePaperId={activePaperId} />;
-      case 'writing': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <WritingAssistant activePaperId={activePaperId} />;
-      case 'references': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <ReferenceIntelligence activePaperId={activePaperId} />;
-      case 'integrity': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <IntegrityChecks activePaperId={activePaperId} />;
-      case 'journals': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <JournalRecommendations activePaperId={activePaperId} />;
-      case 'reviews': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <PeerReviewSimulation activePaperId={activePaperId} />;
+      case 'upload': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} />;
+      case 'formatting': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} /> : <FormattingEngine activePaperId={activePaperId} />;
+      case 'writing': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} /> : <WritingAssistant activePaperId={activePaperId} />;
+      case 'references': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} /> : <ReferenceIntelligence activePaperId={activePaperId} />;
+      case 'integrity': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} /> : <IntegrityChecks activePaperId={activePaperId} />;
+      case 'journals': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} /> : <JournalRecommendations activePaperId={activePaperId} />;
+      case 'reviews': return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} /> : <PeerReviewSimulation activePaperId={activePaperId} />;
       case 'transactions': return <TransactionHistory profile={profile} />;
       case 'records': return <PublicationRecords profile={profile} />;
       case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} />;
@@ -287,7 +287,7 @@ export default function App() {
           .then(res => res.json())
           .then(data => { if (data) setProfile(data); });
       }} />;
-      default: return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} />;
+      default: return (isAdmin && !isSimulatingResearcher) ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} viewMode={adminViewMode} simulateRole={adminSimulateRole} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} />;
     }
   };
 
