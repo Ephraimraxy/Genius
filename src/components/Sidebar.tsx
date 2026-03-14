@@ -29,6 +29,8 @@ interface SidebarProps {
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
   profile?: any;
+  adminViewMode?: 'publication' | 'student';
+  setAdminViewMode?: (mode: 'publication' | 'student') => void;
 }
 
 export default function Sidebar({ 
@@ -38,17 +40,28 @@ export default function Sidebar({
   setIsMobileMenuOpen, 
   isCollapsed, 
   setIsCollapsed, 
-  profile 
+  profile,
+  adminViewMode,
+  setAdminViewMode
 }: SidebarProps) {
   const isAdmin = profile?.user?.role === 'admin';
+  const isStudent = profile?.user?.role === 'student';
 
-  // ─── ADMIN NAV ───────────────────────────────────────────
-  const adminNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
+  // ─── ADMIN NAV (PUBLICATION MODE) ─────────────────────────
+  const adminPublicationNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
+    { id: 'dashboard', label: 'Journal Center', icon: LayoutDashboard, section: 'Overview' },
     { id: 'users', label: 'User Management', icon: Users, section: 'Administration' },
     { id: 'reviewQueue', label: 'Review Queue', icon: ClipboardList },
     { id: 'records', label: 'All Publications', icon: History },
     { id: 'transactions', label: 'Revenue & Billing', icon: FileText },
+    { id: 'settings', label: 'Platform Settings', icon: Settings, section: 'System' },
+  ];
+
+  // ─── ADMIN NAV (STUDENT MANAGE MODE) ──────────────────────
+  const adminStudentNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
+    { id: 'dashboard', label: 'Platform Usage', icon: LayoutDashboard, section: 'Overview' },
+    { id: 'courseManagement', label: 'Course Management', icon: UploadCloud, section: 'Academics' },
+    { id: 'users', label: 'Student Directory', icon: Users },
     { id: 'settings', label: 'Platform Settings', icon: Settings, section: 'System' },
   ];
 
@@ -66,28 +79,87 @@ export default function Sidebar({
     { id: 'transactions', label: 'Transactions', icon: FileText },
   ];
 
-  const navItems = isAdmin ? adminNavItems : researcherNavItems;
+  // ─── STUDENT NAV ─────────────────────────────────────────
+  const studentNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
+    { id: 'dashboard', label: 'Assessments', icon: BookMarked, section: 'Course Work' },
+  ];
+
+  const navItems = isStudent ? studentNavItems 
+                 : isAdmin 
+                    ? (adminViewMode === 'student' ? adminStudentNavItems : adminPublicationNavItems) 
+                    : researcherNavItems;
 
   // Group items by section
   let currentSection = '';
 
   return (
     <>
-      {/* Mobile overlay */}
-      {isMobileMenuOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
+      {/* ─── MOBILE BOTTOM APP BAR ─── */}
+      <div className={`
+        lg:hidden fixed bottom-0 left-0 w-full z-50 flex flex-col
+        ${isAdmin ? 'bg-[#0a0f1e] border-amber-900/20' : 'bg-[#0f172a] border-slate-800/50'} 
+        border-t transition-all pt-1 shadow-2xl
+      `} style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {isAdmin && setAdminViewMode && (
+          <div className="flex items-center p-2 bg-slate-900/80 border-b border-slate-700/50 gap-2">
+            <button
+                onClick={() => { setAdminViewMode('publication'); setActiveTab('dashboard'); }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all whitespace-nowrap ${
+                  adminViewMode === 'publication' ? 'bg-[#800000] text-white shadow-sm' : 'text-slate-400 hover:text-slate-300'
+                }`}
+            >
+              <LayoutDashboard size={12} /> Journal View
+            </button>
+            <button
+                onClick={() => { setAdminViewMode('student'); setActiveTab('courseManagement'); }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-[10px] font-bold uppercase tracking-widest rounded transition-all whitespace-nowrap ${
+                  adminViewMode === 'student' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-300'
+                }`}
+            >
+              <GraduationCap size={12} /> Student View
+            </button>
+          </div>
+        )}
 
+        <div className="flex items-center overflow-x-auto px-2 py-2 gap-1 touch-pan-x" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+          <style dangerouslySetInnerHTML={{__html: `::-webkit-scrollbar { display: none; }`}} />
+          {navItems.map((item) => {
+            const isActive = activeTab === item.id;
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`flex flex-col items-center justify-center min-w-[72px] p-2 rounded-xl transition-all relative shrink-0 ${
+                  isActive ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="mobile-active-nav"
+                    className={`absolute inset-0 rounded-xl ${
+                      isAdmin ? (adminViewMode === 'student' ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-gradient-to-r from-amber-900/80 to-[#800000] shadow-lg shadow-amber-900/20') : isStudent ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-[#800000] shadow-lg shadow-[#800000]/20'
+                    }`}
+                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <span className="relative z-10 mb-1">
+                  <Icon size={20} className={isActive ? 'text-white' : ''} />
+                </span>
+                <span className="relative z-10 text-[9px] font-bold text-center truncate w-full">
+                  {item.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ─── DESKTOP SIDEBAR ─── */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50
-        ${isAdmin ? 'bg-[#0a0f1e]' : 'bg-[#0f172a]'} text-slate-400 flex flex-col border-r ${isAdmin ? 'border-amber-900/20' : 'border-slate-800/50'}
+        hidden lg:flex flex-col inset-y-0 left-0 z-50 shrink-0
+        ${isAdmin ? 'bg-[#0a0f1e]' : 'bg-[#0f172a]'} text-slate-400 border-r ${isAdmin ? 'border-amber-900/20' : 'border-slate-800/50'}
         transition-all duration-300 ease-in-out
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         ${isCollapsed ? 'w-24' : 'w-72'}
       `}>
         <div className={`h-20 flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between px-8'}`}>
@@ -174,10 +246,32 @@ export default function Sidebar({
           })}
         </nav>
 
+      {/* View Toggle For Admin */}
+      {isAdmin && !isCollapsed && setAdminViewMode && (
+          <div className="mx-4 mt-auto mb-2 p-1 bg-slate-800/50 rounded-xl flex items-center border border-slate-700/50 shrink-0 shadow-inner">
+            <button
+                onClick={() => { setAdminViewMode('publication'); setActiveTab('dashboard'); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                  adminViewMode === 'publication' ? 'bg-[#800000] text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                }`}
+            >
+              <LayoutDashboard size={14} /> Journal
+            </button>
+            <button
+                onClick={() => { setAdminViewMode('student'); setActiveTab('courseManagement'); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${
+                  adminViewMode === 'student' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-300'
+                }`}
+            >
+              <GraduationCap size={14} /> Student
+            </button>
+          </div>
+      )}
+
         <div
           className={`
-            m-4 p-4 border rounded-[1.5rem] cursor-pointer transition-all group
-            ${isAdmin ? 'bg-amber-900/10 border-amber-800/30 hover:bg-amber-900/20' : 'bg-slate-800/30 border-slate-700/50 hover:bg-slate-800/50'}
+            m-4 mt-0 p-4 border rounded-[1.5rem] cursor-pointer transition-all group shrink-0
+            ${isAdmin ? 'bg-amber-900/10 border-amber-800/30 hover:bg-amber-900/20' : isStudent ? 'bg-indigo-900/20 border-indigo-800/30 hover:bg-indigo-900/30' : 'bg-slate-800/30 border-slate-700/50 hover:bg-slate-800/50'}
             ${isCollapsed ? 'p-2 flex justify-center' : ''}
           `}
           onClick={() => setActiveTab('profile')}
@@ -185,7 +279,7 @@ export default function Sidebar({
           <div className="flex items-center gap-3">
             <div className={`
               rounded-xl flex items-center justify-center text-white font-bold border shadow-inner group-hover:scale-105 transition-transform shrink-0
-              ${isAdmin ? 'bg-gradient-to-br from-amber-600 to-[#800000] border-amber-700' : 'bg-slate-700 border-slate-600'}
+              ${isAdmin ? 'bg-gradient-to-br from-amber-600 to-[#800000] border-amber-700' : isStudent ? 'bg-indigo-600 border-indigo-500' : 'bg-slate-700 border-slate-600'}
               ${isCollapsed ? 'w-10 h-10' : 'w-11 h-11'}
             `}>
               {(profile?.user?.name?.trim() || profile?.user?.email?.trim() || 'S').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
@@ -197,8 +291,8 @@ export default function Sidebar({
                 </p>
                 <p className="text-[10px] text-slate-500 truncate mb-1">{profile?.user?.email || 'Connected'}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`text-[10px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded-md ${isAdmin ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}`}>
-                    {isAdmin ? 'Admin' : 'Researcher'}
+                  <span className={`text-[10px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded-md ${isAdmin ? 'bg-amber-500/20 text-amber-400' : isStudent ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
+                    {isAdmin ? 'Admin' : isStudent ? 'Student Profile' : 'Researcher'}
                   </span>
                 </div>
               </div>

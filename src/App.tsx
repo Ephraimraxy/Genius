@@ -20,9 +20,12 @@ import ReviewQueue from './components/ReviewQueue';
 import AdminSettings from './components/AdminSettings';
 import GlobalLoader from './components/GlobalLoader';
 import ToastSystem, { useToasts } from './components/ToastSystem';
-import { Menu, LogOut, Bell, Search, ShieldCheck } from 'lucide-react';
+import StudentAuth from './components/StudentAuth'; // NEW
+import StudentDashboard from './components/StudentDashboard'; // NEW
+import CourseManagement from './components/CourseManagement'; // NEW
+import { Menu, LogOut, Bell, Search, ShieldCheck, GraduationCap } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -39,6 +42,7 @@ const TAB_LABELS: Record<Tab, string> = {
   users: 'User Management',
   reviewQueue: 'Review Queue',
   settings: 'Platform Settings',
+  courseManagement: 'Course Management'
 };
 
 export default function App() {
@@ -49,6 +53,8 @@ export default function App() {
   const [activePaperId, setActivePaperId] = useState<number | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [showLanding, setShowLanding] = useState(!token);
+  const [showStudentAuth, setShowStudentAuth] = useState(false); // NEW
+  const [adminViewMode, setAdminViewMode] = useState<'publication' | 'student'>('publication'); // NEW TOGGLE
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
   const [openChatUserId, setOpenChatUserId] = useState<number | null>(null);
@@ -91,21 +97,33 @@ export default function App() {
   const onAuthSuccess = (newToken: string, user: any) => {
     setToken(newToken);
     setShowLanding(false);
+    setShowStudentAuth(false);
   };
 
-  if (showLanding && !token) {
-    return <Landing onStart={() => setShowLanding(false)} />;
+  if (showLanding && !token && !showStudentAuth) {
+    return <Landing onStart={() => setShowLanding(false)} onStudentPortal={() => setShowStudentAuth(true)} />;
+  }
+
+  if (showStudentAuth && !token) {
+    return <StudentAuth onAuthSuccess={onAuthSuccess} addToast={addToast} onBackToMain={() => { setShowStudentAuth(false); setShowLanding(true); }} />;
   }
 
   if (!token) {
-    return <Auth onAuthSuccess={onAuthSuccess} addToast={addToast} />;
+    return <Auth onAuthSuccess={onAuthSuccess} addToast={addToast} onBackToLanding={() => setShowLanding(true)} />;
   }
 
   const isAdmin = profile?.user?.role === 'admin';
+  const isStudent = profile?.user?.role === 'student'; // Determine if logged in user is student
 
   const renderContent = () => {
+    // If student is logged in, restrict them only to Student Dashboard
+    if (isStudent && activeTab !== 'profile') {
+        return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} />;
+    }
+
     switch (activeTab) {
       case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
+      case 'courseManagement': return <CourseManagement addToast={addToast} />;
       case 'upload': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} />;
       case 'formatting': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <FormattingEngine activePaperId={activePaperId} />;
       case 'writing': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <WritingAssistant activePaperId={activePaperId} />;
@@ -123,13 +141,15 @@ export default function App() {
           .then(res => res.json())
           .then(data => { if (data) setProfile(data); });
       }} />;
-      default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
+      default: return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} />;
     }
   };
 
   const getHeaderTitle = () => {
+    if (isStudent) return 'Student Portal';
     if (activeTab === 'dashboard') return isAdmin ? 'Admin Console' : 'Analytics Overview';
-    return TAB_LABELS[activeTab] || activeTab;
+    if (activeTab === 'courseManagement') return 'Course Management';
+    return TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab;
   };
 
   return (
@@ -142,26 +162,27 @@ export default function App() {
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
         profile={profile}
+        adminViewMode={adminViewMode} // Pass down
+        setAdminViewMode={setAdminViewMode} // Pass down
       />
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className={`backdrop-blur-xl border-b h-20 flex items-center justify-between px-8 lg:px-12 shrink-0 z-10 ${
+        <header className={`backdrop-blur-xl border-b h-20 flex items-center justify-between px-4 lg:px-12 shrink-0 z-10 ${
           isAdmin ? 'bg-slate-900/[0.03] border-slate-200' : 'bg-white/90 border-slate-100'
         }`}>
-          <div className="flex items-center gap-6">
-            <button
-              className="lg:hidden p-2.5 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
-              onClick={() => setIsMobileMenuOpen(true)}
-            >
-              <Menu size={22} />
-            </button>
+          <div className="flex items-center gap-4 lg:gap-6">
+            <div className={`w-10 h-10 rounded-xl flex lg:hidden items-center justify-center shadow-lg shrink-0 ${
+              isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : isStudent ? 'bg-indigo-600 shadow-indigo-600/30' : 'premium-gradient shadow-[#800000]/20'
+            }`}>
+              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : isStudent ? <GraduationCap className="text-white" size={22} /> : <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 rounded-full object-contain" />}
+            </div>
             <div>
-              <h1 className="text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
+              <h1 className="text-lg sm:text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
                 {getHeaderTitle()}
-                {isAdmin && <ShieldCheck className="text-amber-500" size={24} />}
+                {isAdmin && <ShieldCheck className="text-amber-500 hidden sm:block" size={24} />}
               </h1>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">
-                {isAdmin ? 'Admin Portal' : 'Genius Portal'} / {TAB_LABELS[activeTab] || activeTab}
+                {isStudent ? 'Student Assessment' : isAdmin ? `Admin / ${adminViewMode === 'publication' ? 'Journal' : 'Student'} View` : 'Genius Portal'} / {TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab}
               </p>
             </div>
 
@@ -242,7 +263,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-6 lg:p-12 scroll-smooth bg-slate-50/30">
+        <div className="flex-1 overflow-auto p-4 lg:p-12 pb-32 lg:pb-12 scroll-smooth bg-slate-50/30">
           <div className="max-w-7xl mx-auto h-full">
             <AnimatePresence mode="wait">
               <motion.div

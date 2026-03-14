@@ -7,9 +7,10 @@ import { ToastType } from './ToastSystem';
 interface AuthProps {
     onAuthSuccess: (token: string, user: any) => void;
     addToast: (message: string, type?: ToastType) => void;
+    onBackToLanding?: () => void;
 }
 
-export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
+export default function Auth({ onAuthSuccess, addToast, onBackToLanding }: AuthProps) {
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -141,12 +142,20 @@ export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
     return (
         <div className="min-h-screen flex items-center justify-center bg-white overflow-hidden relative">
             {/* Optimized Background Layer */}
-            <div className="absolute inset-0 z-0">
+            <div className="absolute inset-0 z-0 bg-slate-900">
                 <img 
                     src="/Banner/NSUK.jpg" 
                     alt="Background" 
-                    className="w-full h-full object-cover opacity-60"
+                    className="w-full h-full object-cover opacity-0 transition-opacity duration-1000 ease-in-out z-0"
+                    onLoad={(e) => {
+                        (e.target as HTMLImageElement).classList.remove('opacity-0');
+                        (e.target as HTMLImageElement).classList.add('opacity-60');
+                    }}
+                    onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                    }}
                 />
+                <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 to-[#800000]/40 z-[5] -z-10" />
                 <div className="absolute inset-0 bg-white/20 backdrop-blur-[2px] z-20"></div>
                 <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/10 to-white z-25"></div>
             </div>
@@ -157,6 +166,15 @@ export default function Auth({ onAuthSuccess, addToast }: AuthProps) {
                 className="max-w-md w-full mx-4 z-10"
             >
                 {/* Glassmorphism Container */}
+                {onBackToLanding && (
+                    <button 
+                        onClick={onBackToLanding}
+                        className="mb-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm font-bold bg-white/5 px-4 py-2 rounded-xl backdrop-blur-md border border-white/10 w-fit"
+                    >
+                        <ArrowLeft size={16} />
+                        Back to Home
+                    </button>
+                )}
                 <div className="glass-morph-dark rounded-[2.5rem] p-8 md:p-12 relative overflow-hidden shadow-2xl">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-[#800000]/20 rounded-full blur-3xl -mr-16 -mt-16"></div>
                     

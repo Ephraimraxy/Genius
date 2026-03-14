@@ -18,9 +18,10 @@ import {
 
 interface LandingProps {
   onStart: () => void;
+  onStudentPortal: () => void;
 }
 
-export default function Landing({ onStart }: LandingProps) {
+export default function Landing({ onStart, onStudentPortal }: LandingProps) {
 
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-[#800000] selection:text-white">
@@ -47,6 +48,12 @@ export default function Landing({ onStart }: LandingProps) {
 
           <div className="flex items-center gap-3">
             <button 
+              onClick={onStudentPortal} 
+              className="px-5 py-2 text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-lg transition-colors uppercase tracking-widest hidden sm:block shadow-sm"
+            >
+              Student Portal
+            </button>
+            <button 
               onClick={onStart} 
               className="px-5 py-2 text-[10px] font-black text-slate-900 hover:bg-slate-100 rounded-lg transition-colors uppercase tracking-widest"
             >
@@ -64,13 +71,22 @@ export default function Landing({ onStart }: LandingProps) {
 
       {/* Hero Section */}
       <section className="relative min-h-[90vh] flex items-center pt-24 overflow-hidden">
-        <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 z-0 bg-slate-900">
           <div className="absolute inset-0 bg-[#800000]/5 z-10"></div>
           <img 
             src="/Banner/NSUK.jpg" 
             alt="University Background" 
-            className="w-full h-full object-cover opacity-60"
+            className="w-full h-full object-cover opacity-0 transition-opacity duration-1000 ease-in-out z-0"
+            onLoad={(e) => {
+              (e.target as HTMLImageElement).classList.remove('opacity-0');
+              (e.target as HTMLImageElement).classList.add('opacity-60');
+            }}
+            onError={(e) => {
+              // Fallback to a gradient if image fails to load
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
           />
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 to-[#800000]/40 z-[5] -z-10" />
           <div className="absolute inset-0 bg-white/20 backdrop-blur-[2px] z-20"></div>
           <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/10 to-white z-25"></div>
         </div>
