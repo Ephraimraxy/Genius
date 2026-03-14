@@ -33,8 +33,8 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
         <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#800000] rounded-xl flex items-center justify-center shadow-lg shadow-[#800000]/20">
-              <img src="/gmijp-logo.png" alt="GMIJP" className="w-6 h-6 object-contain invert brightness-200" />
+            <div className="w-12 h-12 flex items-center justify-center transition-transform hover:scale-110">
+              <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
             </div>
             <span className="text-xl font-black text-slate-900 tracking-tighter uppercase">Genius</span>
           </div>
@@ -95,13 +95,13 @@ export default function Landing({ onStart, onStudentPortal }: LandingProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8 }}
               >
-                <h2 className="text-[1.1rem] font-black text-[#800000] uppercase tracking-[0.4em] mb-6">Neural Research Environment</h2>
-                <h1 className="text-6xl md:text-8xl font-black text-slate-900 leading-[1.05] tracking-tight mb-8 font-display">
-                  GENIUS <span className="text-[#800000]">MINDSPARK</span> <br/>
-                  <span className="text-slate-800">MULTIDISCIPLINARY</span>
+                <h2 className="text-[1.1rem] font-black text-[#ff4d4d] uppercase tracking-[0.4em] mb-6 drop-shadow-sm">Neural Research Environment</h2>
+                <h1 className="text-6xl md:text-8xl font-black text-white leading-[1.05] tracking-tight mb-8 font-display drop-shadow-lg">
+                  GENIUS <span className="text-[#ff4d4d]">MINDSPARK</span> <br/>
+                  <span className="text-white/90">MULTIDISCIPLINARY</span>
                 </h1>
 
-                <p className="text-xl text-slate-600 leading-relaxed mb-12 max-w-2xl font-medium">
+                <p className="text-xl text-white/80 leading-relaxed mb-12 max-w-2xl font-medium drop-shadow-md">
                   The global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation, instant DOI registration, and global dissemination.
                 </p>
 
