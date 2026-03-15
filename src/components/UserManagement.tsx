@@ -257,14 +257,14 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => onOpenChat?.(user.id)}
-                        className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                        className="p-2 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-xl transition-all"
                         title="Message User"
                       >
                         <MessageSquare size={16} />
                       </button>
                       <button
                         onClick={() => setEditingUser(user)}
-                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-xl transition-all"
+                        className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all"
                         title="Edit User"
                       >
                         <Edit2 size={16} />
@@ -272,7 +272,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
                       <button
                         onClick={() => handleDelete(user.id)}
                         disabled={isDeleting === user.id}
-                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all disabled:opacity-50"
+                        className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-all disabled:opacity-50"
                         title="Delete User"
                       >
                         <Trash2 size={16} />
