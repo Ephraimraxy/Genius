@@ -101,7 +101,13 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsSyncing(false), 1500);
+    // Safety fallback: Force hide loader after 3 seconds regardless of profile sync
+    const timer = setTimeout(() => setIsSyncing(false), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsSyncing(false), 800);
     return () => clearTimeout(timer);
   }, [profile]);
 
@@ -328,25 +334,25 @@ export default function App() {
       />
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className={`backdrop-blur-xl border-b h-16 md:h-20 flex items-center justify-between px-4 md:px-8 lg:px-10 shrink-0 z-10 transition-all ${
+        <header className={`backdrop-blur-xl border-b h-14 md:h-16 lg:h-20 flex items-center justify-between px-4 md:px-8 lg:px-10 shrink-0 z-10 transition-all ${
           isAdmin ? 'bg-slate-900/[0.03] border-slate-200' : 'bg-white/90 border-slate-100'
         }`}>
-          <div className="flex items-center gap-4 lg:gap-6">
-            <div className={`w-10 h-10 rounded-full flex lg:hidden items-center justify-center shadow-lg shrink-0 ${
+          <div className="flex items-center gap-3 lg:gap-6">
+            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex lg:hidden items-center justify-center shadow-lg shrink-0 ${
               isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : isStudent ? 'bg-indigo-600 shadow-indigo-600/30' : 'premium-gradient shadow-[#800000]/20'
             }`}>
-              {isAdmin ? <ShieldCheck className="text-white" size={22} /> : (
+              {isAdmin ? <ShieldCheck className="text-white" size={18} /> : (
                 <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center p-0.5 shadow-sm overflow-hidden">
                   <img src="/gmijp-logo.png" alt="Logo" className="w-full h-full object-contain" />
                 </div>
               )}
             </div>
             <div>
-              <h1 className="text-lg sm:text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
+              <h1 className="text-base sm:text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
                 {getHeaderTitle()}
                 {isAdmin && <ShieldCheck className="text-amber-500 hidden sm:block" size={24} />}
               </h1>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">
+              <p className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">
                 {isStudent ? 'Student Assessment' : isAdmin && !isSimulatingResearcher ? `Admin / ${adminViewMode === 'publication' ? 'Journal' : 'Student'} View` : isSimulatingResearcher ? 'Simulated Researcher' : 'Genius Portal'} / {TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab}
               </p>
             </div>
@@ -428,7 +434,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 pb-32 md:pb-8 scroll-smooth bg-slate-50/30">
+        <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 pb-24 md:pb-8 scroll-smooth bg-slate-50/30">
           <div className="max-w-7xl mx-auto h-full">
             <AnimatePresence mode="wait">
               <motion.div

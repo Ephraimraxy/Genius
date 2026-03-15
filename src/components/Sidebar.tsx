@@ -190,8 +190,7 @@ export default function Sidebar({
           </div>
         )}
 
-        <div className="flex items-center overflow-x-auto px-2 py-2 gap-1 touch-pan-x" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          <style dangerouslySetInnerHTML={{__html: `::-webkit-scrollbar { display: none; }`}} />
+        <div className="flex items-center overflow-x-auto px-1.5 py-1.5 gap-0.5 touch-pan-x hide-scrollbar">
           {navItems.map((item) => {
             const isActive = activeTab === item.id;
             const Icon = item.icon;
@@ -199,7 +198,7 @@ export default function Sidebar({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex flex-col items-center justify-center min-w-[72px] p-2 rounded-xl transition-all relative shrink-0 ${
+                className={`flex flex-col items-center justify-center min-w-[64px] p-1.5 rounded-xl transition-all relative shrink-0 ${
                   isActive ? 'text-white' : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
@@ -212,10 +211,14 @@ export default function Sidebar({
                     transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                   />
                 )}
-                <span className="relative z-10 mb-1">
-                  <Icon size={20} className={isActive ? 'text-white' : ''} />
+                <span className="relative z-10 mb-0.5">
+                  {typeof Icon === 'function' || (typeof Icon === 'object' && 'render' in Icon) ? (
+                    <Icon size={18} className={isActive ? 'text-white' : ''} />
+                  ) : (
+                    <div className="w-[18px] h-[18px] flex items-center justify-center">{Icon as React.ReactNode}</div>
+                  )}
                 </span>
-                <span className="relative z-10 text-[9px] font-bold text-center truncate w-full">
+                <span className="relative z-10 text-[8.5px] font-bold text-center truncate w-full tracking-tight">
                   {item.label}
                 </span>
               </button>

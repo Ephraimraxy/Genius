@@ -53,9 +53,9 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
     return (
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
         {/* Admin Welcome */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] rounded-[1.5rem] md:rounded-[2rem] p-6 md:p-10 text-white shadow-2xl">
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] rounded-[1.25rem] md:rounded-[2rem] p-4 md:p-10 text-white shadow-2xl">
           <div className="absolute top-0 right-0 p-8 opacity-10">
-            <img src="/gmijp-logo.png" alt="Branding" className="w-48 h-48 md:w-64 md:h-64 object-contain rounded-full bg-white/5 p-4" />
+            <img src="/gmijp-logo.png" alt="Branding" className="w-32 h-32 md:w-64 md:h-64 object-contain rounded-full bg-white/5 p-4" />
           </div>
           <div className="relative z-10 flex flex-col md:flex-row items-start sm:items-center justify-between gap-8">
             <div className="text-center sm:text-left flex-1 border-r border-white/10 pr-0 sm:pr-8 hidden sm:block">
@@ -87,20 +87,20 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
         </div>
 
         {/* Platform Stats Grid */}
-        <div className="flex overflow-x-auto pb-4 gap-4 sm:grid sm:grid-cols-2 lg:grid-cols-4 sm:gap-6 snap-x snap-mandatory hide-scrollbar">
+        <div className="flex overflow-x-auto pb-4 gap-3 md:grid md:grid-cols-2 lg:grid-cols-4 md:gap-6 snap-x snap-mandatory hide-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
           {platformStats.map((stat, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1 }}
-              className={`min-w-[80vw] sm:min-w-0 snap-center bg-white p-5 md:p-7 rounded-[1.25rem] md:rounded-[1.5rem] shadow-sm border ${stat.border} hover:shadow-md transition-all group`}
+              className={`min-w-[70vw] md:min-w-0 snap-center bg-white p-4 md:p-7 rounded-2xl md:rounded-[1.5rem] shadow-sm border ${stat.border} hover:shadow-md transition-all group`}
             >
-              <div className={`p-4 ${stat.color} rounded-2xl w-fit mb-4 group-hover:scale-110 transition-transform`}>
+              <div className={`p-3 md:p-4 ${stat.color} rounded-xl md:rounded-2xl w-fit mb-3 md:mb-4 group-hover:scale-110 transition-transform`}>
                 {stat.icon}
               </div>
-              <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">{stat.label}</p>
-              <p className="text-3xl font-bold text-slate-800 tracking-tight mt-1">{stat.value}</p>
+              <p className="text-[10px] md:text-sm font-bold text-slate-500 uppercase tracking-wider">{stat.label}</p>
+              <p className="text-xl md:text-3xl font-bold text-slate-800 tracking-tight mt-0.5">{stat.value}</p>
             </motion.div>
           ))}
         </div>
@@ -257,55 +257,57 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="space-y-8 pb-12"
+      className="space-y-4 md:space-y-8 pb-12"
     >
       {/* Welcome Section */}
-      <div className="relative overflow-hidden premium-gradient rounded-[1.5rem] md:rounded-[2rem] p-6 md:p-10 text-white shadow-2xl shadow-indigo-900/20">
+      <div className="relative overflow-hidden premium-gradient rounded-[1.25rem] md:rounded-[2rem] p-5 md:p-10 text-white shadow-2xl shadow-indigo-900/20">
         <div className="absolute top-0 right-0 p-8 opacity-10">
-          <div className="w-44 h-44 rounded-full bg-white flex items-center justify-center p-8 shadow-2xl border border-dashed border-slate-200 overflow-hidden opacity-40">
+          <div className="w-32 h-32 md:w-44 md:h-44 rounded-full bg-white flex items-center justify-center p-8 shadow-2xl border border-dashed border-slate-200 overflow-hidden opacity-40">
             <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
           </div>
         </div>
-        <div className="relative z-10 flex flex-col md:flex-row items-start sm:items-center justify-between gap-8">
-          <div className="text-center sm:text-left flex-1 border-r border-white/10 pr-0 sm:pr-8">
-            <h2 className="text-2xl md:text-4xl font-bold font-display mb-2 md:mb-3 tracking-tight">
+        <div className="relative z-10 flex flex-col md:flex-row items-center sm:items-center justify-between gap-4 md:gap-8 text-center sm:text-left">
+          <div className="flex-1 md:border-r border-white/10 md:pr-8">
+            <h2 className="text-xl md:text-4xl font-bold font-display mb-1 md:mb-3 tracking-tight">
               Welcome back, {profile?.profile?.name || profile?.user?.name?.split(' ')[0] || 'Researcher'}
             </h2>
-            <p className="text-indigo-100 text-base md:text-lg max-w-xl font-medium leading-relaxed">
-              Your research factory is running. You have <span className="text-white font-bold">{papers.filter((p: any) => p.status !== 'published').length} manuscripts</span> waiting.
+            <p className="text-indigo-100/80 text-xs md:text-lg max-w-xl font-medium leading-relaxed">
+              Factory running: <span className="text-white font-bold">{papers.filter((p: any) => p.status !== 'published').length} manuscripts</span> pending.
             </p>
           </div>
-          <div className="flex flex-col items-center sm:items-end justify-center w-full sm:w-auto shrink-0 gap-6">
+          <div className="flex flex-col items-center sm:items-end justify-center w-full sm:w-auto shrink-0 gap-3 md:gap-6">
             <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => onNavigate('upload')}
-                className="shrink-0 bg-white text-indigo-600 px-8 py-4 rounded-2xl font-bold shadow-xl transition-all flex items-center gap-2 hover:bg-indigo-50"
+                className="shrink-0 bg-white text-indigo-600 px-6 py-3 md:px-8 md:py-4 rounded-xl md:rounded-2xl font-bold shadow-xl transition-all flex items-center gap-2 hover:bg-indigo-50 text-sm"
             >
-                <UploadCloud size={22} strokeWidth={2.5} />
+                <UploadCloud size={20} strokeWidth={2.5} />
                 Elevate Manuscript
             </motion.button>
-            <TopRightToggle />
+            <div className="scale-75 md:scale-100 -mt-2 md:mt-0">
+               <TopRightToggle />
+            </div>
           </div>
         </div>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         {researcherStats.map((stat, i) => (
           <motion.div
             key={i}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className="bg-white p-5 md:p-7 rounded-[1.25rem] md:rounded-[1.5rem] shadow-sm border border-slate-200 hover:shadow-md transition-all group"
+            className="bg-white p-4 md:p-7 rounded-2xl md:rounded-[1.5rem] shadow-sm border border-slate-200 hover:shadow-md transition-all group"
           >
-            <div className={`p-4 ${stat.color} rounded-2xl w-fit mb-4 group-hover:scale-110 transition-transform`}>
-              {stat.icon}
+            <div className={`p-3 md:p-4 ${stat.color} rounded-xl md:rounded-2xl w-fit mb-2 md:mb-4 group-hover:scale-110 transition-transform`}>
+              <div className="scale-75 md:scale-100">{stat.icon}</div>
             </div>
             <div>
-              <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">{stat.label}</p>
-              <p className="text-3xl font-bold text-slate-800 tracking-tight mt-1">{stat.value}</p>
+              <p className="text-[10px] md:text-sm font-bold text-slate-500 uppercase tracking-wider">{stat.label}</p>
+              <p className="text-xl md:text-3xl font-bold text-slate-800 tracking-tight mt-0.5">{stat.value}</p>
             </div>
           </motion.div>
         ))}

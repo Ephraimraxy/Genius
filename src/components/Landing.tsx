@@ -101,13 +101,13 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8 }}
               >
-                <h2 className="text-[0.75rem] md:text-[1rem] font-bold text-[#ff4d4d] uppercase tracking-[0.3em] md:tracking-[0.6em] mb-4 md:mb-8 drop-shadow-sm font-sans">Neural Research Environment</h2>
-                <h1 className="text-3xl sm:text-4xl md:text-7xl font-black text-white leading-tight tracking-tight mb-4 md:mb-8 font-display drop-shadow-2xl">
+                <h2 className="text-[0.65rem] md:text-[1rem] font-bold text-[#ff4d4d] uppercase tracking-[0.2em] md:tracking-[0.6em] mb-2 md:mb-8 drop-shadow-sm font-sans">Neural Research Environment</h2>
+                <h1 className="text-2xl sm:text-4xl md:text-7xl font-black text-white leading-tight tracking-tight mb-3 md:mb-8 font-display drop-shadow-2xl">
                   GENIUS <span className="text-[#ff4d4d] italic font-serif">MINDSPARK</span> <br/>
                   <span className="text-white font-sans tracking-[-0.02em]">MULTIDISCIPLINARY</span>
                 </h1>
 
-                <p className="text-lg text-white/80 leading-relaxed mb-12 max-w-2xl font-medium drop-shadow-md">
+                <p className="text-sm md:text-lg text-white/80 leading-relaxed mb-8 md:mb-12 max-w-2xl font-medium drop-shadow-md">
                   The global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation, instant DOI registration, and global dissemination.
                 </p>
 
@@ -131,20 +131,20 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-8">
                   <button 
                     onClick={onSchoolPortal}
-                    className="px-6 md:px-10 py-4 md:py-5 bg-[#800000] text-white font-black rounded-xl md:rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[10px] md:text-[11px] border border-white/10 flex items-center justify-center gap-3"
+                    className="px-6 md:px-10 py-3.5 md:py-5 bg-[#800000] text-white font-black rounded-xl md:rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[10px] md:text-[11px] border border-white/10 flex items-center justify-center gap-3"
                   >
-                    <Users size={18} />
+                    <Users size={16} />
                     Enter School Portal
                   </button>
 
                   <button 
                     onClick={onPublicationHub}
-                    className="flex items-center gap-4 group cursor-pointer"
+                    className="flex items-center gap-3 md:gap-4 group cursor-pointer justify-center sm:justify-start"
                   >
-                    <div className="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center shadow-xl border border-white/20 group-hover:scale-110 transition-all">
-                       <FileText size={20} className="text-[#ff4d4d]" />
+                    <div className="w-10 h-10 md:w-14 md:h-14 bg-white/10 rounded-full flex items-center justify-center shadow-xl border border-white/20 group-hover:scale-110 transition-all">
+                       <FileText size={16} className="text-[#ff4d4d]" />
                     </div>
-                    <span className="text-[11px] font-black text-white/80 uppercase tracking-[0.2em] group-hover:text-white transition-colors">Publication Hub</span>
+                    <span className="text-[9px] md:text-[11px] font-black text-white/80 uppercase tracking-[0.2em] group-hover:text-white transition-colors">Publication Hub</span>
                   </button>
                 </div>
               </motion.div>
