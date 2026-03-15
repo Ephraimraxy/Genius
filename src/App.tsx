@@ -337,22 +337,26 @@ export default function App() {
         <header className={`backdrop-blur-xl border-b h-14 md:h-16 lg:h-20 flex items-center justify-between px-4 md:px-8 lg:px-10 shrink-0 z-10 transition-all ${
           isAdmin ? 'bg-slate-900/[0.03] border-slate-200' : 'bg-white/90 border-slate-100'
         }`}>
-          <div className="flex items-center gap-3 lg:gap-6">
-            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex lg:hidden items-center justify-center shadow-lg shrink-0 ${
-              isAdmin ? 'bg-gradient-to-br from-amber-500 to-[#800000] shadow-amber-900/30' : isStudent ? 'bg-indigo-600 shadow-indigo-600/30' : 'premium-gradient shadow-[#800000]/20'
+          <div className="flex items-center gap-2 sm:gap-3 lg:gap-6">
+            <div className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex lg:hidden items-center justify-center shadow-lg shrink-0 p-1.5 ${
+              isAdmin ? 'bg-white border-2 border-amber-500 shadow-amber-900/10' : isStudent ? 'bg-indigo-600 shadow-indigo-600/30' : 'premium-gradient shadow-[#800000]/20'
             }`}>
-              {isAdmin ? <ShieldCheck className="text-white" size={18} /> : (
-                <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center p-0.5 shadow-sm overflow-hidden">
+              {isAdmin ? (
+                <img src="/gmijp-logo.png" alt="Logo" className="w-full h-full object-contain" />
+              ) : isStudent ? (
+                <ShieldCheck className="text-white" size={18} />
+              ) : (
+                <div className="w-full h-full rounded-full bg-white flex items-center justify-center p-0.5 shadow-sm overflow-hidden">
                   <img src="/gmijp-logo.png" alt="Logo" className="w-full h-full object-contain" />
                 </div>
               )}
             </div>
-            <div>
-              <h1 className="text-base sm:text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-2">
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-1.5 sm:gap-2 truncate">
                 {getHeaderTitle()}
                 {isAdmin && <ShieldCheck className="text-amber-500 hidden sm:block" size={24} />}
               </h1>
-              <p className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">
+              <p className="text-[8px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] sm:tracking-[0.2em] mt-0.5 truncate max-w-[150px] sm:max-w-none">
                 {isStudent ? 'Student Assessment' : isAdmin && !isSimulatingResearcher ? `Admin / ${adminViewMode === 'publication' ? 'Journal' : 'Student'} View` : isSimulatingResearcher ? 'Simulated Researcher' : 'Genius Portal'} / {TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab}
               </p>
             </div>
@@ -394,7 +398,7 @@ export default function App() {
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-3 w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 z-[60]"
+                    className="absolute right-0 mt-3 w-72 sm:w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 p-4 sm:p-6 z-[60] backdrop-blur-none"
                   >
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">Alerts</h4>

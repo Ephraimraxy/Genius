@@ -100,14 +100,14 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
   };
 
   return (
-    <div className="fixed bottom-4 sm:bottom-8 right-4 sm:right-8 z-[100]">
+    <div className="fixed bottom-24 sm:bottom-8 right-4 sm:right-8 z-[100]">
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="absolute bottom-16 right-0 w-[calc(100vw-2rem)] sm:w-[400px] h-[75vh] sm:h-[600px] max-h-[800px] bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl shadow-[#800000]/20 border border-slate-100 flex flex-col overflow-hidden"
+            className="absolute bottom-16 right-0 w-[calc(100vw-2rem)] sm:w-[400px] h-[60vh] sm:h-[600px] max-h-[800px] bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl shadow-[#800000]/20 border border-slate-100 flex flex-col overflow-hidden"
           >
             {/* Header */}
             <div className={`p-6 ${isAdmin ? 'bg-gradient-to-br from-slate-900 to-[#800000]' : 'premium-gradient'} text-white flex items-center justify-between shrink-0`}>
