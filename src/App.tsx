@@ -308,6 +308,19 @@ export default function App() {
   const isStudent = role === 'student';
 
   const renderContent = () => {
+    // If we have a token but no profile yet, we are still syncing.
+    // Return a loading state or nothing to prevent dashboard flash.
+    if (token && !profile) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="flex flex-col items-center gap-4">
+            <GlobalLoader show={true} />
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] animate-pulse">Syncing Environment...</p>
+          </div>
+        </div>
+      );
+    }
+
     // Student View
     if (isStudent && activeTab !== 'profile') {
         if (activeTab === 'performance') return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;

@@ -21,7 +21,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'user' | 'admin'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'user' | 'admin' | 'tenant_admin'>('all');
   
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -139,6 +139,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
     total: users.length,
     admins: users.filter(u => u.role === 'admin').length,
     researchers: users.filter(u => u.role === 'user').length,
+    lecturers: users.filter(u => u.role === 'tenant_admin').length,
   };
 
   return (
@@ -154,7 +155,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
           </div>
           <h2 className="text-4xl font-bold font-display mb-3 tracking-tight">User Management</h2>
           <p className="text-slate-300 text-lg max-w-xl font-medium">
-            Manage <span className="text-white font-bold">{stats.total} registered users</span> — {stats.admins} admin{stats.admins !== 1 ? 's' : ''}, {stats.researchers} researcher{stats.researchers !== 1 ? 's' : ''}.
+            Manage <span className="text-white font-bold">{stats.total} registered users</span> — {stats.admins} admin{stats.admins !== 1 ? 's' : ''}, {stats.researchers} researcher{stats.researchers !== 1 ? 's' : ''}, {stats.lecturers} lecturer{stats.lecturers !== 1 ? 's' : ''}.
           </p>
         </div>
       </div>
@@ -164,6 +165,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
         {[
           { label: 'Total Users', value: stats.total, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-indigo-50', border: 'border-indigo-100' },
           { label: 'Administrators', value: stats.admins, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-amber-50', border: 'border-amber-100' },
+          { label: 'Lecturers', value: stats.lecturers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-indigo-50', border: 'border-indigo-100' },
           { label: 'Researchers', value: stats.researchers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-emerald-50', border: 'border-emerald-100' },
         ].map((stat, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
@@ -184,10 +186,10 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            {(['all', 'user', 'admin'] as const).map(role => (
+            {(['all', 'user', 'tenant_admin', 'admin'] as const).map(role => (
               <button key={role} onClick={() => setRoleFilter(role)}
                 className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all ${roleFilter === role ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
-                {role === 'all' ? 'All' : role === 'user' ? 'Researchers' : 'Admins'}
+                {role === 'all' ? 'All' : role === 'user' ? 'Researchers' : role === 'tenant_admin' ? 'Lecturers' : 'Admins'}
               </button>
             ))}
           </div>
@@ -244,8 +246,12 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
                     <span className="text-sm text-slate-500 flex items-center gap-1.5"><Building2 size={14} /> {user.affiliation || '—'}</span>
                   </td>
                   <td className="px-8 py-5">
-                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${user.role === 'admin' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-                      {user.role === 'admin' ? 'Admin' : 'Researcher'}
+                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
+                        user.role === 'admin' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
+                        user.role === 'tenant_admin' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 
+                        'bg-slate-50 text-slate-500 border-slate-200'
+                    }`}>
+                      {user.role === 'admin' ? 'Admin' : user.role === 'tenant_admin' ? 'Lecturer' : 'Researcher'}
                     </span>
                   </td>
                   <td className="px-8 py-5">
@@ -342,6 +348,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
                   >
                     <option value="user">Researcher</option>
+                    <option value="tenant_admin">Lecturer</option>
                     <option value="admin">Administrator</option>
                   </select>
                 </div>

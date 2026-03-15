@@ -64,8 +64,6 @@ async function initDB() {
       email TEXT,
       password TEXT,
       name TEXT,
-      role TEXT DEFAULT 'user',
-      UNIQUE(email, role),
       affiliation TEXT,
       role TEXT DEFAULT 'user',
       tenant_id INTEGER,
@@ -466,11 +464,23 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     let query = 'SELECT * FROM users WHERE email = $1';
     let params = [email];
     if (requestedRole) {
-      query += ' AND role = $2';
       let mappedRole = requestedRole;
       if (requestedRole === 'researcher') mappedRole = 'user';
       if (requestedRole === 'lecturer') mappedRole = 'tenant_admin';
+      
+      // Admin Priority/Restriction: Admins can ONLY login via the researcher/research portal
+      // unless specifically allowed otherwise. If they try to login via lecturer portal, block it.
+      if (requestedRole === 'lecturer' && email === 'burstbrainconcept@gmail.com') {
+          return res.status(403).json({ error: 'Admin access is restricted to the Publication portal only.' });
+      }
+
+      query += ' AND role = $2';
       params.push(mappedRole);
+    } else {
+      // If no role requested, we still want to avoid accidental cross-portal login for admin
+      if (email === 'burstbrainconcept@gmail.com') {
+          query += ' AND (role = \'super_admin\' OR role = \'admin\')';
+      }
     }
     
     const result = await pool.query(query, params);
