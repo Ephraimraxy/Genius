@@ -1840,7 +1840,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY || '8';
     const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID || 'e22';
 
-    const response = await fetch('https://api.paymentpoint.io/v1/initialize', {
+    const response = await fetch('https://api.paymentpoint.co/v1/initialize', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.PAYMENTPOINT_SECRET_KEY || '784426'}`,
@@ -1852,7 +1852,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
         reference,
         api_key: PAYMENTPOINT_API_KEY,
         business_id: PAYMENTPOINT_BUSINESS_ID,
-        callback_url: `${process.env.APP_URL || 'http://localhost:3000'}/payment/verify`,
+        callback_url: `${process.env.APP_URL || 'https://gmijp-edu.up.railway.app'}/payment/verify`,
         metadata: {
           user_id: req.user.id,
           tenant_id: req.tenant_id,
@@ -1861,6 +1861,12 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
       })
     });
     
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('PaymentPoint initialization failed with status:', response.status, errorText);
+      throw new Error(`PaymentPoint initialization failed (${response.status}): ${errorText}`);
+    }
+
     const data = await response.json();
     if (!data.status) throw new Error(data.message || 'Payment initialization failed');
     
@@ -1870,7 +1876,11 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     res.json(data.data);
   } catch (err: any) {
     console.error('Payment initialization error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ 
+      error: 'Internal Server Error during payment initialization', 
+      details: err.message,
+      code: err.code || 'UNKNOWN'
+    });
   }
 });
 
