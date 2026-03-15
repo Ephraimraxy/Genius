@@ -146,75 +146,83 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
         </div>
       </section>
 
-      {/* AI AI AI Feature Adverts Section */}
-      <section className="py-24 bg-white overflow-hidden">
+      {/* AI AI AI Feature Adverts Section - REDESIGNED for Elegance */}
+      <section className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-6">
-           <div className="text-center mb-20">
-              <h2 className="text-[10px] font-black text-[#800000] uppercase tracking-[0.5em] mb-4">The Neural Advantage</h2>
-              <h3 className="text-3xl md:text-5xl font-black text-slate-900 tracking-tight">AI-Driven Academic Excellence</h3>
-           </div>
-
-           <div className="grid md:grid-cols-2 gap-8">
-              {/* Publication Advert */}
-              <div className="group relative bg-slate-900 rounded-[3rem] p-12 overflow-hidden text-white shadow-2xl">
-                 <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-110 transition-transform duration-700">
-                    <FileText size={200} />
-                 </div>
-                 <div className="relative z-10">
-                    <div className="w-14 h-14 bg-[#ff4d4d]/20 rounded-2xl flex items-center justify-center mb-8 border border-[#ff4d4d]/30">
-                       <Globe size={28} className="text-[#ff4d4d]" />
+           <div className="grid lg:grid-cols-2 gap-20 items-center">
+              {/* Publication Highlights */}
+              <div className="space-y-12">
+                 <div>
+                    <div className="flex items-center gap-3 text-[#800000] font-black text-[10px] uppercase tracking-[0.4em] mb-4">
+                       <span className="w-8 h-px bg-[#800000]"></span>
+                       Neural Publication Hub
                     </div>
-                    <h4 className="text-3xl font-black mb-6">Neural <br/>Publication Hub</h4>
-                    <ul className="space-y-4 mb-10">
-                       {[
-                         { t: 'Automated DOI Registry', d: 'Instant global indexing' },
-                         { t: 'AI Manuscript Audit', d: 'Verify integrity in seconds' },
-                         { t: 'Neural Peer Selection', d: 'Connect with expert reviewers' }
-                       ].map((item, idx) => (
-                         <li key={idx} className="flex gap-4">
-                            <div className="w-5 h-5 rounded-full bg-[#ff4d4d] flex items-center justify-center shrink-0 mt-0.5">
-                               <CheckCircle2 size={12} className="text-white" />
-                            </div>
-                            <div>
-                               <p className="text-sm font-black uppercase text-white tracking-wider">{item.t}</p>
-                               <p className="text-xs text-white/50 font-medium">{item.d}</p>
-                            </div>
-                         </li>
-                       ))}
-                    </ul>
-                    <button onClick={onPublicationHub} className="px-8 py-4 bg-white text-slate-900 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-[#ff4d4d] hover:text-white transition-all">Explore Hub</button>
+                    <h3 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter leading-tight mb-6">
+                       The Future of <br/><span className="text-[#800000]">Scientific Publishing</span>
+                    </h3>
+                    <p className="text-slate-500 font-medium text-lg leading-relaxed max-w-lg">
+                       Experience a streamlined publishing workflow powered by our proprietary neural engine, designed for rapid validation and global reach.
+                    </p>
                  </div>
+
+                 <div className="grid sm:grid-cols-2 gap-8">
+                    {[
+                      { icon: <Globe size={24}/>, t: 'Automated DOI', d: 'Instant global indexing across major repositories.' },
+                      { icon: <Shield size={24}/>, t: 'AI Audit', d: 'Comprehensive integrity verification in seconds.' },
+                      { icon: <FileText size={24}/>, t: 'Peer Selection', d: 'AI-matched expert reviewers for your niche.' },
+                      { icon: <CheckCircle2 size={24}/>, t: 'Rapid Review', d: 'Accelerated peer-review cycles via neural routing.' }
+                    ].map((item, i) => (
+                      <div key={i} className="group">
+                         <div className="text-[#800000] mb-4 group-hover:scale-110 transition-transform origin-left">{item.icon}</div>
+                         <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 mb-2">{item.t}</h4>
+                         <p className="text-xs text-slate-400 font-bold leading-relaxed">{item.d}</p>
+                      </div>
+                    ))}
+                 </div>
+
+                 <button onClick={onPublicationHub} className="group flex items-center gap-3 text-slate-500 font-black text-[11px] uppercase tracking-widest hover:text-[#800000] transition-colors">
+                    Get Started with Hub
+                    <ArrowRight size={16} className="group-hover:translate-x-2 transition-transform" />
+                 </button>
               </div>
 
-              {/* School Portal Advert */}
-              <div className="group relative bg-indigo-600 rounded-[3rem] p-12 overflow-hidden text-white shadow-2xl">
-                 <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-110 transition-transform duration-700">
-                    <Users size={200} />
-                 </div>
+              {/* Workspace Highlights */}
+              <div className="bg-slate-50 rounded-[4rem] p-12 md:p-16 border border-slate-100 relative overflow-hidden">
                  <div className="relative z-10">
-                    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mb-8 border border-white/30">
-                       <ShieldCheck size={28} className="text-white" />
+                    <div className="flex items-center gap-3 text-indigo-600 font-black text-[10px] uppercase tracking-[0.4em] mb-4">
+                       <span className="w-8 h-px bg-indigo-600"></span>
+                       Academic Workspace
                     </div>
-                    <h4 className="text-3xl font-black mb-6">Lecturer <br/>Workspace AI</h4>
-                    <ul className="space-y-4 mb-10">
+                    <h3 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tighter mb-8 leading-tight">
+                       Intelligent Management <br/>for <span className="text-indigo-600">Modern Educators</span>
+                    </h3>
+                    
+                    <div className="space-y-8 mb-12">
                        {[
-                         { t: 'AI Question Engine', d: 'Generate exams from materials' },
-                         { t: 'Neural Proctoring', d: 'Real-time anti-cheat surveillance' },
-                         { t: 'Deep Analytics', d: 'Predictive student performance' }
-                       ].map((item, idx) => (
-                         <li key={idx} className="flex gap-4">
-                            <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center shrink-0 mt-0.5">
-                               <CheckCircle2 size={12} className="text-indigo-600" />
+                         { t: 'AI Question Engine', d: 'Transform your materials into professional exams instantly.' },
+                         { t: 'Neural Proctoring', d: 'Real-time AI surveillance to ensure academic integrity.' },
+                         { t: 'Deep Performance Analytics', d: 'Predictive insights into student learning patterns.' }
+                       ].map((item, i) => (
+                         <div key={i} className="flex gap-6 items-start">
+                            <div className="w-12 h-12 rounded-2xl bg-white border border-slate-100 flex items-center justify-center shadow-sm shrink-0">
+                               <ShieldCheck size={20} className="text-indigo-600" />
                             </div>
                             <div>
-                               <p className="text-sm font-black uppercase text-white tracking-wider">{item.t}</p>
-                               <p className="text-xs text-white/60 font-medium">{item.d}</p>
+                               <h4 className="text-sm font-black uppercase text-slate-900 mb-1">{item.t}</h4>
+                               <p className="text-sm text-slate-500 font-medium leading-relaxed">{item.d}</p>
                             </div>
-                         </li>
+                         </div>
                        ))}
-                    </ul>
-                    <button onClick={onSchoolPortal} className="px-8 py-4 bg-white text-indigo-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all">Launch Space</button>
+                    </div>
+
+                    <button onClick={onSchoolPortal} className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:scale-[1.02] transition-all flex items-center justify-center gap-3">
+                       <PlusCircle size={18} />
+                       Create Your Workspace
+                    </button>
                  </div>
+                 
+                 {/* Subtle decoration */}
+                 <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-indigo-600/5 rounded-full blur-3xl"></div>
               </div>
            </div>
         </div>
