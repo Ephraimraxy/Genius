@@ -22,11 +22,12 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
   
   const isAdmin = profile?.user?.role === 'admin';
 
-  // Force open chat when clicking "Message User" from UserManagement
+  // Force open chat when clicking "Message User" from UserManagement or Notifications
   useEffect(() => {
-    if (forcedOpenThread) {
+    if (forcedOpenThread !== null) {
       setIsOpen(true);
       setActiveThread(forcedOpenThread);
+      fetchData();
     }
   }, [forcedOpenThread]);
 
@@ -170,7 +171,16 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
                             {new Date(thread.last_message_at).toLocaleDateString()}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 truncate font-medium">{thread.last_message}</p>
+                        <div className="flex justify-between items-center gap-2">
+                          <p className={`text-xs truncate font-medium ${thread.unread_count > 0 ? 'text-indigo-600 font-black' : 'text-slate-500'}`}>
+                            {thread.last_message}
+                          </p>
+                          {thread.unread_count > 0 && (
+                            <span className="bg-[#800000] text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0">
+                              {thread.unread_count}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   ))

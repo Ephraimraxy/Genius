@@ -27,7 +27,7 @@ import SecurityGuidelines from './components/SecurityGuidelines';
 import CourseManagement from './components/CourseManagement';
 import PINSetup from './components/PINSetup';
 import SubscriptionModal from './components/SubscriptionModal'; // NEW
-import { Menu, LogOut, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
+import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines';
 
@@ -58,6 +58,28 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [chatNotifications, setChatNotifications] = useState<any[]>([]);
+  const [forcedChatThread, setForcedChatThread] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (token) {
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [token]);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch('/api/chat/notifications', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setChatNotifications(data);
+    } catch (err) {
+      console.error('Failed to fetch chat notifications');
+    }
+  };
   const [activePaperId, setActivePaperId] = useState<number | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [showLanding, setShowLanding] = useState(!token);
@@ -405,6 +427,29 @@ export default function App() {
                       <span className="text-[10px] font-bold text-[#800000] bg-[#800000]/5 px-2 py-1 rounded-md border border-[#800000]/10">1 New</span>
                     </div>
                     <div className="space-y-4">
+                      {chatNotifications.map((notif, idx) => (
+                        <button 
+                          key={`chat-${idx}`}
+                          onClick={() => {
+                            setForcedChatThread(isAdmin ? notif.user_id : null);
+                            setIsNotificationsOpen(false);
+                            // Scroll to bottom or trigger opening handled by ChatWidget's useEffect
+                          }}
+                          className="w-full text-left flex gap-4 p-3 bg-indigo-50 border border-indigo-100 rounded-2xl hover:bg-indigo-100 transition-colors"
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-[#800000] text-white flex items-center justify-center shrink-0">
+                            <MessageCircle size={18} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 truncate">
+                              New Message from {isAdmin ? notif.user_name : 'Admin'}
+                            </p>
+                            <p className="text-[10px] text-slate-500 mt-0.5 truncate">{notif.content}</p>
+                            <p className="text-[9px] font-black text-[#800000] uppercase mt-1">Click to reply</p>
+                          </div>
+                        </button>
+                      ))}
+
                       <div className="flex gap-4 p-3 bg-slate-50 rounded-2xl border border-slate-100">
                         <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
                           <Bell size={18} />
@@ -454,6 +499,8 @@ export default function App() {
             </AnimatePresence>
           </div>
         </div>
+
+        <ChatWidget profile={profile} forcedOpenThread={forcedChatThread} />
       </main>
 
       <AnimatePresence>

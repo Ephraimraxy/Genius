@@ -192,6 +192,7 @@ async function initDB() {
       user_id INTEGER,
       sender_role TEXT, -- 'user', 'admin', 'ai'
       content TEXT,
+      is_read BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
@@ -218,6 +219,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE users ADD COLUMN level TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE chat_messages ADD COLUMN tenant_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE chat_messages ADD COLUMN is_read BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN issn TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN pin_hash TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN setup_token TEXT'); } catch (e) { }
@@ -1898,6 +1900,14 @@ app.get('/api/publications', authenticateToken, async (req: any, res) => {
 // Direct Admin-User Chat System
 app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
   const userId = req.user.role === 'admin' ? (req.query.userId || req.user.id) : req.user.id;
+  
+  // If fetching a thread, mark those messages as read for the recipient
+  if (req.user.role === 'admin' && req.query.userId) {
+    await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND sender_role = \'user\'', [req.query.userId]);
+  } else if (req.user.role === 'user') {
+    await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND sender_role = \'admin\'', [req.user.id]);
+  }
+
   const result = await pool.query(`
     SELECT cm.*, u.name as sender_name 
     FROM chat_messages cm 
@@ -1911,23 +1921,67 @@ app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
 app.get('/api/chat/inbox', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
   
-  // Get latest message per user thread to build the inbox view
+  // Get latest message per user thread to build the inbox view, counting unread messages from users
   const result = await pool.query(`
-    SELECT DISTINCT ON (cm.user_id)
-      cm.user_id,
+    WITH LatestMessages AS (
+      SELECT DISTINCT ON (user_id)
+        user_id,
+        content,
+        created_at,
+        sender_role
+      FROM chat_messages
+      ORDER BY user_id, created_at DESC
+    ),
+    UnreadCounts AS (
+      SELECT user_id, COUNT(*) as unread_count
+      FROM chat_messages
+      WHERE is_read = FALSE AND sender_role = 'user'
+      GROUP BY user_id
+    )
+    SELECT 
+      lm.user_id,
       u.name as user_name,
       u.email as user_email,
-      cm.content as last_message,
-      cm.created_at as last_message_at,
-      cm.sender_role
-    FROM chat_messages cm
-    JOIN users u ON cm.user_id = u.id
-    ORDER BY cm.user_id, cm.created_at DESC
+      lm.content as last_message,
+      lm.created_at as last_message_at,
+      lm.sender_role,
+      COALESCE(uc.unread_count, 0)::int as unread_count
+    FROM LatestMessages lm
+    JOIN users u ON lm.user_id = u.id
+    LEFT JOIN UnreadCounts uc ON lm.user_id = uc.user_id
   `);
   
   // Sort overall inbox by most recent message
   const inbox = result.rows.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
   res.json(inbox);
+});
+
+app.get('/api/chat/notifications', authenticateToken, async (req: any, res) => {
+  const isUser = req.user.role === 'user';
+  const isAdmin = req.user.role === 'admin';
+  
+  if (isUser) {
+    const result = await pool.query(`
+      SELECT cm.content, cm.created_at, u.name as sender_name, u.id as sender_id
+      FROM chat_messages cm
+      JOIN users u ON u.role = 'admin' -- Simplification: join with an admin
+      WHERE cm.user_id = $1 AND cm.sender_role = 'admin' AND cm.is_read = FALSE
+      ORDER BY cm.created_at DESC
+    `, [req.user.id]);
+    res.json(result.rows);
+  } else if (isAdmin) {
+    const result = await pool.query(`
+      SELECT cm.content, cm.created_at, u.name as user_name, u.id as user_id
+      FROM chat_messages cm
+      JOIN users u ON cm.user_id = u.id
+      WHERE cm.sender_role = 'user' AND cm.is_read = FALSE
+      ORDER BY cm.created_at DESC
+      LIMIT 10
+    `);
+    res.json(result.rows);
+  } else {
+    res.json([]);
+  }
 });
 
 app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
