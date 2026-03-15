@@ -459,27 +459,36 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const data = loginSchema.parse(req.body);
-    const { role } = req.body; // Optional: helps disambiguate if multiple roles share email
+    const { role: requestedRole } = req.body; 
     const email = data.email.toLowerCase().trim();
     
+    // Find user with disambiguation for role if provided
     let query = 'SELECT * FROM users WHERE email = $1';
     let params = [email];
-    if (role) {
+    if (requestedRole) {
       query += ' AND role = $2';
-      params.push(role);
+      let mappedRole = requestedRole;
+      if (requestedRole === 'researcher') mappedRole = 'user';
+      if (requestedRole === 'lecturer') mappedRole = 'tenant_admin';
+      params.push(mappedRole);
     }
     
     const result = await pool.query(query, params);
-    if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid email or password for the selected portal' });
     
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: `No account found for this email in the ${requestedRole || 'selected'} portal.` });
+    }
+    
+    // If multiple roles exist and no role was requested, we might pick the wrong one.
+    // But since the frontend will now pass the role, this should be fine.
     let user = result.rows[0];
     const validPassword = await bcrypt.compare(data.password.trim(), user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
 
-    // Enforce admin for specific email if they somehow lost it
-    if (user.email.toLowerCase() === 'burstbrainconcept@gmail.com' && user.role !== 'admin') {
-      await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [user.id]);
-      user.role = 'admin';
+    // Enforce admin for specific email
+    if (user.email.toLowerCase() === 'burstbrainconcept@gmail.com' && user.role !== 'admin' && user.role !== 'super_admin') {
+      await pool.query("UPDATE users SET role = 'super_admin' WHERE id = $1", [user.id]);
+      user.role = 'super_admin';
     }
 
     const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id }, JWT_SECRET, { expiresIn: '7d' });
@@ -523,7 +532,7 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     // Attempt to send email
     try {
       await mailTransporter.sendMail({
-        from: `"Genius Portal" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
+        from: `"Genius Mindspark Portal" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
         to: email,
         subject: 'Your Genius Portal Password Reset Code',
         html: `
@@ -1958,14 +1967,15 @@ app.get('/api/chat/inbox', authenticateToken, async (req: any, res) => {
 
 app.get('/api/chat/notifications', authenticateToken, async (req: any, res) => {
   const isUser = req.user.role === 'user';
-  const isAdmin = req.user.role === 'admin';
+  const isLecturer = req.user.role === 'tenant_admin';
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
   
-  if (isUser) {
+  if (isUser || isLecturer) {
     const result = await pool.query(`
       SELECT cm.content, cm.created_at, u.name as sender_name, u.id as sender_id
       FROM chat_messages cm
-      JOIN users u ON u.role = 'admin' -- Simplification: join with an admin
-      WHERE cm.user_id = $1 AND cm.sender_role = 'admin' AND cm.is_read = FALSE
+      JOIN users u ON u.role = 'admin' OR u.role = 'super_admin'
+      WHERE cm.user_id = $1 AND cm.sender_role IN ('admin', 'super_admin') AND cm.is_read = FALSE
       ORDER BY cm.created_at DESC
     `, [req.user.id]);
     res.json(result.rows);
@@ -1986,10 +1996,11 @@ app.get('/api/chat/notifications', authenticateToken, async (req: any, res) => {
 
 app.post('/api/chat/read-all', authenticateToken, async (req: any, res) => {
   try {
-    if (req.user.role === 'admin') {
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    if (isAdmin) {
       await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE sender_role = \'user\'');
     } else {
-      await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND sender_role = \'admin\'', [req.user.id]);
+      await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND sender_role IN (\'admin\', \'super_admin\')', [req.user.id]);
     }
     res.json({ success: true });
   } catch (error) {
@@ -1999,14 +2010,15 @@ app.post('/api/chat/read-all', authenticateToken, async (req: any, res) => {
 
 app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
   const { content, targetUserId } = req.body;
-  const userId = req.user.role === 'admin' ? targetUserId : req.user.id;
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+  const userId = isAdmin ? targetUserId : req.user.id;
   const senderRole = req.user.role;
   
   if (!userId) return res.status(400).json({ error: 'Target user ID required for admin replies' });
 
   // Save the message directly to the targeted user's thread
-  await pool.query('INSERT INTO chat_messages (user_id, sender_role, content) VALUES ($1, $2, $3)',
-    [userId, senderRole, content]);
+  await pool.query('INSERT INTO chat_messages (user_id, sender_role, content, tenant_id) VALUES ($1, $2, $3, $4)',
+    [userId, senderRole, content, req.tenant_id || null]);
     
   res.json({ success: true });
 });
@@ -2044,23 +2056,32 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
       [req.tenant_id, matricNumber, name, email, course || '', setupToken, tokenExpires]
     );
 
-    // 4. Send Onboarding Email
     try {
       const setupLink = `${process.env.APP_URL || 'http://localhost:3000'}/setup-pin?token=${setupToken}&matric=${matricNumber}`;
+      const portalBranding = "Genius Academic Portal";
       await mailTransporter.sendMail({
-        from: `"Genius Portal" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
+        from: `"${portalBranding}" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
         to: email,
-        subject: 'Secure Your Student Portal Access',
+        subject: `[${portalBranding}] Secure Your Student Access`,
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 16px;">
-            <h2 style="color: #0f172a;">Welcome to Genius Portal</h2>
-            <p style="color: #64748b;">Hi ${name},</p>
-            <p style="color: #64748b;">Your lecturer has added you to the course roster. To access your exams and assignments, you must first set up your 4-digit Secure PIN.</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${setupLink}" style="background: #800000; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Set Up Your PIN</a>
+          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 20px; border: 1px solid #e2e8f0;">
+            <div style="text-align: center; margin-bottom: 25px;">
+              <img src="/gmijp-logo.png" alt="Genius" style="width: 70px; height: 70px; border-radius: 50%; background: white; padding: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);" />
             </div>
-            <p style="color: #64748b; font-size: 13px;">Matric Number: <strong>${matricNumber}</strong></p>
-            <p style="color: #94a3b8; font-size: 11px;">This link will expire in 48 hours. If you did not expect this, please contact your lecturer.</p>
+            <h2 style="color: #0f172a; text-align: center; font-size: 24px;">Welcome to Genius Academy</h2>
+            <p style="color: #64748b; font-size: 16px; line-height: 1.6;">Hi ${name},</p>
+            <p style="color: #64748b; font-size: 16px; line-height: 1.6;">You have been officially registered in the Academic Workspace. To access your portal, exams, and academic resources, please establish your secure 4-digit PIN.</p>
+            <div style="text-align: center; margin: 35px 0;">
+              <a href="${setupLink}" style="background: #1a237e; color: white; padding: 15px 35px; border-radius: 12px; text-decoration: none; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(26, 35, 126, 0.3);">Set Up Secure PIN</a>
+            </div>
+            <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin-bottom: 25px;">
+               <p style="margin: 0; color: #475569; font-size: 13px;"><strong>Matriculation Number:</strong> ${matricNumber}</p>
+               <p style="margin: 5px 0 0 0; color: #475569; font-size: 13px;"><strong>Course/Department:</strong> ${course || 'Not Assigned'}</p>
+            </div>
+            <p style="color: #94a3b8; font-size: 12px; text-align: center; line-height: 1.5;">This invitation expires in 48 hours for security reasons.<br/>If you did not expect this, please ignore this email or contact your administrator.</p>
+            <div style="border-top: 1px solid #e2e8f0; margin-top: 30px; padding-top: 20px; text-align: center;">
+               <p style="color: #cbd5e1; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px;">Genius Mindspark Academic Hub</p>
+            </div>
           </div>
         `
       });

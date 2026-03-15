@@ -3,46 +3,25 @@ import { motion } from 'motion/react';
 import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, TrendingUp, Users, ShieldCheck, Eye, User, ToggleLeft, ToggleRight } from 'lucide-react';
 import { Tab } from '../App';
 
-export default function DashboardOverview({ onNavigate, profile, setActivePaperId, viewMode: activeViewMode, simulateRole }: { 
+export default function DashboardOverview({ onNavigate, profile, setActivePaperId }: { 
   onNavigate: (tab: Tab) => void, 
   profile: any, 
   setActivePaperId: (id: number) => void,
-  viewMode?: 'publication' | 'student' | 'lecturer',
-  simulateRole?: 'none' | 'researcher' | 'student' | 'lecturer'
 }) {
   const papers = profile?.papers || [];
-  const userRole = profile?.user?.role;
-  const isSuperAdmin = userRole === 'super_admin' || userRole === 'admin';
-  const isLecturer = userRole === 'tenant_admin' || simulateRole === 'lecturer' || activeViewMode === 'lecturer' || activeViewMode === 'student';
-  const isAdmin = isSuperAdmin || isLecturer;
+  const role = profile?.user?.role;
+  const isAdmin = role === 'super_admin' || role === 'admin';
+  const isLecturer = role === 'tenant_admin';
   const adminStats = profile?.adminStats;
-
-  // Added toggle for Admin to view User Dashboard
-  const [viewMode, setViewMode] = useState<'admin' | 'user'>(isSuperAdmin && activeViewMode === 'publication' ? 'admin' : 'user');
 
   const handlePaperClick = (id: number) => {
     setActivePaperId(id);
     onNavigate('formatting');
   };
 
-  const TopRightToggle = () => {
-    if (!isAdmin) return null;
-    return (
-      <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/20 mt-4 sm:mt-0 shadow-inner">
-        <span className={`text-xs font-bold ${viewMode === 'user' ? 'text-white' : 'text-slate-400'}`}>Researcher View</span>
-        <button 
-          onClick={() => setViewMode(viewMode === 'admin' ? 'user' : 'admin')}
-          className="text-white hover:text-amber-300 transition-colors"
-        >
-          {viewMode === 'admin' ? <ToggleRight size={28} className="text-amber-400" /> : <ToggleLeft size={28} />}
-        </button>
-        <span className={`text-xs font-bold ${viewMode === 'admin' ? 'text-amber-400' : 'text-slate-400'}`}>Admin View</span>
-      </div>
-    );
-  }
 
-  // ─── ADMIN DASHBOARD (Super Admin in Publication Mode) ──────────────────────────
-  if (isSuperAdmin && activeViewMode === 'publication' && adminStats && viewMode === 'admin') {
+  // ─── ADMIN DASHBOARD ──────────────────────────
+  if (isAdmin && adminStats) {
     const platformStats = [
       { label: 'Registered Users', value: adminStats.totalUsers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-indigo-50', border: 'border-indigo-100' },
       { label: 'Total Manuscripts', value: adminStats.totalPapers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-blue-50', border: 'border-blue-100' },
@@ -81,7 +60,6 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Revenue</p>
                 <p className="text-3xl font-black text-emerald-400">₦{adminStats.totalRevenue.toLocaleString()}</p>
               </div>
-              <TopRightToggle />
             </div>
           </div>
         </div>
@@ -203,7 +181,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   }
 
   // ─── LECTURER / ACADEMIC DASHBOARD ─────────────────────────────────────────────
-  if ((isLecturer && viewMode === 'user') || (isSuperAdmin && (activeViewMode === 'student' || activeViewMode === 'lecturer'))) {
+  if (isLecturer) {
     const lecturerStats = [
       { label: 'Active Students', value: profile?.lecturerStats?.totalStudents || 0, icon: <Users size={20} className="text-indigo-600" />, color: 'bg-indigo-50' },
       { label: 'Generated Quizzes', value: profile?.lecturerStats?.totalExams || 0, icon: <FileText size={20} className="text-blue-600" />, color: 'bg-blue-50' },
@@ -222,7 +200,6 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                 <h2 className="text-4xl font-bold font-display mb-2">Academic Dashboard</h2>
                 <p className="text-indigo-200 text-lg font-medium">Manage your courses, students and AI-generated assessments.</p>
               </div>
-              <TopRightToggle />
            </div>
         </div>
 
@@ -285,9 +262,6 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                 <UploadCloud size={20} strokeWidth={2.5} />
                 Elevate Manuscript
             </motion.button>
-            <div className="scale-75 md:scale-100 -mt-2 md:mt-0">
-               <TopRightToggle />
-            </div>
           </div>
         </div>
       </div>

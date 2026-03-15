@@ -49,10 +49,10 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
             : (isLecturer ? '/api/auth/lecturer/register' : '/api/auth/register');
         
         const body = isLogin
-            ? { email, password }
+            ? { email, password, role }
             : (isLecturer 
-                ? { email, password, name, tenantName }
-                : { email, password, name, affiliation });
+                ? { email, password, name, tenantName, role: 'tenant_admin' }
+                : { email, password, name, affiliation, role: 'user' });
 
         try {
             const response = await fetch(endpoint, {
