@@ -11,9 +11,10 @@ interface StudentDashboardProps {
     addToast: (msg: string, type: ToastType) => void;
     view: string;
     token: string | null;
+    confirm?: (config: any) => Promise<boolean>;
 }
 
-export default function StudentDashboard({ profile, onNavigate, addToast, view, token }: StudentDashboardProps) {
+export default function StudentDashboard({ profile, onNavigate, addToast, view, token, confirm }: StudentDashboardProps) {
     const [activeExamId, setActiveExamId] = useState<number | null>(null);
     const [activeExamCourse, setActiveExamCourse] = useState<string | null>(null);
     const [showProctoringModal, setShowProctoringModal] = useState(false);
@@ -87,6 +88,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
             addToast={addToast} 
             onExamSubmit={handleExamSubmit}
             token={token}
+            confirm={confirm}
         />;
     }
 

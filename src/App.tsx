@@ -27,6 +27,7 @@ import SecurityGuidelines from './components/SecurityGuidelines';
 import CourseManagement from './components/CourseManagement';
 import PINSetup from './components/PINSetup';
 import SubscriptionModal from './components/SubscriptionModal'; // NEW
+import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines';
@@ -104,6 +105,31 @@ export default function App() {
   const [openChatUserId, setOpenChatUserId] = useState<number | null>(null);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const { toasts, addToast, removeToast } = useToasts();
+
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    onCancel: () => {},
+  });
+
+  const confirm = (config: Omit<ConfirmConfig, 'isOpen' | 'onConfirm' | 'onCancel'>): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmConfig({
+        ...config,
+        isOpen: true,
+        onConfirm: () => {
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+          resolve(true);
+        },
+        onCancel: () => {
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+          resolve(false);
+        }
+      });
+    });
+  };
 
   useEffect(() => {
     const handleLocationChange = () => setCurrentPath(window.location.pathname);
@@ -286,7 +312,7 @@ export default function App() {
     if (isStudent && activeTab !== 'profile') {
         if (activeTab === 'performance') return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
         if (activeTab === 'guidelines') return <SecurityGuidelines onNavigate={setActiveTab} />;
-        return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} />;
+        return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} confirm={confirm} />;
     }
 
     // Lecturer View
@@ -294,7 +320,7 @@ export default function App() {
         switch (activeTab) {
             case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
             case 'courseManagement': return <CourseManagement addToast={addToast} token={token} />;
-            case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} />;
+            case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
             case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
             default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
         }
@@ -313,7 +339,7 @@ export default function App() {
       case 'reviews': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <PeerReviewSimulation activePaperId={activePaperId} />;
       case 'transactions': return <TransactionHistory profile={profile} />;
       case 'records': return <PublicationRecords profile={profile} />;
-      case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} />;
+      case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
       case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
       case 'reviewQueue': return <ReviewQueue profile={profile} />;
       case 'settings': return <AdminSettings />;
@@ -322,7 +348,7 @@ export default function App() {
           .then(res => res.json())
           .then(data => { if (data) setProfile(data); });
       }} />;
-      default: return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} />;
+      default: return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} confirm={confirm} />;
     }
   };
 
@@ -595,6 +621,7 @@ export default function App() {
 
       <ChatWidget profile={profile} />
       <ToastSystem toasts={toasts} removeToast={removeToast} />
+      <ConfirmModal {...confirmConfig} />
       <GlobalLoader show={isSyncing} />
     </div>
   );

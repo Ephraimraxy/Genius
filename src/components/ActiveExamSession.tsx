@@ -10,9 +10,10 @@ interface ActiveExamSessionProps {
     addToast: (msg: string, type: ToastType) => void;
     onExamSubmit: (score: string, reason?: string) => void;
     token: string | null;
+    confirm?: (config: any) => Promise<boolean>;
 }
 
-export default function ActiveExamSession({ examId, courseName, matricNumber, addToast, onExamSubmit, token }: ActiveExamSessionProps) {
+export default function ActiveExamSession({ examId, courseName, matricNumber, addToast, onExamSubmit, token, confirm }: ActiveExamSessionProps) {
     const [timeLeft, setTimeLeft] = useState(3600); // 60 mins in seconds
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -335,8 +336,15 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
         lastActivityTime.current = Date.now();
     };
     
-    const handleManualSubmit = () => {
-        if(window.confirm("Are you sure you want to submit your exam now? You cannot return.")) {
+    const handleManualSubmit = async () => {
+        const isConfirmed = confirm ? await confirm({
+            title: 'Submit Examination',
+            message: 'Are you sure you want to submit your exam now? You cannot return after submission.',
+            confirmLabel: 'Submit Assessment',
+            type: 'info'
+        }) : window.confirm("Are you sure you want to submit your exam now? You cannot return.");
+
+        if(isConfirmed) {
             triggerAutoSubmit("Manual Submission");
         }
     };

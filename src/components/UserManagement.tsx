@@ -11,7 +11,13 @@ interface User {
   created_at: string;
 }
 
-export default function UserManagement({ addToast, onOpenChat }: { addToast?: (msg: string, type?: string) => void, onOpenChat?: (userId: number) => void }) {
+interface UserManagementProps {
+  addToast?: (msg: string, type?: any) => void;
+  onOpenChat?: (userId: number) => void;
+  confirm?: (config: any) => Promise<boolean>;
+}
+
+export default function UserManagement({ addToast, onOpenChat, confirm }: UserManagementProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -72,7 +78,14 @@ export default function UserManagement({ addToast, onOpenChat }: { addToast?: (m
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to permanently delete this user? This action cannot be undone and will remove all their papers and data.')) return;
+    const isConfirmed = confirm ? await confirm({
+      title: 'Delete User Account',
+      message: 'Are you sure you want to permanently delete this user? This action cannot be undone and will remove all their papers and data.',
+      confirmLabel: 'Delete Forever',
+      type: 'danger'
+    }) : window.confirm('Are you sure you want to permanently delete this user? This action cannot be undone and will remove all their papers and data.');
+
+    if (!isConfirmed) return;
     setIsDeleting(id);
     try {
       const res = await fetch(`/api/admin/users/${id}`, {
@@ -241,7 +254,7 @@ export default function UserManagement({ addToast, onOpenChat }: { addToast?: (m
                     </span>
                   </td>
                   <td className="px-8 py-5">
-                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-2 opacity-0 translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
                       <button
                         onClick={() => onOpenChat?.(user.id)}
                         className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
