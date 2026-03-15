@@ -470,17 +470,21 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       if (requestedRole === 'lecturer') mappedRole = 'tenant_admin';
       
       // Admin Priority/Restriction: Admins can ONLY login via the researcher/research portal
-      // unless specifically allowed otherwise. If they try to login via lecturer portal, block it.
       if (requestedRole === 'lecturer' && email === 'burstbrainconcept@gmail.com') {
           return res.status(403).json({ error: 'Admin access is restricted to the Publication portal only.' });
       }
 
-      query += ' AND role = $2';
-      params.push(mappedRole);
+      if (email === 'burstbrainconcept@gmail.com' && requestedRole === 'researcher') {
+          // Allow admin to match their actual high-privilege role in the researcher portal
+          query += " AND (role = 'super_admin' OR role = 'admin' OR role = 'user')";
+      } else {
+          query += ' AND role = $2';
+          params.push(mappedRole);
+      }
     } else {
       // If no role requested, we still want to avoid accidental cross-portal login for admin
       if (email === 'burstbrainconcept@gmail.com') {
-          query += ' AND (role = \'super_admin\' OR role = \'admin\')';
+          query += " AND (role = 'super_admin' OR role = 'admin')";
       }
     }
     
