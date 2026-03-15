@@ -398,11 +398,11 @@ export default function App() {
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-3 w-72 sm:w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 p-4 sm:p-6 z-[60] backdrop-blur-none"
+                    className="fixed sm:absolute right-4 sm:right-0 left-4 sm:left-auto top-16 sm:top-auto mt-3 w-auto sm:w-80 bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 p-6 z-[200] backdrop-blur-none ring-1 ring-black/5"
                   >
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">Alerts</h4>
-                      <span className="text-[10px] font-bold text-[#800000] bg-[#800000]/5 px-2 py-1 rounded-md">1 New</span>
+                    <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">System Alerts</h4>
+                      <span className="text-[10px] font-bold text-[#800000] bg-[#800000]/5 px-2 py-1 rounded-md border border-[#800000]/10">1 New</span>
                     </div>
                     <div className="space-y-4">
                       <div className="flex gap-4 p-3 bg-slate-50 rounded-2xl border border-slate-100">
