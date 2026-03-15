@@ -4,7 +4,7 @@ import { ShieldCheck, Lock, ArrowRight, Loader2, CheckCircle2, AlertCircle } fro
 
 interface PINSetupProps {
   onBackToLanding: () => void;
-  addToast: (toast: any) => void;
+  addToast: (msg: string, type: any) => void;
 }
 
 export default function PINSetup({ onBackToLanding, addToast }: PINSetupProps) {
@@ -32,11 +32,11 @@ export default function PINSetup({ onBackToLanding, addToast }: PINSetupProps) {
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (pin !== confirmPin) {
-      addToast({ title: 'PIN Mismatch', message: 'Values do not match.', type: 'error' });
+      addToast('PIN values do not match.', 'error');
       return;
     }
     if (!/^\d{4}$/.test(pin)) {
-      addToast({ title: 'Invalid PIN', message: 'PIN must be exactly 4 digits.', type: 'error' });
+      addToast('PIN must be exactly 4 digits.', 'error');
       return;
     }
 
@@ -51,10 +51,10 @@ export default function PINSetup({ onBackToLanding, addToast }: PINSetupProps) {
       if (!res.ok) throw new Error(data.error);
 
       setStep('success');
-      addToast({ title: 'Success', message: 'Your Secure PIN is active.', type: 'success' });
+      addToast('Your Secure PIN is now active.', 'success');
     } catch (err: any) {
       setError(err.message);
-      addToast({ title: 'Setup Failed', message: err.message, type: 'error' });
+      addToast(err.message, 'error');
     } finally {
       setLoading(false);
     }

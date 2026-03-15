@@ -82,9 +82,19 @@ export default function ToastSystem({ toasts, removeToast }: ToastSystemProps) {
 export function useToasts() {
   const [toasts, setToasts] = React.useState<Toast[]>([]);
 
-  const addToast = (message: string, type: ToastType = 'info') => {
+  const addToast = (content: any, type: ToastType = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, message, type }]);
+    let message = '';
+    let finalType = type;
+
+    if (typeof content === 'string') {
+      message = content;
+    } else if (content && typeof content === 'object') {
+      message = content.message || content.title || 'Signal received';
+      if (content.type) finalType = content.type;
+    }
+
+    setToasts((prev) => [...prev, { id, message, type: finalType }]);
     setTimeout(() => removeToast(id), 5000);
   };
 

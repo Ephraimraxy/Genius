@@ -225,6 +225,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE tenants ADD COLUMN is_subscribed BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
+  try { await pool.query('ALTER TABLE transactions ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   
   // Migration: Drop global email uniqueness and add role-scoped uniqueness
   try {

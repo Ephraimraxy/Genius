@@ -5,7 +5,7 @@ import { ShieldCheck, CreditCard, ArrowRight, Loader2, Lock, Gift, Star, CheckCi
 interface SubscriptionModalProps {
   profile: any;
   onSuccess: () => void;
-  addToast: (toast: any) => void;
+  addToast: (msg: string, type: any) => void;
 }
 
 export default function SubscriptionModal({ profile, onSuccess, addToast }: SubscriptionModalProps) {
@@ -28,7 +28,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
 
       // In a real app, we would redirect to data.authorization_url
       // For this demo, we simulate success after 2 seconds
-      addToast({ title: 'Redirecting', message: 'Connecting to PaymentPoint secure gateway...', type: 'info' });
+      addToast('Connecting to PaymentPoint secure gateway...', 'info');
       
       setTimeout(async () => {
         // Simulate webhook success
@@ -36,14 +36,14 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
         if (verifyRes.ok) {
-            addToast({ title: 'Payment Success', message: 'Workspace activated! Welcome aboard.', type: 'success' });
+            addToast('Workspace activated! Welcome aboard.', 'success');
             onSuccess();
         }
         setLoading(false);
       }, 2500);
 
     } catch (err: any) {
-      addToast({ title: 'Payment Error', message: err.message, type: 'error' });
+      addToast(err.message, 'error');
       setLoading(false);
     }
   };
