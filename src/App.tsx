@@ -334,7 +334,7 @@ export default function App() {
       />
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className={`backdrop-blur-xl border-b h-14 md:h-16 lg:h-20 flex items-center justify-between px-4 md:px-8 lg:px-10 shrink-0 z-10 transition-all ${
+        <header className={`backdrop-blur-xl border-b h-14 md:h-16 lg:h-20 flex items-center justify-between px-4 md:px-8 lg:px-10 shrink-0 z-[100] transition-all ${
           isAdmin ? 'bg-slate-900/[0.03] border-slate-200' : 'bg-white/90 border-slate-100'
         }`}>
           <div className="flex items-center gap-2 sm:gap-3 lg:gap-6">
@@ -356,8 +356,8 @@ export default function App() {
                 {getHeaderTitle()}
                 {isAdmin && <ShieldCheck className="text-amber-500 hidden sm:block" size={24} />}
               </h1>
-              <p className="text-[8px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] sm:tracking-[0.2em] mt-0.5 truncate max-w-[150px] sm:max-w-none">
-                {isStudent ? 'Student Assessment' : isAdmin && !isSimulatingResearcher ? `Admin / ${adminViewMode === 'publication' ? 'Journal' : 'Student'} View` : isSimulatingResearcher ? 'Simulated Researcher' : 'Genius Portal'} / {TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab}
+              <p className="text-[8px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] sm:tracking-[0.2em] mt-0.5 truncate max-w-[120px] sm:max-w-none">
+                {isStudent ? 'Portal' : isAdmin && !isSimulatingResearcher ? `${adminViewMode === 'publication' ? 'Journal' : 'Student'}` : isSimulatingResearcher ? 'Simulated' : 'Genius'} / {TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab}
               </p>
             </div>
 
