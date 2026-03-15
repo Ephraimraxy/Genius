@@ -131,13 +131,13 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
 
   const filtered = users.filter(u => {
     const matchSearch = u.name?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase());
-    const matchRole = roleFilter === 'all' || u.role === roleFilter;
+    const matchRole = roleFilter === 'all' || (roleFilter === 'admin' && (u.role === 'admin' || u.role === 'super_admin')) || u.role === roleFilter;
     return matchSearch && matchRole;
   });
 
   const stats = {
     total: users.length,
-    admins: users.filter(u => u.role === 'admin').length,
+    admins: users.filter(u => u.role === 'admin' || u.role === 'super_admin').length,
     researchers: users.filter(u => u.role === 'user').length,
     lecturers: users.filter(u => u.role === 'tenant_admin').length,
   };
@@ -251,7 +251,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
                         user.role === 'tenant_admin' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 
                         'bg-slate-50 text-slate-500 border-slate-200'
                     }`}>
-                      {user.role === 'admin' ? 'Admin' : user.role === 'tenant_admin' ? 'Lecturer' : 'Researcher'}
+                      {(user.role === 'admin' || user.role === 'super_admin') ? 'Admin' : user.role === 'tenant_admin' ? 'Lecturer' : 'Researcher'}
                     </span>
                   </td>
                   <td className="px-8 py-5">

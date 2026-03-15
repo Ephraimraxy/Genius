@@ -1698,7 +1698,7 @@ app.get('/article/:doi(*)', async (req, res) => {
 
 // ─── ADMIN-ONLY ENDPOINTS ──────────────────────────────────────────
 app.get('/api/admin/users', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const result = await pool.query('SELECT id, name, email, role, affiliation, created_at FROM users ORDER BY created_at DESC');
     res.json(result.rows);
@@ -1708,7 +1708,7 @@ app.get('/api/admin/users', authenticateToken, async (req: any, res) => {
 });
 
 app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = idParamSchema.parse(req.params);
     const { name, email, role, affiliation } = req.body;
@@ -1744,7 +1744,7 @@ app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
 });
 
 app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = idParamSchema.parse(req.params);
     if (id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account' });
@@ -1774,7 +1774,7 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
 });
 
 app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   const { role } = req.body;
   if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   try {
@@ -1789,7 +1789,7 @@ app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) =>
 });
 
 app.put('/api/admin/papers/:id/status', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   const { status } = req.body;
   const validStatuses = ['uploaded', 'formatting', 'peer_review', 'integrity_check', 'ready', 'published', 'rejected'];
   if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
