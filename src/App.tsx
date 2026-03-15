@@ -80,6 +80,18 @@ export default function App() {
       console.error('Failed to fetch chat notifications');
     }
   };
+
+  const markAllAsRead = async () => {
+    try {
+      await fetch('/api/chat/read-all', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setChatNotifications([]);
+    } catch (err) {
+      console.error('Failed to mark all as read');
+    }
+  };
   const [activePaperId, setActivePaperId] = useState<number | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [showLanding, setShowLanding] = useState(!token);
@@ -423,8 +435,20 @@ export default function App() {
                     className="fixed sm:absolute right-4 sm:right-0 left-4 sm:left-auto top-16 sm:top-auto mt-3 w-auto sm:w-80 bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 p-6 z-[200] backdrop-blur-none ring-1 ring-black/5"
                   >
                     <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
-                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">System Alerts</h4>
-                      <span className="text-[10px] font-bold text-[#800000] bg-[#800000]/5 px-2 py-1 rounded-md border border-[#800000]/10">1 New</span>
+                      <div className="flex flex-col">
+                        <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">System Alerts</h4>
+                        {chatNotifications.length > 0 && (
+                          <button 
+                            onClick={markAllAsRead}
+                            className="text-[9px] font-black text-[#800000] uppercase tracking-widest mt-1 hover:underline"
+                          >
+                            Mark all as read
+                          </button>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold text-[#800000] bg-[#800000]/5 px-2 py-1 rounded-md border border-[#800000]/10">
+                        {chatNotifications.length === 0 ? '0 New' : `${chatNotifications.length} New`}
+                      </span>
                     </div>
                     <div className="space-y-4">
                       {chatNotifications.map((notif, idx) => (

@@ -1984,6 +1984,19 @@ app.get('/api/chat/notifications', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.post('/api/chat/read-all', authenticateToken, async (req: any, res) => {
+  try {
+    if (req.user.role === 'admin') {
+      await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE sender_role = \'user\'');
+    } else {
+      await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND sender_role = \'admin\'', [req.user.id]);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to mark messages as read' });
+  }
+});
+
 app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
   const { content, targetUserId } = req.body;
   const userId = req.user.role === 'admin' ? targetUserId : req.user.id;
