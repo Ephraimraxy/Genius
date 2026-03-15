@@ -1,22 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Settings, Banknote, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity } from 'lucide-react';
+import { Settings, Banknote, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity, CreditCard } from 'lucide-react';
 
 export default function AdminSettings() {
-  const [price, setPrice] = useState<number>(5000);
-  const [newPrice, setNewPrice] = useState<string>('5000');
+  const [pubPrice, setPubPrice] = useState<number>(5000);
+  const [newPubPrice, setNewPubPrice] = useState<string>('5000');
+  const [subPrice, setSubPrice] = useState<number>(15000);
+  const [newSubPrice, setNewSubPrice] = useState<string>('15000');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [health, setHealth] = useState<any>(null);
   const [loadingHealth, setLoadingHealth] = useState(true);
 
   useEffect(() => {
-    // Fetch current price
-    fetch('/api/settings/price')
+    // Fetch current prices
+    const token = localStorage.getItem('token');
+    fetch('/api/admin/config/pricing', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
       .then(res => res.json())
       .then(data => {
-        setPrice(data.price);
-        setNewPrice(data.price.toString());
+        setPubPrice(data.publication_price);
+        setNewPubPrice(data.publication_price.toString());
+        setSubPrice(data.subscription_price);
+        setNewSubPrice(data.subscription_price.toString());
       })
       .catch(console.error);
 
@@ -36,19 +43,20 @@ export default function AdminSettings() {
     setLoadingHealth(false);
   };
 
-  const handleSavePrice = async () => {
-    const parsed = parseInt(newPrice, 10);
+  const handleSavePrice = async (key: 'publication_price' | 'lecturer_subscription_price', value: string) => {
+    const parsed = parseInt(value, 10);
     if (isNaN(parsed) || parsed < 0) return;
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('/api/settings/price', {
+      const res = await fetch('/api/admin/config/pricing', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ price: parsed })
+        body: JSON.stringify({ key, value: parsed })
       });
       if (res.ok) {
-        setPrice(parsed);
+        if (key === 'publication_price') setPubPrice(parsed);
+        else setSubPrice(parsed);
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
       }
@@ -77,26 +85,26 @@ export default function AdminSettings() {
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
           <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
             <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
-              <Banknote size={20} className="text-emerald-600" /> Publication Pricing
+              <Banknote size={20} className="text-emerald-600" /> Publication Pricing (Researcher)
             </h3>
           </div>
           <div className="p-8 space-y-6">
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">Current Publication Fee</label>
-              <p className="text-3xl font-black text-slate-800">₦{price.toLocaleString()}</p>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">Current Fee</label>
+              <p className="text-3xl font-black text-slate-800">₦{pubPrice.toLocaleString()}</p>
             </div>
             <div>
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">Set New Price (₦)</label>
               <div className="flex items-center gap-3">
                 <input
                   type="number" min="0" step="500"
-                  value={newPrice}
-                  onChange={(e) => setNewPrice(e.target.value)}
+                  value={newPubPrice}
+                  onChange={(e) => setNewPubPrice(e.target.value)}
                   className="flex-1 px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-800 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all"
                 />
                 <button
-                  onClick={handleSavePrice}
-                  disabled={saving || newPrice === price.toString()}
+                  onClick={() => handleSavePrice('publication_price', newPubPrice)}
+                  disabled={saving || newPubPrice === pubPrice.toString()}
                   className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-slate-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
                 >
                   {saving ? <RefreshCw size={16} className="animate-spin" /> : saved ? <CheckCircle size={16} /> : <Save size={16} />}
@@ -104,7 +112,40 @@ export default function AdminSettings() {
                 </button>
               </div>
             </div>
-            <p className="text-xs text-slate-400 font-medium">This fee is charged to researchers when publishing papers through the platform.</p>
+          </div>
+        </div>
+
+        {/* Subscription Pricing */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
+            <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
+              <CreditCard size={20} className="text-[#800000]" /> Lecturer Subscription Fee
+            </h3>
+          </div>
+          <div className="p-8 space-y-6">
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">Current Fee</label>
+              <p className="text-3xl font-black text-slate-800">₦{subPrice.toLocaleString()}</p>
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">Set New Price (₦)</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number" min="0" step="1000"
+                  value={newSubPrice}
+                  onChange={(e) => setNewSubPrice(e.target.value)}
+                  className="flex-1 px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all"
+                />
+                <button
+                  onClick={() => handleSavePrice('lecturer_subscription_price', newSubPrice)}
+                  disabled={saving || newSubPrice === subPrice.toString()}
+                  className="flex items-center gap-2 px-6 py-3 bg-[#800000] text-white rounded-xl font-bold text-sm hover:bg-[#600000] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
+                >
+                  {saving ? <RefreshCw size={16} className="animate-spin" /> : saved ? <CheckCircle size={16} /> : <Save size={16} />}
+                  {saving ? 'Saving...' : saved ? 'Saved!' : 'Update'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

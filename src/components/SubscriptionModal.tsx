@@ -59,7 +59,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       <motion.div
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative w-full max-w-2xl bg-white rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row shadow-[#800000]/20 border border-white/20"
+        className="relative w-full max-w-2xl bg-white rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row shadow-[#800000]/20 border border-white/20 max-h-[90vh] overflow-y-auto md:overflow-visible"
       >
         {/* Left Visual Side */}
         <div className="w-full md:w-5/12 premium-gradient p-12 text-white flex flex-col justify-between relative overflow-hidden">
@@ -69,12 +69,12 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
           </div>
 
           <div className="relative z-10">
-            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-md mb-6 shadow-lg border border-white/20">
-              <Gift className="text-white" size={24} />
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-xl md:rounded-2xl flex items-center justify-center backdrop-blur-md mb-4 md:mb-6 shadow-lg border border-white/20">
+              <Gift className="text-white" size={20} />
             </div>
-            <h2 className="text-2xl md:text-3xl font-black tracking-tight leading-tight mb-3">Unlock Your <br/>Workspace</h2>
-            <p className="text-white/80 text-sm font-medium leading-relaxed">
-              Activate your lecturer portal to start managing students, exams, and assessments with AI intelligence.
+            <h2 className="text-2xl md:text-3xl font-black tracking-tight leading-tight mb-2 md:mb-3">Unlock Your <br className="hidden md:block" />Workspace</h2>
+            <p className="text-white/80 text-xs md:text-sm font-medium leading-relaxed">
+              Activate your lecturer portal to start managing students and exams with AI intelligence.
             </p>
           </div>
 
@@ -98,8 +98,8 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
         </div>
 
         {/* Right Action Side */}
-        <div className="w-full md:w-7/12 p-8 md:p-14 flex flex-col justify-center bg-white">
-          <div className="mb-6 md:mb-10 text-center md:text-left">
+        <div className="w-full md:w-7/12 p-6 md:p-14 flex flex-col justify-center bg-white">
+          <div className="mb-4 md:mb-10 text-center md:text-left">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100 mb-3 animate-bounce">
               <Star size={10} fill="currentColor" />
               <span className="text-[10px] font-black uppercase tracking-widest">Premium Plan</span>
@@ -124,18 +124,18 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
           <button
             onClick={handleSubscribe}
             disabled={loading}
-            className="w-full premium-gradient text-white py-6 rounded-3xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-4 shadow-2xl shadow-[#800000]/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
+            className="w-full premium-gradient text-white py-4 md:py-6 rounded-2xl md:rounded-3xl font-black text-xs md:text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-3 md:gap-4 shadow-xl md:shadow-2xl shadow-[#800000]/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
           >
-            {loading ? <Loader2 className="animate-spin" size={20} /> : (
+            {loading ? <Loader2 className="animate-spin" size={18} /> : (
               <>
-                <CreditCard size={20} />
+                <CreditCard size={18} />
                 Activate Now
-                <ArrowRight size={18} />
+                <ArrowRight size={16} />
               </>
             )}
           </button>
 
-          <p className="mt-8 text-center text-[10px] font-bold text-slate-400 uppercase tracking-[0.1em] px-4">
+          <p className="mt-4 md:mt-8 text-center text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.1em] px-2 md:px-4">
             Security Guaranteed • Encrypted Processing • Instant Access
           </p>
         </div>

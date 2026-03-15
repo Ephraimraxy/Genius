@@ -139,21 +139,30 @@ export default function App() {
 
   useEffect(() => {
     if (token) {
-      fetch('/api/profile', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-        .then(res => {
-          if (res.status === 401 || res.status === 403) {
-            handleLogout();
-            return null;
-          }
-          return res.json();
+      const syncProfile = () => {
+        fetch('/api/profile', {
+          headers: { 'Authorization': `Bearer ${token}` }
         })
-        .then(data => {
-          if (data) setProfile(data);
-        })
-        .catch(err => console.error('Failed to load profile', err))
-        .finally(() => setIsSyncing(false));
+          .then(res => {
+            if (res.status === 401 || res.status === 403) {
+              handleLogout();
+              return null;
+            }
+            return res.json();
+          })
+          .then(data => {
+            if (data) setProfile(data);
+          })
+          .catch(err => console.error('Failed to load profile', err))
+          .finally(() => setIsSyncing(false));
+      };
+
+      // Initial sync
+      syncProfile();
+
+      // Background sync every 3 seconds
+      const interval = setInterval(syncProfile, 3000);
+      return () => clearInterval(interval);
     } else {
       setIsSyncing(false);
     }

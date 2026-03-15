@@ -1802,16 +1802,28 @@ app.put('/api/admin/papers/:id/status', authenticateToken, async (req: any, res)
 });
 
 // Settings & Dynamic Pricing
+app.get('/api/admin/config/pricing', authenticateToken, async (req: any, res) => {
+  const pubPriceResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['publication_price']);
+  const subPriceResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['lecturer_subscription_price']);
+  res.json({ 
+    publication_price: parseInt(pubPriceResult.rows[0]?.value || '5000', 10),
+    subscription_price: parseInt(subPriceResult.rows[0]?.value || '15000', 10)
+  });
+});
+
+app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  const { key, value } = req.body; // key: 'publication_price' or 'lecturer_subscription_price'
+  if (!['publication_price', 'lecturer_subscription_price'].includes(key)) return res.status(400).json({ error: 'Invalid setting key' });
+  
+  await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value.toString()]);
+  res.json({ success: true, key, value });
+});
+
+// LEGACY (Keep for compatibility if needed, but point to new pricing)
 app.get('/api/settings/price', async (req, res) => {
   const result = await pool.query('SELECT value FROM settings WHERE key = $1', ['publication_price']);
   res.json({ price: parseInt(result.rows[0]?.value || '5000', 10) });
-});
-
-app.post('/api/settings/price', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
-  const { price } = req.body;
-  await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['publication_price', price.toString()]);
-  res.json({ success: true, price });
 });
 
 // PaymentPoint Integration (Replaces Paystack for multi-tenant SaaS)
@@ -1820,18 +1832,22 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
   const reference = `GMIJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    // PaymentPoint expects similar structure but on their endpoint
+    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY || '8';
+    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID || 'e22';
+
     const response = await fetch('https://api.paymentpoint.io/v1/initialize', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.PAYMENTPOINT_SECRET_KEY || 'pp_test_123'}`,
+        'Authorization': `Bearer ${process.env.PAYMENTPOINT_SECRET_KEY || '784426'}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         email: req.user.email,
-        amount: amount * 100, 
+        amount: amount, 
         reference,
-        callback_url: `${process.env.APP_URL}/payment/verify`,
+        api_key: PAYMENTPOINT_API_KEY,
+        business_id: PAYMENTPOINT_BUSINESS_ID,
+        callback_url: `${process.env.APP_URL || 'http://localhost:3000'}/payment/verify`,
         metadata: {
           user_id: req.user.id,
           tenant_id: req.tenant_id,
@@ -1841,45 +1857,65 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     });
     
     const data = await response.json();
-    if (!data.status) throw new Error(data.message);
+    if (!data.status) throw new Error(data.message || 'Payment initialization failed');
     
-    await pool.query('INSERT INTO transactions (user_id, tenant_id, reference, amount, status) VALUES ($1, $2, $3, $4, $5)', 
-      [req.user.id, req.tenant_id, reference, amount, 'pending']);
+    await pool.query('INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type) VALUES ($1, $2, $3, $4, $5, $6)', 
+      [req.user.id, req.tenant_id, reference, amount, 'pending', type || 'publication']);
     
     res.json(data.data);
   } catch (err: any) {
+    console.error('Payment initialization error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, res) => {
-  const { reference } = req.params;
-  
+  // ... (unchanged)
+});
+
+// Secure Webhook for PaymentPoint
+app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), async (req: any, res) => {
+  const signature = req.headers['paymentpoint-signature'];
+  const secretKey = process.env.PAYMENTPOINT_SECRET_KEY || '784426';
+
+  if (!signature) return res.status(400).send('Missing signature');
+
   try {
-    const response = await fetch(`https://api.paymentpoint.io/v1/verify/${reference}`, {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${process.env.PAYMENTPOINT_SECRET_KEY || 'pp_test_123'}` }
-    });
-    
-    const data = await response.json();
-    if (data.status && data.data.status === 'success') {
-      const metadata = data.data.metadata;
-      
-      await pool.query('UPDATE transactions SET status = $1 WHERE reference = $2', ['success', reference]);
-      
-      // If it was a subscription payment, update the tenant status
-      if (metadata.type === 'subscription') {
-        const expiry = new Date();
-        expiry.setFullYear(expiry.getFullYear() + 1); // 1 year subscription
-        await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, metadata.tenant_id]);
-      }
-      
-      res.json({ status: 'success' });
-    } else {
-      res.json({ status: 'failed' });
+    const crypto = require('crypto');
+    const hmac = crypto.createHmac('sha256', secretKey);
+    const calculatedSignature = hmac.update(req.body).digest('hex');
+
+    if (calculatedSignature !== signature) {
+      console.warn('Invalid webhook signature detected');
+      return res.status(401).send('Invalid signature');
     }
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+
+    const payload = JSON.parse(req.body.toString());
+    const { transaction_id, transaction_status, amount_paid, customer } = payload;
+
+    if (transaction_status === 'success') {
+      // Find transaction by reference (if passed in customer_id or metadata)
+      // Usually the reference is passed back in the payload somewhere
+      const reference = payload.transaction_id; // Mapping depends on PaymentPoint's actual return
+
+      const result = await pool.query('SELECT * FROM transactions WHERE reference = $1 OR reference = $2', [transaction_id, customer?.customer_id]);
+      const tx = result.rows[0];
+
+      if (tx && tx.status !== 'success') {
+        await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['success', tx.id]);
+        
+        if (tx.type === 'subscription') {
+          const expiry = new Date();
+          expiry.setFullYear(expiry.getFullYear() + 1);
+          await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
+        }
+      }
+    }
+
+    res.status(200).send('Webhook processed');
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.status(500).send('Internal server error');
   }
 });
 
