@@ -254,7 +254,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
                     </span>
                   </td>
                   <td className="px-8 py-5">
-                    <div className="flex items-center gap-2 opacity-0 translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
+                    <div className="flex items-center gap-2 opacity-0 translate-x-4 invisible pointer-events-none group-hover:opacity-100 group-hover:translate-x-0 group-hover:visible group-hover:pointer-events-auto transition-all duration-300">
                       <button
                         onClick={() => onOpenChat?.(user.id)}
                         className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
