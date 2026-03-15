@@ -226,7 +226,11 @@ export default function Sidebar({
                     />
                   )}
                   <span className="relative z-10">
-                    <Icon size={20} className={isActive ? 'text-white' : `${isAdmin ? 'text-slate-500 group-hover:text-amber-400' : 'text-slate-500 group-hover:text-white'} transition-colors`} />
+                    {typeof Icon === 'function' || (typeof Icon === 'object' && Icon !== null && 'render' in Icon) ? (
+                      <Icon size={20} className={isActive ? 'text-white' : `${isAdmin ? 'text-slate-500 group-hover:text-amber-400' : 'text-slate-500 group-hover:text-white'} transition-colors`} />
+                    ) : (
+                      <div className="w-5 h-5 flex items-center justify-center">{Icon as React.ReactNode}</div>
+                    )}
                   </span>
                   {!isCollapsed && (
                     <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative z-10 flex-1 text-left truncate">

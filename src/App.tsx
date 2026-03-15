@@ -152,7 +152,8 @@ export default function App() {
         .then(data => {
           if (data) setProfile(data);
         })
-        .catch(err => console.error('Failed to load profile', err));
+        .catch(err => console.error('Failed to load profile', err))
+        .finally(() => setIsSyncing(false));
     } else {
       setIsSyncing(false);
     }
@@ -632,7 +633,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <ChatWidget profile={profile} />
       <ToastSystem toasts={toasts} removeToast={removeToast} />
       <ConfirmModal {...confirmConfig} />
       <GlobalLoader show={isSyncing} />
