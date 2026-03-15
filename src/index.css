@@ -18,6 +18,16 @@
   --color-maroon-950: #450a0a;
 }
 
+.premium-text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-[#ff4d4d] via-white to-[#ff4d4d] bg-[length:200%_auto] animate-gradient-x;
+}
+
+@keyframes gradient-x {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
 @layer base {
   html {
     scroll-behavior: smooth;

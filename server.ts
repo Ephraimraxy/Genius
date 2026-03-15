@@ -1840,7 +1840,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY || '8';
     const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID || 'e22';
 
-    const response = await fetch('https://api.paymentpoint.co/v1/initialize', {
+    const response = await fetch('https://api.paymentpoint.co/api/v1/initialize', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.PAYMENTPOINT_SECRET_KEY || '784426'}`,

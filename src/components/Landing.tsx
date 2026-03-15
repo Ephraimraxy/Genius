@@ -76,118 +76,147 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
       </nav>
 
       {/* Hero Section */}
-      <section className="relative min-h-[90vh] flex items-center pt-24 overflow-hidden">
-        <div className="absolute inset-0 z-0 bg-slate-900">
-          <div className="absolute inset-0 bg-[#800000]/5 z-10"></div>
+      <section className="relative min-h-screen flex items-center pt-24 overflow-hidden bg-slate-900">
+        <div className="absolute inset-0 z-0">
           <img 
             src="/Banner/NSUK.jpg" 
             alt="University Background" 
-            className="w-full h-full object-cover opacity-0 transition-opacity duration-1000 ease-in-out z-0"
-            onLoad={(e) => {
-              (e.target as HTMLImageElement).classList.remove('opacity-0');
-              (e.target as HTMLImageElement).classList.add('opacity-60');
-            }}
-            onError={(e) => {
-              // Fallback to a gradient if image fails to load
-              (e.target as HTMLImageElement).style.display = 'none';
-            }}
+            className="w-full h-full object-cover opacity-40 transition-opacity duration-1000 ease-in-out"
           />
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[1px] z-10" />
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 via-transparent to-slate-900/40 z-20" />
-        </div>        <div className="max-w-7xl mx-auto px-6 relative z-30 w-full">
-           <div className="max-w-3xl">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] z-10" />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-900 via-transparent to-slate-900 z-20" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-6 relative z-30 w-full">
+           <div className="max-w-4xl">
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8 }}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 1 }}
               >
-                <h2 className="text-[0.65rem] md:text-[1rem] font-bold text-[#ff4d4d] uppercase tracking-[0.2em] md:tracking-[0.6em] mb-2 md:mb-8 drop-shadow-sm font-sans">Neural Research Environment</h2>
-                <h1 className="text-2xl sm:text-4xl md:text-7xl font-black text-white leading-tight tracking-tight mb-3 md:mb-8 font-display drop-shadow-2xl">
-                  GENIUS <span className="text-[#ff4d4d] italic font-serif">MINDSPARK</span> <br/>
-                  <span className="text-white font-sans tracking-[-0.02em]">MULTIDISCIPLINARY</span>
-                </h1>
-
-                <p className="text-sm md:text-lg text-white/80 leading-relaxed mb-8 md:mb-12 max-w-2xl font-medium drop-shadow-md">
-                  The global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation, instant DOI registration, and global dissemination.
-                </p>
-
-                {/* Simplified Search Bar Interface */}
-                <div className="relative max-w-xl mb-12 group">
-                  <div className="bg-white rounded-2xl shadow-2xl p-2 flex items-center border border-slate-100 group-hover:border-[#800000]/30 transition-all">
-                    <input 
-                      type="text" 
-                      placeholder="Search for articles, DOIs or journals..." 
-                      className="flex-1 bg-transparent px-6 py-3 text-slate-600 font-medium outline-none"
-                    />
-                    <button className="p-3 text-slate-300 hover:text-slate-600">
-                      <Search size={20} />
-                    </button>
-                    <button onClick={onPublicationHub} className="bg-[#800000] p-4 rounded-xl text-white shadow-lg shadow-[#800000]/30 hover:scale-105 transition-all">
-                      <ArrowRight size={24} />
-                    </button>
-                  </div>
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full mb-8 backdrop-blur-md">
+                   <div className="w-2 h-2 rounded-full bg-[#ff4d4d] animate-pulse"></div>
+                   <span className="text-[10px] font-black text-white/80 uppercase tracking-[0.3em]">Neural Verified Research Environment</span>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-8">
+                <h1 className="text-4xl md:text-8xl font-black text-white leading-[0.95] tracking-tighter mb-8 font-display">
+                  GENIUS <span className="premium-text-gradient italic">MINDSPARK</span> <br/>
+                  <span className="text-white/40 font-sans">MULTIDISCIPLINARY</span>
+                </h1>
+
+                <p className="text-lg md:text-xl text-white/70 leading-relaxed mb-12 max-w-2xl font-medium">
+                  The global benchmark for multidisciplinary research excellence. Transform your ideas with <span className="text-white border-b border-[#ff4d4d]">neural-assisted validation</span>, instant DOI registration, and global dissemination.
+                </p>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-6">
                   <button 
-                    onClick={onSchoolPortal}
-                    className="px-6 md:px-10 py-3.5 md:py-5 bg-[#800000] text-white font-black rounded-xl md:rounded-2xl shadow-2xl shadow-[#800000]/20 hover:shadow-[#800000]/40 transition-all uppercase tracking-[0.2em] text-[10px] md:text-[11px] border border-white/10 flex items-center justify-center gap-3"
+                    onClick={onPublicationHub}
+                    className="group relative px-10 py-5 bg-[#800000] text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/40 transition-all hover:scale-[1.05] active:scale-95 uppercase tracking-[0.2em] text-[11px] overflow-hidden"
                   >
-                    <Users size={16} />
-                    Enter School Portal
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                    <span className="relative flex items-center justify-center gap-3">
+                       <PlusCircle size={18} />
+                       Publication Hub
+                    </span>
                   </button>
 
                   <button 
-                    onClick={onPublicationHub}
-                    className="flex items-center gap-3 md:gap-4 group cursor-pointer justify-center sm:justify-start"
+                    onClick={onSchoolPortal}
+                    className="px-10 py-5 bg-white text-slate-900 font-black rounded-2xl shadow-2xl hover:bg-slate-50 transition-all uppercase tracking-[0.2em] text-[11px] flex items-center justify-center gap-3"
                   >
-                    <div className="w-10 h-10 md:w-14 md:h-14 bg-white/10 rounded-full flex items-center justify-center shadow-xl border border-white/20 group-hover:scale-110 transition-all">
-                       <FileText size={16} className="text-[#ff4d4d]" />
-                    </div>
-                    <span className="text-[9px] md:text-[11px] font-black text-white/80 uppercase tracking-[0.2em] group-hover:text-white transition-colors">Publication Hub</span>
+                    <Users size={18} />
+                    Academic Workspace
                   </button>
                 </div>
               </motion.div>
            </div>
         </div>
+
+        {/* Floating AI Features Badge */}
+        <div className="absolute bottom-12 right-12 z-30 hidden xl:block">
+           <div className="flex items-center gap-4 bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-[2rem] shadow-2xl">
+              <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center">
+                 <Gem className="text-[#ff4d4d]" size={24} />
+              </div>
+              <div className="pr-4">
+                 <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Compute Engine</p>
+                 <p className="text-sm font-bold text-white">Genius Neural Fabric v4.0</p>
+              </div>
+           </div>
+        </div>
       </section>
 
-      {/* NEW: Lecturer & Workspace Promotion Section (Addresses User request) */}
-      <section className="py-20 bg-slate-50 border-y border-slate-100">
+      {/* AI AI AI Feature Adverts Section */}
+      <section className="py-24 bg-white overflow-hidden">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="bg-white rounded-[3rem] p-12 shadow-2xl shadow-slate-200 border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-12 relative overflow-hidden">
-             <div className="absolute top-0 right-0 p-8 opacity-5">
-                <Gem size={120} className="text-[#800000]" />
-             </div>
-             
-             <div className="relative z-10 text-center md:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100 mb-6">
-                   <ShieldCheck size={14} />
-                   <span className="text-[10px] font-black uppercase tracking-widest">Lecturer Workspace</span>
-                </div>
-                <h3 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Need a Private Portal?</h3>
-                <p className="text-slate-500 font-medium max-w-md leading-relaxed">
-                   Are you a lecturer or researcher? Register to create your isolated workspace, manage students, upload rosters, and automate assessments. 
-                </p>
-             </div>
+           <div className="text-center mb-20">
+              <h2 className="text-[10px] font-black text-[#800000] uppercase tracking-[0.5em] mb-4">The Neural Advantage</h2>
+              <h3 className="text-3xl md:text-5xl font-black text-slate-900 tracking-tight">AI-Driven Academic Excellence</h3>
+           </div>
 
-             <div className="flex flex-col sm:flex-row gap-4 relative z-10">
-                <button 
-                  onClick={onSchoolPortal}
-                  className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:scale-105 transition-all flex items-center gap-3"
-                >
-                   <Users size={18} />
-                   Student Portal
-                </button>
-                <button 
-                  onClick={onSchoolPortal}
-                  className="px-8 py-4 bg-[#800000] text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all flex items-center gap-3"
-                >
-                   <PlusCircle size={18} />
-                   Create Workspace
-                </button>
-             </div>
-          </div>
+           <div className="grid md:grid-cols-2 gap-8">
+              {/* Publication Advert */}
+              <div className="group relative bg-slate-900 rounded-[3rem] p-12 overflow-hidden text-white shadow-2xl">
+                 <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-110 transition-transform duration-700">
+                    <FileText size={200} />
+                 </div>
+                 <div className="relative z-10">
+                    <div className="w-14 h-14 bg-[#ff4d4d]/20 rounded-2xl flex items-center justify-center mb-8 border border-[#ff4d4d]/30">
+                       <Globe size={28} className="text-[#ff4d4d]" />
+                    </div>
+                    <h4 className="text-3xl font-black mb-6">Neural <br/>Publication Hub</h4>
+                    <ul className="space-y-4 mb-10">
+                       {[
+                         { t: 'Automated DOI Registry', d: 'Instant global indexing' },
+                         { t: 'AI Manuscript Audit', d: 'Verify integrity in seconds' },
+                         { t: 'Neural Peer Selection', d: 'Connect with expert reviewers' }
+                       ].map((item, idx) => (
+                         <li key={idx} className="flex gap-4">
+                            <div className="w-5 h-5 rounded-full bg-[#ff4d4d] flex items-center justify-center shrink-0 mt-0.5">
+                               <CheckCircle2 size={12} className="text-white" />
+                            </div>
+                            <div>
+                               <p className="text-sm font-black uppercase text-white tracking-wider">{item.t}</p>
+                               <p className="text-xs text-white/50 font-medium">{item.d}</p>
+                            </div>
+                         </li>
+                       ))}
+                    </ul>
+                    <button onClick={onPublicationHub} className="px-8 py-4 bg-white text-slate-900 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-[#ff4d4d] hover:text-white transition-all">Explore Hub</button>
+                 </div>
+              </div>
+
+              {/* School Portal Advert */}
+              <div className="group relative bg-indigo-600 rounded-[3rem] p-12 overflow-hidden text-white shadow-2xl">
+                 <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-110 transition-transform duration-700">
+                    <Users size={200} />
+                 </div>
+                 <div className="relative z-10">
+                    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mb-8 border border-white/30">
+                       <ShieldCheck size={28} className="text-white" />
+                    </div>
+                    <h4 className="text-3xl font-black mb-6">Lecturer <br/>Workspace AI</h4>
+                    <ul className="space-y-4 mb-10">
+                       {[
+                         { t: 'AI Question Engine', d: 'Generate exams from materials' },
+                         { t: 'Neural Proctoring', d: 'Real-time anti-cheat surveillance' },
+                         { t: 'Deep Analytics', d: 'Predictive student performance' }
+                       ].map((item, idx) => (
+                         <li key={idx} className="flex gap-4">
+                            <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center shrink-0 mt-0.5">
+                               <CheckCircle2 size={12} className="text-indigo-600" />
+                            </div>
+                            <div>
+                               <p className="text-sm font-black uppercase text-white tracking-wider">{item.t}</p>
+                               <p className="text-xs text-white/60 font-medium">{item.d}</p>
+                            </div>
+                         </li>
+                       ))}
+                    </ul>
+                    <button onClick={onSchoolPortal} className="px-8 py-4 bg-white text-indigo-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all">Launch Space</button>
+                 </div>
+              </div>
+           </div>
         </div>
       </section>      {/* AboutUs Section */}
       <section id="about" className="py-24 bg-white">
@@ -325,19 +354,19 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
             <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[8px] md:text-[10px]">Academic Oversight Committee</p>
           </div>
 
-          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-2xl shadow-slate-200/50 overflow-hidden">
+          <div className="bg-white rounded-[3rem] border border-slate-200 shadow-2xl shadow-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="bg-slate-50 text-slate-400 border-b border-slate-100">
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest">S/N</th>
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest">Full Name</th>
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest">Institution</th>
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest">Department</th>
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest">Country</th>
+                  <tr className="bg-slate-900 text-white border-b border-slate-800">
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">S/N</th>
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Full Name</th>
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Institution</th>
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Department</th>
+                    <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Country</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-50">
+                <tbody className="divide-y divide-slate-100">
                   {[
                     { sn: 1, name: "Prof. Yahaya A. Adadu", school: "Nasarawa State University, Keffi", dept: "Social Sciences", country: "Nigeria" },
                     { sn: 2, name: "Prof. Francis A. Akawu", school: "Nasarawa State University, Keffi", dept: "Economics", country: "Nigeria" },
@@ -352,15 +381,15 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                     { sn: 11, name: "Dr. David M. Shekwolo", school: "Nigerian Defence Academy", dept: "Psychology", country: "Kaduna" },
                     { sn: 12, name: "Assoc. Prof. Abubakar M. Tafida", school: "Nsuk", dept: "Psychology", country: "Nasarawa State" },
                   ].map((member) => (
-                    <tr key={member.sn} className="hover:bg-slate-50/50 transition-colors group">
-                      <td className="px-8 py-4 text-sm font-black text-[#800000]">{member.sn}</td>
-                      <td className="px-8 py-4">
+                    <tr key={member.sn} className="hover:bg-slate-50 transition-colors group">
+                      <td className="px-8 py-5 text-sm font-black text-[#800000]">{member.sn}</td>
+                      <td className="px-8 py-5">
                         <span className="text-sm font-black text-slate-900 group-hover:text-[#800000] transition-colors">{member.name}</span>
                       </td>
-                      <td className="px-8 py-4 text-sm font-bold text-slate-500">{member.school}</td>
-                      <td className="px-8 py-4 text-sm font-medium text-slate-400 italic">{member.dept}</td>
-                      <td className="px-8 py-4">
-                        <span className="px-3 py-1 bg-slate-100 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-500 group-hover:bg-[#800000]/10 group-hover:text-[#800000] transition-all">
+                      <td className="px-8 py-5 text-sm font-bold text-slate-500">{member.school}</td>
+                      <td className="px-8 py-5 text-sm font-medium text-slate-400 italic">{member.dept}</td>
+                      <td className="px-8 py-5">
+                        <span className="px-3 py-1 bg-slate-100 rounded-lg text-[9px] font-black uppercase tracking-widest text-slate-500 group-hover:bg-[#800000]/10 group-hover:text-[#800000] transition-all border border-slate-200">
                           {member.country}
                         </span>
                       </td>
