@@ -1952,7 +1952,7 @@ app.get('/api/transactions', authenticateToken, async (req: any, res) => {
 });
 
 app.get('/api/publications', authenticateToken, async (req: any, res) => {
-  const isAdmin = req.user.role === 'admin';
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
   const query = isAdmin
     ? `SELECT p.id, p.title, p.authors, p.status, p.doi, p.created_at, u.name as researcher_name, u.email as researcher_email 
        FROM papers p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC`
@@ -1989,7 +1989,7 @@ app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
 });
 
 app.get('/api/chat/inbox', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   
   // Get latest message per user thread to build the inbox view, counting unread messages from users
   const result = await pool.query(`
