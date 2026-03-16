@@ -183,6 +183,7 @@ async function initDB() {
       amount INTEGER,
       status TEXT DEFAULT 'pending',
       type TEXT DEFAULT 'publication',
+      metadata JSONB DEFAULT '{}',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
@@ -228,6 +229,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN tenant_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE transactions ADD COLUMN metadata JSONB DEFAULT \'{}\''); } catch (e) { }
   
   // Migration: Drop global email uniqueness and add role-scoped uniqueness
   try {
@@ -1902,6 +1904,81 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
   }
 });
 
+// Student Attendance Integration - Dynamic Virtual Account Flow
+app.post('/api/payment/attendance/initialize', authenticateToken, async (req: any, res) => {
+  const { course_id, amount } = req.body;
+  if (!course_id || !amount) return res.status(400).json({ error: 'course_id and amount are required' });
+
+  const reference = `ATT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  
+  try {
+    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
+    const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
+    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
+
+    if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
+      return res.status(500).json({ error: 'Payment gateway is not configured.' });
+    }
+
+    // Step 1: Create a Dynamic Virtual Account for the customer via PaymentPoint API
+    const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
+        'api-key': PAYMENTPOINT_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: req.user.email,
+        name: req.user.name || req.user.email.split('@')[0],
+        phoneNumber: req.user.phone || '00000000000',
+        bankCode: ['20946', '20897'], // PalmPay + OPay
+        businessId: PAYMENTPOINT_BUSINESS_ID
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`PaymentPoint failed (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
+    
+    // Step 2: Record the pending transaction with course, date, and expiration metadata
+    const attendance_date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const expires_at_date = new Date();
+    expires_at_date.setMinutes(expires_at_date.getMinutes() + 30); // 30-minute expiration
+    const expires_at = expires_at_date.toISOString();
+
+    const metadata = {
+        course_id,
+        attendance_date,
+        expires_at
+    };
+
+    // Note: tenant_id here represents the lecturer who owns the course. 
+    // Usually passed in request or inferred from user's tenant_id.
+    await pool.query(
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
+      [req.user.id, req.tenant_id, reference, amount, 'pending', 'attendance_token', metadata]
+    );
+    
+    res.json({
+      reference,
+      amount,
+      customer_id: data.customer?.customer_id,
+      bankAccounts: data.bankAccounts || [],
+      expires_at,
+      message: `Transfer ₦${Number(amount).toLocaleString()} to sign attendance for ${course_id}.`
+    });
+  } catch (err: any) {
+    console.error('Attendance Payment initialization error:', err);
+    res.status(500).json({ error: 'Attendance payment initialization failed', details: err.message });
+  }
+});
+
+
 app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, res) => {
   // ... (unchanged)
 });
@@ -1947,12 +2024,25 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
       const tx = result?.rows?.[0];
 
       if (tx) {
+        // Expiration check for attendance tokens
+        if (tx.type === 'attendance_token') {
+          const now = new Date();
+          const expiresAt = new Date(tx.metadata?.expires_at);
+          if (now > expiresAt) {
+             await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['expired', tx.id]);
+             console.warn(`PaymentPoint webhook: Transaction ${tx.reference} failed (EXPIRED)`);
+             return res.status(400).send('Transaction window expired');
+          }
+        }
+
         await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['success', tx.id]);
         
         if (tx.type === 'subscription') {
           const expiry = new Date();
           expiry.setFullYear(expiry.getFullYear() + 1);
           await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
+        } else if (tx.type === 'attendance_token') {
+          console.log(`PaymentPoint webhook: Student marked present for ${tx.metadata?.course_id} on ${tx.metadata?.attendance_date}`);
         }
         console.log(`PaymentPoint webhook: Transaction ${tx.reference} marked as success (₦${amount_paid})`);
       } else {

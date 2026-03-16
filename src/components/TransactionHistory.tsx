@@ -20,6 +20,7 @@ interface Transaction {
   amount: number;
   status: string;
   type: string;
+  metadata?: any;
   created_at: string;
 }
 
@@ -28,6 +29,7 @@ export default function TransactionHistory({ profile }: { profile: any }) {
   const [loading, setLoading] = useState(true);
   const [publicationPrice, setPublicationPrice] = useState<number>(0);
   const [newPrice, setNewPrice] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'standard' | 'attendance'>('standard');
   const isAdmin = profile?.user?.role === 'admin';
 
   useEffect(() => {
@@ -82,6 +84,14 @@ export default function TransactionHistory({ profile }: { profile: any }) {
       default: return <AlertCircle className="text-red-500" size={18} />;
     }
   };
+
+  const attendanceTransactions = transactions.filter(t => t.type === 'attendance_token');
+  const standardTransactions = transactions.filter(t => t.type !== 'attendance_token');
+  const displayedTransactions = activeTab === 'attendance' ? attendanceTransactions : standardTransactions;
+
+  const totalAttendanceIncome = attendanceTransactions
+    .filter(t => t.status === 'success')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
 
   return (
     <div className="space-y-8 h-full flex flex-col">
@@ -146,6 +156,47 @@ export default function TransactionHistory({ profile }: { profile: any }) {
         </div>
       </div>
 
+      {/* Optional: Tab switcher for Lecturers to see Attendance Income */}
+      {!isAdmin && (
+        <div className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm w-fit">
+          <button 
+            onClick={() => setActiveTab('standard')}
+            className={`px-6 py-3 rounded-xl font-bold uppercase tracking-wider text-xs transition-all ${activeTab === 'standard' ? 'bg-[#800000] text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Payments & Subscriptions
+          </button>
+          <button 
+             onClick={() => setActiveTab('attendance')}
+             className={`px-6 py-3 rounded-xl font-bold uppercase tracking-wider text-xs transition-all flex items-center gap-2 ${activeTab === 'attendance' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Clock size={16} />
+            Attendance Tokens
+          </button>
+        </div>
+      )}
+
+      {/* Attendance Income Overview Banner */}
+      {activeTab === 'attendance' && (
+         <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 md:p-8 flex items-center justify-between shadow-sm"
+         >
+            <div className="flex items-center gap-4">
+               <div className="p-4 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/20">
+                  <span className="font-serif text-2xl font-black">₦</span>
+               </div>
+               <div>
+                  <h3 className="text-lg font-black text-slate-900 tracking-tight">Total Attendance Income</h3>
+                  <p className="text-indigo-600 font-bold uppercase tracking-widest text-xs mt-1">From Token Payments</p>
+               </div>
+            </div>
+            <div className="text-right">
+               <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter">₦{totalAttendanceIncome.toLocaleString()}</span>
+            </div>
+         </motion.div>
+      )}
+
       {/* Transactions Table */}
       <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm flex-1 flex flex-col overflow-hidden">
         <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-white sticky top-0 z-10">
@@ -179,17 +230,20 @@ export default function TransactionHistory({ profile }: { profile: any }) {
                     Loading your financial records...
                   </td>
                 </tr>
-              ) : transactions.length === 0 ? (
+              ) : displayedTransactions.length === 0 ? (
                 <tr>
                   <td colSpan={isAdmin ? 6 : 5} className="px-8 py-12 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">
-                    No transactions found.
+                    No {activeTab} transactions found.
                   </td>
                 </tr>
               ) : (
-                transactions.map((t) => (
+                displayedTransactions.map((t) => (
                   <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-8 py-5">
                       <span className="text-sm font-black text-slate-900 tracking-tight">{t.reference}</span>
+                      {t.type === 'attendance_token' && t.metadata?.course_id && (
+                        <span className="block text-[10px] font-bold text-indigo-500 mt-1 uppercase">Course: {t.metadata.course_id}</span>
+                      )}
                     </td>
                     {isAdmin && (
                       <td className="px-8 py-5">
@@ -197,7 +251,7 @@ export default function TransactionHistory({ profile }: { profile: any }) {
                       </td>
                     )}
                     <td className="px-8 py-5">
-                      <span className="text-sm font-black text-[#800000]">₦{t.amount.toLocaleString()}</span>
+                      <span className={`text-sm font-black ${t.type === 'attendance_token' ? 'text-indigo-600' : 'text-[#800000]'}`}>₦{t.amount.toLocaleString()}</span>
                     </td>
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-2">

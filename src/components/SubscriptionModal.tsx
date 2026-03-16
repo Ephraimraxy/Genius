@@ -109,7 +109,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
             <>
               {/* Initial state — show pricing & activate button */}
               <div className="mb-4 md:mb-10 text-center md:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100 mb-3 animate-bounce">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-br from-indigo-600 to-blue-800 border-amber-100 mb-3 animate-bounce">
                   <Star size={10} fill="currentColor" />
                   <span className="text-[10px] font-black uppercase tracking-widest">Premium Plan</span>
                 </div>
@@ -117,7 +117,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                 <p className="text-slate-500 text-xs md:text-sm font-medium">Complete payment to activate full system capabilities.</p>
               </div>
 
-              <div className="bg-slate-50 rounded-[1.5rem] p-6 md:p-8 mb-6 md:mb-10 border border-slate-100 relative overflow-hidden group hover:border-[#800000]/20 transition-all">
+              <div className="bg-slate-50 rounded-[1.5rem] p-6 md:p-8 mb-6 md:mb-10 border border-slate-100 relative overflow-hidden group hover:border-indigo-600/20 transition-all">
                 <div className="flex items-baseline gap-1 mb-1">
                   <span className="text-slate-400 text-base font-bold">₦</span>
                   <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter">
@@ -126,14 +126,14 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                   <span className="text-slate-400 font-bold">/year</span>
                 </div>
                 <p className="text-[9px] md:text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
-                  Secure payment handled by <span className="text-[#800000]">PaymentPoint</span> PCI-DSS gateway.
+                  Secure payment handled by <span className="text-indigo-600">PaymentPoint</span> PCI-DSS gateway.
                 </p>
               </div>
 
               <button
                 onClick={handleSubscribe}
                 disabled={loading}
-                className="w-full premium-gradient text-white py-4 md:py-6 rounded-2xl md:rounded-3xl font-black text-xs md:text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-3 md:gap-4 shadow-xl md:shadow-2xl shadow-[#800000]/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
+                className="w-full bg-gradient-to-br from-indigo-600 to-blue-800 text-white py-4 md:py-6 rounded-2xl md:rounded-3xl font-black text-xs md:text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-3 md:gap-4 shadow-xl md:shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
               >
                 {loading ? <Loader2 className="animate-spin" size={18} /> : (
                   <>
@@ -160,12 +160,12 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
 
               <div className="space-y-3 mb-6">
                 {bankAccounts.map((acct, i) => (
-                  <div key={i} className="bg-slate-50 rounded-2xl p-5 border border-slate-100 hover:border-[#800000]/20 transition-all group">
+                  <div key={i} className="bg-slate-50 rounded-2xl p-5 border border-slate-100 hover:border-indigo-600/20 transition-all group">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{acct.bankName}</span>
                       <button 
                         onClick={() => copyToClipboard(acct.accountNumber, 'Account number')}
-                        className="text-slate-400 hover:text-[#800000] transition-colors"
+                        className="text-slate-400 hover:text-indigo-600 transition-colors"
                       >
                         <Copy size={14} />
                       </button>
@@ -177,7 +177,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
               </div>
 
               <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 mb-4">
-                <p className="text-[10px] font-bold text-amber-700 leading-relaxed">
+                <p className="text-[10px] font-bold text-indigo-700 leading-relaxed">
                   ⏳ Your workspace will be activated automatically once payment is confirmed (usually within 1–5 minutes). Reference: <span className="font-black">{paymentRef}</span>
                 </p>
               </div>
@@ -204,7 +204,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                     }
                   }, 1000);
                 }}
-                className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] flex items-center justify-center gap-3 hover:bg-slate-800 transition-all"
+                className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] flex items-center justify-center gap-3 hover:bg-blue-800 transition-all"
               >
                 <CheckCircle2 size={16} />
                 I've Made the Transfer
