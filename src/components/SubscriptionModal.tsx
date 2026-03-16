@@ -114,7 +114,8 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                 'Unlimited Student Rosters',
                 'AI-Powered Quiz Creation',
                 'Proctoring & Anti-Cheat',
-                'Performance Analytics'
+                'Performance Analytics',
+                '12 Months Full Access'
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-3">
                   <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center">

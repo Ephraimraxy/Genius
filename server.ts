@@ -359,11 +359,22 @@ const authenticateToken = (req: any, res: any, next: any) => {
 const checkSubscription = async (req: any, res: any, next: any) => {
   if (req.user.role === 'super_admin') return next();
   if (req.user.role === 'tenant_admin') {
-    const result = await pool.query('SELECT is_subscribed FROM tenants WHERE id = $1', [req.tenant_id]);
-    if (!result.rows[0]?.is_subscribed) {
+    const result = await pool.query('SELECT is_subscribed, subscription_expiry FROM tenants WHERE id = $1', [req.tenant_id]);
+    const tenant = result.rows[0];
+    
+    if (!tenant?.is_subscribed) {
       return res.status(402).json({ 
         error: 'Subscription required', 
         message: 'Your lecturer account requires an active subscription. Please complete payment to access your workspace.' 
+      });
+    }
+
+    if (tenant.subscription_expiry && new Date() > new Date(tenant.subscription_expiry)) {
+      // Automatic downgrade if expired
+      await pool.query('UPDATE tenants SET is_subscribed = FALSE WHERE id = $1', [req.tenant_id]);
+      return res.status(402).json({ 
+        error: 'Subscription expired', 
+        message: 'Your 12-month subscription has expired. Please renew to continue accessing your workspace.' 
       });
     }
   }
