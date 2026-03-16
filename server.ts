@@ -2353,36 +2353,89 @@ app.post('/api/exams/:id/questions', authenticateToken, checkSubscription, async
   }
 });
 
-// Student: Get Assessments
-app.get('/api/student/assessments', authenticateToken, async (req: any, res) => {
+// Student: Get Performance Stats (Live)
+app.get('/api/student/performance-stats', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    // Fetch active assessments for the student's tenant
-    const result = await pool.query(
-      'SELECT id, title, description, duration, type, created_at FROM exams WHERE tenant_id = $1 AND status = \'active\' ORDER BY created_at DESC',
-      [req.tenant_id]
-    );
-    
-    // Also include results for past assessments
-    const resultsResult = await pool.query(
-      'SELECT exam_id, score, risk_score, submitted_at FROM exam_results WHERE user_id = $1',
+    // 1. Get all exam results for this student
+    const results = await pool.query(
+      `SELECT er.*, e.title as course, e.type, 
+       (SELECT SUM(points) FROM questions WHERE exam_id = e.id) as max_points
+       FROM exam_results er
+       JOIN exams e ON er.exam_id = e.id
+       WHERE er.user_id = $1
+       ORDER BY er.submitted_at DESC`,
       [req.user.id]
     );
+
+    // 2. Calculate Stats
+    const totalExams = results.rows.length;
+    const totalScore = results.rows.reduce((sum, r) => sum + (r.score || 0), 0);
+    const avgScore = totalExams > 0 ? totalScore / totalExams : 0;
     
-    const resultsMap: Record<number, any> = {};
-    resultsResult.rows.forEach(r => { resultsMap[r.exam_id] = r; });
+    // CGPA Calculation (Simplified: mapping 0-100 to 0-4.0)
+    const cgpa = (avgScore / 100 * 4).toFixed(2);
+    
+    // Total Credits (Sum of points from exams)
+    const totalCredits = results.rows.reduce((sum, r) => sum + (r.max_points || 0), 0);
+    
+    // Global Rank (Relative to other students in the same tenant)
+    const rankResult = await pool.query(
+      `SELECT user_id, AVG(score) as avg_score 
+       FROM exam_results 
+       WHERE tenant_id = $1 
+       GROUP BY user_id 
+       ORDER BY avg_score DESC`,
+      [req.tenant_id]
+    );
+    const rankIndex = rankResult.rows.findIndex(r => r.user_id === req.user.id);
+    const globalRank = rankIndex !== -1 ? `#${rankIndex + 1}` : 'N/A';
 
-    const assessments = result.rows.map(exam => ({
-      ...exam,
-      status: resultsMap[exam.id] ? 'completed' : 'active',
-      result: resultsMap[exam.id] || null
-    }));
+    // 3. Format Records
+    const records = results.rows.map(r => {
+      let grade = 'F';
+      const s = r.score;
+      if (s >= 90) grade = 'A+';
+      else if (s >= 80) grade = 'A';
+      else if (s >= 70) grade = 'B';
+      else if (s >= 60) grade = 'C';
+      else if (s >= 50) grade = 'D';
 
-    res.json(assessments);
+      return {
+        id: r.id,
+        course: r.course,
+        type: r.type,
+        score: Math.round(s),
+        grade,
+        date: new Date(r.submitted_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+      };
+    });
+
+    // 4. Dynamic Skills (Simplified: assign skills based on average scores in different types)
+    const skills = [
+      { name: 'Practical Application', percent: Math.round(avgScore * 0.9 + 5), color: 'bg-emerald-500' },
+      { name: 'Theory & Logic', percent: Math.round(avgScore), color: 'bg-indigo-500' },
+      { name: 'Research Accuracy', percent: Math.round(avgScore * 0.8 + 10), color: 'bg-amber-500' },
+    ];
+
+    res.json({
+      stats: [
+        { label: 'CGPA', value: cgpa, type: 'gpa' },
+        { label: 'Courses Passed', value: totalExams.toString(), type: 'count' },
+        { label: 'Global Rank', value: globalRank, type: 'rank' },
+        { label: 'Total Credits', value: totalCredits.toString(), type: 'credits' }
+      ],
+      records: records.slice(0, 5), // Latest 5
+      improvement: 12, // Placeholder
+      skills
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch assessments' });
+    console.error('Performance stats error:', error);
+    res.status(500).json({ error: 'Failed to calculate performance' });
   }
 });
+
+// Student: Get Assessments
 
 // Student: Get Exam Details & Questions
 app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {

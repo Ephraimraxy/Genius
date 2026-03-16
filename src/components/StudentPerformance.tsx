@@ -10,33 +10,50 @@ interface StudentPerformanceProps {
 export default function StudentPerformance({ profile, onNavigate }: StudentPerformanceProps) {
     const [records, setRecords] = useState<any[]>([]);
     const [stats, setStats] = useState<any[]>([]);
+    const [skills, setSkills] = useState<any[]>([]);
+    const [improvement, setImprovement] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Simulated API fetch for academic records
         const fetchPerformanceData = async () => {
             setIsLoading(true);
-            setTimeout(() => {
-                // In a real system, these would come from the backend database
-                const fetchedRecords = [
-                    { id: 1, course: 'Advanced Physics (PHY401)', type: 'Exam', score: 88, grade: 'A', date: 'Sept 2025' },
-                    { id: 2, course: 'Quantum Mechanics (PHY405)', type: 'Test', score: 92, grade: 'A+', date: 'Aug 2025' },
-                    { id: 3, course: 'Linear Algebra', type: 'Test', score: 76, grade: 'B', date: 'July 2025' },
-                    { id: 4, course: 'Lab Report: Optics', type: 'Assignment', score: 95, grade: 'A+', date: 'June 2025' },
-                    { id: 5, course: 'Classical Mechanics', type: 'Exam', score: 82, grade: 'A', date: 'May 2025' },
-                ];
+            try {
+                const res = await fetch('/api/student/performance-stats', {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const data = await res.json();
+                
+                if (data.stats) {
+                    const iconMap: any = {
+                        gpa: Trophy,
+                        count: BookOpen,
+                        rank: Award,
+                        credits: Clock
+                    };
+                    const colorMap: any = {
+                        gpa: { text: 'text-amber-600', bg: 'bg-amber-50' },
+                        count: { text: 'text-indigo-600', bg: 'bg-indigo-50' },
+                        rank: { text: 'text-emerald-600', bg: 'bg-emerald-50' },
+                        credits: { text: 'text-rose-600', bg: 'bg-rose-50' }
+                    };
 
-                const fetchedStats = [
-                    { label: 'CGPA', value: '3.82', icon: Trophy, color: 'text-amber-600', bg: 'bg-amber-50' },
-                    { label: 'Courses Passed', value: '12', icon: BookOpen, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-                    { label: 'Global Rank', value: '#4', icon: Award, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                    { label: 'Total Credits', value: '36', icon: Clock, color: 'text-rose-600', bg: 'bg-rose-50' },
-                ];
+                    const formattedStats = data.stats.map((s: any) => ({
+                        ...s,
+                        icon: iconMap[s.type] || BookOpen,
+                        color: colorMap[s.type]?.text || 'text-indigo-600',
+                        bg: colorMap[s.type]?.bg || 'bg-indigo-50'
+                    }));
 
-                setRecords(fetchedRecords);
-                setStats(fetchedStats);
+                    setStats(formattedStats);
+                    setRecords(data.records || []);
+                    setSkills(data.skills || []);
+                    setImprovement(data.improvement || 0);
+                }
+            } catch (err) {
+                console.error('Failed to load live performance data', err);
+            } finally {
                 setIsLoading(false);
-            }, 1000);
+            }
         };
 
         fetchPerformanceData();
@@ -88,7 +105,7 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                                 <TrendingUp size={14} /> Performance Trend
                             </div>
                             <h3 className="text-2xl font-black leading-tight mb-6">
-                                Your academic performance has improved by <span className="text-emerald-400">12%</span> compared to last semester.
+                                Your academic performance has improved by <span className="text-emerald-400">{improvement}%</span> compared to last semester.
                             </h3>
                             <button className="px-6 py-3 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 rounded-xl text-xs font-bold uppercase tracking-widest transition-all">
                                 View Semester Analysis
@@ -180,11 +197,7 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                             <ChevronRight size={16} className="text-slate-400" />
                         </div>
                         <div className="space-y-5">
-                            {[
-                                { name: 'Analytical Thinking', percent: 94, color: 'bg-emerald-500' },
-                                { name: 'Problem Solving', percent: 88, color: 'bg-indigo-500' },
-                                { name: 'Lab Techniques', percent: 79, color: 'bg-amber-500' },
-                            ].map((skill, i) => (
+                            {skills.map((skill, i) => (
                                 <div key={i} className="space-y-2">
                                     <div className="flex justify-between text-[11px] font-black uppercase tracking-widest">
                                         <span className="text-slate-500">{skill.name}</span>

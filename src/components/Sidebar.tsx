@@ -65,7 +65,7 @@ export default function Sidebar({
   // ─── LECTURER NAV (Academic Workspace) ──────────────────────
   const lecturerNavItems: { id: Tab; label: string; icon: React.ComponentType<any> | React.ReactNode; section?: string }[] = [
     { id: 'dashboard', label: 'Workspace Stats', icon: LayoutDashboard, section: 'Overview' },
-    { id: 'courseManagement', label: 'Course & Attendance', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-4 h-4 object-contain" />, section: 'Academic' },
+    { id: 'courseManagement', label: 'Academics Hub', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-4 h-4 object-contain rounded-full" />, section: 'Academic' },
     { id: 'users', label: 'Student Roster', icon: Users },
     { id: 'performance', label: 'Class Analytics', icon: BarChart3 },
     { id: 'settings', label: 'Workspace Settings', icon: Settings, section: 'Settings' },
