@@ -9,7 +9,8 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
   const { profile: scholarProfile, papers, user } = profile || {};
   const metrics = scholarProfile?.metrics || { citations: 0, hIndex: 0, i10Index: 0 };
   const publications = scholarProfile?.publications || [];
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const isLecturer = user?.role === 'tenant_admin';
 
   const [editName, setEditName] = useState(user?.name || '');
   const [editAffiliation, setEditAffiliation] = useState(user?.affiliation || '');
@@ -80,12 +81,16 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
     >
       {/* Profile Header Card */}
       <div className="relative overflow-hidden bg-white rounded-[2.5rem] p-10 shadow-xl shadow-slate-200/50 border border-slate-100">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-3xl -mr-32 -mt-32 opacity-50"></div>
+        <div className={`absolute top-0 right-0 w-64 h-64 ${isLecturer ? 'bg-blue-50' : 'bg-indigo-50'} rounded-full blur-3xl -mr-32 -mt-32 opacity-50`}></div>
 
         <div className="flex flex-col md:flex-row items-center md:items-start gap-10 relative z-10">
           {/* Avatar */}
           <div className="relative">
-            <div className={`w-32 h-32 rounded-3xl text-white flex items-center justify-center text-4xl font-bold shadow-2xl ${isAdmin ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] shadow-slate-900/30' : 'premium-gradient shadow-[#800000]/30'}`}>
+            <div className={`w-32 h-32 rounded-3xl text-white flex items-center justify-center text-4xl font-bold shadow-2xl ${
+              isAdmin ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] shadow-slate-900/30' : 
+              isLecturer ? 'bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-900 shadow-blue-900/30' :
+              'premium-gradient shadow-[#800000]/30'
+            }`}>
               {(user?.name?.trim() || user?.email?.trim() || 'S').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
             </div>
             <div className="absolute -bottom-2 -right-2 p-2 bg-white rounded-xl shadow-lg border border-slate-100">
@@ -109,16 +114,16 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
               <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border mx-auto md:mx-0 w-fit ${
                 isAdmin
                   ? 'bg-amber-50 text-amber-600 border-amber-200'
-                  : 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                  : isLecturer ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-indigo-50 text-indigo-600 border-indigo-200'
               }`}>
-                {isAdmin ? 'System Administrator' : 'Verified Researcher'}
+                {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Verified Researcher'}
               </span>
             </div>
 
             {/* Session Email */}
             <div className="flex items-center justify-center md:justify-start gap-2 mb-4">
-              <Mail size={16} className="text-[#800000]" />
-              <span className="text-sm font-bold text-[#800000]">{user?.email}</span>
+              <Mail size={16} className={isLecturer ? 'text-blue-600' : 'text-[#800000]'} />
+              <span className={`text-sm font-bold ${isLecturer ? 'text-blue-600' : 'text-[#800000]'}`}>{user?.email}</span>
             </div>
 
             {/* Affiliation */}
@@ -128,7 +133,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
                 <input
                   value={editAffiliation}
                   onChange={(e) => setEditAffiliation(e.target.value)}
-                  className="text-lg text-slate-600 font-medium bg-transparent border-b-2 border-indigo-400 outline-none pb-1 w-full md:w-auto"
+                  className={`text-lg text-slate-600 font-medium bg-transparent border-b-2 ${isLecturer ? 'border-blue-400' : 'border-indigo-400'} outline-none pb-1 w-full md:w-auto`}
                   placeholder="Your institution or affiliation"
                 />
               ) : (
@@ -141,7 +146,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Research Interests</p>
               <div className="flex flex-wrap justify-center md:justify-start gap-2">
                 {(isEditing ? editInterests : (metrics.interests || [])).map((tag: string) => (
-                  <span key={tag} className="px-4 py-2 bg-slate-50 text-slate-600 rounded-2xl text-sm font-bold border border-slate-200/60 hover:border-indigo-200 hover:bg-white transition-all cursor-default flex items-center gap-2">
+                  <span key={tag} className={`px-4 py-2 bg-slate-50 text-slate-600 rounded-2xl text-sm font-bold border border-slate-200/60 hover:border-${isLecturer ? 'blue' : 'indigo'}-200 hover:bg-white transition-all cursor-default flex items-center gap-2`}>
                     {tag}
                     {isEditing && (
                       <button onClick={() => removeInterest(tag)} className="text-rose-400 hover:text-rose-600">
@@ -157,9 +162,9 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
                       onChange={(e) => setNewInterest(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && addInterest()}
                       placeholder="Add interest..."
-                      className="px-4 py-2 bg-white border-2 border-dashed border-indigo-300 rounded-2xl text-sm font-bold outline-none w-36 focus:border-indigo-500"
+                      className={`px-4 py-2 bg-white border-2 border-dashed ${isLecturer ? 'border-blue-300 focus:border-blue-500' : 'border-indigo-300 focus:border-indigo-500'} rounded-2xl text-sm font-bold outline-none w-36`}
                     />
-                    <button onClick={addInterest} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-all">
+                    <button onClick={addInterest} className={`p-2 ${isLecturer ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'} rounded-xl transition-all`}>
                       <Plus size={16} />
                     </button>
                   </div>
@@ -198,7 +203,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
             ) : (
               <button
                 onClick={() => setIsEditing(true)}
-                className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-indigo-600 transition-all shadow-lg shadow-slate-200"
+                className={`flex items-center gap-2 px-6 py-3 ${isLecturer ? 'bg-blue-700 hover:bg-blue-800' : 'bg-slate-900 hover:bg-indigo-600'} text-white rounded-2xl font-bold transition-all shadow-lg shadow-slate-200`}
               >
                 <Edit3 size={18} /> Edit Profile
               </button>
@@ -210,7 +215,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
       {/* Account Details Card */}
       <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-8">
         <h3 className="text-lg font-bold text-slate-800 font-display mb-6 flex items-center gap-2">
-          <User size={20} className="text-[#800000]" />
+          <User size={20} className={isLecturer ? 'text-blue-600' : 'text-[#800000]'} />
           Account Details
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -224,8 +229,8 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           </div>
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Role</p>
-            <p className={`text-sm font-bold ${isAdmin ? 'text-amber-600' : 'text-indigo-600'}`}>
-              {isAdmin ? 'System Administrator' : 'Researcher'}
+            <p className={`text-sm font-bold ${isAdmin ? 'text-amber-600' : isLecturer ? 'text-blue-600' : 'text-indigo-600'}`}>
+              {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Verified Researcher'}
             </p>
           </div>
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">

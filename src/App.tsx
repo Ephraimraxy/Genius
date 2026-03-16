@@ -30,7 +30,7 @@ import SubscriptionModal from './components/SubscriptionModal'; // NEW
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -51,7 +51,9 @@ const TAB_LABELS: Record<Tab, string> = {
   tests: 'Tests',
   assignments: 'Assignments',
   performance: 'Performance Tracking',
-  guidelines: 'Security Guidelines'
+  guidelines: 'Security Guidelines',
+  attendance: 'Attendance Management',
+  exams: 'Exam Records'
 };
 
 export default function App() {
@@ -152,13 +154,17 @@ export default function App() {
             return res.json();
           })
           .then(data => {
-            if (data && data.user) setProfile(data);
+            if (data && data.user) {
+              setProfile(data);
+              setIsSyncing(false); // Only stop syncing once we have the profile
+            }
           })
-          .catch(err => console.error('Failed to load profile', err))
-          .finally(() => setIsSyncing(false));
+          .catch(err => {
+            console.error('Failed to load profile', err);
+            setIsSyncing(false);
+          });
       };
 
-      // Initial sync
       syncProfile();
 
       // Background sync every 30 seconds
@@ -170,15 +176,15 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    // Safety fallback: Force hide loader after 3 seconds regardless of profile sync
-    const timer = setTimeout(() => setIsSyncing(false), 3000);
+    // Safety fallback: Force hide loader after 5 seconds if profile fails to load
+    const timer = setTimeout(() => {
+        if (token && !profile) {
+            // If still no profile after 5s, something is wrong, allow interaction to at least logout
+            setIsSyncing(false);
+        }
+    }, 5000);
     return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setIsSyncing(false), 800);
-    return () => clearTimeout(timer);
-  }, [profile]);
+  }, [token, profile]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -321,6 +327,7 @@ export default function App() {
   const isStudent = role === 'student';
 
   const renderContent = () => {
+    if (!profile) return null; // Prevent default view flash
     // If we have a token but no profile yet, we are still syncing.
     // Return a loading state or nothing to prevent dashboard flash.
     if (token && !profile) {
@@ -345,9 +352,12 @@ export default function App() {
     if (isLecturer && activeTab !== 'profile') {
         switch (activeTab) {
             case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
-            case 'courseManagement': return <CourseManagement addToast={addToast} token={token} />;
+            case 'attendance': return <CourseManagement addToast={addToast} token={token} />; // CourseManagement handles attendance
+            case 'tests': return <CourseManagement addToast={addToast} token={token} />; // CourseManagement also handles tests/exams
+            case 'assignments': return <CourseManagement addToast={addToast} token={token} />; 
+            case 'exams': return <CourseManagement addToast={addToast} token={token} />;
             case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
-            case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
+            case 'settings': return <AdminSettings />;
             default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
         }
     }
@@ -380,13 +390,19 @@ export default function App() {
 
   const getHeaderTitle = () => {
     if (isStudent) return 'Student Portal';
+    if (isLecturer) {
+        if (activeTab === 'dashboard') return 'Academic Workspace';
+        if (activeTab === 'attendance') return 'Attendance System';
+        if (activeTab === 'exams') return 'Exam Records';
+        if (activeTab === 'tests') return 'CBT Assessment';
+        if (activeTab === 'assignments') return 'Submission Manager';
+    }
     if (activeTab === 'dashboard') return isAdmin ? 'Admin Console' : 'Analytics Overview';
-    if (activeTab === 'courseManagement') return 'Exams & Attendance';
     return TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab;
   };
 
   return (
-    <div className="flex h-screen bg-white text-slate-900 font-sans overflow-hidden">
+    <div className={`flex h-screen bg-white text-slate-900 font-sans overflow-hidden`}>
       {/* Subscription Overlay for Lecturers */}
       {profile?.user?.role === 'tenant_admin' && !profile?.tenant?.is_subscribed && (
         <SubscriptionModal
@@ -412,11 +428,11 @@ export default function App() {
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className={`backdrop-blur-xl border-b h-14 md:h-16 lg:h-20 flex items-center justify-between px-4 md:px-8 lg:px-10 shrink-0 z-[100] transition-all ${
-          isAdmin ? 'bg-slate-900/[0.03] border-slate-200' : 'bg-white/90 border-slate-100'
+          (isAdmin || isLecturer || isStudent) ? 'bg-blue-50/30 border-blue-100' : 'bg-white/90 border-slate-100'
         }`}>
           <div className="flex items-center gap-2 sm:gap-3 lg:gap-6">
             <div className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex lg:hidden items-center justify-center shadow-lg shrink-0 p-1.5 ${
-              isAdmin ? 'bg-white border-2 border-amber-500 shadow-amber-900/10' : isStudent ? 'bg-indigo-600 shadow-indigo-600/30' : 'premium-gradient shadow-[#800000]/20'
+              (isAdmin || isLecturer) ? 'bg-white shadow-blue-900/10' : isStudent ? 'bg-blue-600 shadow-blue-600/30' : 'premium-gradient shadow-[#800000]/20'
             }`}>
               {isAdmin ? (
                 <img src="/gmijp-logo.png" alt="Logo" className="w-full h-full object-contain" />
@@ -431,10 +447,10 @@ export default function App() {
             <div className="min-w-0">
               <h1 className="text-sm sm:text-2xl font-black text-slate-900 capitalize font-display tracking-tight flex items-center gap-1.5 sm:gap-2 truncate">
                 {getHeaderTitle()}
-                {isAdmin && <ShieldCheck className="text-amber-500 hidden sm:block" size={24} />}
+                {(isAdmin || isLecturer) && <ShieldCheck className="text-blue-600 hidden sm:block" size={24} />}
               </h1>
               <p className="text-[8px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] sm:tracking-[0.2em] mt-0.5 truncate max-w-[120px] sm:max-w-none">
-                {isStudent ? 'Portal' : isAdmin ? 'Admin' : 'Genius'} / {TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab}
+                {(isLecturer || isAdmin) ? 'School Portal' : isStudent ? 'Student Center' : 'Publications'} / {TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab}
               </p>
             </div>
 
@@ -647,7 +663,7 @@ export default function App() {
 
       <ToastSystem toasts={toasts} removeToast={removeToast} />
       <ConfirmModal {...confirmConfig} />
-      <GlobalLoader show={isSyncing} />
+      <GlobalLoader show={isSyncing || (!!token && !profile)} />
     </div>
   );
 }

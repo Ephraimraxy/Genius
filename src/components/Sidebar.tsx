@@ -22,7 +22,8 @@ import {
   FileUp,
   BarChart3,
   ClipboardCheck,
-  Info
+  Info,
+  GraduationCap
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -45,6 +46,8 @@ export default function Sidebar({
   setIsCollapsed, 
   profile,
 }: SidebarProps) {
+  if (!profile) return null; // Prevent flash of default items
+
   const userRole = profile?.user?.role;
   const isSuperAdmin = userRole === 'super_admin' || userRole === 'admin';
   const isLecturer = userRole === 'tenant_admin';
@@ -64,11 +67,12 @@ export default function Sidebar({
 
   // ─── LECTURER NAV (Academic Workspace) ──────────────────────
   const lecturerNavItems: { id: Tab; label: string; icon: React.ComponentType<any> | React.ReactNode; section?: string }[] = [
-    { id: 'dashboard', label: 'Workspace Stats', icon: LayoutDashboard, section: 'Overview' },
-    { id: 'courseManagement', label: 'Academics Hub', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-4 h-4 object-contain rounded-full" />, section: 'Academic' },
-    { id: 'users', label: 'Student Roster', icon: Users },
-    { id: 'performance', label: 'Class Analytics', icon: BarChart3 },
-    { id: 'settings', label: 'Workspace Settings', icon: Settings, section: 'Settings' },
+    { id: 'dashboard', label: 'Workspace Stats', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-5 h-5 object-contain rounded-full bg-white p-0.5" />, section: 'Management' },
+    { id: 'attendance', label: 'Attendance', icon: ClipboardList, section: 'Academic' },
+    { id: 'tests', label: 'Tests', icon: ClipboardCheck },
+    { id: 'assignments', label: 'Assignments', icon: FileUp },
+    { id: 'exams', label: 'Exams', icon: GraduationCap },
+    { id: 'settings', label: 'Settings', icon: Settings, section: 'Preferences' },
   ];
 
   // ─── RESEARCHER NAV (Journal Center) ──────────────────────
@@ -112,7 +116,7 @@ export default function Sidebar({
       {/* ─── MOBILE BOTTOM APP BAR ─── */}
       <div className={`
         lg:hidden fixed bottom-0 left-0 w-full z-50 flex flex-col
-        ${isAdmin ? 'bg-[#0a0f1e] border-amber-900/20' : isLecturer ? 'bg-indigo-950 border-indigo-900/30' : 'bg-[#0f172a] border-slate-800/50'} 
+        ${isAdmin ? 'bg-[#0a0f1e] border-amber-900/20' : isLecturer ? 'bg-[#1e3a8a] border-blue-900/30' : 'bg-[#0f172a] border-slate-800/50'} 
         border-t transition-all pt-1 shadow-2xl
       `} style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="flex items-center overflow-x-auto px-1.5 py-1.5 gap-0.5 touch-pan-x hide-scrollbar">
@@ -131,7 +135,7 @@ export default function Sidebar({
                   <motion.div
                     layoutId="mobile-active-nav"
                     className={`absolute inset-0 rounded-xl ${
-                      isStudent ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : isLecturer ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-[#800000] shadow-lg shadow-[#800000]/20'
+                      isStudent ? 'bg-blue-600 shadow-lg shadow-blue-600/20' : isLecturer ? 'bg-blue-600 shadow-lg shadow-blue-600/20' : 'bg-[#800000] shadow-lg shadow-[#800000]/20'
                     }`}
                     transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                   />
@@ -155,9 +159,9 @@ export default function Sidebar({
       {/* ─── DESKTOP SIDEBAR ─── */}
       <aside className={`
         hidden lg:flex flex-col inset-y-0 left-0 z-50 shrink-0
-        ${isAdmin ? 'bg-[#0a0f1e]' : isLecturer ? 'bg-white border-r border-slate-100' : 'bg-[#0f172a]'} 
-        ${isAdmin ? 'text-slate-400' : isLecturer ? 'text-slate-600' : 'text-slate-400'}
-        ${isAdmin ? 'border-r border-amber-900/20' : isLecturer ? '' : 'border-r border-slate-800/50'}
+        ${isAdmin ? 'bg-[#0a0f1e]' : isLecturer ? 'bg-[#1e3a8a]' : 'bg-[#0f172a]'} 
+        ${isAdmin ? 'text-slate-400' : isLecturer ? 'text-white' : 'text-slate-400'}
+        ${isAdmin ? 'border-r border-amber-900/20' : isLecturer ? 'border-r border-blue-800' : 'border-r border-slate-800/50'}
         transition-all duration-300 ease-in-out
         ${isCollapsed ? 'w-20' : 'w-64'}
       `}>
@@ -168,16 +172,16 @@ export default function Sidebar({
             </div>
             {!isCollapsed && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col">
-                <span className={`leading-tight text-lg ${isLecturer ? 'text-slate-900' : 'text-white'}`}>Genius</span>
+                <span className={`leading-tight text-lg text-white`}>Genius</span>
                 {isAdmin && <span className="text-[8px] font-black text-amber-500 uppercase tracking-[0.25em] -mt-0.5">Admin</span>}
-                {isLecturer && <span className="text-[8px] font-black text-indigo-500 uppercase tracking-[0.25em] -mt-0.5">Workspace</span>}
+                {isLecturer && <span className="text-[8px] font-black text-blue-300 uppercase tracking-[0.25em] -mt-0.5">Workspace</span>}
               </motion.div>
             )}
           </div>
           
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className={`hidden lg:flex p-2 rounded-lg transition-colors ml-2 ${isLecturer ? 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            className={`hidden lg:flex p-2 rounded-lg transition-colors ml-2 ${isLecturer ? 'text-blue-300 hover:text-white hover:bg-blue-800' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
           >
             {isCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
           </button>
@@ -201,7 +205,7 @@ export default function Sidebar({
               <React.Fragment key={item.id}>
                 {showSection && !isCollapsed && (
                   <div className={`px-4 ${idx > 0 ? 'mt-7' : ''} mb-3 text-[10px] font-bold uppercase tracking-[0.2em] ${
-                    isAdmin ? 'text-amber-500/70' : 'text-slate-500'
+                    isAdmin ? 'text-amber-500/70' : isLecturer ? 'text-blue-300/70' : 'text-slate-500'
                   }`}>
                     {item.section}
                   </div>
@@ -215,8 +219,8 @@ export default function Sidebar({
                     w-full flex items-center gap-3 px-3 md:px-4 py-2.5 rounded-xl md:rounded-2xl text-sm font-semibold transition-all relative group
                     ${isCollapsed ? 'justify-center' : ''}
                     ${isActive
-                      ? 'text-white'
-                      : isLecturer ? 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50/50' : 'hover:text-slate-200 hover:bg-slate-800/50'}
+                      ? 'text-white font-bold'
+                      : isLecturer ? 'text-blue-100 hover:text-white hover:bg-white/10' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}
                   `}
                   title={isCollapsed ? item.label : ''}
                 >
@@ -224,14 +228,14 @@ export default function Sidebar({
                     <motion.div
                       layoutId="active-nav"
                       className={`absolute inset-0 rounded-2xl shadow-lg ${
-                        isAdmin ? 'bg-gradient-to-r from-amber-900/80 to-[#800000] shadow-amber-900/20' : isLecturer ? 'bg-indigo-600 shadow-indigo-600/10' : 'bg-[#800000] shadow-[#800000]/20'
+                        isAdmin ? 'bg-gradient-to-r from-amber-900/80 to-[#800000] shadow-amber-900/20' : isLecturer ? 'bg-blue-600 shadow-blue-600/20' : 'bg-[#800000] shadow-[#800000]/20'
                       }`}
                       transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                     />
                   )}
                   <span className="relative z-10">
                     {typeof Icon === 'function' || (typeof Icon === 'object' && Icon !== null && 'render' in Icon) ? (
-                      <Icon size={20} className={isActive ? 'text-white' : `${isAdmin ? 'text-slate-500 group-hover:text-amber-400' : isLecturer ? 'text-slate-400 group-hover:text-indigo-600' : 'text-slate-500 group-hover:text-white'} transition-colors`} />
+                      <Icon size={20} className={isActive ? 'text-white' : `${isAdmin ? 'text-slate-500 group-hover:text-amber-400' : isLecturer ? 'text-blue-300 group-hover:text-white' : 'text-slate-500 group-hover:text-white'} transition-colors`} />
                     ) : (
                       <div className="w-5 h-5 flex items-center justify-center">{Icon as React.ReactNode}</div>
                     )}
@@ -251,7 +255,7 @@ export default function Sidebar({
         <div
           className={`
             m-4 mt-0 p-4 border rounded-[1.5rem] cursor-pointer transition-all group shrink-0
-            ${isAdmin ? 'bg-amber-900/10 border-amber-800/30 hover:bg-amber-900/20' : isLecturer ? 'bg-indigo-50 border-indigo-100 hover:bg-indigo-100/50' : isStudent ? 'bg-indigo-900/20 border-indigo-800/30 hover:bg-indigo-900/30' : 'bg-slate-800/30 border-slate-700/50 hover:bg-slate-800/50'}
+            ${isAdmin ? 'bg-amber-900/10 border-amber-800/30 hover:bg-amber-900/20' : isLecturer ? 'bg-blue-800/50 border-blue-700/50 hover:bg-blue-800/80' : isStudent ? 'bg-indigo-900/20 border-indigo-800/30 hover:bg-indigo-900/30' : 'bg-slate-800/30 border-slate-700/50 hover:bg-slate-800/50'}
             ${isCollapsed ? 'p-2 flex justify-center' : ''}
           `}
           onClick={() => setActiveTab('profile')}
@@ -266,12 +270,12 @@ export default function Sidebar({
             </div>
             {!isCollapsed && (
               <div className="flex-1 min-w-0">
-                <p className={`text-sm font-bold truncate transition-colors ${isLecturer ? 'text-slate-900' : 'text-white'}`}>
+                <p className={`text-sm font-bold truncate transition-colors ${isLecturer ? 'text-white' : 'text-white'}`}>
                   {profile?.user?.name?.trim() || profile?.user?.email?.trim() || 'Verified Scholar'}
                 </p>
-                <p className={`text-[10px] truncate mb-1 ${isLecturer ? 'text-slate-500' : 'text-slate-500'}`}>{profile?.user?.email || 'Connected'}</p>
+                <p className={`text-[10px] truncate mb-1 ${isLecturer ? 'text-blue-300' : 'text-slate-500'}`}>{profile?.user?.email || 'Connected'}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`text-[10px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded-md ${isAdmin ? 'bg-amber-500/20 text-amber-400' : isLecturer ? 'bg-indigo-100 text-indigo-600' : isStudent ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
+                  <span className={`text-[10px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded-md ${isAdmin ? 'bg-amber-500/20 text-amber-400' : isLecturer ? 'bg-blue-500/30 text-blue-100' : isStudent ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
                     {isAdmin ? 'Admin' : isLecturer ? 'Lecturer' : isStudent ? 'Student Profile' : 'Researcher'}
                   </span>
                 </div>
