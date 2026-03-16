@@ -26,7 +26,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
   if (!profile) return (
     <div className="flex items-center justify-center h-[60vh]">
       <div className="flex flex-col items-center gap-4">
-        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        <div className={`w-12 h-12 border-4 ${isLecturer ? 'border-blue-600' : 'border-rose-600'} border-t-transparent rounded-full animate-spin`}></div>
         <p className="text-slate-500 font-medium tracking-wide">Retrieving Scholar Profile...</p>
       </div>
     </div>
@@ -114,7 +114,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
               <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border mx-auto md:mx-0 w-fit ${
                 isAdmin
                   ? 'bg-amber-50 text-amber-600 border-amber-200'
-                  : isLecturer ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                  : isLecturer ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-rose-50 text-rose-600 border-rose-200'
               }`}>
                 {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Verified Researcher'}
               </span>
@@ -229,7 +229,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           </div>
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Role</p>
-            <p className={`text-sm font-bold ${isAdmin ? 'text-amber-600' : isLecturer ? 'text-blue-600' : 'text-indigo-600'}`}>
+            <p className={`text-sm font-bold ${isAdmin ? 'text-amber-600' : isLecturer ? 'text-blue-600' : 'text-rose-600'}`}>
               {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Verified Researcher'}
             </p>
           </div>
