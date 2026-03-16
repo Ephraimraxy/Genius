@@ -109,24 +109,26 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                 </div>
 
                 {/* Right Side: Login Form */}
-                <div className="w-full md:w-[55%] p-6 sm:p-10 flex flex-col justify-center bg-slate-50 relative z-10">
-                    <div className="max-w-md w-full mx-auto relative px-4">
+                <div className="w-full md:w-[55%] p-4 md:p-6 lg:p-10 flex flex-col justify-center bg-blue-50/50 md:bg-white relative z-10">
+                    <div className={`max-w-md w-full mx-auto relative px-6 py-10 md:p-0 transition-all ${
+                        'bg-white rounded-[4rem] border-[10px] border-[#1a237e] shadow-[0_40px_100px_-20px_rgba(26,35,126,0.15)] md:bg-transparent md:border-0 md:shadow-none'
+                    }`}>
                         {/* Static Background Text */}
                         <div className="absolute -top-32 -right-32 text-slate-100 text-9xl font-black select-none pointer-events-none rotate-12 opacity-50">
                             GENIUS
                         </div>
 
-                        <div className="mb-4 relative">
+                        <div className="mb-6 relative text-center md:text-left">
                              <button 
                                 onClick={onBackToMain}
-                                className="mb-4 flex items-center gap-2 text-slate-400 hover:text-[#1a237e] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#1a237e]/20 pb-1"
+                                className="mb-6 flex items-center justify-center md:justify-start gap-2 text-slate-400 hover:text-[#1a237e] transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent hover:border-[#1a237e]/20 pb-1 mx-auto md:mx-0"
                              >
                                 <ArrowRight size={14} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
-                                Back to Main Portal
+                                BACK TO MAIN PORTAL
                              </button>
 
-                            <h3 className="text-xl font-black text-slate-900 tracking-tight mb-1">Welcome back</h3>
-                            <p className="text-slate-500 font-medium text-xs">Login to your account below to continue to your student dashboard</p>
+                            <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2 uppercase tracking-wide">Welcome Student</h3>
+                            <p className="text-slate-500 font-medium text-xs italic">Login to your account below to continue to your student dashboard</p>
                         </div>
 
                         <AnimatePresence mode="wait">
@@ -135,7 +137,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                     initial={{ opacity: 0, scale: 0.95 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, scale: 0.95 }}
-                                    className="mb-8 p-5 bg-red-50 border border-red-100/50 text-red-600 rounded-2xl text-xs font-black flex items-center gap-3 shadow-sm"
+                                    className="mb-8 p-5 bg-red-50 border border-red-100/50 text-red-600 rounded-2xl text-[10px] font-black flex items-center gap-3 shadow-sm uppercase tracking-wider"
                                 >
                                     <div className="p-1.5 bg-red-600 rounded-lg text-white"><ShieldCheck size={14} /></div>
                                     <span>{error}</span>
@@ -145,24 +147,24 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
 
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-indigo-700 uppercase tracking-widest ml-1">Matriculation Number</label>
+                                <label className="text-[10px] font-black text-indigo-700 uppercase tracking-[0.2em] ml-2">MATRICULATION NUMBER</label>
                                 <div className="relative group">
-                                    <GraduationCap className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#1a237e] transition-colors" size={20} />
+                                    <GraduationCap className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#1a237e] transition-colors" size={20} />
                                     <input
                                         type="text"
                                         required
                                         value={matricNumber}
                                         onChange={(e) => formatMatricInput(e.target.value)}
-                                        className="w-full pl-14 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono font-black tracking-widest uppercase text-sm"
+                                        className="w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono font-black tracking-widest uppercase text-sm"
                                         placeholder="NSUK/SCI/YYYY/NNNN"
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-indigo-700 uppercase tracking-widest ml-1">Secure 4-Digit PIN</label>
+                                <label className="text-[10px] font-black text-indigo-700 uppercase tracking-[0.2em] ml-2">SECURE 4-DIGIT PIN</label>
                                 <div className="relative group">
-                                    <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#1a237e] transition-colors" size={20} />
+                                    <Key className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#1a237e] transition-colors" size={20} />
                                     <input
                                         type="password"
                                         required
@@ -170,7 +172,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                         inputMode="numeric"
                                         value={pin}
                                         onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                                        className="w-full pl-14 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:border-[#1a237e] focus:shadow-xl focus:shadow-indigo-900/5 outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono text-xl tracking-[0.8em] text-center"
+                                        className="w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono text-xl tracking-[0.8em] text-center"
                                         placeholder="••••"
                                     />
                                 </div>
@@ -181,13 +183,13 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                 whileTap={{ scale: 0.99 }}
                                 type="submit"
                                 disabled={loading}
-                                className="w-full bg-[#1a237e] text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-900/20 hover:bg-[#121858] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                className="w-full bg-[#1a237e] text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-900/20 hover:bg-[#121858] transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
                             >
                                 {loading ? (
                                     <Loader2 size={20} className="animate-spin" />
                                 ) : (
                                     <>
-                                        <span>Portal Access</span>
+                                        <span>PORTAL ACCESS</span>
                                         <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                                     </>
                                 )}
@@ -196,9 +198,20 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
 
                         <div className="mt-8 p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-100/50 relative overflow-hidden group">
                            <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl -mr-12 -mt-12 transition-all group-hover:bg-indigo-500/10" />
-                           <p className="text-slate-500 font-bold text-[11px] leading-relaxed relative z-10 italic">
+                           <p className="text-slate-400 font-bold text-[10px] leading-relaxed relative z-10 italic uppercase tracking-wider text-center">
                              Lost your access PIN? Please contact the department administrator to reset your credentials. Secure academic monitoring is active.
                            </p>
+                        </div>
+
+                        <div className="mt-8 pt-6 border-t border-slate-100 text-center relative z-10">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                               <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest leading-relaxed">
+                                 Institutional Academic Gateway &copy; 2026
+                               </p>
+                               <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                                 GENIUS MINDSPARK ACADEMY
+                               </p>
+                            </div>
                         </div>
                     </div>
                 </div>

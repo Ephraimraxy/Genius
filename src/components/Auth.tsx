@@ -200,7 +200,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                          <div className="flex items-center justify-center gap-3">
                             <ShieldCheck size={14} className="opacity-50" />
                             <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-tight text-left">
-                              Secured by GMIJ <br/> Neural Encryption
+                               Secured by GMIJ <br/> Neural Encryption
                             </p>
                          </div>
                       </div>
@@ -208,28 +208,32 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                 </div>
 
                 {/* Right Side: Action Area */}
-                <div className="w-full md:w-[60%] p-6 sm:p-10 flex flex-col justify-center bg-white relative z-10 overflow-y-auto">
-                    <div className="max-w-md w-full mx-auto relative px-4">
+                <div className={`w-full md:w-[60%] p-4 md:p-6 lg:p-10 flex flex-col justify-center bg-white relative z-10 overflow-y-auto ${!isLecturer ? 'md:bg-white bg-slate-50' : 'md:bg-white bg-blue-50/50'}`}>
+                    <div className={`max-w-md w-full mx-auto relative px-6 py-10 md:p-0 transition-all ${
+                        !isLecturer 
+                        ? 'bg-white rounded-[4rem] border-[10px] border-[#800000] shadow-[0_40px_100px_-20px_rgba(128,0,0,0.15)] md:bg-transparent md:border-0 md:shadow-none' 
+                        : 'bg-white rounded-[4rem] border-[10px] border-[#1a237e] shadow-[0_40px_100px_-20px_rgba(26,35,126,0.15)] md:bg-transparent md:border-0 md:shadow-none'
+                    }`}>
                         {/* Static Background Pattern */}
                         <div className="absolute -top-32 -right-32 text-slate-50 text-8xl font-black select-none pointer-events-none rotate-6 opacity-20">
                             GENIUS
                         </div>
 
-                        <div className="mb-4 relative">
+                        <div className="mb-6 relative text-center md:text-left">
                              {onBackToLanding && (
                                 <button 
                                     onClick={onBackToLanding}
-                                    className="mb-4 flex items-center gap-2 text-slate-400 transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent pb-1"
+                                    className="mb-6 flex items-center justify-center md:justify-start gap-2 text-slate-400 transition-all text-xs font-black uppercase tracking-widest group border-b border-transparent pb-1 mx-auto md:mx-0"
                                     style={{ '--hover-color': themeColor } as any}
                                 >
                                     <div className="flex items-center gap-2 group-hover:text-[var(--hover-color)]">
                                         <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
-                                        Back to Main Portal
+                                        BACK TO MAIN PORTAL
                                     </div>
                                 </button>
                              )}
 
-                            <h3 className="text-xl font-black text-slate-900 tracking-tight mb-1">
+                            <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">
                                 {isLogin 
                                     ? (isLecturer ? 'Lecturer Login' : 'Welcome back') 
                                     : (isLecturer ? 'Lecturer Signup' : 'Create Account')}
@@ -266,31 +270,31 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                             className="space-y-4"
                                         >
                                             <div className="space-y-1">
-                                                <label className={`text-[10px] font-black uppercase tracking-widest ml-1 ${labelColor}`}>Full Name</label>
+                                                <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>FULL NAME</label>
                                                 <div className="relative group">
-                                                    <User className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors" size={20} />
+                                                    <User className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
                                                     <input
                                                         type="text"
                                                         required
                                                         value={name}
                                                         onChange={(e) => setName(e.target.value)}
-                                                        className={`w-full pl-14 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                        className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
                                                         placeholder="John Doe"
                                                     />
                                                 </div>
                                             </div>
                                             
                                             <div className="space-y-1">
-                                                <label className={`text-[10px] font-black uppercase tracking-widest ml-1 ${labelColor}`}>
-                                                    {isLecturer ? "Workspace/Organization" : "Affiliation"}
+                                                <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>
+                                                    {isLecturer ? "WORKSPACE/ORGANIZATION" : "AFFILIATION"}
                                                 </label>
                                                 <div className="relative group">
-                                                    <Building className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors" size={20} />
+                                                    <Building className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
                                                     <input
                                                         type="text"
                                                         value={isLecturer ? tenantName : affiliation}
                                                         onChange={(e) => isLecturer ? setTenantName(e.target.value) : setAffiliation(e.target.value)}
-                                                        className={`w-full pl-14 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                        className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
                                                         placeholder={isLecturer ? "e.g. Science Faculty" : "e.g. NSUK Research Unit"}
                                                         required={!isLogin}
                                                     />
@@ -301,41 +305,41 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                 </AnimatePresence>
 
                                 <div className="space-y-1">
-                                    <label className={`text-[10px] font-black uppercase tracking-widest ml-1 ${labelColor}`}>Email Address</label>
+                                    <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>EMAIL ADDRESS</label>
                                     <div className="relative group">
-                                        <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors" size={20} />
+                                        <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
                                         <input
                                             type="email"
                                             required
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
-                                            className={`w-full pl-14 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                            className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
                                             placeholder="you@genius.com"
                                         />
                                     </div>
                                 </div>
 
                                 <div className="space-y-1">
-                                    <div className="flex justify-between items-center ml-1">
-                                        <label className={`text-[10px] font-black uppercase tracking-widest ${labelColor}`}>Password</label>
+                                    <div className="flex justify-between items-center ml-2">
+                                        <label className={`text-[10px] font-black uppercase tracking-[0.2em] ${labelColor}`}>PASSWORD</label>
                                         {isLogin && (
                                             <button
                                                 type="button"
                                                 onClick={() => setForgotMode('choose')}
                                                 className={`text-[10px] font-black text-slate-400 hover:text-[${themeColor}] uppercase tracking-widest transition-colors`}
                                             >
-                                                Forgot?
+                                                FORGOT?
                                             </button>
                                         )}
                                     </div>
                                     <div className="relative group">
-                                        <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors" size={20} />
+                                        <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
                                         <input
                                             type="password"
                                             required
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            className={`w-full pl-14 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                            className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
                                             placeholder="••••••••"
                                         />
                                     </div>
@@ -346,14 +350,14 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                     whileTap={{ scale: 0.99 }}
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full text-white font-black py-4 rounded-2xl shadow-xl transition-all disabled:opacity-50 mt-2 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                    className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
                                     style={{ backgroundColor: themeColor }}
                                 >
                                     {loading ? (
                                         <Loader2 size={20} className="animate-spin" />
                                     ) : (
                                         <>
-                                            <span>{isLogin ? 'Sign In' : (isLecturer ? 'Secure Space' : 'Establish Account')}</span>
+                                            <span>{isLogin ? 'SIGN IN' : (isLecturer ? 'SECURE SPACE' : 'ESTABLISH ACCOUNT')}</span>
                                             <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                                         </>
                                     )}
@@ -366,7 +370,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                     {forgotMode === 'choose' && (
                                         <motion.div key="choose" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                                             <button onClick={exitForgotMode} className="flex items-center gap-2 text-slate-400 hover:text-slate-900 transition-colors text-[10px] uppercase font-black tracking-widest mb-6">
-                                                <ArrowLeft size={12} /> Back to Login
+                                                <ArrowLeft size={12} /> BACK TO LOGIN
                                             </button>
                                             <h4 className="text-xl font-black text-slate-900 mb-2">Recovery Method</h4>
                                             <div className="grid gap-3">
@@ -408,9 +412,9 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                         placeholder="Enter registered email"
                                                      />
                                                      <button onClick={handleRequestCode} disabled={resetLoading} className="w-full text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2" style={{ backgroundColor: themeColor }}>
-                                                         {resetLoading ? <Loader2 size={18} className="animate-spin" /> : <span>Request Code</span>}
+                                                         {resetLoading ? <Loader2 size={18} className="animate-spin" /> : <span>REQUEST CODE</span>}
                                                      </button>
-                                                     <button onClick={() => setForgotMode('choose')} className="w-full text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">Change Method</button>
+                                                     <button onClick={() => setForgotMode('choose')} className="w-full text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">CHANGE METHOD</button>
                                                  </div>
                                              )}
 
@@ -438,7 +442,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                         placeholder="New Secure Password"
                                                      />
                                                      <button onClick={handleVerifyCode} disabled={resetLoading || resetCode.length !== 6 || newPassword.length < 6} className="w-full text-white font-black py-4 rounded-2xl" style={{ backgroundColor: themeColor }}>
-                                                         {resetLoading ? <Loader2 size={18} className="animate-spin" /> : <span>Update Password</span>}
+                                                         {resetLoading ? <Loader2 size={18} className="animate-spin" /> : <span>UPDATE PASSWORD</span>}
                                                      </button>
                                                  </div>
                                              )}
@@ -464,7 +468,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                          />
                                                      )}
                                                      <button onClick={forgotMode === 'admin' ? handleContactAdmin : exitForgotMode} className={`w-full text-white font-black py-4 rounded-2xl ${forgotMode === 'admin' ? 'bg-amber-600' : 'bg-emerald-600'}`}>
-                                                         {forgotMode === 'admin' ? (resetLoading ? <Loader2 className="animate-spin mx-auto" /> : 'Contact Admin') : 'Back to Login'}
+                                                         {forgotMode === 'admin' ? (resetLoading ? <Loader2 className="animate-spin mx-auto" /> : 'CONTACT ADMIN') : 'BACK TO LOGIN'}
                                                      </button>
                                                  </div>
                                              )}
@@ -475,24 +479,27 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                         )}
 
                         <div className="mt-8 pt-6 border-t border-slate-100 text-center relative z-10">
-                            <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.3em]">
-                                {isLogin 
-                                    ? (isLecturer ? "Configure new workspace?" : "New research team?") 
-                                    : "Already a member?"}
+                            <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.3em] flex flex-col sm:flex-row items-center justify-center gap-1">
+                                <span>{isLogin 
+                                    ? (isLecturer ? "Configure new workspace?" : "ALREADY A MEMBER?") 
+                                    : "ALREADY A MEMBER?"}</span>
                                 <button
                                     onClick={() => { setIsLogin(!isLogin); exitForgotMode(); }}
-                                    className="transition-colors ml-2 font-black underline underline-offset-4"
+                                    className="transition-colors font-black underline underline-offset-4"
                                     style={{ color: themeColor }}
                                 >
                                     {isLogin 
-                                        ? (isLecturer ? 'Establish Space' : 'Join Team') 
+                                        ? (isLecturer ? 'Establish Space' : 'Account Login') 
                                         : 'Account Login'}
                                 </button>
                             </p>
                             
-                            <div className="mt-8 flex items-center justify-center gap-4">
+                            <div className="mt-8 flex flex-col items-center justify-center gap-2">
                                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest leading-relaxed">
-                                 {isLecturer ? 'Institutional Academic Gateway' : 'GMIJ Neural Publication Network'} <br/> &copy; 2026 GENIUS MINDSPARK
+                                 {isLecturer ? 'Institutional Academic Gateway' : 'GMIJ NEURAL PUBLICATION NETWORK'}
+                               </p>
+                               <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                                 &copy; 2026 GENIUS MINDSPARK
                                </p>
                             </div>
                         </div>
