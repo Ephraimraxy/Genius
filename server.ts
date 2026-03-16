@@ -62,6 +62,7 @@ async function initDB() {
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       email TEXT,
+      phone TEXT,
       password TEXT,
       name TEXT,
       affiliation TEXT,
@@ -211,6 +212,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE papers ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE reviews ADD COLUMN user_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE users ADD COLUMN phone TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE users ADD COLUMN role TEXT DEFAULT \'user\''); } catch (e) { }
   try { await pool.query('ALTER TABLE users ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE users ADD COLUMN matric_number TEXT'); } catch (e) { }
@@ -391,8 +393,10 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 // Lecturer/Tenant Admin Registration (Creates Tenant + Admin)
 app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
   try {
-    const { email, password, name, tenantName } = req.body;
-    if (!email || !password || !name || !tenantName) return res.status(400).json({ error: 'All fields are required' });
+    const { email, password, name, tenantName, phone } = req.body;
+    if (!email || !password || !name || !tenantName || !phone) return res.status(400).json({ error: 'All fields are required including phone number' });
+
+    if (!/^\d{11}$/.test(phone)) return res.status(400).json({ error: 'The phone number field must be exactly 11 digits' });
 
     const role = 'tenant_admin';
     const existingUser = await pool.query('SELECT id FROM users WHERE email = $1 AND role = $2', [email, role]);
@@ -411,8 +415,8 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
     // 2. Create Tenant Admin User
     const hashedPassword = await bcrypt.hash(password, 10);
     const userResult = await pool.query(
-      'INSERT INTO users (email, password, name, role, tenant_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [email, hashedPassword, name, 'tenant_admin', tenantId]
+      'INSERT INTO users (email, phone, password, name, role, tenant_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [email, phone, hashedPassword, name, 'tenant_admin', tenantId]
     );
     const userId = userResult.rows[0].id;
 

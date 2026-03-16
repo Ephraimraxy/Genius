@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, ShieldCheck, ArrowLeft, KeyRound, CheckCircle, MessageSquare, Send } from 'lucide-react';
+import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, ShieldCheck, ArrowLeft, KeyRound, CheckCircle, MessageSquare, Send, Phone } from 'lucide-react';
 
 import { ToastType } from './ToastSystem';
 
@@ -21,6 +21,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [tenantName, setTenantName] = useState('');
+    const [phone, setPhone] = useState('');
 
     const isLecturer = role === 'lecturer';
     const themeColor = isLecturer ? '#1a237e' : '#800000';
@@ -48,10 +49,16 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
             ? '/api/auth/login' 
             : (isLecturer ? '/api/auth/lecturer/register' : '/api/auth/register');
         
+        if (!isLogin && isLecturer && phone.length !== 11) {
+            setError('Phone number must be exactly 11 digits');
+            setLoading(false);
+            return;
+        }
+
         const body = isLogin
             ? { email, password, role }
             : (isLecturer 
-                ? { email, password, name, tenantName, role: 'tenant_admin' }
+                ? { email, password, name, tenantName, phone, role: 'tenant_admin' }
                 : { email, password, name, affiliation, role: 'user' });
 
         try {
@@ -300,6 +307,25 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                     />
                                                 </div>
                                             </div>
+
+                                            {isLecturer && (
+                                                <div className="space-y-1">
+                                                    <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>PHONE NUMBER (11 DIGITS)</label>
+                                                    <div className="relative group">
+                                                        <Phone className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                        <input
+                                                            type="tel"
+                                                            required
+                                                            pattern="[0-9]{11}"
+                                                            maxLength={11}
+                                                            value={phone}
+                                                            onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                                                            className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                            placeholder="08012345678"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
