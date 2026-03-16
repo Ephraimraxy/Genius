@@ -1847,7 +1847,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     }
 
     // Step 1: Create a Virtual Account for the customer via PaymentPoint API
-    const response = await fetch('https://api.paymentpoint.co/api/v1/create-virtual-account', {
+    const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
