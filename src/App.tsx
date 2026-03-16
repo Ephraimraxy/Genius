@@ -148,10 +148,11 @@ export default function App() {
               handleLogout();
               return null;
             }
+            if (!res.ok) return null;
             return res.json();
           })
           .then(data => {
-            if (data) setProfile(data);
+            if (data && data.user) setProfile(data);
           })
           .catch(err => console.error('Failed to load profile', err))
           .finally(() => setIsSyncing(false));
@@ -187,6 +188,8 @@ export default function App() {
   };
 
   const onAuthSuccess = (newToken: string, user: any) => {
+    setProfile(null); // Clear stale profile immediately to prevent dashboard flash
+    setIsSyncing(true); // Trigger loader for environment sync
     setToken(newToken);
     setShowLanding(false);
     setShowStudentAuth(false);
