@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, CreditCard, ArrowRight, Loader2, Lock, Gift, Star, CheckCircle2, Copy, Building2 } from 'lucide-react';
 
@@ -48,6 +48,30 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    let pollInterval: any;
+    if (paymentRef && bankAccounts.length > 0) {
+      pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/payment/verify/${paymentRef}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'success') {
+              clearInterval(pollInterval);
+              addToast('Payment detected! Workspace activating...', 'success');
+              setTimeout(onSuccess, 1500);
+            }
+          }
+        } catch (e) {
+          console.error('Polling error:', e);
+        }
+      }, 10000); // Poll every 10 seconds
+    }
+    return () => clearInterval(pollInterval);
+  }, [paymentRef, bankAccounts]);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -154,7 +178,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                 </div>
                 <h3 className="text-slate-900 text-xl md:text-2xl font-black tracking-tight mb-1">Transfer to Activate</h3>
                 <p className="text-slate-500 text-xs font-medium">
-                  Send exactly <span className="font-black text-slate-900">₦{paymentAmount.toLocaleString()}</span> to any account below.
+                  Send exactly <span className="font-black text-slate-900">₦{paymentAmount.toLocaleString()}</span> to the below account.
                 </p>
               </div>
 

@@ -23,6 +23,65 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(cors());
 app.set('trust proxy', 1);
+
+// Secure Webhook for PaymentPoint (Must be before global JSON parser for raw body)
+app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), async (req: any, res) => {
+  const signature = req.headers['paymentpoint-signature'];
+  const secretKey = process.env.PAYMENTPOINT_SECRET_KEY;
+
+  if (!signature || !secretKey) return res.status(400).send('Missing signature or configuration');
+
+  try {
+    const crypto = require('crypto');
+    const hmac = crypto.createHmac('sha256', secretKey);
+    const calculatedSignature = hmac.update(req.body).digest('hex');
+
+    if (calculatedSignature !== signature) {
+      console.warn('Invalid PaymentPoint webhook signature');
+      return res.status(401).send('Invalid signature');
+    }
+
+    const payload = JSON.parse(req.body.toString());
+    const { notification_status, transaction_id, amount_paid, settlement_amount, transaction_status, customer } = payload;
+
+    if (transaction_status === 'success' && notification_status === 'payment_successful') {
+      const customerEmail = customer?.email;
+      let result = await pool.query(
+        `SELECT t.* FROM transactions t 
+         JOIN users u ON t.user_id = u.id 
+         WHERE u.email = $1 AND t.status = 'pending' 
+         ORDER BY t.created_at DESC LIMIT 1`,
+        [customerEmail]
+      );
+
+      const tx = result?.rows?.[0];
+
+      if (tx) {
+        if (tx.type === 'attendance_token') {
+          const now = new Date();
+          const expiresAt = new Date(tx.metadata?.expires_at);
+          if (now > expiresAt) {
+             await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['expired', tx.id]);
+             return res.status(400).send('Transaction window expired');
+          }
+        }
+
+        await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['success', tx.id]);
+        
+        if (tx.type === 'subscription') {
+          const expiry = new Date();
+          expiry.setFullYear(expiry.getFullYear() + 1);
+          await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
+        }
+        console.log(`PaymentPoint webhook: Transaction ${tx.reference} marked as success`);
+      }
+    }
+    res.status(200).send('Webhook processed');
+  } catch (err) {
+    console.error('PaymentPoint webhook error:', err);
+    res.status(500).send('Internal server error');
+  }
+});
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -1984,78 +2043,6 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
 });
 
 // Secure Webhook for PaymentPoint (per official docs)
-app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), async (req: any, res) => {
-  const signature = req.headers['paymentpoint-signature'];
-  const secretKey = process.env.PAYMENTPOINT_SECRET_KEY;
-
-  if (!signature || !secretKey) return res.status(400).send('Missing signature or configuration');
-
-  try {
-    const crypto = require('crypto');
-    const hmac = crypto.createHmac('sha256', secretKey);
-    const calculatedSignature = hmac.update(req.body).digest('hex');
-
-    if (calculatedSignature !== signature) {
-      console.warn('Invalid PaymentPoint webhook signature');
-      return res.status(401).send('Invalid signature');
-    }
-
-    const payload = JSON.parse(req.body.toString());
-    const { notification_status, transaction_id, amount_paid, settlement_amount, transaction_status, customer } = payload;
-
-    if (transaction_status === 'success' && notification_status === 'payment_successful') {
-      // Match transaction by customer_id (which maps to the PaymentPoint customer created during VA setup)
-      // or by looking up the most recent pending transaction for this customer email
-      const customerEmail = customer?.email;
-      const customerId = customer?.customer_id;
-
-      // Try to find the pending transaction for this customer
-      let result;
-      if (customerEmail) {
-        result = await pool.query(
-          `SELECT t.* FROM transactions t 
-           JOIN users u ON t.user_id = u.id 
-           WHERE u.email = $1 AND t.status = 'pending' 
-           ORDER BY t.created_at DESC LIMIT 1`,
-          [customerEmail]
-        );
-      }
-
-      const tx = result?.rows?.[0];
-
-      if (tx) {
-        // Expiration check for attendance tokens
-        if (tx.type === 'attendance_token') {
-          const now = new Date();
-          const expiresAt = new Date(tx.metadata?.expires_at);
-          if (now > expiresAt) {
-             await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['expired', tx.id]);
-             console.warn(`PaymentPoint webhook: Transaction ${tx.reference} failed (EXPIRED)`);
-             return res.status(400).send('Transaction window expired');
-          }
-        }
-
-        await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['success', tx.id]);
-        
-        if (tx.type === 'subscription') {
-          const expiry = new Date();
-          expiry.setFullYear(expiry.getFullYear() + 1);
-          await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
-        } else if (tx.type === 'attendance_token') {
-          console.log(`PaymentPoint webhook: Student marked present for ${tx.metadata?.course_id} on ${tx.metadata?.attendance_date}`);
-        }
-        console.log(`PaymentPoint webhook: Transaction ${tx.reference} marked as success (₦${amount_paid})`);
-      } else {
-        console.warn('PaymentPoint webhook: No matching pending transaction found for', customerEmail || customerId);
-      }
-    }
-
-    res.status(200).send('Webhook processed');
-  } catch (err) {
-    console.error('PaymentPoint webhook error:', err);
-    res.status(500).send('Internal server error');
-  }
-});
 
 app.get('/api/transactions', authenticateToken, async (req: any, res) => {
   let query, params;
