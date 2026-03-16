@@ -23,7 +23,8 @@ import {
   BarChart3,
   ClipboardCheck,
   Info,
-  GraduationCap
+  GraduationCap,
+  Database
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -68,6 +69,7 @@ export default function Sidebar({
   // ─── LECTURER NAV (Academic Workspace) ──────────────────────
   const lecturerNavItems: { id: Tab; label: string; icon: React.ComponentType<any> | React.ReactNode; section?: string }[] = [
     { id: 'dashboard', label: 'Workspace Stats', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-5 h-5 object-contain rounded-full bg-white p-0.5" />, section: 'Management' },
+    { id: 'storage', label: 'Resource Hub', icon: Database },
     { id: 'attendance', label: 'Attendance', icon: ClipboardList, section: 'Academic' },
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },
     { id: 'assignments', label: 'Assignments', icon: FileUp },

@@ -12,6 +12,8 @@ import {
     MoreHorizontal,
     FileDown,
     Plus,
+    Database,
+    FileText,
     Calendar,
     Clock,
     AlertCircle,
@@ -20,6 +22,15 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ToastType } from './ToastSystem';
+
+interface Resource {
+    id: number;
+    type: 'roster' | 'material';
+    name: string;
+    status: 'ready' | 'failed' | 'pending' | 'short';
+    created_at: string;
+    content?: any;
+}
 
 interface AcademicManagementProps {
     mode: 'attendance' | 'tests' | 'assignments' | 'exams';
@@ -30,6 +41,37 @@ interface AcademicManagementProps {
 export default function AcademicManagement({ mode, addToast, token }: AcademicManagementProps) {
     const [isProcessing, setIsProcessing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [showResourceSelector, setShowResourceSelector] = useState(false);
+    const [hubResources, setHubResources] = useState<Resource[]>([]);
+    const [isLoadingHub, setIsLoadingHub] = useState(false);
+    const [selectedHubResource, setSelectedHubResource] = useState<Resource | null>(null);
+
+    const fetchHubResources = async (type: 'roster' | 'material') => {
+        setIsLoadingHub(true);
+        try {
+            const res = await fetch('/api/resources', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            setHubResources(data.filter((r: Resource) => r.type === type && r.status === 'ready'));
+        } catch (err) {
+            addToast('Failed to fetch from Resource Hub', 'error');
+        }
+        setIsLoadingHub(false);
+    };
+
+    const handleOpenSelector = () => {
+        const type = mode === 'attendance' ? 'roster' : 'material';
+        fetchHubResources(type);
+        setShowResourceSelector(true);
+    };
+
+    const selectResource = (res: Resource) => {
+        setSelectedHubResource(res);
+        setShowResourceSelector(false);
+        addToast(`Linked to resource: ${res.name}`, 'success');
+        // In a real app, you'd here populate the form with res.content
+    };
 
     const renderHeader = () => {
         const titles = {
@@ -64,10 +106,17 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                     <h3 className="text-xl font-bold text-slate-900 mb-2">Student Whitelist</h3>
                     <p className="text-sm text-slate-500 mb-6 font-medium">Upload matriculation numbers to authorize specific students for this session.</p>
                     
-                    <div className="border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center hover:bg-blue-50 transition-all cursor-pointer group mb-6">
+                    <div className="border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center hover:bg-blue-50 transition-all cursor-pointer group mb-6 relative">
                         <Upload className="mx-auto text-slate-300 group-hover:text-blue-500 mb-4 transition-colors" size={32} />
-                        <p className="font-bold text-slate-700">Drop roster file here</p>
-                        <p className="text-xs text-slate-400 mt-1">Supports .csv or .xlsx members (Max 5,000 students)</p>
+                        <p className="font-bold text-slate-700">{selectedHubResource ? selectedHubResource.name : 'Drop roster file here'}</p>
+                        <p className="text-xs text-slate-400 mt-1">{selectedHubResource ? 'Linked from Resource Hub' : 'Supports .csv or .xlsx members (Max 5,000 students)'}</p>
+                        
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleOpenSelector(); }}
+                            className="mt-4 px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-blue-600 transition-all"
+                        >
+                            Select from Resource Hub
+                        </button>
                     </div>
 
                     <div className="flex gap-3">
@@ -185,9 +234,16 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             </div>
                         </div>
 
-                        <div className="border-2 border-dashed border-slate-200 rounded-3xl p-8 text-center hover:bg-slate-50 transition-all cursor-pointer group mb-6">
+                        <div className="border-2 border-dashed border-slate-200 rounded-3xl p-8 text-center hover:bg-slate-50 transition-all cursor-pointer group mb-6 relative">
                             <Plus className="mx-auto text-slate-300 group-hover:text-blue-500 mb-3" size={24} />
-                            <p className="font-bold text-slate-700 text-sm">Upload Material (.pdf)</p>
+                            <p className="font-bold text-slate-700 text-sm">{selectedHubResource ? selectedHubResource.name : 'Upload Material (.pdf)'}</p>
+                            
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); handleOpenSelector(); }}
+                                className="mt-4 px-4 py-2 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-slate-900 transition-all"
+                            >
+                                Fetch from Hub
+                            </button>
                         </div>
 
                         <button className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-xl shadow-slate-200">
@@ -266,8 +322,11 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             <button className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:shadow-lg shadow-blue-200 transition-all">
                                 <Plus size={18} /> Dispatch Task
                             </button>
-                            <button className="px-8 bg-slate-900 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2">
-                                <Upload size={18} /> Upload Resource
+                            <button 
+                                onClick={handleOpenSelector}
+                                className="px-8 bg-slate-900 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-blue-600 transition-all shadow-lg"
+                            >
+                                <Database size={18} /> {selectedHubResource ? 'Change Hub Resource' : 'Link Hub Resource'}
                             </button>
                         </div>
                     </div>
@@ -318,9 +377,15 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                         <h3 className="text-3xl font-black mb-2 tracking-tight">Formal Examination Console</h3>
                         <p className="text-slate-400 font-medium max-w-xl">Configure final assessments with active proctoring, AI risk scoring, and student whitelist enforcement.</p>
                     </div>
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex flex-col gap-3">
                          <button className="bg-white text-slate-900 font-black px-10 py-5 rounded-2xl hover:scale-105 transition-all shadow-xl">
                             Create New Session
+                         </button>
+                         <button 
+                            onClick={handleOpenSelector}
+                            className="bg-blue-600/20 text-blue-400 border border-blue-500/30 px-6 py-3 rounded-xl hover:bg-blue-600/40 transition-all font-bold text-xs"
+                         >
+                            {selectedHubResource ? `Linked: ${selectedHubResource.name}` : 'Link Exam Material'}
                          </button>
                     </div>
                 </div>
@@ -372,6 +437,73 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 {mode === 'tests' && <motion.div key="tests" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderTestsContent()}</motion.div>}
                 {mode === 'assignments' && <motion.div key="assignments" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderAssignmentsContent()}</motion.div>}
                 {mode === 'exams' && <motion.div key="exams" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderExamsContent()}</motion.div>}
+            </AnimatePresence>
+
+            {/* Resource Selector Modal */}
+            <AnimatePresence>
+                {showResourceSelector && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                            className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden"
+                        >
+                            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                                <div>
+                                    <h3 className="text-xl font-bold text-slate-900">Select {mode === 'attendance' ? 'Roster' : 'Material'}</h3>
+                                    <p className="text-xs text-slate-500 font-medium tracking-tight">Only sanitized resources are shown.</p>
+                                </div>
+                                <button onClick={() => setShowResourceSelector(false)} className="p-2 hover:bg-slate-200 rounded-full transition-all">
+                                    <MoreHorizontal size={20} />
+                                </button>
+                            </div>
+
+                            <div className="p-6 max-h-[400px] overflow-y-auto space-y-3">
+                                {isLoadingHub ? (
+                                    <div className="py-20 text-center animate-pulse">
+                                        <Database className="mx-auto text-slate-300 mb-4" size={48} />
+                                        <p className="font-bold text-slate-400">Querying Resource Hub...</p>
+                                    </div>
+                                ) : hubResources.length === 0 ? (
+                                    <div className="py-20 text-center">
+                                        <AlertCircle className="mx-auto text-slate-300 mb-4" size={48} />
+                                        <p className="font-bold text-slate-800">No ready {mode === 'attendance' ? 'rosters' : 'materials'} found.</p>
+                                        <p className="text-xs text-slate-400 mt-1">Upload them in the Resource Hub first.</p>
+                                    </div>
+                                ) : (
+                                    hubResources.map(res => (
+                                        <div 
+                                            key={res.id}
+                                            onClick={() => selectResource(res)}
+                                            className="p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer group flex items-center justify-between"
+                                        >
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 shadow-sm group-hover:scale-110 transition-transform">
+                                                    {res.type === 'roster' ? <Users size={20} /> : <FileText size={20} />}
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-slate-900 uppercase text-xs">{res.name}</p>
+                                                    <p className="text-[10px] text-slate-400 font-medium">Uploaded {new Date(res.created_at).toLocaleDateString()}</p>
+                                                </div>
+                                            </div>
+                                            <CheckCircle className="text-emerald-500 opacity-0 group-hover:opacity-100" size={18} />
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-4">
+                                <button 
+                                    onClick={() => setShowResourceSelector(false)}
+                                    className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-100 transition-all"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
             </AnimatePresence>
         </motion.div>
     );

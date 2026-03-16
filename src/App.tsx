@@ -21,6 +21,7 @@ import AdminSettings from './components/AdminSettings';
 import GlobalLoader from './components/GlobalLoader';
 import AcademicManagement from './components/AcademicManagement';
 import LecturerSettings from './components/LecturerSettings';
+import ResourceHub from './components/ResourceHub';
 import ToastSystem, { useToasts } from './components/ToastSystem';
 import StudentAuth from './components/StudentAuth';
 import StudentDashboard from './components/StudentDashboard';
@@ -32,7 +33,7 @@ import SubscriptionModal from './components/SubscriptionModal'; // NEW
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -55,7 +56,8 @@ const TAB_LABELS: Record<Tab, string> = {
   performance: 'Performance Tracking',
   guidelines: 'Security Guidelines',
   attendance: 'Attendance Management',
-  exams: 'Exam Records'
+  exams: 'Exam Records',
+  storage: 'Resource Hub'
 };
 
 export default function App() {
@@ -364,6 +366,7 @@ export default function App() {
             case 'tests': return <AcademicManagement mode="tests" addToast={addToast} token={token} />;
             case 'assignments': return <AcademicManagement mode="assignments" addToast={addToast} token={token} />;
             case 'exams': return <AcademicManagement mode="exams" addToast={addToast} token={token} />;
+            case 'storage': return <ResourceHub addToast={addToast} token={token} />;
             case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
             case 'settings': return <LecturerSettings />;
             default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
@@ -404,6 +407,7 @@ export default function App() {
         if (activeTab === 'exams') return 'Exam Records';
         if (activeTab === 'tests') return 'CBT Assessment';
         if (activeTab === 'assignments') return 'Submission Manager';
+        if (activeTab === 'storage') return 'Genius Resource Hub';
     }
     if (activeTab === 'dashboard') return isAdmin ? 'Admin Console' : 'Analytics Overview';
     return TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab;

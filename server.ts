@@ -266,6 +266,16 @@ async function initDB() {
       status TEXT DEFAULT 'pending',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS resources (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER,
+      type TEXT, -- 'roster', 'material'
+      name TEXT,
+      content JSONB,
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(tenant_id) REFERENCES tenants(id)
+    );
   `);
   
   try { await pool.query('ALTER TABLE papers ADD COLUMN doi TEXT'); } catch (e) { }
@@ -2206,6 +2216,60 @@ app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
 });
 
 // ─── MULTI-TENANT ACADEMIC ENDPOINTS ────────────────────────────────
+// ─── RESOURCE HUB ENDPOINTS ─────────────────────────────────────────
+app.get('/api/resources', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, type, name, status, created_at FROM resources WHERE tenant_id = $1 ORDER BY created_at DESC',
+      [req.tenant_id]
+    );
+    res.json(result.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/resources/upload', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  try {
+    const { type, name, content } = req.body;
+    if (!type || !name || !content) return res.status(400).json({ error: 'Missing required fields' });
+
+    // Sanitization and Critical Check
+    let status = 'ready';
+    if (type === 'roster') {
+        const students = Array.isArray(content) ? content : [];
+        if (students.length === 0) return res.status(400).json({ error: 'Empty roster' });
+        
+        const isValid = students.every((s: any) => 
+            s.matricNumber && 
+            s.email && 
+            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email)
+        );
+        if (!isValid) status = 'failed';
+    } else if (type === 'material') {
+        if (content.length < 50) status = 'failed';
+    }
+
+    const result = await pool.query(
+      'INSERT INTO resources (tenant_id, type, name, content, status) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [req.tenant_id, type, name, JSON.stringify(content), status]
+    );
+
+    res.json({ success: true, id: result.rows[0].id, status });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/resources/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  try {
+    await pool.query('DELETE FROM resources WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Lecturer: Get student roster
 app.get('/api/courses/roster', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
