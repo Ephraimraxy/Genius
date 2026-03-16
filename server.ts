@@ -1831,53 +1831,67 @@ app.get('/api/settings/price', async (req, res) => {
   res.json({ price: parseInt(result.rows[0]?.value || '5000', 10) });
 });
 
-// PaymentPoint Integration (Replaces Paystack for multi-tenant SaaS)
+// PaymentPoint Integration — Virtual Account Flow (per official docs)
 app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => {
   const { amount, type } = req.body; // type: 'subscription' or 'other'
   const reference = `GMIJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY || '8';
-    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID || 'e22';
+    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
+    const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
+    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
 
-    const response = await fetch('https://api.paymentpoint.co/api/v1/initialize-transaction', {
+    if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
+      console.error('Missing PaymentPoint environment variables. Ensure PAYMENTPOINT_API_KEY, PAYMENTPOINT_SECRET_KEY, and PAYMENTPOINT_BUSINESS_ID are set.');
+      return res.status(500).json({ error: 'Payment gateway is not configured. Please contact support.' });
+    }
+
+    // Step 1: Create a Virtual Account for the customer via PaymentPoint API
+    const response = await fetch('https://api.paymentpoint.co/api/v1/create-virtual-account', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.PAYMENTPOINT_SECRET_KEY || '784426'}`,
+        'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
+        'api-key': PAYMENTPOINT_API_KEY,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         email: req.user.email,
-        amount: amount, 
-        reference,
-        api_key: PAYMENTPOINT_API_KEY,
-        business_id: PAYMENTPOINT_BUSINESS_ID,
-        callback_url: `${process.env.APP_URL || 'https://gmijp-edu.up.railway.app'}/payment/verify`,
-        metadata: {
-          user_id: req.user.id,
-          tenant_id: req.tenant_id,
-          type
-        }
+        name: req.user.name || req.user.email.split('@')[0],
+        phoneNumber: req.user.phone || '0000000000',
+        bankCode: ['20946', '20897'], // PalmPay + OPay
+        businessId: PAYMENTPOINT_BUSINESS_ID
       })
     });
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('PaymentPoint initialization failed with status:', response.status, errorText);
-      throw new Error(`PaymentPoint initialization failed (${response.status}): ${errorText}`);
+      console.error('PaymentPoint Virtual Account creation failed:', response.status, errorText);
+      throw new Error(`PaymentPoint failed (${response.status}): ${errorText}`);
     }
 
     const data = await response.json();
-    if (!data.status) throw new Error(data.message || 'Payment initialization failed');
+    if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
     
-    await pool.query('INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type) VALUES ($1, $2, $3, $4, $5, $6)', 
-      [req.user.id, req.tenant_id, reference, amount, 'pending', type || 'publication']);
+    // Step 2: Record the pending transaction
+    await pool.query(
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type) VALUES ($1, $2, $3, $4, $5, $6)', 
+      [req.user.id, req.tenant_id, reference, amount, 'pending', type || 'publication']
+    );
     
-    res.json(data.data);
+    // Step 3: Return virtual account details to the frontend
+    // The user will transfer the exact amount to one of these bank accounts.
+    // PaymentPoint webhook will fire when money lands.
+    res.json({
+      reference,
+      amount,
+      customer_id: data.customer?.customer_id,
+      bankAccounts: data.bankAccounts || [],
+      message: `Transfer ₦${Number(amount).toLocaleString()} to any of the bank accounts below to complete your payment.`
+    });
   } catch (err: any) {
     console.error('Payment initialization error:', err);
     res.status(500).json({ 
-      error: 'Internal Server Error during payment initialization', 
+      error: 'Payment initialization failed', 
       details: err.message,
       code: err.code || 'UNKNOWN'
     });
@@ -1888,12 +1902,12 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
   // ... (unchanged)
 });
 
-// Secure Webhook for PaymentPoint
+// Secure Webhook for PaymentPoint (per official docs)
 app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), async (req: any, res) => {
   const signature = req.headers['paymentpoint-signature'];
-  const secretKey = process.env.PAYMENTPOINT_SECRET_KEY || '784426';
+  const secretKey = process.env.PAYMENTPOINT_SECRET_KEY;
 
-  if (!signature) return res.status(400).send('Missing signature');
+  if (!signature || !secretKey) return res.status(400).send('Missing signature or configuration');
 
   try {
     const crypto = require('crypto');
@@ -1901,22 +1915,34 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
     const calculatedSignature = hmac.update(req.body).digest('hex');
 
     if (calculatedSignature !== signature) {
-      console.warn('Invalid webhook signature detected');
+      console.warn('Invalid PaymentPoint webhook signature');
       return res.status(401).send('Invalid signature');
     }
 
     const payload = JSON.parse(req.body.toString());
-    const { transaction_id, transaction_status, amount_paid, customer } = payload;
+    const { notification_status, transaction_id, amount_paid, settlement_amount, transaction_status, customer } = payload;
 
-    if (transaction_status === 'success') {
-      // Find transaction by reference (if passed in customer_id or metadata)
-      // Usually the reference is passed back in the payload somewhere
-      const reference = payload.transaction_id; // Mapping depends on PaymentPoint's actual return
+    if (transaction_status === 'success' && notification_status === 'payment_successful') {
+      // Match transaction by customer_id (which maps to the PaymentPoint customer created during VA setup)
+      // or by looking up the most recent pending transaction for this customer email
+      const customerEmail = customer?.email;
+      const customerId = customer?.customer_id;
 
-      const result = await pool.query('SELECT * FROM transactions WHERE reference = $1 OR reference = $2', [transaction_id, customer?.customer_id]);
-      const tx = result.rows[0];
+      // Try to find the pending transaction for this customer
+      let result;
+      if (customerEmail) {
+        result = await pool.query(
+          `SELECT t.* FROM transactions t 
+           JOIN users u ON t.user_id = u.id 
+           WHERE u.email = $1 AND t.status = 'pending' 
+           ORDER BY t.created_at DESC LIMIT 1`,
+          [customerEmail]
+        );
+      }
 
-      if (tx && tx.status !== 'success') {
+      const tx = result?.rows?.[0];
+
+      if (tx) {
         await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['success', tx.id]);
         
         if (tx.type === 'subscription') {
@@ -1924,12 +1950,15 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
           expiry.setFullYear(expiry.getFullYear() + 1);
           await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
         }
+        console.log(`PaymentPoint webhook: Transaction ${tx.reference} marked as success (₦${amount_paid})`);
+      } else {
+        console.warn('PaymentPoint webhook: No matching pending transaction found for', customerEmail || customerId);
       }
     }
 
     res.status(200).send('Webhook processed');
   } catch (err) {
-    console.error('Webhook error:', err);
+    console.error('PaymentPoint webhook error:', err);
     res.status(500).send('Internal server error');
   }
 });
