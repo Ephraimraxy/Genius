@@ -19,6 +19,8 @@ import UserManagement from './components/UserManagement';
 import ReviewQueue from './components/ReviewQueue';
 import AdminSettings from './components/AdminSettings';
 import GlobalLoader from './components/GlobalLoader';
+import AcademicManagement from './components/AcademicManagement';
+import LecturerSettings from './components/LecturerSettings';
 import ToastSystem, { useToasts } from './components/ToastSystem';
 import StudentAuth from './components/StudentAuth';
 import StudentDashboard from './components/StudentDashboard';
@@ -187,10 +189,16 @@ export default function App() {
   }, [token, profile]);
 
   const handleLogout = () => {
+    // Preserve role context for redirection
+    const isLecturerAdmin = profile?.user?.role === 'tenant_admin';
+    const lastRole = isLecturerAdmin ? 'lecturer' : 'researcher';
+    
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setToken(null);
     setProfile(null);
+    setAuthRole(lastRole);
+    setShowLanding(false); // Take them directly to the last used portal's login form
   };
 
   const onAuthSuccess = (newToken: string, user: any) => {
@@ -352,12 +360,12 @@ export default function App() {
     if (isLecturer && activeTab !== 'profile') {
         switch (activeTab) {
             case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
-            case 'attendance': return <CourseManagement addToast={addToast} token={token} />; // CourseManagement handles attendance
-            case 'tests': return <CourseManagement addToast={addToast} token={token} />; // CourseManagement also handles tests/exams
-            case 'assignments': return <CourseManagement addToast={addToast} token={token} />; 
-            case 'exams': return <CourseManagement addToast={addToast} token={token} />;
+            case 'attendance': return <AcademicManagement mode="attendance" addToast={addToast} token={token} />;
+            case 'tests': return <AcademicManagement mode="tests" addToast={addToast} token={token} />;
+            case 'assignments': return <AcademicManagement mode="assignments" addToast={addToast} token={token} />;
+            case 'exams': return <AcademicManagement mode="exams" addToast={addToast} token={token} />;
             case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
-            case 'settings': return <AdminSettings />;
+            case 'settings': return <LecturerSettings />;
             default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
         }
     }
