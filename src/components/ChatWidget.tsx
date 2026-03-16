@@ -35,7 +35,7 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
   useEffect(() => {
     if (isOpen) {
       fetchData();
-      const interval = setInterval(fetchData, 5000); 
+      const interval = setInterval(fetchData, 20000); 
       return () => clearInterval(interval);
     }
   }, [isOpen, activeThread]);

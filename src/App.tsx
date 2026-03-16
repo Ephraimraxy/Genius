@@ -65,7 +65,7 @@ export default function App() {
   useEffect(() => {
     if (token) {
       fetchNotifications();
-      const interval = setInterval(fetchNotifications, 10000);
+      const interval = setInterval(fetchNotifications, 30000);
       return () => clearInterval(interval);
     }
   }, [token]);
@@ -161,8 +161,8 @@ export default function App() {
       // Initial sync
       syncProfile();
 
-      // Background sync every 3 seconds
-      const interval = setInterval(syncProfile, 3000);
+      // Background sync every 30 seconds
+      const interval = setInterval(syncProfile, 30000);
       return () => clearInterval(interval);
     } else {
       setIsSyncing(false);
