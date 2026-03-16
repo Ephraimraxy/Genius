@@ -193,6 +193,7 @@ export default function App() {
   const handleLogout = () => {
     // Preserve role context for redirection
     const isLecturerAdmin = profile?.user?.role === 'tenant_admin';
+    const isResearcher = profile?.user?.role === 'user' || profile?.user?.role === 'admin' || profile?.user?.role === 'super_admin';
     const lastRole = isLecturerAdmin ? 'lecturer' : 'researcher';
     
     localStorage.removeItem('token');
@@ -200,6 +201,7 @@ export default function App() {
     setToken(null);
     setProfile(null);
     setAuthRole(lastRole);
+    setAuthIsLogin(true); // Always take to login form first
     setShowLanding(false); // Take them directly to the last used portal's login form
   };
 

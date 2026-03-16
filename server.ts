@@ -2229,6 +2229,31 @@ app.get('/api/resources', authenticateToken, checkSubscription, async (req: any,
   }
 });
 
+app.get('/api/resources/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM resources WHERE id = $1 AND tenant_id = $2',
+      [req.params.id, req.tenant_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Resource not found' });
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, title, questions, duration, created_at FROM exams WHERE tenant_id = $1 ORDER BY created_at DESC',
+      [req.tenant_id]
+    );
+    res.json(result.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/resources/upload', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const { type, name, content } = req.body;

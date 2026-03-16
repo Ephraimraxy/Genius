@@ -161,9 +161,9 @@ export default function Sidebar({
       {/* ─── DESKTOP SIDEBAR ─── */}
       <aside className={`
         hidden lg:flex flex-col inset-y-0 left-0 z-50 shrink-0
-        ${isAdmin ? 'bg-[#0a0f1e]' : isLecturer ? 'bg-[#1e3a8a]' : 'bg-[#0f172a]'} 
+        ${isAdmin ? 'bg-[#0a0f1e]' : isLecturer ? 'bg-[#0a192f]' : 'bg-[#0f172a]'} 
         ${isAdmin ? 'text-slate-400' : isLecturer ? 'text-white' : 'text-slate-400'}
-        ${isAdmin ? 'border-r border-amber-900/20' : isLecturer ? 'border-r border-blue-800' : 'border-r border-slate-800/50'}
+        ${isAdmin ? 'border-r border-amber-900/20' : isLecturer ? 'border-r border-blue-900/50 shadow-2xl' : 'border-r border-slate-800/50'}
         transition-all duration-300 ease-in-out
         ${isCollapsed ? 'w-20' : 'w-64'}
       `}>
@@ -212,7 +212,9 @@ export default function Sidebar({
                     {item.section}
                   </div>
                 )}
-                <button
+                <motion.button
+                  whileHover={{ x: isCollapsed ? 0 : 5, scale: isCollapsed ? 1.05 : 1 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => {
                     setActiveTab(item.id);
                     setIsMobileMenuOpen(false);
@@ -222,33 +224,38 @@ export default function Sidebar({
                     ${isCollapsed ? 'justify-center' : ''}
                     ${isActive
                       ? 'text-white font-bold'
-                      : isLecturer ? 'text-blue-100 hover:text-white hover:bg-white/10' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}
+                      : isLecturer ? 'text-blue-100/60 hover:text-white hover:bg-white/5' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}
                   `}
                   title={isCollapsed ? item.label : ''}
                 >
                   {isActive && (
                     <motion.div
                       layoutId="active-nav"
-                      className={`absolute inset-0 rounded-2xl shadow-lg ${
-                        isAdmin ? 'bg-gradient-to-r from-amber-900/80 to-[#800000] shadow-amber-900/20' : isLecturer ? 'bg-blue-600 shadow-blue-600/20' : 'bg-[#800000] shadow-[#800000]/20'
+                      className={`absolute inset-0 rounded-2xl shadow-lg border border-white/10 ${
+                        isAdmin ? 'bg-gradient-to-r from-amber-900/80 to-[#800000] shadow-amber-900/20' : isLecturer ? 'bg-white/10 backdrop-blur-md shadow-xl shadow-black/20' : 'bg-[#800000] shadow-[#800000]/20'
                       }`}
                       transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                     />
                   )}
-                  <span className="relative z-10">
+                  <span className="relative z-10 shrink-0">
                     {typeof Icon === 'function' || (typeof Icon === 'object' && Icon !== null && 'render' in Icon) ? (
-                      <Icon size={20} className={isActive ? 'text-white' : `${isAdmin ? 'text-slate-500 group-hover:text-amber-400' : isLecturer ? 'text-blue-300 group-hover:text-white' : 'text-slate-500 group-hover:text-white'} transition-colors`} />
+                      <Icon size={20} className={isActive ? 'text-white' : `${isAdmin ? 'text-slate-500 group-hover:text-amber-400' : isLecturer ? 'text-blue-200/50 group-hover:text-white' : 'text-slate-500 group-hover:text-white'} transition-all group-hover:scale-110`} />
                     ) : (
-                      <div className="w-5 h-5 flex items-center justify-center">{Icon as React.ReactNode}</div>
+                      <div className="w-5 h-5 flex items-center justify-center transition-transform group-hover:scale-110">{Icon as React.ReactNode}</div>
                     )}
                   </span>
                   {!isCollapsed && (
-                    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`relative z-10 flex-1 text-left truncate ${isActive ? 'font-bold' : ''}`}>
+                    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`relative z-10 flex-1 text-left truncate ${isActive ? 'font-black' : ''}`}>
                       {item.label}
                     </motion.span>
                   )}
-                  {isActive && !isCollapsed && <ChevronRight className={`relative z-10 ${isLecturer ? 'opacity-30' : 'opacity-50'}`} size={16} />}
-                </button>
+                  {isActive && !isCollapsed && (
+                    <motion.div 
+                      layoutId="activePill"
+                      className={`relative z-10 w-1.5 h-1.5 rounded-full ${isLecturer ? 'bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)]' : 'bg-white/50'}`}
+                    />
+                  )}
+                </motion.button>
               </React.Fragment>
             );
           })}
