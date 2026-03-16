@@ -65,10 +65,10 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       <motion.div
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative w-full max-w-2xl bg-white rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row shadow-[#800000]/20 border border-white/20 max-h-[90vh] overflow-y-auto md:overflow-visible"
+        className="relative w-full max-w-2xl bg-white rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row shadow-indigo-600/20 border border-white/20 max-h-[90vh] overflow-y-auto md:overflow-visible"
       >
         {/* Left Visual Side */}
-        <div className="w-full md:w-5/12 premium-gradient p-12 text-white flex flex-col justify-between relative overflow-hidden">
+        <div className="w-full md:w-5/12 bg-gradient-to-br from-indigo-600 to-blue-800 p-12 text-white flex flex-col justify-between relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
             <div className="absolute -top-20 -right-20 w-64 h-64 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
             <div className="absolute bottom-[-10%] left-[-10%] w-60 h-60 bg-black/10 rounded-full blur-2xl"></div>
@@ -109,11 +109,11 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
             <>
               {/* Initial state — show pricing & activate button */}
               <div className="mb-4 md:mb-10 text-center md:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-br from-indigo-600 to-blue-800 border-amber-100 mb-3 animate-bounce">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 text-[#FFD700] border border-[#FFD700]/30 mb-3 animate-pulse shadow-lg">
                   <Star size={10} fill="currentColor" />
                   <span className="text-[10px] font-black uppercase tracking-widest">Premium Plan</span>
                 </div>
-                <h3 className="text-slate-900 text-2xl md:text-3xl font-black tracking-tight mb-2">Annual Access</h3>
+                <h3 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight mb-2 md:mb-4">Annual Access</h3>
                 <p className="text-slate-500 text-xs md:text-sm font-medium">Complete payment to activate full system capabilities.</p>
               </div>
 

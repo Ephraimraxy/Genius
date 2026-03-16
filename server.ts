@@ -422,8 +422,8 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
     );
     const userId = userResult.rows[0].id;
 
-    const token = jwt.sign({ id: userId, email, name, role: 'tenant_admin', tenant_id: tenantId }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: userId, email, name, role: 'tenant_admin', tenant_id: tenantId, tenantName } });
+    const token = jwt.sign({ id: userId, email, name, role: 'tenant_admin', tenant_id: tenantId, phone }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: userId, email, name, role: 'tenant_admin', tenant_id: tenantId, tenantName, phone } });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -512,8 +512,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       user.role = 'super_admin';
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id } });
+    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id, phone: user.phone }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, tenant_id: user.tenant_id, phone: user.phone } });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
@@ -1863,7 +1863,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
       body: JSON.stringify({
         email: req.user.email,
         name: req.user.name || req.user.email.split('@')[0],
-        phoneNumber: req.user.phone || '0000000000',
+        phoneNumber: (req.user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
         bankCode: ['20946', '20897'], // PalmPay + OPay
         businessId: PAYMENTPOINT_BUSINESS_ID
       })
@@ -1931,7 +1931,7 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
       body: JSON.stringify({
         email: req.user.email,
         name: req.user.name || req.user.email.split('@')[0],
-        phoneNumber: req.user.phone || '00000000000',
+        phoneNumber: (req.user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
         bankCode: ['20946', '20897'], // PalmPay + OPay
         businessId: PAYMENTPOINT_BUSINESS_ID
       })
