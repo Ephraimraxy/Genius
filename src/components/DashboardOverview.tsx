@@ -184,7 +184,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   if (isLecturer) {
     const lecturerStats = [
       { label: 'Active Students', value: profile?.lecturerStats?.totalStudents || 0, icon: <Users size={20} className="text-indigo-600" />, color: 'bg-indigo-50' },
-      { label: 'Generated Quizzes', value: profile?.lecturerStats?.totalExams || 0, icon: <FileText size={20} className="text-blue-600" />, color: 'bg-blue-50' },
+      { label: 'Assessments Set', value: profile?.lecturerStats?.totalExams || 0, icon: <FileText size={20} className="text-blue-600" />, color: 'bg-blue-50' },
       { label: 'Materials Uploaded', value: profile?.lecturerStats?.totalMaterials || 0, icon: <CheckCircle size={20} className="text-emerald-600" />, color: 'bg-emerald-50' },
     ];
 
@@ -198,7 +198,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               <div>
                 <span className="px-3 py-1 bg-indigo-500/20 text-indigo-300 text-[10px] font-black uppercase tracking-widest rounded-lg border border-indigo-500/30 mb-3 inline-block">Lecturer Workspace</span>
                 <h2 className="text-4xl font-bold font-display mb-2">Academic Dashboard</h2>
-                <p className="text-indigo-200 text-lg font-medium">Manage your courses, students and AI-generated assessments.</p>
+                <p className="text-indigo-200 text-lg font-medium">Manage your courses, students, exams and attendance with AI.</p>
               </div>
            </div>
         </div>

@@ -47,8 +47,8 @@ const TAB_LABELS: Record<Tab, string> = {
   users: 'User Management',
   reviewQueue: 'Review Queue',
   settings: 'Platform Settings',
-  courseManagement: 'Course Management',
-  tests: 'Tests & Quizzes',
+  courseManagement: 'Exams & Attendance',
+  tests: 'Tests',
   assignments: 'Assignments',
   performance: 'Performance Tracking',
   guidelines: 'Security Guidelines'
@@ -378,7 +378,7 @@ export default function App() {
   const getHeaderTitle = () => {
     if (isStudent) return 'Student Portal';
     if (activeTab === 'dashboard') return isAdmin ? 'Admin Console' : 'Analytics Overview';
-    if (activeTab === 'courseManagement') return 'Course Management';
+    if (activeTab === 'courseManagement') return 'Exams & Attendance';
     return TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab;
   };
 

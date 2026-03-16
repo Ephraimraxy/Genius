@@ -17,7 +17,7 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
     
     // Dynamic Application State
     const [activeStudents, setActiveStudents] = useState(0);
-    const [generatedQuizzes, setGeneratedQuizzes] = useState(0);
+    const [assessmentsSet, setAssessmentsSet] = useState(0);
     const [materialsUploaded, setMaterialsUploaded] = useState(0);
 
     const handleRosterUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -110,7 +110,7 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                 }
 
                 setMaterialsUploaded(prev => prev + 1);
-                setGeneratedQuizzes(prev => prev + 1);
+                setAssessmentsSet(prev => prev + 1);
                 addToast(`AI successfully generated ${examTitle} with ${questions.length} questions.`, 'success');
                 setExamTitle('');
                 setMaterialFile(null);
@@ -127,9 +127,9 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
         <div className="space-y-8 max-w-5xl">
             <header className="mb-6 md:mb-8">
                 <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-                    Course & Quiz Management <img src="/gmijp-logo.png" alt="Logo" className="w-8 h-8 object-contain" />
+                    Exams, Tests & Assignments <img src="/gmijp-logo.png" alt="Logo" className="w-8 h-8 object-contain" />
                 </h2>
-                <p className="text-slate-500 font-medium">Whitelist students and generate AI quizzes from lecture notes.</p>
+                <p className="text-slate-500 font-medium">Whitelist students, track attendance, and generate AI assessments from lecture notes.</p>
             </header>
 
             <div className="grid md:grid-cols-2 gap-8">
@@ -234,8 +234,8 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                     <p className="text-2xl font-black text-slate-900">{activeStudents}</p>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Generated Quizzes</p>
-                    <p className="text-2xl font-black text-slate-900">{generatedQuizzes}</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Assessments Set</p>
+                    <p className="text-2xl font-black text-slate-900">{assessmentsSet}</p>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl">
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Materials Uploaded</p>

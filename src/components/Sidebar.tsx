@@ -49,7 +49,8 @@ export default function Sidebar({
   const isSuperAdmin = userRole === 'super_admin' || userRole === 'admin';
   const isLecturer = userRole === 'tenant_admin';
   const isStudent = userRole === 'student';
-  const isAdmin = isSuperAdmin || isLecturer;
+  const isAdmin = isSuperAdmin; // Strictly Super Admin 
+  const isAnyAdmin = isSuperAdmin || isLecturer;
 
   // ─── SUPER ADMIN NAV (Genius Platform) ──────────────────────────
   const superAdminNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
@@ -64,7 +65,7 @@ export default function Sidebar({
   // ─── LECTURER NAV (Academic Workspace) ──────────────────────
   const lecturerNavItems: { id: Tab; label: string; icon: React.ComponentType<any> | React.ReactNode; section?: string }[] = [
     { id: 'dashboard', label: 'Workspace Stats', icon: LayoutDashboard, section: 'Overview' },
-    { id: 'courseManagement', label: 'Course & Quiz', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-4 h-4 object-contain" />, section: 'Academic' },
+    { id: 'courseManagement', label: 'Course & Attendance', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-4 h-4 object-contain" />, section: 'Academic' },
     { id: 'users', label: 'Student Roster', icon: Users },
     { id: 'performance', label: 'Class Analytics', icon: BarChart3 },
     { id: 'settings', label: 'Workspace Settings', icon: Settings, section: 'Settings' },
@@ -111,7 +112,7 @@ export default function Sidebar({
       {/* ─── MOBILE BOTTOM APP BAR ─── */}
       <div className={`
         lg:hidden fixed bottom-0 left-0 w-full z-50 flex flex-col
-        ${isAdmin ? 'bg-[#0a0f1e] border-amber-900/20' : 'bg-[#0f172a] border-slate-800/50'} 
+        ${isAdmin ? 'bg-[#0a0f1e] border-amber-900/20' : isLecturer ? 'bg-indigo-950 border-indigo-900/30' : 'bg-[#0f172a] border-slate-800/50'} 
         border-t transition-all pt-1 shadow-2xl
       `} style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="flex items-center overflow-x-auto px-1.5 py-1.5 gap-0.5 touch-pan-x hide-scrollbar">
@@ -130,7 +131,7 @@ export default function Sidebar({
                   <motion.div
                     layoutId="mobile-active-nav"
                     className={`absolute inset-0 rounded-xl ${
-                      isStudent ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-[#800000] shadow-lg shadow-[#800000]/20'
+                      isStudent ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : isLecturer ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-[#800000] shadow-lg shadow-[#800000]/20'
                     }`}
                     transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                   />
@@ -154,26 +155,29 @@ export default function Sidebar({
       {/* ─── DESKTOP SIDEBAR ─── */}
       <aside className={`
         hidden lg:flex flex-col inset-y-0 left-0 z-50 shrink-0
-        ${isAdmin ? 'bg-[#0a0f1e]' : 'bg-[#0f172a]'} text-slate-400 border-r ${isAdmin ? 'border-amber-900/20' : 'border-slate-800/50'}
+        ${isAdmin ? 'bg-[#0a0f1e]' : isLecturer ? 'bg-white border-r border-slate-100' : 'bg-[#0f172a]'} 
+        ${isAdmin ? 'text-slate-400' : isLecturer ? 'text-slate-600' : 'text-slate-400'}
+        ${isAdmin ? 'border-r border-amber-900/20' : isLecturer ? '' : 'border-r border-slate-800/50'}
         transition-all duration-300 ease-in-out
         ${isCollapsed ? 'w-20' : 'w-64'}
       `}>
         <div className={`h-20 flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between px-8'}`}>
           <div className="flex items-center gap-3 text-white font-bold text-xl font-display tracking-tight">
-            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-lg shrink-0 bg-white shadow-slate-200 p-1.5`}>
+            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-lg shrink-0 ${isLecturer ? 'bg-indigo-50 border border-indigo-100' : 'bg-white shadow-slate-200'} p-1.5`}>
               <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full rounded-full object-contain" />
             </div>
             {!isCollapsed && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col">
-                <span className="leading-tight text-lg">Genius</span>
+                <span className={`leading-tight text-lg ${isLecturer ? 'text-slate-900' : 'text-white'}`}>Genius</span>
                 {isAdmin && <span className="text-[8px] font-black text-amber-500 uppercase tracking-[0.25em] -mt-0.5">Admin</span>}
+                {isLecturer && <span className="text-[8px] font-black text-indigo-500 uppercase tracking-[0.25em] -mt-0.5">Workspace</span>}
               </motion.div>
             )}
           </div>
           
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="hidden lg:flex p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors ml-2"
+            className={`hidden lg:flex p-2 rounded-lg transition-colors ml-2 ${isLecturer ? 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
           >
             {isCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
           </button>
@@ -212,7 +216,7 @@ export default function Sidebar({
                     ${isCollapsed ? 'justify-center' : ''}
                     ${isActive
                       ? 'text-white'
-                      : 'hover:text-slate-200 hover:bg-slate-800/50'}
+                      : isLecturer ? 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50/50' : 'hover:text-slate-200 hover:bg-slate-800/50'}
                   `}
                   title={isCollapsed ? item.label : ''}
                 >
@@ -220,24 +224,24 @@ export default function Sidebar({
                     <motion.div
                       layoutId="active-nav"
                       className={`absolute inset-0 rounded-2xl shadow-lg ${
-                        isAdmin ? 'bg-gradient-to-r from-amber-900/80 to-[#800000] shadow-amber-900/20' : 'bg-[#800000] shadow-[#800000]/20'
+                        isAdmin ? 'bg-gradient-to-r from-amber-900/80 to-[#800000] shadow-amber-900/20' : isLecturer ? 'bg-indigo-600 shadow-indigo-600/10' : 'bg-[#800000] shadow-[#800000]/20'
                       }`}
                       transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                     />
                   )}
                   <span className="relative z-10">
                     {typeof Icon === 'function' || (typeof Icon === 'object' && Icon !== null && 'render' in Icon) ? (
-                      <Icon size={20} className={isActive ? 'text-white' : `${isAdmin ? 'text-slate-500 group-hover:text-amber-400' : 'text-slate-500 group-hover:text-white'} transition-colors`} />
+                      <Icon size={20} className={isActive ? 'text-white' : `${isAdmin ? 'text-slate-500 group-hover:text-amber-400' : isLecturer ? 'text-slate-400 group-hover:text-indigo-600' : 'text-slate-500 group-hover:text-white'} transition-colors`} />
                     ) : (
                       <div className="w-5 h-5 flex items-center justify-center">{Icon as React.ReactNode}</div>
                     )}
                   </span>
                   {!isCollapsed && (
-                    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative z-10 flex-1 text-left truncate">
+                    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`relative z-10 flex-1 text-left truncate ${isActive ? 'font-bold' : ''}`}>
                       {item.label}
                     </motion.span>
                   )}
-                  {isActive && !isCollapsed && <ChevronRight className="relative z-10 opacity-50" size={16} />}
+                  {isActive && !isCollapsed && <ChevronRight className={`relative z-10 ${isLecturer ? 'opacity-30' : 'opacity-50'}`} size={16} />}
                 </button>
               </React.Fragment>
             );
@@ -247,7 +251,7 @@ export default function Sidebar({
         <div
           className={`
             m-4 mt-0 p-4 border rounded-[1.5rem] cursor-pointer transition-all group shrink-0
-            ${isAdmin ? 'bg-amber-900/10 border-amber-800/30 hover:bg-amber-900/20' : isStudent ? 'bg-indigo-900/20 border-indigo-800/30 hover:bg-indigo-900/30' : 'bg-slate-800/30 border-slate-700/50 hover:bg-slate-800/50'}
+            ${isAdmin ? 'bg-amber-900/10 border-amber-800/30 hover:bg-amber-900/20' : isLecturer ? 'bg-indigo-50 border-indigo-100 hover:bg-indigo-100/50' : isStudent ? 'bg-indigo-900/20 border-indigo-800/30 hover:bg-indigo-900/30' : 'bg-slate-800/30 border-slate-700/50 hover:bg-slate-800/50'}
             ${isCollapsed ? 'p-2 flex justify-center' : ''}
           `}
           onClick={() => setActiveTab('profile')}
@@ -262,13 +266,13 @@ export default function Sidebar({
             </div>
             {!isCollapsed && (
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-white truncate group-hover:text-white transition-colors">
+                <p className={`text-sm font-bold truncate transition-colors ${isLecturer ? 'text-slate-900' : 'text-white'}`}>
                   {profile?.user?.name?.trim() || profile?.user?.email?.trim() || 'Verified Scholar'}
                 </p>
-                <p className="text-[10px] text-slate-500 truncate mb-1">{profile?.user?.email || 'Connected'}</p>
+                <p className={`text-[10px] truncate mb-1 ${isLecturer ? 'text-slate-500' : 'text-slate-500'}`}>{profile?.user?.email || 'Connected'}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`text-[10px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded-md ${isAdmin ? 'bg-amber-500/20 text-amber-400' : isStudent ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
-                    {isAdmin ? 'Admin' : isStudent ? 'Student Profile' : 'Researcher'}
+                  <span className={`text-[10px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded-md ${isAdmin ? 'bg-amber-500/20 text-amber-400' : isLecturer ? 'bg-indigo-100 text-indigo-600' : isStudent ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
+                    {isAdmin ? 'Admin' : isLecturer ? 'Lecturer' : isStudent ? 'Student Profile' : 'Researcher'}
                   </span>
                 </div>
               </div>

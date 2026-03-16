@@ -112,7 +112,8 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
             <div className="space-y-4">
               {[
                 'Unlimited Student Rosters',
-                'AI-Powered Quiz Creation',
+                'Exams, Tests & Assignments',
+                'Attendance Management',
                 'Proctoring & Anti-Cheat',
                 'Performance Analytics',
                 '12 Months Full Access'
