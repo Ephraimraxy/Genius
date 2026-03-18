@@ -89,10 +89,10 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       <motion.div
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative w-full max-w-2xl bg-white rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row shadow-indigo-600/20 border border-white/20 max-h-[90vh] overflow-y-auto md:overflow-visible"
+        className="relative w-full max-w-2xl bg-white rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row shadow-indigo-600/20 border border-white/20 max-h-[95vh] md:max-h-[90vh] overflow-y-auto md:overflow-visible"
       >
         {/* Left Visual Side */}
-        <div className="w-full md:w-5/12 bg-gradient-to-br from-indigo-600 to-blue-800 p-12 text-white flex flex-col justify-between relative overflow-hidden">
+        <div className="w-full md:w-5/12 bg-gradient-to-br from-indigo-600 to-blue-800 p-6 md:p-10 text-white flex flex-col justify-between relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
             <div className="absolute -top-20 -right-20 w-64 h-64 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
             <div className="absolute bottom-[-10%] left-[-10%] w-60 h-60 bg-black/10 rounded-full blur-2xl"></div>
@@ -108,8 +108,8 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
             </p>
           </div>
 
-          <div className="relative z-10 pt-12">
-            <div className="space-y-4">
+          <div className="relative z-10 pt-6 md:pt-10">
+            <div className="space-y-3 md:space-y-4">
               {[
                 'Unlimited Student Rosters',
                 'Exams, Tests & Assignments',
@@ -130,28 +130,28 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
         </div>
 
         {/* Right Action Side */}
-        <div className="w-full md:w-7/12 p-6 md:p-14 flex flex-col justify-center bg-white">
+        <div className="w-full md:w-7/12 p-6 md:p-10 flex flex-col justify-center bg-white">
           {bankAccounts.length === 0 ? (
             <>
               {/* Initial state — show pricing & activate button */}
-              <div className="mb-4 md:mb-10 text-center md:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 text-[#FFD700] border border-[#FFD700]/30 mb-3 animate-pulse shadow-lg">
+              <div className="mb-4 md:mb-6 text-center md:text-left">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 text-[#FFD700] border border-[#FFD700]/30 mb-2 md:mb-3 animate-pulse shadow-lg">
                   <Star size={10} fill="currentColor" />
                   <span className="text-[10px] font-black uppercase tracking-widest">Premium Plan</span>
                 </div>
-                <h3 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight mb-2 md:mb-4">Annual Access</h3>
-                <p className="text-slate-500 text-xs md:text-sm font-medium">Complete payment to activate full system capabilities.</p>
+                <h3 className="text-2xl md:text-4xl font-black text-slate-900 tracking-tight mb-2 md:mb-4">Annual Access</h3>
+                <p className="text-slate-500 text-[10px] md:text-sm font-medium">Complete payment to activate full system capabilities.</p>
               </div>
 
-              <div className="bg-slate-50 rounded-[1.5rem] p-6 md:p-8 mb-6 md:mb-10 border border-slate-100 relative overflow-hidden group hover:border-indigo-600/20 transition-all">
+              <div className="bg-slate-50 rounded-[1.5rem] p-4 md:p-8 mb-4 md:mb-10 border border-slate-100 relative overflow-hidden group hover:border-indigo-600/20 transition-all">
                 <div className="flex items-baseline gap-1 mb-1">
-                  <span className="text-slate-400 text-base font-bold">₦</span>
-                  <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter">
+                  <span className="text-slate-400 text-sm md:text-base font-bold">₦</span>
+                  <span className="text-3xl md:text-5xl font-black text-slate-900 tracking-tighter">
                     {price.toLocaleString()}
                   </span>
-                  <span className="text-slate-400 font-bold">/year</span>
+                  <span className="text-slate-400 text-sm md:text-base font-bold">/year</span>
                 </div>
-                <p className="text-[9px] md:text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                <p className="text-[8px] md:text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
                   Secure payment handled by <span className="text-indigo-600">PaymentPoint</span> PCI-DSS gateway.
                 </p>
               </div>
@@ -159,7 +159,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
               <button
                 onClick={handleSubscribe}
                 disabled={loading}
-                className="w-full bg-gradient-to-br from-indigo-600 to-blue-800 text-white py-4 md:py-6 rounded-2xl md:rounded-3xl font-black text-xs md:text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-3 md:gap-4 shadow-xl md:shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
+                className="w-full bg-gradient-to-br from-indigo-600 to-blue-800 text-white py-3.5 md:py-6 rounded-xl md:rounded-3xl font-black text-[10px] md:text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2 md:gap-4 shadow-xl md:shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
               >
                 {loading ? <Loader2 className="animate-spin" size={18} /> : (
                   <>
@@ -238,7 +238,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
             </>
           )}
 
-          <p className="mt-4 md:mt-8 text-center text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.1em] px-2 md:px-4">
+          <p className="mt-4 md:mt-6 text-center text-[8px] md:text-[10px] font-bold text-slate-400 uppercase tracking-[0.1em] px-2 md:px-4">
             Security Guaranteed • Encrypted Processing • Instant Access
           </p>
         </div>
