@@ -123,10 +123,11 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
             {deferredPrompt && (
               <button 
                 onClick={handleInstallClick}
-                className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black rounded-lg shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest flex items-center gap-2"
+                className="p-2 md:px-4 md:py-2 bg-emerald-600 text-white text-[10px] font-black rounded-lg shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest flex items-center gap-2"
+                title="Install App"
               >
-                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                Install App
+                <FileDown size={16} />
+                <span className="hidden md:inline">Install App</span>
               </button>
             )}
             <button 
@@ -139,10 +140,11 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
             <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
             <button 
               onClick={onPublicationHub} 
-              className="px-6 py-3 bg-[#800000] text-white text-[11px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest flex items-center gap-2"
+              className="px-3 py-2 md:px-6 md:py-3 bg-[#800000] text-white text-[9px] md:text-[11px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest flex items-center gap-2"
             >
-              <PlusCircle size={16} />
-              Publication Hub
+              <PlusCircle size={14} className="md:w-4 md:h-4" />
+              <span className="hidden sm:inline">Publication Hub</span>
+              <span className="sm:hidden">Hub</span>
             </button>
           </div>
         </div>
