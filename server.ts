@@ -1842,6 +1842,7 @@ app.get('/api/admin/users', authenticateToken, async (req: any, res) => {
 
 app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
     const { id } = idParamSchema.parse(req.params);
     const { name, email, role, affiliation } = req.body;
 
