@@ -85,7 +85,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                            animate={{ scale: 1, opacity: 1 }}
                            className="mb-8"
                          >
-                            <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-4" />
+                            <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-8" />
                          </motion.div>
 
                          <div className="mb-8">
