@@ -27,7 +27,9 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
     <div className="flex items-center justify-center h-[60vh]">
       <div className="flex flex-col items-center gap-4">
         <div className={`w-12 h-12 border-4 ${isLecturer ? 'border-blue-600' : 'border-rose-600'} border-t-transparent rounded-full animate-spin`}></div>
-        <p className="text-slate-500 font-medium tracking-wide">Retrieving Scholar Profile...</p>
+        <p className="text-slate-500 font-medium tracking-wide">
+          {isLecturer ? 'Retrieving Academic Profile...' : 'Retrieving Scholar Profile...'}
+        </p>
       </div>
     </div>
   );
@@ -116,7 +118,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
                   ? 'bg-amber-50 text-amber-600 border-amber-200'
                   : isLecturer ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-rose-50 text-rose-600 border-rose-200'
               }`}>
-                {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Verified Researcher'}
+                {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Research Portal'}
               </span>
             </div>
 
@@ -141,9 +143,11 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
               )}
             </div>
 
-            {/* Research Interests / Tags */}
+            {/* Expertise / Specialization */}
             <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Research Interests</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+                {isLecturer ? 'Expertise & Specialization' : 'Research Interests'}
+              </p>
               <div className="flex flex-wrap justify-center md:justify-start gap-2">
                 {(isEditing ? editInterests : (metrics.interests || [])).map((tag: string) => (
                   <span key={tag} className={`px-4 py-2 bg-slate-50 text-slate-600 rounded-2xl text-sm font-bold border border-slate-200/60 hover:border-${isLecturer ? 'blue' : 'indigo'}-200 hover:bg-white transition-all cursor-default flex items-center gap-2`}>
@@ -170,7 +174,9 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
                   </div>
                 )}
                 {!isEditing && (metrics.interests || []).length === 0 && (
-                  <span className="text-sm font-medium text-slate-300 italic">Click "Edit Profile" to add your research interests</span>
+                  <span className="text-sm font-medium text-slate-300 italic">
+                    {isLecturer ? 'Click "Edit Profile" to add your academic expertise' : 'Click "Edit Profile" to add your research interests'}
+                  </span>
                 )}
               </div>
             </div>
@@ -230,7 +236,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Role</p>
             <p className={`text-sm font-bold ${isAdmin ? 'text-amber-600' : isLecturer ? 'text-blue-600' : 'text-rose-600'}`}>
-              {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Verified Researcher'}
+              {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Research Portal'}
             </p>
           </div>
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
@@ -241,7 +247,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
       </div>
 
       {/* Metrics Grid (Researcher only) */}
-      {!isAdmin && (
+      {!isAdmin && !isLecturer && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             { label: 'Total Citations', value: metrics.citations, icon: Quote, color: 'text-indigo-600', bg: 'bg-indigo-50' },
@@ -298,7 +304,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
               <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
             </div>
             <h3 className="text-2xl font-bold text-slate-800 font-display">
-              {isAdmin ? 'Administrative Record' : 'Scientific Contributions'}
+              {isAdmin ? 'Administrative Record' : isLecturer ? 'Academic Contributions' : 'Scientific Contributions'}
             </h3>
           </div>
           <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">{publications.length} Papers</span>
@@ -312,9 +318,11 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
                   <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain" />
                 </div>
               </div>
-              <h4 className="text-xl font-bold text-slate-800">No publications yet</h4>
+              <h4 className="text-xl font-bold text-slate-800">{isLecturer ? 'No academic records yet' : 'No publications yet'}</h4>
               <p className="text-slate-500 mt-2 max-w-sm mx-auto">
-                {isAdmin ? 'Published papers from your administrative oversight will appear here.' : 'Your verified publications will appear here once they are indexed.'}
+                {isAdmin ? 'Published papers from your administrative oversight will appear here.' : 
+                 isLecturer ? 'Your published work and session contributions will appear here.' : 
+                 'Your verified publications will appear here once they are indexed.'}
               </p>
             </div>
           ) : publications.map((pub: any, i: number) => (

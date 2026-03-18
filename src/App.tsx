@@ -567,7 +567,11 @@ export default function App() {
             {!isAdmin && (
               <div className="hidden sm:flex items-center bg-slate-100 rounded-2xl px-4 py-2 mr-2 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
                 <Search size={18} className="text-slate-400" />
-                <input type="text" placeholder="Search research..." className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium" />
+                <input 
+                  type="text" 
+                  placeholder={isLecturer ? "Search academic hub..." : isStudent ? "Search courses..." : "Search research..."} 
+                  className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium" 
+                />
               </div>
             )}
 
