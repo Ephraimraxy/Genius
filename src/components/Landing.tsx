@@ -119,32 +119,33 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 md:gap-6">
             {deferredPrompt && (
               <button 
                 onClick={handleInstallClick}
-                className="p-2 md:px-4 md:py-2 bg-emerald-600 text-white text-[10px] font-black rounded-lg shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest flex items-center gap-2"
+                className="p-2.5 md:px-4 md:py-2 bg-emerald-600 text-white text-[10px] font-black rounded-lg shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest flex items-center gap-2 shrink-0"
                 title="Install App"
               >
-                <FileDown size={16} />
+                <FileDown size={18} className="md:w-4 md:h-4" />
                 <span className="hidden md:inline">Install App</span>
               </button>
             )}
             <button 
               onClick={onSchoolPortal} 
-              className="px-6 py-3 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-xl transition-all uppercase tracking-widest hidden sm:flex items-center gap-2 shadow-sm"
+              className="p-2.5 md:px-6 md:py-3 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-xl transition-all uppercase tracking-widest flex items-center gap-2 shadow-sm shrink-0"
+              title="School Portal"
             >
-              <Users size={16} />
-              School Portal
+              <Users size={18} className="md:w-4 md:h-4" />
+              <span className="hidden md:inline">School Portal</span>
             </button>
-            <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
+            <div className="h-6 w-px bg-slate-200 hidden md:block"></div>
             <button 
               onClick={onPublicationHub} 
-              className="px-3 py-2 md:px-6 md:py-3 bg-[#800000] text-white text-[9px] md:text-[11px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest flex items-center gap-2"
+              className="p-2.5 md:px-6 md:py-3 bg-[#800000] text-white text-[11px] font-black rounded-xl shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all uppercase tracking-widest flex items-center gap-2 shrink-0"
+              title="Publication Hub"
             >
-              <PlusCircle size={14} className="md:w-4 md:h-4" />
-              <span className="hidden sm:inline">Publication Hub</span>
-              <span className="sm:hidden">Hub</span>
+              <PlusCircle size={18} className="md:w-4 md:h-4" />
+              <span className="hidden md:inline">Publication Hub</span>
             </button>
           </div>
         </div>
