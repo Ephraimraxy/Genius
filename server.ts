@@ -1,4 +1,12 @@
+// Polyfill for DOMMatrix which is required by some dependencies like pdf-parse in Node environments
+if (typeof global.DOMMatrix === 'undefined') {
+  (global as any).DOMMatrix = class DOMMatrix {
+    constructor() {}
+  };
+}
+
 import express from 'express';
+
 import { createServer as createViteServer } from 'vite';
 import multer from 'multer';
 // @ts-ignore
@@ -133,7 +141,7 @@ async function initDB() {
     );
     CREATE TABLE IF NOT EXISTS tenants (
       id SERIAL PRIMARY KEY,
-      name TEXT UNIQUE,
+      name TEXT,
       owner_name TEXT,
       owner_email TEXT,
       plan TEXT DEFAULT 'starter',
@@ -484,8 +492,7 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
     const existingUser = await pool.query('SELECT id FROM users WHERE email = $1 AND role = $2', [email, role]);
     if (existingUser.rows.length > 0) return res.status(400).json({ error: 'This email is already associated with an Academic Workspace' });
 
-    const existingTenant = await pool.query('SELECT id FROM tenants WHERE name = $1', [tenantName]);
-    if (existingTenant.rows.length > 0) return res.status(400).json({ error: 'Tenant name already taken' });
+    // existingTenant check removed to allow duplicate names as per user request
 
     // 1. Create Tenant
     const tenantResult = await pool.query(
