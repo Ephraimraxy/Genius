@@ -286,6 +286,9 @@ async function initDB() {
     );
   `);
   
+  try { await pool.query('ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_name_key'); } catch (e) { }
+
+  
   try { await pool.query('ALTER TABLE papers ADD COLUMN doi TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
@@ -1856,6 +1859,17 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
     }
     await pool.query('DELETE FROM papers WHERE user_id = $1', [id]);
     
+    // Delete associated tenant if user is a lecturer (tenant_admin)
+    const userResult = await pool.query('SELECT role, tenant_id FROM users WHERE id = $1', [id]);
+    const user = userResult.rows[0];
+    if (user && user.role === 'tenant_admin' && user.tenant_id) {
+       // Clear students roster and resources for this tenant first
+       await pool.query('DELETE FROM students_roster WHERE tenant_id = $1', [user.tenant_id]);
+       await pool.query('DELETE FROM resources WHERE tenant_id = $1', [user.tenant_id]);
+       await pool.query('DELETE FROM exams WHERE tenant_id = $1', [user.tenant_id]);
+       await pool.query('DELETE FROM tenants WHERE id = $1', [user.tenant_id]);
+    }
+
     // Finally delete user
     await pool.query('DELETE FROM users WHERE id = $1', [id]);
 
