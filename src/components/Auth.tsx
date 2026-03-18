@@ -22,6 +22,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
     const [loading, setLoading] = useState(false);
     const [tenantName, setTenantName] = useState('');
     const [phone, setPhone] = useState('');
+    const [regStep, setRegStep] = useState(1);
 
     const isLecturer = role === 'lecturer';
     const themeColor = isLecturer ? '#1a237e' : '#800000';
@@ -269,125 +270,225 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                         {forgotMode === 'off' ? (
                             <form onSubmit={handleSubmit} className="space-y-4">
                                 <AnimatePresence mode="popLayout">
-                                    {!isLogin && (
+                                    {!isLogin ? (
+                                        <div className="space-y-4">
+                                            {regStep === 1 ? (
+                                                <motion.div
+                                                    key="step1"
+                                                    initial={{ opacity: 0, x: -20 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    exit={{ opacity: 0, x: 20 }}
+                                                    className="space-y-4"
+                                                >
+                                                    <div className="flex justify-between items-center mb-2 px-2">
+                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${labelColor}`}>Step 1: Identity</span>
+                                                        <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest leading-tight">Professional Proofing</span>
+                                                    </div>
+
+                                                    <div className="space-y-1">
+                                                        <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>FULL NAME</label>
+                                                        <div className="relative group">
+                                                            <User className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                            <input
+                                                                type="text"
+                                                                required
+                                                                value={name}
+                                                                onChange={(e) => setName(e.target.value)}
+                                                                className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                                placeholder="John Doe"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="space-y-1">
+                                                        <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>
+                                                            {isLecturer ? "WORKSPACE/ORGANIZATION" : "AFFILIATION"}
+                                                        </label>
+                                                        <div className="relative group">
+                                                            <Building className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                            <input
+                                                                type="text"
+                                                                value={isLecturer ? tenantName : affiliation}
+                                                                onChange={(e) => isLecturer ? setTenantName(e.target.value) : setAffiliation(e.target.value)}
+                                                                className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                                placeholder={isLecturer ? "e.g. Science Faculty" : "e.g. NSUK Research Unit"}
+                                                                required={!isLogin}
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    {isLecturer && (
+                                                        <div className="space-y-1">
+                                                            <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>PHONE NUMBER (11 DIGITS)</label>
+                                                            <div className="relative group">
+                                                                <Phone className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                                <input
+                                                                    type="tel"
+                                                                    required
+                                                                    pattern="[0-9]{11}"
+                                                                    maxLength={11}
+                                                                    value={phone}
+                                                                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                                                                    className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                                    placeholder="08012345678"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    <motion.button
+                                                        whileTap={{ scale: 0.98 }}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (name && (isLecturer ? (tenantName && phone.length === 11) : affiliation)) {
+                                                                setRegStep(2);
+                                                            } else {
+                                                                addToast(isLecturer && phone.length !== 11 ? 'Please enter a valid 11-digit phone number' : 'Please fill all required fields', 'error');
+                                                            }
+                                                        }}
+                                                        className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                                        style={{ backgroundColor: themeColor }}
+                                                    >
+                                                        <span>NEXT SETUP</span>
+                                                        <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                                                    </motion.button>
+                                                </motion.div>
+                                            ) : (
+                                                <motion.div
+                                                    key="step2"
+                                                    initial={{ opacity: 0, x: 20 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    exit={{ opacity: 0, x: -20 }}
+                                                    className="space-y-4"
+                                                >
+                                                    <div className="flex justify-between items-center mb-2 px-2">
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => setRegStep(1)}
+                                                            className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 flex items-center gap-1"
+                                                        >
+                                                            <ArrowLeft size={10} /> BACK
+                                                        </button>
+                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${labelColor}`}>Step 2: Accounts</span>
+                                                    </div>
+
+                                                    <div className="space-y-1">
+                                                        <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>EMAIL ADDRESS</label>
+                                                        <div className="relative group">
+                                                            <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                            <input
+                                                                type="email"
+                                                                required
+                                                                value={email}
+                                                                onChange={(e) => setEmail(e.target.value)}
+                                                                className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                                placeholder="you@genius.com"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-1">
+                                                        <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>PASSWORD</label>
+                                                        <div className="relative group">
+                                                            <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                            <input
+                                                                type="password"
+                                                                required
+                                                                value={password}
+                                                                onChange={(e) => setPassword(e.target.value)}
+                                                                className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                                placeholder="••••••••"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <motion.button
+                                                        whileHover={{ scale: 1.01, boxShadow: `0 20px 25px -5px ${themeColor}1a` }}
+                                                        whileTap={{ scale: 0.99 }}
+                                                        type="submit"
+                                                        disabled={loading}
+                                                        className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                                        style={{ backgroundColor: themeColor }}
+                                                    >
+                                                        {loading ? (
+                                                            <Loader2 size={20} className="animate-spin" />
+                                                        ) : (
+                                                            <>
+                                                                <span>{isLecturer ? 'SECURE SPACE' : 'ESTABLISH ACCOUNT'}</span>
+                                                                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                                                            </>
+                                                        )}
+                                                    </motion.button>
+                                                </motion.div>
+                                            )}
+                                        </div>
+                                    ) : (
                                         <motion.div
-                                            initial={{ opacity: 0, y: -10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            exit={{ opacity: 0, y: 10 }}
+                                            key="login"
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
                                             className="space-y-4"
                                         >
                                             <div className="space-y-1">
-                                                <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>FULL NAME</label>
+                                                <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>EMAIL ADDRESS</label>
                                                 <div className="relative group">
-                                                    <User className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                    <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
                                                     <input
-                                                        type="text"
+                                                        type="email"
                                                         required
-                                                        value={name}
-                                                        onChange={(e) => setName(e.target.value)}
+                                                        value={email}
+                                                        onChange={(e) => setEmail(e.target.value)}
                                                         className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
-                                                        placeholder="John Doe"
-                                                    />
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="space-y-1">
-                                                <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>
-                                                    {isLecturer ? "WORKSPACE/ORGANIZATION" : "AFFILIATION"}
-                                                </label>
-                                                <div className="relative group">
-                                                    <Building className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
-                                                    <input
-                                                        type="text"
-                                                        value={isLecturer ? tenantName : affiliation}
-                                                        onChange={(e) => isLecturer ? setTenantName(e.target.value) : setAffiliation(e.target.value)}
-                                                        className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
-                                                        placeholder={isLecturer ? "e.g. Science Faculty" : "e.g. NSUK Research Unit"}
-                                                        required={!isLogin}
+                                                        placeholder="you@genius.com"
                                                     />
                                                 </div>
                                             </div>
 
-                                            {isLecturer && (
-                                                <div className="space-y-1">
-                                                    <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>PHONE NUMBER (11 DIGITS)</label>
-                                                    <div className="relative group">
-                                                        <Phone className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
-                                                        <input
-                                                            type="tel"
-                                                            required
-                                                            pattern="[0-9]{11}"
-                                                            maxLength={11}
-                                                            value={phone}
-                                                            onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                                                            className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
-                                                            placeholder="08012345678"
-                                                        />
-                                                    </div>
+                                            <div className="space-y-1">
+                                                <div className="flex justify-between items-center ml-2">
+                                                    <label className={`text-[10px] font-black uppercase tracking-[0.2em] ${labelColor}`}>PASSWORD</label>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setForgotMode('choose')}
+                                                        className={`text-[10px] font-black text-slate-400 hover:text-[${themeColor}] uppercase tracking-widest transition-colors`}
+                                                    >
+                                                        FORGOT?
+                                                    </button>
                                                 </div>
-                                            )}
+                                                <div className="relative group">
+                                                    <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                    <input
+                                                        type="password"
+                                                        required
+                                                        value={password}
+                                                        onChange={(e) => setPassword(e.target.value)}
+                                                        className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                        placeholder="••••••••"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <motion.button
+                                                whileHover={{ scale: 1.01, boxShadow: `0 20px 25px -5px ${themeColor}1a` }}
+                                                whileTap={{ scale: 0.99 }}
+                                                type="submit"
+                                                disabled={loading}
+                                                className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                                style={{ backgroundColor: themeColor }}
+                                            >
+                                                {loading ? (
+                                                    <Loader2 size={20} className="animate-spin" />
+                                                ) : (
+                                                    <>
+                                                        <span>SIGN IN</span>
+                                                        <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                                                    </>
+                                                )}
+                                            </motion.button>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
-
-                                <div className="space-y-1">
-                                    <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>EMAIL ADDRESS</label>
-                                    <div className="relative group">
-                                        <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
-                                        <input
-                                            type="email"
-                                            required
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
-                                            placeholder="you@genius.com"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-1">
-                                    <div className="flex justify-between items-center ml-2">
-                                        <label className={`text-[10px] font-black uppercase tracking-[0.2em] ${labelColor}`}>PASSWORD</label>
-                                        {isLogin && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setForgotMode('choose')}
-                                                className={`text-[10px] font-black text-slate-400 hover:text-[${themeColor}] uppercase tracking-widest transition-colors`}
-                                            >
-                                                FORGOT?
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="relative group">
-                                        <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
-                                        <input
-                                            type="password"
-                                            required
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
-                                            placeholder="••••••••"
-                                        />
-                                    </div>
-                                </div>
-
-                                <motion.button
-                                    whileHover={{ scale: 1.01, boxShadow: `0 20px 25px -5px ${themeColor}1a` }}
-                                    whileTap={{ scale: 0.99 }}
-                                    type="submit"
-                                    disabled={loading}
-                                    className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
-                                    style={{ backgroundColor: themeColor }}
-                                >
-                                    {loading ? (
-                                        <Loader2 size={20} className="animate-spin" />
-                                    ) : (
-                                        <>
-                                            <span>{isLogin ? 'SIGN IN' : (isLecturer ? 'SECURE SPACE' : 'ESTABLISH ACCOUNT')}</span>
-                                            <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                                        </>
-                                    )}
-                                </motion.button>
                             </form>
                         ) : (
                             /* ─── FORGOT PASSWORD FLOW REDESIGN ─── */
@@ -510,7 +611,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                     ? (isLecturer ? "Configure new workspace?" : "ALREADY A MEMBER?") 
                                     : "ALREADY A MEMBER?"}</span>
                                 <button
-                                    onClick={() => { setIsLogin(!isLogin); exitForgotMode(); }}
+                                    onClick={() => { setIsLogin(!isLogin); exitForgotMode(); setRegStep(1); }}
                                     className="transition-colors font-black underline underline-offset-4"
                                     style={{ color: themeColor }}
                                 >
