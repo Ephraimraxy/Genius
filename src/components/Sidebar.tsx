@@ -174,7 +174,7 @@ export default function Sidebar({
       `}>
         <div className={`h-20 flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between px-8'}`}>
           <div className="flex items-center gap-3 text-white font-bold text-xl font-display tracking-tight">
-            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-lg shrink-0 ${isLecturer ? 'bg-indigo-50 border border-indigo-100' : 'bg-white shadow-slate-200'} p-4`}>
+            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center shadow-lg shrink-0 ${isLecturer ? 'bg-indigo-50 border border-indigo-100' : 'bg-white shadow-slate-200'} p-2.5`}>
               <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full rounded-full object-contain scale-110" />
             </div>
             {!isCollapsed && (

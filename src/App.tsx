@@ -328,7 +328,7 @@ export default function App() {
                         initial={{ scale: 0.9, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                       >
-                         <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-4" />
+                         <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-3" />
                       </motion.div>
 
                       <div className="mb-8">
@@ -534,7 +534,7 @@ export default function App() {
           (isAdmin || isLecturer || isStudent) ? 'bg-blue-50/30 border-blue-100' : 'bg-white/90 border-slate-100'
         }`}>
           <div className="flex items-center gap-2 sm:gap-3 lg:gap-6">
-            <div className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex lg:hidden items-center justify-center shadow-lg shrink-0 p-3.5 ${
+            <div className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex lg:hidden items-center justify-center shadow-lg shrink-0 p-1.5 ${
               (isAdmin || isLecturer) ? 'bg-white shadow-blue-900/10' : isStudent ? 'bg-blue-600 shadow-blue-600/30' : 'premium-gradient shadow-[#800000]/20'
             }`}>
               {isAdmin ? (
@@ -542,7 +542,7 @@ export default function App() {
               ) : isStudent ? (
                 <ShieldCheck className="text-white" size={18} />
               ) : (
-                <div className="w-full h-full rounded-full bg-white flex items-center justify-center p-4 shadow-sm overflow-hidden">
+                <div className="w-full h-full rounded-full bg-white flex items-center justify-center p-2 shadow-sm overflow-hidden">
                   <img src="/gmijp-logo.png" alt="Logo" className="w-full h-full object-contain scale-110" />
                 </div>
               )}
@@ -711,8 +711,8 @@ export default function App() {
             >
               <div className="p-6 md:p-10">
                 <div className="text-center mb-8 md:mb-10">
-                  <div className="w-14 h-14 md:w-16 md:h-16 bg-[#800000]/5 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6 border border-slate-100 p-4 md:p-5">
-                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white flex items-center justify-center p-4 shadow-lg border border-slate-100 shrink-0 overflow-hidden">
+                  <div className="w-14 h-14 md:w-16 md:h-16 bg-[#800000]/5 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6 border border-slate-100 p-2.5 md:p-3">
+                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white flex items-center justify-center p-2 shadow-lg border border-slate-100 shrink-0 overflow-hidden">
                       <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain" />
                     </div>
                   </div>
