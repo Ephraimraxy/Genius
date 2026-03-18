@@ -608,7 +608,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                         <div className="mt-8 pt-6 border-t border-slate-100 text-center relative z-10">
                             <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.3em] flex flex-col sm:flex-row items-center justify-center gap-1">
                                 <span>{isLogin 
-                                    ? (isLecturer ? "Configure new workspace?" : "ALREADY A MEMBER?") 
+                                    ? (isLecturer ? "New to scholar-sync?" : "NOT A MEMBER?") 
                                     : "ALREADY A MEMBER?"}</span>
                                 <button
                                     onClick={() => { setIsLogin(!isLogin); exitForgotMode(); setRegStep(1); }}
@@ -616,7 +616,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                     style={{ color: themeColor }}
                                 >
                                     {isLogin 
-                                        ? (isLecturer ? 'Establish Space' : 'Account Login') 
+                                        ? (isLecturer ? 'Establish Space' : 'Establish Account') 
                                         : 'Account Login'}
                                 </button>
                             </p>
