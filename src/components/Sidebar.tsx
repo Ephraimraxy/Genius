@@ -61,8 +61,9 @@ export default function Sidebar({
     { id: 'dashboard', label: 'Platform Stats', icon: LayoutDashboard, section: 'Overview' },
     { id: 'users', label: 'Tenant Directory', icon: Users, section: 'SaaS Management' },
     { id: 'reviewQueue', label: 'Global Reviews', icon: ClipboardList },
-    { id: 'records', label: 'All Publications', icon: History },
-    { id: 'transactions', label: 'Global Revenue', icon: FileText },
+    { id: 'users', label: 'User Directory', icon: Users },
+    { id: 'tokenStatus', label: 'Token Tracking', icon: CreditCard },
+    { id: 'reviewQueue', label: 'Review Queue', icon: FileText },
     { id: 'settings', label: 'System Settings', icon: Settings, section: 'Core' },
   ];
 
@@ -71,6 +72,7 @@ export default function Sidebar({
     { id: 'dashboard', label: 'Workspace Stats', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-5 h-5 object-contain rounded-full bg-white p-0.5" />, section: 'Management' },
     { id: 'storage', label: 'Resource Hub', icon: Database },
     { id: 'attendance', label: 'Attendance', icon: ClipboardList, section: 'Academic' },
+    { id: 'materials', label: 'Lecture Materials', icon: BookOpen },
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },
     { id: 'assignments', label: 'Assignments', icon: FileUp },
     { id: 'exams', label: 'Exams', icon: GraduationCap },
@@ -94,6 +96,7 @@ export default function Sidebar({
   // ─── STUDENT NAV (Student Center) ─────────────────────────
   const studentNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
     { id: 'dashboard', label: 'Exams', icon: BookOpen, section: 'Course Work' },
+    { id: 'materials', label: 'Lecture Materials', icon: BookMarked },
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },
     { id: 'assignments', label: 'Assignments', icon: FileUp },
     { id: 'performance', label: 'Performance', icon: BarChart3, section: 'Records' },
@@ -149,7 +152,7 @@ export default function Sidebar({
                     <div className="w-[18px] h-[18px] flex items-center justify-center">{Icon as React.ReactNode}</div>
                   )}
                 </span>
-                <span className="relative z-10 text-[8.5px] font-bold text-center truncate w-full tracking-tight">
+                <span className="relative z-10 text-[10px] font-bold text-center truncate w-full tracking-tight">
                   {item.label}
                 </span>
               </button>

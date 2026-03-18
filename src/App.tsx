@@ -30,10 +30,12 @@ import SecurityGuidelines from './components/SecurityGuidelines';
 import CourseManagement from './components/CourseManagement';
 import PINSetup from './components/PINSetup';
 import SubscriptionModal from './components/SubscriptionModal'; // NEW
+import StudentMaterialView from './components/StudentMaterialView';
+import TokenStatusView from './components/TokenStatusView';
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -49,18 +51,83 @@ const TAB_LABELS: Record<Tab, string> = {
   records: 'Publication Records',
   users: 'User Management',
   reviewQueue: 'Review Queue',
-  settings: 'Platform Settings',
-  courseManagement: 'Exams & Attendance',
+  settings: 'Settings',
+  courseManagement: 'Course Management',
+  tokenStatus: 'Token Status Tracking',
   tests: 'Tests',
   assignments: 'Assignments',
   performance: 'Performance Tracking',
   guidelines: 'Security Guidelines',
   attendance: 'Attendance Management',
   exams: 'Exam Records',
-  storage: 'Resource Hub'
+  storage: 'Resource Hub',
+  materials: 'Lecture Materials'
+};
+
+const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
+  useEffect(() => {
+    const timer = setTimeout(onComplete, 3000);
+    return () => clearTimeout(timer);
+  }, [onComplete]);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.8, ease: "easeInOut" }}
+      className="fixed inset-0 z-[9999] bg-[#800000] flex flex-col items-center justify-center text-white overflow-hidden"
+    >
+      <div className="absolute inset-0 bg-slate-900/20" />
+      <div className="absolute top-0 left-0 w-96 h-96 bg-white/5 rounded-full blur-3xl -ml-48 -mt-48 animate-pulse" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl -mr-48 -mb-48 animate-pulse" />
+
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={{ duration: 1, ease: "easeOut" }}
+        className="relative z-10 flex flex-col items-center"
+      >
+        <div className="w-32 h-32 md:w-40 md:h-40 bg-white rounded-full p-4 shadow-2xl mb-8 flex items-center justify-center border-4 border-white/20">
+          <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain" />
+        </div>
+        
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5, duration: 0.8 }}
+          className="text-center"
+        >
+          <h2 className="text-4xl md:text-6xl font-black tracking-tighter mb-2 font-display">
+            HELLO <span className="text-white/40">GENIUS</span>
+          </h2>
+          <div className="h-1 w-24 bg-[#ff4d4d] mx-auto rounded-full mb-4 shadow-[0_0_15px_rgba(255,77,77,0.5)]" />
+          <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.4em] text-white/60">
+            Neural Verified Environment
+          </p>
+        </motion.div>
+      </motion.div>
+
+      <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-4">
+         <div className="w-1 h-12 bg-gradient-to-b from-white/20 to-transparent rounded-full overflow-hidden">
+            <motion.div 
+              initial={{ y: -48 }}
+              animate={{ y: 48 }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+              className="w-full h-full bg-white shadow-[0_0_10px_white]"
+            />
+         </div>
+         <span className="text-[8px] font-black uppercase tracking-[0.3em] text-white/30">Initializing Platform</span>
+      </div>
+    </motion.div>
+  );
 };
 
 export default function App() {
+  const isPWA = () => {
+    return window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
+  };
+
+  const [showSplash, setShowSplash] = useState(isPWA());
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -213,6 +280,10 @@ export default function App() {
     setShowStudentAuth(false);
   };
 
+  const handleOpenChatWithUser = (userId: number) => {
+    setOpenChatUserId(userId);
+  };
+
   if (currentPath === '/setup-pin') {
     return <PINSetup onBackToLanding={() => { window.history.pushState({}, '', '/'); setCurrentPath('/'); setShowLanding(true); }} addToast={addToast} />;
   }
@@ -355,9 +426,12 @@ export default function App() {
 
     // Student View
     if (isStudent && activeTab !== 'profile') {
-        if (activeTab === 'performance') return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
-        if (activeTab === 'guidelines') return <SecurityGuidelines onNavigate={setActiveTab} />;
-        return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} confirm={confirm} />;
+        switch (activeTab) {
+            case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
+            case 'guidelines': return <SecurityGuidelines onNavigate={setActiveTab} />;
+            case 'materials': return <StudentMaterialView addToast={addToast} token={token} />;
+            default: return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} confirm={confirm} />;
+        }
     }
 
     // Lecturer View
@@ -368,8 +442,10 @@ export default function App() {
             case 'tests': return <AcademicManagement mode="tests" addToast={addToast} token={token} />;
             case 'assignments': return <AcademicManagement mode="assignments" addToast={addToast} token={token} />;
             case 'exams': return <AcademicManagement mode="exams" addToast={addToast} token={token} />;
+            case 'materials': return <AcademicManagement mode="materials" addToast={addToast} token={token} />;
             case 'storage': return <ResourceHub addToast={addToast} token={token} />;
-            case 'users': return <UserManagement addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
+            case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} />;
+            case 'reviewQueue': return <ReviewQueue profile={profile} />;
             case 'settings': return <LecturerSettings />;
             default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
         }
@@ -409,6 +485,7 @@ export default function App() {
         if (activeTab === 'exams') return 'Exam Records';
         if (activeTab === 'tests') return 'CBT Assessment';
         if (activeTab === 'assignments') return 'Submission Manager';
+        if (activeTab === 'materials') return 'Lecture Material Manager';
         if (activeTab === 'storage') return 'Genius Resource Hub';
     }
     if (activeTab === 'dashboard') return isAdmin ? 'Admin Console' : 'Analytics Overview';
@@ -416,7 +493,11 @@ export default function App() {
   };
 
   return (
-    <div className={`flex h-screen bg-white text-slate-900 font-sans overflow-hidden`}>
+    <>
+      <AnimatePresence>
+        {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+      </AnimatePresence>
+      <div className={`flex h-screen bg-white text-slate-900 font-sans overflow-hidden`}>
       {/* Subscription Overlay for Lecturers */}
       {profile?.user?.role === 'tenant_admin' && !profile?.tenant?.is_subscribed && (
         <SubscriptionModal
@@ -679,5 +760,6 @@ export default function App() {
       <ConfirmModal {...confirmConfig} />
       <GlobalLoader show={isSyncing || (!!token && !profile)} />
     </div>
+    </>
   );
 }

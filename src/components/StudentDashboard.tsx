@@ -4,7 +4,7 @@ import { BookOpen, Calendar, Clock, CheckCircle2, AlertCircle } from 'lucide-rea
 import { ToastType, useToasts } from './ToastSystem';
 import ExamProctoringModal from './ExamProctoringModal';
 import ActiveExamSession from './ActiveExamSession';
-import AttendancePaymentModal from './AttendancePaymentModal';
+import GeniusPaymentModal from './GeniusPaymentModal';
 
 interface StudentDashboardProps {
     profile: any;
@@ -23,6 +23,10 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
     // Attendance State
     const [showAttendanceModal, setShowAttendanceModal] = useState(false);
     const [selectedCourseForAttendance, setSelectedCourseForAttendance] = useState<string | null>(null);
+    
+    // Assessment Payment State
+    const [showAssessmentPaymentModal, setShowAssessmentPaymentModal] = useState(false);
+    const [selectedAssessmentForPayment, setSelectedAssessmentForPayment] = useState<any | null>(null);
     
     // Dynamic Application State
     const [exams, setExams] = useState<any[]>([]);
@@ -61,9 +65,14 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
     const pastExams = exams.filter(e => e.status === 'completed' && e.type === activeType);
     const activeExams = exams.filter(e => e.status === 'active' && e.type === activeType);
 
-    const handleStartExamClick = (examId: number, courseName: string) => {
-        setActiveExamId(examId);
-        setActiveExamCourse(courseName);
+    const handleStartExamClick = (exam: any) => {
+        if (exam.is_paid && !exam.hasPaid) {
+            setSelectedAssessmentForPayment(exam);
+            setShowAssessmentPaymentModal(true);
+            return;
+        }
+        setActiveExamId(exam.id);
+        setActiveExamCourse(exam.course);
         setShowProctoringModal(true);
     };
 
@@ -141,10 +150,10 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                         </div>
                     </div>
                     <button 
-                        onClick={() => handleStartExamClick(activeExams[0].id, activeExams[0].course)}
+                        onClick={() => handleStartExamClick(activeExams[0])}
                         className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-white text-rose-600 font-black rounded-xl shadow-lg hover:bg-slate-50 transition-colors uppercase tracking-[0.1em] text-xs md:text-sm"
                     >
-                        {activeType === 'assignment' ? 'Open Assignment' : 'Start Now'}
+                        {activeExams[0].is_paid && !activeExams[0].hasPaid ? 'Unlock Now' : (activeType === 'assignment' ? 'Open Assignment' : 'Start Now')}
                     </button>
                 </motion.div>
             )}
@@ -177,6 +186,52 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                     Sign Attendance (₦500)
                 </button>
             </motion.div>
+
+            <AnimatePresence>
+                {showAttendanceModal && selectedCourseForAttendance && (
+                    <GeniusPaymentModal
+                        courseName={selectedCourseForAttendance}
+                        courseId={selectedCourseForAttendance}
+                        amount={500}
+                        token={token}
+                        addToast={addToast}
+                        onClose={() => {
+                            setShowAttendanceModal(false);
+                            setSelectedCourseForAttendance(null);
+                        }}
+                        onSuccess={() => {
+                            setShowAttendanceModal(false);
+                            setSelectedCourseForAttendance(null);
+                            // Real app: fetch updated attendance status here
+                        }}
+                        type="attendance"
+                    />
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {showAssessmentPaymentModal && selectedAssessmentForPayment && (
+                    <GeniusPaymentModal
+                        courseName={selectedAssessmentForPayment.course}
+                        courseId={selectedAssessmentForPayment.id.toString()}
+                        amount={selectedAssessmentForPayment.price}
+                        token={token}
+                        addToast={addToast}
+                        onClose={() => {
+                            setShowAssessmentPaymentModal(false);
+                            setSelectedAssessmentForPayment(null);
+                        }}
+                        onSuccess={() => {
+                            setShowAssessmentPaymentModal(false);
+                            const assessment = selectedAssessmentForPayment;
+                            setSelectedAssessmentForPayment(null);
+                            // Refresh data
+                            window.location.reload(); // Simple refresh to update hasPaid
+                        }}
+                        type="assessment"
+                    />
+                )}
+            </AnimatePresence>
 
             <div className="grid lg:grid-cols-2 gap-8">
                 {/* Upcoming Assessments */}
@@ -260,27 +315,6 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                 )}
             </AnimatePresence>
 
-            {/* Attendance Payment Modal Wrapper */}
-            <AnimatePresence>
-                {showAttendanceModal && selectedCourseForAttendance && (
-                    <AttendancePaymentModal
-                        courseName={selectedCourseForAttendance}
-                        courseId={selectedCourseForAttendance}
-                        amount={500}
-                        token={token}
-                        addToast={addToast}
-                        onClose={() => {
-                            setShowAttendanceModal(false);
-                            setSelectedCourseForAttendance(null);
-                        }}
-                        onSuccess={() => {
-                            setShowAttendanceModal(false);
-                            setSelectedCourseForAttendance(null);
-                            // Real app: fetch updated attendance status here
-                        }}
-                    />
-                )}
-            </AnimatePresence>
         </div>
     );
 }

@@ -159,6 +159,9 @@ async function initDB() {
       duration INTEGER, -- in minutes
       type TEXT, -- 'exam', 'test', 'assignment'
       status TEXT DEFAULT 'active',
+      is_available BOOLEAN DEFAULT TRUE,
+      price INTEGER DEFAULT 0,
+      is_paid BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(tenant_id) REFERENCES tenants(id)
     );
@@ -281,6 +284,9 @@ async function initDB() {
       name TEXT,
       content JSONB,
       status TEXT DEFAULT 'pending',
+      is_available BOOLEAN DEFAULT TRUE,
+      price INTEGER DEFAULT 0,
+      is_paid BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(tenant_id) REFERENCES tenants(id)
     );
@@ -310,6 +316,13 @@ async function initDB() {
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN metadata JSONB DEFAULT \'{}\''); } catch (e) { }
+  
+  try { await pool.query('ALTER TABLE exams ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
+  try { await pool.query('ALTER TABLE exams ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
+  try { await pool.query('ALTER TABLE exams ADD COLUMN is_paid BOOLEAN DEFAULT FALSE'); } catch (e) { }
+  try { await pool.query('ALTER TABLE resources ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
+  try { await pool.query('ALTER TABLE resources ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
+  try { await pool.query('ALTER TABLE resources ADD COLUMN is_paid BOOLEAN DEFAULT FALSE'); } catch (e) { }
   
   // Migration: Drop global email uniqueness and add role-scoped uniqueness
   try {
@@ -703,7 +716,7 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
 
 // Admin-only: Force override a user's password
 app.post('/api/admin/users/:id/reset-password', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = req.params;
     const { newPassword } = req.body;
@@ -771,6 +784,30 @@ app.get('/api/admin/reset-requests', authenticateToken, async (req: any, res) =>
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch reset requests' });
+  }
+});
+
+// Super Admin: Lecturer Material Status
+app.get('/api/admin/lecturer-material-stats', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query(`
+      SELECT 
+        u.id, 
+        u.name, 
+        u.email,
+        u.tenant_id,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'material') as material_count,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'material' AND is_available = true) as active_materials,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'material_access') as material_revenue,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'assessment_access') as assessment_revenue
+      FROM users u
+      WHERE u.role = 'tenant_admin'
+      ORDER BY material_count DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch lecturer material stats' });
   }
 });
 
@@ -1805,15 +1842,19 @@ app.get('/api/admin/users', authenticateToken, async (req: any, res) => {
 
 app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
-  try {
     const { id } = idParamSchema.parse(req.params);
     const { name, email, role, affiliation } = req.body;
-    
-    // Check if new email conflicts with existing user (Scoped to the current user's role)
-    if (email) {
-      const userRes = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
-      const currentRole = userRes.rows[0]?.role;
-      const existing = await pool.query('SELECT id FROM users WHERE email = $1 AND role = $2 AND id != $3', [email, currentRole, id]);
+
+    const currentUserRes = await pool.query('SELECT email, role FROM users WHERE id = $1', [id]);
+    const currentUser = currentUserRes.rows[0];
+    if (!currentUser) return res.status(404).json({ error: 'User not found' });
+
+    const targetEmail = email || currentUser.email;
+    const targetRole = role || currentUser.role;
+
+    // Check if new email/role combination conflicts with existing user
+    if (email || role) {
+      const existing = await pool.query('SELECT id FROM users WHERE email = $1 AND role = $2 AND id != $3', [targetEmail, targetRole, id]);
       if (existing.rows.length > 0) return res.status(400).json({ error: 'Email already in use for this role' });
     }
 
@@ -2256,7 +2297,7 @@ app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
 app.get('/api/resources', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
-      'SELECT id, type, name, status, created_at FROM resources WHERE tenant_id = $1 ORDER BY created_at DESC',
+      'SELECT id, type, name, status, created_at, is_available, price, is_paid FROM resources WHERE tenant_id = $1 ORDER BY created_at DESC',
       [req.tenant_id]
     );
     res.json(result.rows);
@@ -2281,7 +2322,7 @@ app.get('/api/resources/:id', authenticateToken, checkSubscription, async (req: 
 app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
-      'SELECT id, title, questions, duration, created_at FROM exams WHERE tenant_id = $1 ORDER BY created_at DESC',
+      'SELECT id, title, questions, duration, created_at, is_available, price, is_paid FROM exams WHERE tenant_id = $1 ORDER BY created_at DESC',
       [req.tenant_id]
     );
     res.json(result.rows);
@@ -2328,6 +2369,150 @@ app.delete('/api/resources/:id', authenticateToken, checkSubscription, async (re
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Update settings for resources (price, availability)
+app.put('/api/resources/:id/settings', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const { price, is_available, is_paid } = req.body;
+    await pool.query(
+      'UPDATE resources SET price = $1, is_available = $2, is_paid = $3 WHERE id = $4 AND tenant_id = $5',
+      [price, is_available, is_paid, id, req.tenant_id]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update settings for exams/assessments (price, availability)
+app.put('/api/exams/:id/settings', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const { price, is_available, is_paid } = req.body;
+    await pool.query(
+      'UPDATE exams SET price = $1, is_available = $2, is_paid = $3 WHERE id = $4 AND tenant_id = $5',
+      [price, is_available, is_paid, id, req.tenant_id]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Payment for Material Access
+app.post('/api/payment/material/initialize', authenticateToken, async (req: any, res) => {
+  const { resource_id, amount } = req.body;
+  if (!resource_id || !amount) return res.status(400).json({ error: 'resource_id and amount are required' });
+
+  const reference = `MAT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  
+  try {
+    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
+    const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
+    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
+
+    if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
+      return res.status(500).json({ error: 'Payment gateway is not configured.' });
+    }
+
+    const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
+        'api-key': PAYMENTPOINT_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: req.user.email,
+        name: req.user.name || req.user.email.split('@')[0],
+        phoneNumber: (req.user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
+        bankCode: ['20946', '20897'],
+        businessId: PAYMENTPOINT_BUSINESS_ID
+      })
+    });
+    
+    if (!response.ok) throw new Error(`PaymentPoint failed (${response.status})`);
+
+    const data = await response.json();
+    if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
+    
+    const resourceRes = await pool.query('SELECT tenant_id FROM resources WHERE id = $1', [resource_id]);
+    const tenant_id = resourceRes.rows[0]?.tenant_id;
+
+    await pool.query(
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
+      [req.user.id, tenant_id, reference, amount, 'pending', 'material_access', { resource_id }]
+    );
+    
+    res.json({
+      reference,
+      amount,
+      bankAccounts: data.bankAccounts || [],
+      message: `Transfer ₦${Number(amount).toLocaleString()} to access this material.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Payment initialization failed', details: err.message });
+  }
+});
+
+// Payment for Assessment Access
+app.post('/api/payment/assessment/initialize', authenticateToken, async (req: any, res) => {
+  const { exam_id, amount } = req.body;
+  if (!exam_id || !amount) return res.status(400).json({ error: 'exam_id and amount are required' });
+
+  const reference = `ASM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  
+  try {
+    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
+    const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
+    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
+
+    if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
+      return res.status(500).json({ error: 'Payment gateway is not configured.' });
+    }
+
+    const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
+        'api-key': PAYMENTPOINT_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: req.user.email,
+        name: req.user.name || req.user.email.split('@')[0],
+        phoneNumber: (req.user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
+        bankCode: ['20946', '20897'],
+        businessId: PAYMENTPOINT_BUSINESS_ID
+      })
+    });
+    
+    if (!response.ok) throw new Error(`PaymentPoint failed (${response.status})`);
+
+    const data = await response.json();
+    if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
+    
+    const examRes = await pool.query('SELECT tenant_id FROM exams WHERE id = $1', [exam_id]);
+    const tenant_id = examRes.rows[0]?.tenant_id;
+
+    await pool.query(
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
+      [req.user.id, tenant_id, reference, amount, 'pending', 'assessment_access', { exam_id }]
+    );
+    
+    res.json({
+      reference,
+      amount,
+      bankAccounts: data.bankAccounts || [],
+      message: `Transfer ₦${Number(amount).toLocaleString()} to access this assessment.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Payment initialization failed', details: err.message });
   }
 });
 
@@ -2561,8 +2746,56 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
 });
 
 // Student: Get Assessments
+app.get('/api/student/assessments', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const assessments = await pool.query(
+      `SELECT e.*, 
+       (SELECT COUNT(*) FROM questions WHERE exam_id = e.id) as "totalQuestions",
+       EXISTS(SELECT 1 FROM exam_results WHERE exam_id = e.id AND user_id = $1) as completed,
+       EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'assessment_access' AND (metadata->>'exam_id')::int = e.id AND status = 'success') as "hasPaid"
+       FROM exams e 
+       WHERE e.tenant_id = $2 AND e.is_available = true
+       ORDER BY e.created_at DESC`,
+      [req.user.id, req.tenant_id]
+    );
 
-// Student: Get Exam Details & Questions
+    const formatted = assessments.rows.map(a => ({
+      id: a.id,
+      course: a.title,
+      type: a.type || 'test',
+      duration: `${a.duration} Mins`,
+      totalQuestions: a.totalQuestions || 0,
+      status: a.completed ? 'completed' : 'pending',
+      date: new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      is_paid: a.is_paid,
+      price: a.price,
+      hasPaid: a.hasPaid
+    }));
+
+    res.json({ success: true, assessments: formatted });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Student: Get Materials
+app.get('/api/student/materials', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query(
+      `SELECT r.*,
+       EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'material_access' AND (metadata->>'resource_id')::int = r.id AND status = 'success') as "hasPaid"
+       FROM resources r
+       WHERE r.tenant_id = $2 AND r.type = 'material' AND r.is_available = true
+       ORDER BY r.created_at DESC`,
+      [req.user.id, req.tenant_id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch materials' });
+  }
+});
 app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = req.params;

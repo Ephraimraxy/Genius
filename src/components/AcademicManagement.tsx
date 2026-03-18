@@ -30,10 +30,13 @@ interface Resource {
     status: 'ready' | 'failed' | 'pending' | 'short';
     created_at: string;
     content?: any;
+    is_available?: boolean;
+    price?: number;
+    is_paid?: boolean;
 }
 
 interface AcademicManagementProps {
-    mode: 'attendance' | 'tests' | 'assignments' | 'exams';
+    mode: 'attendance' | 'tests' | 'assignments' | 'exams' | 'materials';
     addToast: (msg: string, type: ToastType) => void;
     token: string | null;
 }
@@ -152,12 +155,37 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         setIsProcessing(false);
     };
 
+    const updateSettings = async (itemId: number, isResource: boolean, settings: { price: number; is_available: boolean; is_paid: boolean }) => {
+        try {
+            const endpoint = isResource ? `/api/resources/${itemId}/settings` : `/api/exams/${itemId}/settings`;
+            const res = await fetch(endpoint, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(settings)
+            });
+            if (res.ok) {
+                addToast('Settings updated', 'success');
+                if (isResource) {
+                    if (mode === 'materials') fetchHubResources('material');
+                } else {
+                    fetchRecords();
+                }
+            }
+        } catch (err) {
+            addToast('Update failed', 'error');
+        }
+    };
+
     const renderHeader = () => {
         const titles = {
             attendance: { title: 'Attendance Management', desc: 'Manage your student whitelist and track daily portal access logs.', icon: ClipboardList },
             tests: { title: 'CBT Assessment Suite', desc: 'Create AI-powered tests and track student performance in real-time.', icon: BrainCircuit },
             assignments: { title: 'Submission Manager', desc: 'Set academic tasks - management student submissions.', icon: FileUp },
-            exams: { title: 'Proctored Exam Console', desc: 'Coordinate formal examinations with advanced security.', icon: GraduationCap }
+            exams: { title: 'Proctored Exam Console', desc: 'Coordinate formal examinations with advanced security.', icon: GraduationCap },
+            materials: { title: 'Lecture Material Manager', desc: 'Manage your uploaded materials, set prices, and control availability.', icon: BookOpen }
         };
         const current = titles[mode];
         const Icon = current.icon;
@@ -262,12 +290,51 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 <div className="space-y-4">
                     <h3 className="text-xs font-black text-slate-400 uppercase px-2">Records</h3>
                     {records.map((r, i) => (
-                        <div key={i} className="bg-white p-5 rounded-3xl border border-slate-200 flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><BookOpen size={18} /></div>
-                                <p className="font-bold text-slate-900">{r.title}</p>
+                        <div key={i} className="bg-white p-5 rounded-3xl border border-slate-200 flex flex-col gap-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><BookOpen size={18} /></div>
+                                    <p className="font-bold text-slate-900">{r.title}</p>
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-400">{r.duration}m</span>
                             </div>
-                            <span className="text-[10px] font-bold text-slate-400">{r.duration}m</span>
+                            
+                            <div className="pt-4 border-t border-slate-50 flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase">Paid Access</label>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={r.is_paid} 
+                                        onChange={(e) => updateSettings(r.id, false, { ...r, is_paid: e.target.checked })}
+                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                    />
+                                </div>
+                                {r.is_paid && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black text-slate-400">₦</span>
+                                        <input 
+                                            type="number" 
+                                            value={r.price} 
+                                            onChange={(e) => {
+                                                const newPrice = parseInt(e.target.value);
+                                                if (isNaN(newPrice)) return;
+                                                // We might want to debounce this or use a button, but for now lets just update
+                                            }}
+                                            onBlur={(e) => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
+                                            className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold"
+                                        />
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-2 ml-auto">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase">{r.is_available ? 'Enabled' : 'Disabled'}</span>
+                                    <button 
+                                        onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
+                                        className={`w-10 h-5 rounded-full relative transition-colors ${r.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                    >
+                                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${r.is_available ? 'right-1' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     ))}
                     {records.length === 0 && !isLoadingRecords && <div className="text-center py-10 text-slate-400 font-bold">No records.</div>}
@@ -284,16 +351,43 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                     <input name="title" required placeholder="Assignment Title" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold" />
                     <textarea name="description" placeholder="Instructions" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold min-h-[100px]" />
                     <div className="flex gap-4">
-                         <button type="submit" disabled={isProcessing || !selectedHubResource} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl disabled:opacity-50">Dispatch</button>
+                         <button type="submit" disabled={isProcessing} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl disabled:opacity-50">Dispatch</button>
                          <button type="button" onClick={handleOpenSelector} className="px-6 bg-slate-900 text-white rounded-2xl"><Database size={20} /></button>
                     </div>
                 </form>
             </div>
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-2 gap-6">
                 {records.map((r, i) => (
-                    <div key={i} className="bg-white p-6 rounded-3xl border border-slate-200">
-                        <p className="font-bold text-slate-900 mb-2">{r.title}</p>
-                        <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Active</span>
+                    <div key={i} className="bg-white p-6 rounded-3xl border border-slate-200 flex flex-col gap-4">
+                        <div className="flex justify-between items-center">
+                            <p className="font-bold text-slate-900">{r.title}</p>
+                            <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Active</span>
+                        </div>
+                        <div className="pt-4 border-t border-slate-50 flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase">Paid</label>
+                                <input 
+                                    type="checkbox" 
+                                    checked={r.is_paid} 
+                                    onChange={(e) => updateSettings(r.id, false, { ...r, is_paid: e.target.checked })}
+                                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                />
+                            </div>
+                            {r.is_paid && (
+                                <input 
+                                    type="number" 
+                                    value={r.price} 
+                                    onBlur={(e) => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
+                                    className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold"
+                                />
+                            )}
+                            <button 
+                                onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
+                                className={`w-10 h-5 rounded-full relative transition-colors ml-auto ${r.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                            >
+                                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${r.is_available ? 'right-1' : 'left-1'}`} />
+                            </button>
+                        </div>
                     </div>
                 ))}
             </div>
@@ -311,12 +405,123 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 <button onClick={handleOpenSelector} className="bg-white text-slate-900 font-black px-8 py-4 rounded-xl">New Session</button>
             </div>
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden p-8">
-                <h3 className="text-lg font-bold text-slate-800 mb-6">History</h3>
-                {records.length === 0 ? <p className="text-center py-10 text-slate-400">Empty history.</p> : records.map((r, i) => (
-                    <div key={i} className="p-4 bg-slate-50 rounded-2xl mb-2 flex justify-between items-center">
-                        <p className="font-bold">{r.title}</p>
-                        <span className="text-xs text-slate-400">{new Date(r.created_at).toLocaleDateString()}</span>
+                <h3 className="text-lg font-bold text-slate-800 mb-6 font-display">Active & Past Examinations</h3>
+                <div className="space-y-4">
+                    {records.length === 0 ? <p className="text-center py-10 text-slate-400">Empty history.</p> : records.map((r, i) => (
+                        <div key={i} className="p-6 bg-slate-50 rounded-[2rem] flex flex-col md:flex-row justify-between items-center gap-6 group hover:bg-white border border-transparent hover:border-blue-100 transition-all">
+                            <div className="flex items-center gap-4 flex-1">
+                                <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-all"><GraduationCap size={24} /></div>
+                                <div>
+                                    <p className="font-bold text-slate-900">{r.title}</p>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(r.created_at).toLocaleDateString()}</p>
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase">Paid Access</label>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={r.is_paid} 
+                                        onChange={(e) => updateSettings(r.id, false, { ...r, is_paid: e.target.checked })}
+                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                    />
+                                </div>
+                                {r.is_paid && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black text-slate-400">₦</span>
+                                        <input 
+                                            type="number" 
+                                            value={r.price} 
+                                            onBlur={(e) => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
+                                            className="w-24 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-black shadow-sm"
+                                        />
+                                    </div>
+                                )}
+                                <button 
+                                    onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
+                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${r.is_available ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}
+                                >
+                                    {r.is_available ? 'Available' : 'Disabled'}
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderMaterialsContent = () => (
+        <div className="space-y-8">
+            <div className="grid lg:grid-cols-2 gap-8">
+                {hubResources.filter(r => r.type === 'material').length === 0 && (
+                    <div className="lg:col-span-2 bg-white rounded-[2rem] p-12 text-center border border-slate-200 grayscale opacity-40">
+                         <BookOpen size={48} className="mx-auto mb-4" />
+                         <p className="font-bold">No lecture materials uploaded in the Hub yet.</p>
+                         <p className="text-sm">Upload materials in the "Resource Hub" first.</p>
                     </div>
+                )}
+                
+                {hubResources.filter(r => r.type === 'material').map((item) => (
+                    <motion.div 
+                        key={item.id}
+                        layout
+                        className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm hover:border-blue-200 transition-all group"
+                    >
+                        <div className="flex items-start justify-between mb-6">
+                            <div className="flex items-center gap-5">
+                                <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shadow-sm">
+                                    <FileText size={24} />
+                                </div>
+                                <div>
+                                    <p className="font-bold text-slate-900 uppercase tracking-tight">{item.name}</p>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Material ID: {item.id}</p>
+                                </div>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${item.is_available ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                {item.is_available ? 'Public' : 'Hidden'}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-50">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Access Policy</label>
+                                <div className="flex items-center gap-3">
+                                    <button 
+                                        onClick={() => updateSettings(item.id, true, { ...item, is_paid: !item.is_paid } as any)}
+                                        className={`flex-1 py-2 px-3 rounded-xl text-[10px] font-bold border transition-all ${item.is_paid ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border-slate-200 text-slate-400 hover:border-blue-200'}`}
+                                    >
+                                        {item.is_paid ? 'Paid Access' : 'Free Access'}
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            {item.is_paid && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Download Price (₦)</label>
+                                    <input 
+                                        type="number"
+                                        value={item.price}
+                                        onBlur={(e) => updateSettings(item.id, true, { ...item, price: parseInt(e.target.value) || 0 } as any)}
+                                        onChange={(e) => {
+                                            // Local state update would be better but let's stick to updateSettings on blur
+                                        }}
+                                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-900 outline-none focus:border-blue-400 transition-all"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="col-span-2 pt-4">
+                                <button 
+                                    onClick={() => updateSettings(item.id, true, { ...item, is_available: !item.is_available } as any)}
+                                    className={`w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${item.is_available ? 'bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-200'}`}
+                                >
+                                    {item.is_available ? 'Disable Student Access' : 'Authorize Student Access'}
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
                 ))}
             </div>
         </div>
@@ -330,6 +535,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 {mode === 'tests' && <motion.div key="tests" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderTestsContent()}</motion.div>}
                 {mode === 'assignments' && <motion.div key="assignments" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderAssignmentsContent()}</motion.div>}
                 {mode === 'exams' && <motion.div key="exams" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderExamsContent()}</motion.div>}
+                {mode === 'materials' && <motion.div key="materials" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderMaterialsContent()}</motion.div>}
             </AnimatePresence>
 
             <AnimatePresence>

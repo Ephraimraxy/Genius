@@ -41,16 +41,21 @@
     font-feature-settings: "cv02", "cv05", "cv11";
   }
 
-  /* Professional Mobile Scaling - Reduces scrolling & improves density */
+  /* Professional Mobile Scaling - Improves density */
   @media (max-width: 768px) {
     html {
-      font-size: 13px; /* Slightly smaller base font for mobile */
+      font-size: 14px; /* Slightly larger for easier reading on small screens */
     }
     
     section {
-      padding-top: 3rem !important;
-      padding-bottom: 3rem !important;
+      padding-top: 2.5rem !important;
+      padding-bottom: 2.5rem !important;
     }
+  }
+
+  /* Easy Zoom Support - Ensure no touch-action restricts pinch zoom */
+  * {
+    touch-action: manipulation; /* Allows pinch-zoom but prevents some double-tap delay issues */
   }
 
   /* Custom Scrollbar */

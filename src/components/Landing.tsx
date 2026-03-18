@@ -16,7 +16,8 @@ import {
   Play,
   XCircle,
   PlusCircle,
-  Gem
+  Gem,
+  FileDown
 } from 'lucide-react';
 
 interface LandingProps {
@@ -25,6 +26,25 @@ interface LandingProps {
 }
 
 export default function Landing({ onPublicationHub, onSchoolPortal }: LandingProps) {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  React.useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-[#800000] selection:text-white">
@@ -56,6 +76,15 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
 
           {/* Actions */}
           <div className="flex items-center gap-6">
+            {deferredPrompt && (
+              <button 
+                onClick={handleInstallClick}
+                className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black rounded-lg shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest flex items-center gap-2"
+              >
+                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                Install App
+              </button>
+            )}
             <button 
               onClick={onSchoolPortal} 
               className="px-6 py-3 text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-xl transition-all uppercase tracking-widest hidden sm:flex items-center gap-2 shadow-sm"
@@ -108,26 +137,37 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                   The global benchmark for multidisciplinary research excellence. Transform your ideas with <span className="text-white border-b border-[#ff4d4d]">neural-assisted validation</span>, instant DOI registration, and global dissemination.
                 </p>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-6">
-                  <button 
-                    onClick={onPublicationHub}
-                    className="group relative px-10 py-5 bg-[#800000] text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/40 transition-all hover:scale-[1.05] active:scale-95 uppercase tracking-[0.2em] text-[11px] overflow-hidden"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                    <span className="relative flex items-center justify-center gap-3">
-                       <PlusCircle size={18} />
-                       Publication Hub
-                    </span>
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-6">
+                    <button 
+                      onClick={onPublicationHub}
+                      className="group relative px-10 py-5 bg-[#800000] text-white font-black rounded-2xl shadow-2xl shadow-[#800000]/40 transition-all hover:scale-[1.05] active:scale-95 uppercase tracking-[0.2em] text-[11px] overflow-hidden"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                      <span className="relative flex items-center justify-center gap-3">
+                         <PlusCircle size={18} />
+                         Publication Hub
+                      </span>
+                    </button>
 
-                  <button 
-                    onClick={onSchoolPortal}
-                    className="px-10 py-5 bg-white text-slate-900 font-black rounded-2xl shadow-2xl hover:bg-slate-50 transition-all uppercase tracking-[0.2em] text-[11px] flex items-center justify-center gap-3"
-                  >
-                    <Users size={18} />
-                    Academic Workspace
-                  </button>
-                </div>
+                    <button 
+                      onClick={onSchoolPortal}
+                      className="px-10 py-5 bg-white text-slate-900 font-black rounded-2xl shadow-2xl hover:bg-slate-50 transition-all uppercase tracking-[0.2em] text-[11px] flex items-center justify-center gap-3 border border-slate-100"
+                    >
+                      <Users size={18} />
+                      Academic Workspace
+                    </button>
+
+                    {deferredPrompt && (
+                      <button 
+                        onClick={handleInstallClick}
+                        className="group relative px-10 py-5 bg-emerald-600 text-white font-black rounded-2xl shadow-2xl shadow-emerald-600/20 transition-all hover:scale-[1.05] active:scale-95 uppercase tracking-[0.2em] text-[11px] flex items-center justify-center gap-3"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                        <FileDown size={18} />
+                        Download App
+                      </button>
+                    )}
+                  </div>
               </motion.div>
            </div>
         </div>

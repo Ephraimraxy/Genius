@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, CreditCard, Loader2, CheckCircle2, ShieldUser, Copy, Clock, AlertCircle } from 'lucide-react';
 
-interface AttendancePaymentModalProps {
+interface GeniusPaymentModalProps {
   onClose: () => void;
   onSuccess: () => void;
   amount: number | string;
@@ -10,9 +10,10 @@ interface AttendancePaymentModalProps {
   courseId: string;
   token: string | null;
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
+  type?: 'attendance' | 'material' | 'assessment';
 }
 
-export default function AttendancePaymentModal({ onClose, onSuccess, amount, courseName, courseId, token, addToast }: AttendancePaymentModalProps) {
+export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseName, courseId, token, addToast, type = 'attendance' }: GeniusPaymentModalProps) {
   const [loading, setLoading] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
   const [paymentRef, setPaymentRef] = useState('');
@@ -26,16 +27,24 @@ export default function AttendancePaymentModal({ onClose, onSuccess, amount, cou
     const initializePayment = async () => {
       setLoading(true);
       try {
-        const response = await fetch('/api/payment/attendance/initialize', {
+        let endpoint = '/api/payment/attendance/initialize';
+        let body: any = { amount, course_id: courseId };
+
+        if (type === 'material') {
+          endpoint = '/api/payment/material/initialize';
+          body = { amount, resource_id: parseInt(courseId) };
+        } else if (type === 'assessment') {
+          endpoint = '/api/payment/assessment/initialize';
+          body = { amount, exam_id: parseInt(courseId) };
+        }
+
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {})
           },
-          body: JSON.stringify({
-            amount,
-            course_id: courseId
-          })
+          body: JSON.stringify(body)
         });
 
         const data = await response.json();
@@ -121,10 +130,10 @@ export default function AttendancePaymentModal({ onClose, onSuccess, amount, cou
           </div>
           
           <h2 className="text-3xl md:text-4xl font-black mb-4 tracking-tight leading-tight relative z-10">
-            Sign Attendance
+            {type === 'attendance' ? 'Sign Attendance' : type === 'material' ? 'Unlock Material' : 'Unlock Assessment'}
           </h2>
           <p className="text-indigo-100 mb-8 font-medium leading-relaxed relative z-10 text-sm">
-            Pay the required token to register your presence for <span className="font-bold text-white">{courseName}</span>.
+            Pay the required token to access <span className="font-bold text-white">{courseName}</span>.
           </p>
 
           <div className="space-y-4 w-full relative z-10 mt-auto">
@@ -179,7 +188,7 @@ export default function AttendancePaymentModal({ onClose, onSuccess, amount, cou
               <div className="mb-6 text-center md:text-left flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                    <h3 className="text-2xl font-black text-slate-900">Payment Details</h3>
-                   <p className="text-slate-500 text-sm font-medium">Complete transfer to log today's attendance.</p>
+                   <p className="text-slate-500 text-sm font-medium">Complete transfer to {type === 'attendance' ? "log today's attendance" : "gain instant access"}.</p>
                 </div>
                 {/* Live Countdown Timer */}
                 <div className="flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-2 rounded-full border border-rose-100 shrink-0">
@@ -199,8 +208,8 @@ export default function AttendancePaymentModal({ onClose, onSuccess, amount, cou
                     </span>
                     </div>
                 </div>
-                <div className="text-right">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Course</p>
+                 <div className="text-right">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{type === 'attendance' ? 'Course' : type === 'material' ? 'Material ID' : 'Assessment ID'}</p>
                     <p className="font-bold text-slate-700">{courseId}</p>
                 </div>
               </div>
