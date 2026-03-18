@@ -15,9 +15,24 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Use Network First for navigation and root requests
+  if (event.request.mode === 'navigate' || event.request.url.endsWith('/') || event.request.url.endsWith('index.html')) {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Cache First for static assets (images, logos)
+  if (event.request.url.match(/\.(png|jpg|jpeg|gif|svg|ico)$/)) {
+    event.respondWith(
+      caches.match(event.request).then((response) => response || fetch(event.request))
+    );
+    return;
+  }
+
+  // Network First for scripts/styles to avoid loading outdated bundles
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    })
+    fetch(event.request).catch(() => caches.match(event.request))
   );
 });

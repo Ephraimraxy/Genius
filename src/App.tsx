@@ -247,15 +247,20 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    // Safety fallback: Force hide loader after 5 seconds if profile fails to load
+    // Safety fallback: Force hide loader after 8 seconds if profile fails to load
+    // This prevents "white screen" on slow mobile networks or API failures
     const timer = setTimeout(() => {
+      if (isSyncing || (token && !profile)) {
+        setIsSyncing(false);
+        // If we have a token but no profile after 8s, something is wrong with the API
+        // We'll set a minimal mock profile to allow interaction and Logout
         if (token && !profile) {
-            // If still no profile after 5s, something is wrong, allow interaction to at least logout
-            setIsSyncing(false);
+          setProfile({ user: { name: 'User', role: 'researcher', email: 'sync-error@genius.com' }, papers: [] });
         }
-    }, 5000);
+      }
+    }, 8000);
     return () => clearTimeout(timer);
-  }, [token, profile]);
+  }, [isSyncing, token, profile]);
 
   const handleLogout = () => {
     // Preserve role context for redirection
