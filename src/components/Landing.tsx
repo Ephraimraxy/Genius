@@ -27,7 +27,7 @@ interface LandingProps {
 
 const AnimatedCounter = ({ value }: { value: string }) => {
   const ref = useRef<HTMLSpanElement>(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
+  const isInView = useInView(ref, { once: false, margin: "-100px" });
 
   useEffect(() => {
     if (!isInView || !ref.current) return;
@@ -35,20 +35,35 @@ const AnimatedCounter = ({ value }: { value: string }) => {
     const numericMatch = value.match(/[\d.]+/);
     if (!numericMatch) return;
     
-    const target = parseFloat(numericMatch[0]);
+    let target = parseFloat(numericMatch[0]);
     const suffix = value.replace(numericMatch[0], '');
+    const isKValue = value.toLowerCase().includes('k');
+    const isDecimal = value.includes('.');
     
     const controls = animate(0, target, {
-      duration: 2.5,
+      duration: 6,
       ease: "easeOut",
       onUpdate: (latest) => {
         if (ref.current) {
-          ref.current.textContent = (value.includes('.') ? latest.toFixed(2) : Math.floor(latest)) + suffix;
+          ref.current.textContent = (isKValue || isDecimal ? latest.toFixed(2) : Math.floor(latest)) + suffix;
         }
       }
     });
 
-    return () => controls.stop();
+    let intervalId: any;
+    const timeoutId = setTimeout(() => {
+      intervalId = setInterval(() => {
+        if (!ref.current) return;
+        target += (isKValue || isDecimal ? 0.01 : 1);
+        ref.current.textContent = (isKValue || isDecimal ? target.toFixed(2) : Math.floor(target)) + suffix;
+      }, 5000);
+    }, 6000);
+
+    return () => {
+      controls.stop();
+      clearTimeout(timeoutId);
+      if (intervalId) clearInterval(intervalId);
+    };
   }, [isInView, value]);
 
   return <span ref={ref}>0{value.includes('.') ? '.00' : ''}{value.replace(/[\d.]+/, '')}</span>;
@@ -335,7 +350,7 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
               className="grid grid-cols-2 gap-4"
             >
               {[
-                { label: 'Published Papers', value: '2.5k+', icon: <FileText size={20} /> },
+                { label: 'Published Papers', value: '2.50k+', icon: <FileText size={20} /> },
                 { label: 'Global Citations', value: '850k+', icon: <Globe size={20} /> },
                 { label: 'Expert Reviewers', value: '450+', icon: <Users size={20} /> },
                 { label: 'Impact Factor', value: '8.42', icon: <CheckCircle2 size={20} /> }
