@@ -345,12 +345,18 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
                   <select
                     value={editingUser.role}
                     onChange={e => setEditingUser({ ...editingUser, role: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+                    disabled={editingUser.role === 'tenant_admin' || editingUser.role === 'student'}
+                    className={`w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none ${editingUser.role === 'tenant_admin' || editingUser.role === 'student' ? 'opacity-60 cursor-not-allowed' : ''}`}
                   >
                     <option value="user">Researcher</option>
-                    <option value="tenant_admin">Lecturer</option>
+                    <option value="tenant_admin" disabled>Lecturer (Non-promotable)</option>
                     <option value="admin">Administrator</option>
                   </select>
+                  {(editingUser.role === 'tenant_admin' || editingUser.role === 'student') && (
+                    <p className="text-[10px] text-amber-600 mt-2 font-bold uppercase tracking-wider">
+                      Role promotion is restricted to Research portal users only.
+                    </p>
+                  )}
                 </div>
 
                 {/* Security / Password Reset Section */}

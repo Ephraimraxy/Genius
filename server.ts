@@ -709,7 +709,7 @@ app.post('/api/admin/users/:id/reset-password', authenticateToken, async (req: a
     const { newPassword } = req.body;
     if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
     const result = await pool.query('UPDATE users SET password = $1 WHERE id = $2 RETURNING id, email, name', [hashedPassword, parseInt(id)]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
@@ -1809,10 +1809,12 @@ app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
     const { id } = idParamSchema.parse(req.params);
     const { name, email, role, affiliation } = req.body;
     
-    // Check if new email conflicts with existing user
+    // Check if new email conflicts with existing user (Scoped to the current user's role)
     if (email) {
-      const existing = await pool.query('SELECT id FROM users WHERE email = $1 AND id != $2', [email, id]);
-      if (existing.rows.length > 0) return res.status(400).json({ error: 'Email already in use' });
+      const userRes = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
+      const currentRole = userRes.rows[0]?.role;
+      const existing = await pool.query('SELECT id FROM users WHERE email = $1 AND role = $2 AND id != $3', [email, currentRole, id]);
+      if (existing.rows.length > 0) return res.status(400).json({ error: 'Email already in use for this role' });
     }
 
     const updates: string[] = [];
@@ -1822,6 +1824,14 @@ app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
     if (name) { updates.push(`name = $${paramIdx++}`); values.push(name); }
     if (email) { updates.push(`email = $${paramIdx++}`); values.push(email); }
     if (role && ['admin', 'user'].includes(role)) { 
+      const userRes = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
+      const currentRole = userRes.rows[0]?.role;
+      
+      // Restriction: Only users from the Research portal (role='user') can be made admins
+      if (role === 'admin' && currentRole !== 'user' && currentRole !== 'admin' && currentRole !== 'super_admin') {
+          return res.status(400).json({ error: "Only Research portal users can be assigned Admin roles." });
+      }
+
       if (id === req.user.id && role === 'user') return res.status(400).json({ error: "Cannot demote yourself" });
       updates.push(`role = $${paramIdx++}`); values.push(role); 
     }
@@ -1884,8 +1894,13 @@ app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) =>
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   const { role } = req.body;
   if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
-  try {
     const { id } = idParamSchema.parse(req.params);
+    const userRes = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
+    const currentRole = userRes.rows[0]?.role;
+    if (role === 'admin' && currentRole !== 'user' && currentRole !== 'admin' && currentRole !== 'super_admin') {
+        return res.status(400).json({ error: "Only Research portal users can be assigned Admin roles." });
+    }
+
     if (id === req.user.id) return res.status(400).json({ error: 'Cannot change your own role' });
     await pool.query('UPDATE users SET role = $1 WHERE id = $2', [role, id]);
     const updated = await pool.query('SELECT id, name, email, role, affiliation, created_at FROM users WHERE id = $1', [id]);
