@@ -1893,7 +1893,7 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
 app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   const { role } = req.body;
-  if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  try {
     const { id } = idParamSchema.parse(req.params);
     const userRes = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
     const currentRole = userRes.rows[0]?.role;
