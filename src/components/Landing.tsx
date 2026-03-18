@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, animate, useInView } from 'motion/react';
 import { 
   Search, 
   ArrowRight, 
@@ -24,6 +24,35 @@ interface LandingProps {
   onPublicationHub: () => void;
   onSchoolPortal: () => void;
 }
+
+const AnimatedCounter = ({ value }: { value: string }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+  useEffect(() => {
+    if (!isInView || !ref.current) return;
+
+    const numericMatch = value.match(/[\d.]+/);
+    if (!numericMatch) return;
+    
+    const target = parseFloat(numericMatch[0]);
+    const suffix = value.replace(numericMatch[0], '');
+    
+    const controls = animate(0, target, {
+      duration: 2.5,
+      ease: "easeOut",
+      onUpdate: (latest) => {
+        if (ref.current) {
+          ref.current.textContent = (value.includes('.') ? latest.toFixed(2) : Math.floor(latest)) + suffix;
+        }
+      }
+    });
+
+    return () => controls.stop();
+  }, [isInView, value]);
+
+  return <span ref={ref}>0{value.includes('.') ? '.00' : ''}{value.replace(/[\d.]+/, '')}</span>;
+};
 
 export default function Landing({ onPublicationHub, onSchoolPortal }: LandingProps) {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -315,7 +344,9 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                   <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-[#800000] mb-4">
                      {stat.icon}
                   </div>
-                  <p className="text-3xl font-black text-slate-900 mb-1">{stat.value}</p>
+                  <p className="text-3xl font-black text-slate-900 mb-1">
+                    <AnimatedCounter value={stat.value} />
+                  </p>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">{stat.label}</p>
                 </div>
               ))}
