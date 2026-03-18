@@ -65,7 +65,7 @@ const TAB_LABELS: Record<Tab, string> = {
   lectureRecords: 'Manage Records'
 };
 
-const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
+const SplashScreen = ({ onComplete, themeColor = '#800000', accentColor = '#ff4d4d' }: { onComplete: () => void, themeColor?: string, accentColor?: string }) => {
   useEffect(() => {
     const timer = setTimeout(onComplete, 3000);
     return () => clearTimeout(timer);
@@ -76,11 +76,12 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
       initial={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.8, ease: "easeInOut" }}
-      className="fixed inset-0 z-[9999] bg-[#800000] flex flex-col items-center justify-center text-white overflow-hidden"
+      className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center text-white overflow-hidden`}
+      style={{ backgroundColor: themeColor }}
     >
       <div className="absolute inset-0 bg-slate-900/20" />
       <div className="absolute top-0 left-0 w-96 h-96 bg-white/5 rounded-full blur-3xl -ml-48 -mt-48 animate-pulse" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl -mr-48 -mb-48 animate-pulse" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -mr-48 -mb-48 animate-pulse" style={{ backgroundColor: accentColor + '1a' }} />
 
       <motion.div
         initial={{ scale: 0.8, opacity: 0, y: 20 }}
@@ -101,7 +102,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
           <h2 className="text-4xl md:text-6xl font-black tracking-tighter mb-2 font-display">
             HELLO <span className="text-white/40">GENIUS</span>
           </h2>
-          <div className="h-1 w-24 bg-[#ff4d4d] mx-auto rounded-full mb-4 shadow-[0_0_15px_rgba(255,77,77,0.5)]" />
+          <div className="h-1 w-24 mx-auto rounded-full mb-4 shadow-lg" style={{ backgroundColor: accentColor, boxShadow: `0 0 15px ${accentColor}80` }} />
           <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.4em] text-white/60">
             Neural Verified Environment
           </p>
@@ -130,6 +131,22 @@ export default function App() {
 
   const [showSplash, setShowSplash] = useState(true);
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  
+  // Determine role-based theme color for SplashScreen early
+  const getInitialTheme = () => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        if (user.role === 'tenant_admin' || user.role === 'student') {
+          return { theme: '#1a237e', accent: '#3f51b5' }; // School/Blue
+        }
+      }
+    } catch (e) {}
+    return { theme: '#800000', accent: '#ff4d4d' }; // Research/Red
+  };
+  const [splashTheme] = useState(getInitialTheme());
+
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -290,130 +307,134 @@ export default function App() {
     setOpenChatUserId(userId);
   };
 
-  if (currentPath === '/setup-pin') {
-    return <PINSetup onBackToLanding={() => { window.history.pushState({}, '', '/'); setCurrentPath('/'); setShowLanding(true); }} addToast={addToast} />;
-  }
+  const renderMainContent = () => {
+    if (currentPath === '/setup-pin') {
+      return <PINSetup onBackToLanding={() => { window.history.pushState({}, '', '/'); setCurrentPath('/'); setShowLanding(true); }} addToast={addToast} />;
+    }
 
-  if (showLanding && !token && !showStudentAuth) {
-    return (
-      <>
-        <Landing 
-            onPublicationHub={() => { setAuthRole('researcher'); setAuthIsLogin(true); setShowLanding(false); }} 
-            onSchoolPortal={() => setShowPortalSelection(true)} 
-        />
-        <AnimatePresence>
-          {showPortalSelection && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowPortalSelection(false)}
-                className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-              />
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className="relative w-full max-w-5xl bg-white rounded-[2.5rem] shadow-2xl border border-white/10 overflow-hidden flex flex-col md:flex-row min-h-[500px]"
-              >
-                {/* Left Side: Branding (Refined for Spacing) */}
-                <div className="hidden md:flex md:w-1/2 bg-[#800000] relative overflow-hidden flex-col p-8 text-white">
-                   <div className="absolute inset-0 bg-slate-900/20" />
-                   <div className="absolute top-0 left-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -ml-32 -mt-32" />
-                   <div className="absolute bottom-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl -mr-40 -mb-40" />
-                   
-                   <div className="relative z-10 flex flex-col items-center justify-center h-full text-center">
-                      <motion.div
-                        initial={{ scale: 0.9, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
+    if (showLanding && !token && !showStudentAuth) {
+      return (
+        <>
+          <Landing 
+              onPublicationHub={() => { setAuthRole('researcher'); setAuthIsLogin(true); setShowLanding(false); }} 
+              onSchoolPortal={() => setShowPortalSelection(true)} 
+          />
+          <AnimatePresence>
+            {showPortalSelection && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setShowPortalSelection(false)}
+                  className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                />
+                <motion.div
+                  initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                  className="relative w-full max-w-5xl bg-white rounded-[2.5rem] shadow-2xl border border-white/10 overflow-hidden flex flex-col md:flex-row min-h-[500px]"
+                >
+                  {/* Left Side: Branding (Refined for Spacing) */}
+                  <div className="hidden md:flex md:w-1/2 bg-[#800000] relative overflow-hidden flex-col p-8 text-white">
+                     <div className="absolute inset-0 bg-slate-900/20" />
+                     <div className="absolute top-0 left-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -ml-32 -mt-32" />
+                     <div className="absolute bottom-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl -mr-40 -mb-40" />
+                     
+                     <div className="relative z-10 flex flex-col items-center justify-center h-full text-center">
+                        <motion.div
+                          initial={{ scale: 0.9, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                        >
+                           <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-3" />
+                        </motion.div>
+
+                        <div className="mb-8">
+                           <span className="font-black tracking-[0.2em] text-[10px] md:text-xs uppercase opacity-50">Genius Academy</span>
+                           <div className="h-0.5 w-12 bg-[#ff4d4d] mx-auto mt-2" />
+                        </div>
+
+                        <h2 className="text-3xl md:text-4xl font-black mb-4 tracking-tight">Academic Portal</h2>
+                        <p className="text-white/60 font-medium leading-relaxed max-w-sm mx-auto text-sm md:text-base px-4">
+                          Secure access point for students and faculty members of the Genius Mindspark ecosystem.
+                        </p>
+                     </div>
+                  </div>
+
+                  {/* Right Side: Selection Buttons */}
+                  <div className="w-full md:w-1/2 p-6 sm:p-8 flex flex-col justify-center bg-slate-50/50">
+                    <div className="mb-6 text-center md:text-left">
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-1">Welcome Back</h3>
+                      <p className="text-slate-500 font-medium text-xs">Choose your access role to continue to your dashboard</p>
+                    </div>
+
+                     <div className="grid gap-2">
+                      <button
+                        onClick={() => {
+                          setShowPortalSelection(false);
+                          setShowStudentAuth(true);
+                        }}
+                        className="group p-3 bg-white hover:bg-white border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
                       >
-                         <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-3" />
-                      </motion.div>
+                        <div className="w-10 h-10 flex items-center justify-center text-indigo-600 transition-transform flex-shrink-0">
+                          <GraduationCap size={22} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-slate-900 leading-tight">Student Login</p>
+                          <p className="text-[10px] text-slate-500 font-medium italic">Access exams with Matric & PIN</p>
+                        </div>
+                      </button>
 
-                      <div className="mb-8">
-                         <span className="font-black tracking-[0.2em] text-[10px] md:text-xs uppercase opacity-50">Genius Academy</span>
-                         <div className="h-0.5 w-12 bg-[#ff4d4d] mx-auto mt-2" />
-                      </div>
-
-                      <h2 className="text-3xl md:text-4xl font-black mb-4 tracking-tight">Academic Portal</h2>
-                      <p className="text-white/60 font-medium leading-relaxed max-w-sm mx-auto text-sm md:text-base px-4">
-                        Secure access point for students and faculty members of the Genius Mindspark ecosystem.
-                      </p>
-                   </div>
-                </div>
-
-                {/* Right Side: Selection Buttons */}
-                <div className="w-full md:w-1/2 p-6 sm:p-8 flex flex-col justify-center bg-slate-50/50">
-                  <div className="mb-6 text-center md:text-left">
-                    <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-1">Welcome Back</h3>
-                    <p className="text-slate-500 font-medium text-xs">Choose your access role to continue to your dashboard</p>
-                  </div>
-
-                   <div className="grid gap-2">
-                    <button
-                      onClick={() => {
-                        setShowPortalSelection(false);
-                        setShowStudentAuth(true);
-                      }}
-                      className="group p-3 bg-white hover:bg-white border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
-                    >
-                      <div className="w-10 h-10 flex items-center justify-center text-indigo-600 transition-transform flex-shrink-0">
-                        <GraduationCap size={22} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-black text-slate-900 leading-tight">Student Login</p>
-                        <p className="text-[10px] text-slate-500 font-medium italic">Access exams with Matric & PIN</p>
-                      </div>
-                    </button>
+                      <button
+                        onClick={() => {
+                          setAuthRole('lecturer');
+                          setAuthIsLogin(false);
+                          setShowPortalSelection(false);
+                          setShowLanding(false);
+                        }}
+                        className="group p-3 bg-white hover:bg-white border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
+                      >
+                        <div className="w-10 h-10 flex items-center justify-center text-indigo-600 transition-transform flex-shrink-0">
+                          <PlusCircle size={22} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-slate-900 leading-tight">Lecturer Workspace</p>
+                          <p className="text-[10px] text-slate-500 font-medium italic">Join as a new academic space creator</p>
+                        </div>
+                      </button>
+                    </div>
 
                     <button
-                      onClick={() => {
-                        setAuthRole('lecturer');
-                        setAuthIsLogin(false);
-                        setShowPortalSelection(false);
-                        setShowLanding(false);
-                      }}
-                      className="group p-3 bg-white hover:bg-white border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 rounded-2xl transition-all flex items-center gap-4 text-left"
+                      onClick={() => setShowPortalSelection(false)}
+                      className="mt-4 flex items-center justify-center gap-2 text-slate-400 font-bold hover:text-[#800000] transition-colors uppercase tracking-[0.2em] text-[10px] border-t border-slate-100 pt-4"
                     >
-                      <div className="w-10 h-10 flex items-center justify-center text-indigo-600 transition-transform flex-shrink-0">
-                        <PlusCircle size={22} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-black text-slate-900 leading-tight">Lecturer Workspace</p>
-                        <p className="text-[10px] text-slate-500 font-medium italic">Join as a new academic space creator</p>
-                      </div>
+                      <ArrowLeft size={14} />
+                      Back to Selection
                     </button>
                   </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+        </>
+      );
+    }
 
-                  <button
-                    onClick={() => setShowPortalSelection(false)}
-                    className="mt-4 flex items-center justify-center gap-2 text-slate-400 font-bold hover:text-[#800000] transition-colors uppercase tracking-[0.2em] text-[10px] border-t border-slate-100 pt-4"
-                  >
-                    <ArrowLeft size={14} />
-                    Back to Selection
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-      </>
-    );
-  }
+    if (showStudentAuth && !token) {
+      return <StudentAuth onAuthSuccess={onAuthSuccess} addToast={addToast} onBackToMain={() => { setShowStudentAuth(false); setShowLanding(true); }} />;
+    }
 
-  if (showStudentAuth && !token) {
-    return <StudentAuth onAuthSuccess={onAuthSuccess} addToast={addToast} onBackToMain={() => { setShowStudentAuth(false); setShowLanding(true); }} />;
-  }
-
-  if (!token) {
-    return <Auth onAuthSuccess={onAuthSuccess} addToast={addToast} onBackToLanding={() => setShowLanding(true)} role={authRole} initialIsLogin={authIsLogin} />;
-  }
+    if (!token) {
+      return <Auth onAuthSuccess={onAuthSuccess} addToast={addToast} onBackToLanding={() => setShowLanding(true)} role={authRole} initialIsLogin={authIsLogin} />;
+    }
+    
+    return null;
+  };
 
   const role = profile?.user?.role;
-  const isAdmin = role === 'super_admin' || role === 'admin';
-  const isLecturer = role === 'tenant_admin';
-  const isStudent = role === 'student';
+    const isAdmin = role === 'super_admin' || role === 'admin';
+    const isLecturer = role === 'tenant_admin';
+    const isStudent = role === 'student';
 
   const renderContent = () => {
     if (!profile) return null; // Prevent default view flash
@@ -500,11 +521,13 @@ export default function App() {
     return TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab;
   };
 
-  return (
-    <>
-      <AnimatePresence>
-        {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
-      </AnimatePresence>
+  const mainView = () => {
+    const role = profile?.user?.role;
+    const isAdmin = role === 'super_admin' || role === 'admin';
+    const isLecturer = role === 'tenant_admin';
+    const isStudent = role === 'student';
+
+    return (
       <div className={`flex h-screen bg-white text-slate-900 font-sans overflow-hidden`}>
       {/* Subscription Overlay for Lecturers */}
       {profile?.user?.role === 'tenant_admin' && !profile?.tenant?.is_subscribed && (
@@ -772,6 +795,15 @@ export default function App() {
       <ConfirmModal {...confirmConfig} />
       <GlobalLoader show={isSyncing || (!!token && !profile)} />
     </div>
+    );
+  };
+
+  return (
+    <>
+      <AnimatePresence>
+        {showSplash && <SplashScreen themeColor={splashTheme.theme} accentColor={splashTheme.accent} onComplete={() => setShowSplash(false)} />}
+      </AnimatePresence>
+      {renderMainContent() || mainView()}
     </>
   );
-}
+}
