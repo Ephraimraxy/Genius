@@ -18,14 +18,17 @@ import {
     Clock,
     AlertCircle,
     BookOpen,
-    ShieldCheck
+    ShieldCheck,
+    Mic,
+    Volume2,
+    Coins
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ToastType } from './ToastSystem';
 
 interface Resource {
     id: number;
-    type: 'roster' | 'material';
+    type: 'roster' | 'material' | 'audio';
     name: string;
     status: 'ready' | 'failed' | 'pending' | 'short';
     created_at: string;
@@ -36,7 +39,7 @@ interface Resource {
 }
 
 interface AcademicManagementProps {
-    mode: 'attendance' | 'tests' | 'assignments' | 'exams' | 'materials';
+    mode: 'attendance' | 'tests' | 'assignments' | 'exams' | 'materials' | 'records';
     addToast: (msg: string, type: ToastType) => void;
     token: string | null;
 }
@@ -89,7 +92,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         }
     };
 
-    const fetchHubResources = async (type: 'roster' | 'material') => {
+    const fetchHubResources = async (type: 'roster' | 'material' | 'audio') => {
         setIsLoadingHub(true);
         try {
             const res = await fetch('/api/resources', {
@@ -102,6 +105,14 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         }
         setIsLoadingHub(false);
     };
+
+    useEffect(() => {
+        if (mode === 'records') {
+            fetchHubResources('audio');
+        } else if (mode === 'materials') {
+            fetchHubResources('material');
+        }
+    }, [mode]);
 
     const handleOpenSelector = () => {
         const type = mode === 'attendance' ? 'roster' : 'material';
@@ -170,6 +181,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 addToast('Settings updated', 'success');
                 if (isResource) {
                     if (mode === 'materials') fetchHubResources('material');
+                    if (mode === 'records') fetchHubResources('audio');
                 } else {
                     fetchRecords();
                 }
@@ -185,7 +197,8 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             tests: { title: 'CBT Assessment Suite', desc: 'Create AI-powered tests and track student performance in real-time.', icon: BrainCircuit },
             assignments: { title: 'Submission Manager', desc: 'Set academic tasks - management student submissions.', icon: FileUp },
             exams: { title: 'Proctored Exam Console', desc: 'Coordinate formal examinations with advanced security.', icon: GraduationCap },
-            materials: { title: 'Lecture Material Manager', desc: 'Manage your uploaded materials, set prices, and control availability.', icon: BookOpen }
+            materials: { title: 'Lecture Material Manager', desc: 'Manage your uploaded materials, set prices, and control availability.', icon: BookOpen },
+            records: { title: 'Lecture Record Repository', desc: 'Manage your voice/audio recordings, set monetization, and control access.', icon: Mic }
         };
         const current = titles[mode];
         const Icon = current.icon;
@@ -527,6 +540,86 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         </div>
     );
 
+    const renderRecordsContent = () => (
+        <div className="space-y-8">
+            <div className="grid lg:grid-cols-2 gap-8">
+                {hubResources.filter(r => r.type === 'audio').length === 0 && (
+                    <div className="lg:col-span-2 bg-white rounded-[2rem] p-12 text-center border border-slate-200 grayscale opacity-40">
+                         <Volume2 size={48} className="mx-auto mb-4 text-rose-600" />
+                         <p className="font-bold">No voice/audio records found in the Hub.</p>
+                         <p className="text-sm">Upload audio records in the "Resource Hub" first.</p>
+                    </div>
+                )}
+                
+                {hubResources.filter(r => r.type === 'audio').map((item) => (
+                    <motion.div 
+                        key={item.id}
+                        layout
+                        className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm hover:border-rose-200 transition-all group"
+                    >
+                        <div className="flex items-start justify-between mb-6">
+                            <div className="flex items-center gap-5">
+                                <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center shadow-sm">
+                                    <Volume2 size={24} />
+                                </div>
+                                <div>
+                                    <p className="font-bold text-slate-900 uppercase tracking-tight">{item.name}</p>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Record ID: {item.id}</p>
+                                </div>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${item.is_available ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                {item.is_available ? 'Active' : 'Private'}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-50">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Access Status</label>
+                                <div className="flex items-center gap-3">
+                                    <button 
+                                        onClick={() => updateSettings(item.id, true, { ...item, is_paid: false } as any)}
+                                        className={`flex-1 py-3 px-3 rounded-xl text-[10px] font-bold border transition-all ${!item.is_paid ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-200' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200'}`}
+                                    >
+                                        Free
+                                    </button>
+                                    <button 
+                                        onClick={() => updateSettings(item.id, true, { ...item, is_paid: true } as any)}
+                                        className={`flex-1 py-3 px-3 rounded-xl text-[10px] font-bold border transition-all ${item.is_paid ? 'bg-rose-600 border-rose-600 text-white shadow-lg shadow-rose-200' : 'bg-white border-slate-200 text-slate-400 hover:border-rose-200'}`}
+                                    >
+                                        Paid
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Monetization (₦)</label>
+                                <div className="relative">
+                                    <Coins className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                    <input 
+                                        type="number"
+                                        disabled={!item.is_paid}
+                                        value={item.price || 0}
+                                        onBlur={(e) => updateSettings(item.id, true, { ...item, price: parseInt(e.target.value) || 0 } as any)}
+                                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-900 outline-none focus:border-rose-400 disabled:opacity-40 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="col-span-2 pt-4">
+                                <button 
+                                    onClick={() => updateSettings(item.id, true, { ...item, is_available: !item.is_available } as any)}
+                                    className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${item.is_available ? 'bg-slate-900 text-white' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-200'}`}
+                                >
+                                    {item.is_available ? 'Set Record Private' : 'Publish to Students'}
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                ))}
+            </div>
+        </div>
+    );
+
     return (
         <motion.div key={mode} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="pb-12">
             {renderHeader()}
@@ -536,6 +629,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 {mode === 'assignments' && <motion.div key="assignments" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderAssignmentsContent()}</motion.div>}
                 {mode === 'exams' && <motion.div key="exams" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderExamsContent()}</motion.div>}
                 {mode === 'materials' && <motion.div key="materials" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderMaterialsContent()}</motion.div>}
+                {mode === 'records' && <motion.div key="records" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderRecordsContent()}</motion.div>}
             </AnimatePresence>
 
             <AnimatePresence>

@@ -35,7 +35,7 @@ import TokenStatusView from './components/TokenStatusView';
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -61,7 +61,8 @@ const TAB_LABELS: Record<Tab, string> = {
   attendance: 'Attendance Management',
   exams: 'Exam Records',
   storage: 'Resource Hub',
-  materials: 'Lecture Materials'
+  materials: 'Lecture Materials',
+  lectureRecords: 'Manage Records'
 };
 
 const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
@@ -87,7 +88,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
         transition={{ duration: 1, ease: "easeOut" }}
         className="relative z-10 flex flex-col items-center"
       >
-        <div className="w-32 h-32 md:w-40 md:h-40 bg-white rounded-full p-4 shadow-2xl mb-8 flex items-center justify-center border-4 border-white/20">
+        <div className="w-32 h-32 md:w-40 md:h-40 bg-white rounded-full p-8 shadow-2xl mb-8 flex items-center justify-center border-4 border-white/20">
           <img src="/gmijp-logo.png" alt="Genius" className="w-full h-full object-contain" />
         </div>
         
@@ -127,7 +128,7 @@ export default function App() {
     return window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
   };
 
-  const [showSplash, setShowSplash] = useState(isPWA());
+  const [showSplash, setShowSplash] = useState(true);
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -448,6 +449,7 @@ export default function App() {
             case 'assignments': return <AcademicManagement mode="assignments" addToast={addToast} token={token} />;
             case 'exams': return <AcademicManagement mode="exams" addToast={addToast} token={token} />;
             case 'materials': return <AcademicManagement mode="materials" addToast={addToast} token={token} />;
+            case 'lectureRecords': return <AcademicManagement mode="records" addToast={addToast} token={token} />;
             case 'storage': return <ResourceHub addToast={addToast} token={token} />;
             case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} />;
             case 'reviewQueue': return <ReviewQueue profile={profile} />;
@@ -491,6 +493,7 @@ export default function App() {
         if (activeTab === 'tests') return 'CBT Assessment';
         if (activeTab === 'assignments') return 'Submission Manager';
         if (activeTab === 'materials') return 'Lecture Material Manager';
+        if (activeTab === 'lectureRecords') return 'Audio Record Hub';
         if (activeTab === 'storage') return 'Genius Resource Hub';
     }
     if (activeTab === 'dashboard') return isAdmin ? 'Admin Console' : 'Analytics Overview';
@@ -539,8 +542,8 @@ export default function App() {
               ) : isStudent ? (
                 <ShieldCheck className="text-white" size={18} />
               ) : (
-                <div className="w-full h-full rounded-full bg-white flex items-center justify-center p-0.5 shadow-sm overflow-hidden">
-                  <img src="/gmijp-logo.png" alt="Logo" className="w-full h-full object-contain" />
+                <div className="w-full h-full rounded-full bg-white flex items-center justify-center p-2 shadow-sm overflow-hidden">
+                  <img src="/gmijp-logo.png" alt="Logo" className="w-full h-full object-contain scale-110" />
                 </div>
               )}
             </div>

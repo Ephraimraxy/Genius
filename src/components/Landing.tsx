@@ -97,7 +97,7 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
         <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-2 md:gap-4">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 drop-shadow-sm border border-slate-100 overflow-hidden bg-white p-1.5">
+|            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 drop-shadow-sm border border-slate-100 overflow-hidden bg-white p-2.5">
               <img src="/gmijp-logo.png" alt="GMIJP" className="w-full h-full object-contain rounded-full" />
             </div>
             <div className="flex flex-col">
@@ -495,7 +495,7 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
           <div className="grid lg:grid-cols-4 gap-16">
             <div className="lg:col-span-2">
               <div className="flex items-center gap-4 mb-8">
-                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg">
+|                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg p-2.5">
                   <img src="/gmijp-logo.png" alt="GMIJP" className="w-8 h-8 rounded-full object-contain" />
                 </div>
                 <span className="text-2xl font-black tracking-tighter uppercase">Genius Publication</span>

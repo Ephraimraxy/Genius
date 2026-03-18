@@ -11,14 +11,16 @@ import {
     RefreshCw,
     ShieldCheck,
     FileUp,
-    Download
+    Download,
+    Mic,
+    Volume2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ToastType } from './ToastSystem';
 
 interface Resource {
     id: number;
-    type: 'roster' | 'material';
+    type: 'roster' | 'material' | 'audio';
     name: string;
     status: 'ready' | 'failed' | 'pending' | 'short';
     created_at: string;
@@ -33,7 +35,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [resources, setResources] = useState<Resource[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isUploading, setIsUploading] = useState(false);
-    const [uploadType, setUploadType] = useState<'roster' | 'material'>('roster');
+    const [uploadType, setUploadType] = useState<'roster' | 'material' | 'audio'>('roster');
     const [fileHandle, setFileHandle] = useState<File | null>(null);
 
     useEffect(() => {
@@ -106,6 +108,12 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         };
 
         if (uploadType === 'roster') reader.readAsText(fileHandle);
+        else if (uploadType === 'audio') {
+            // Simulate audio processing
+            setTimeout(() => {
+                reader.readAsDataURL(fileHandle); // Just to satisfy the flow
+            }, 500);
+        }
         else reader.readAsText(fileHandle); // In real app, we'd handle PDF/DOCX
     };
 
@@ -162,6 +170,12 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 >
                                     Lecture Material
                                 </button>
+                                <button 
+                                    onClick={() => setUploadType('audio')}
+                                    className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${uploadType === 'audio' ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white'}`}
+                                >
+                                    Audio Record
+                                </button>
                             </div>
 
                             <div className="border-2 border-dashed border-white/20 rounded-[2rem] p-10 text-center hover:border-blue-400 hover:bg-white/5 transition-all cursor-pointer relative group">
@@ -179,10 +193,10 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                             <button 
                                 onClick={processUpload}
                                 disabled={!fileHandle || isUploading}
-                                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl transition-all disabled:opacity-40 shadow-xl shadow-blue-500/20 flex items-center justify-center gap-2"
+                                className={`w-full ${uploadType === 'audio' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'} text-white font-black py-4 rounded-2xl transition-all disabled:opacity-40 shadow-xl flex items-center justify-center gap-2`}
                             >
-                                {isUploading ? <RefreshCw className="animate-spin" size={20} /> : <ShieldCheck size={20} />}
-                                {isUploading ? 'Sanitizing...' : 'Upload & Sanitize'}
+                                {isUploading ? <RefreshCw className="animate-spin" size={20} /> : (uploadType === 'audio' ? <Mic size={20} /> : <ShieldCheck size={20} />)}
+                                {isUploading ? (uploadType === 'audio' ? 'Neural Refining...' : 'Sanitizing...') : (uploadType === 'audio' ? 'Upload & Refine' : 'Upload & Sanitize')}
                             </button>
                          </div>
                     </div>
@@ -235,8 +249,14 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                         className="flex items-center justify-between p-5 bg-slate-50 rounded-3xl border border-slate-100 group hover:border-blue-200 transition-all"
                                     >
                                         <div className="flex items-center gap-5">
-                                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm ${item.type === 'roster' ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'}`}>
-                                                {item.type === 'roster' ? <Users size={24} /> : <FileText size={24} />}
+                                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm ${
+                                                item.type === 'roster' ? 'bg-indigo-50 text-indigo-600' : 
+                                                item.type === 'audio' ? 'bg-rose-50 text-rose-600' :
+                                                'bg-amber-50 text-amber-600'
+                                            }`}>
+                                                {item.type === 'roster' ? <Users size={24} /> : 
+                                                 item.type === 'audio' ? <Volume2 size={24} /> : 
+                                                 <FileText size={24} />}
                                             </div>
                                             <div>
                                                 <p className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors uppercase tracking-tight">{item.name}</p>

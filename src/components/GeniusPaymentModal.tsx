@@ -10,7 +10,7 @@ interface GeniusPaymentModalProps {
   courseId: string;
   token: string | null;
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
-  type?: 'attendance' | 'material' | 'assessment';
+  type?: 'attendance' | 'material' | 'assessment' | 'audio';
 }
 
 export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseName, courseId, token, addToast, type = 'attendance' }: GeniusPaymentModalProps) {
@@ -36,6 +36,9 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         } else if (type === 'assessment') {
           endpoint = '/api/payment/assessment/initialize';
           body = { amount, exam_id: parseInt(courseId) };
+        } else if (type === 'audio') {
+          endpoint = '/api/payment/audio/initialize';
+          body = { amount, record_id: parseInt(courseId) };
         }
 
         const response = await fetch(endpoint, {
@@ -130,7 +133,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
           </div>
           
           <h2 className="text-3xl md:text-4xl font-black mb-4 tracking-tight leading-tight relative z-10">
-            {type === 'attendance' ? 'Sign Attendance' : type === 'material' ? 'Unlock Material' : 'Unlock Assessment'}
+            {type === 'attendance' ? 'Sign Attendance' : type === 'material' ? 'Unlock Material' : type === 'audio' ? 'Unlock Audio' : 'Unlock Assessment'}
           </h2>
           <p className="text-indigo-100 mb-8 font-medium leading-relaxed relative z-10 text-sm">
             Pay the required token to access <span className="font-bold text-white">{courseName}</span>.

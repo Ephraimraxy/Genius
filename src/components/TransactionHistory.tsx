@@ -10,7 +10,8 @@ import {
   ExternalLink,
   PlusCircle,
   Save,
-  DollarSign
+  DollarSign,
+  Volume2
 } from 'lucide-react';
 
 interface Transaction {
@@ -29,7 +30,7 @@ export default function TransactionHistory({ profile }: { profile: any }) {
   const [loading, setLoading] = useState(true);
   const [publicationPrice, setPublicationPrice] = useState<number>(0);
   const [newPrice, setNewPrice] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'standard' | 'attendance'>('standard');
+  const [activeTab, setActiveTab] = useState<'standard' | 'attendance' | 'audio'>('standard');
   const isAdmin = profile?.user?.role === 'admin';
 
   useEffect(() => {
@@ -86,10 +87,19 @@ export default function TransactionHistory({ profile }: { profile: any }) {
   };
 
   const attendanceTransactions = transactions.filter(t => t.type === 'attendance_token');
-  const standardTransactions = transactions.filter(t => t.type !== 'attendance_token');
-  const displayedTransactions = activeTab === 'attendance' ? attendanceTransactions : standardTransactions;
+  const audioTransactions = transactions.filter(t => t.type === 'audio_payment');
+  const standardTransactions = transactions.filter(t => t.type !== 'attendance_token' && t.type !== 'audio_payment');
+  
+  const displayedTransactions = 
+    activeTab === 'attendance' ? attendanceTransactions : 
+    activeTab === 'audio' ? audioTransactions : 
+    standardTransactions;
 
   const totalAttendanceIncome = attendanceTransactions
+    .filter(t => t.status === 'success')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  const totalAudioIncome = audioTransactions
     .filter(t => t.status === 'success')
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
@@ -172,6 +182,13 @@ export default function TransactionHistory({ profile }: { profile: any }) {
             <Clock size={16} />
             Attendance Tokens
           </button>
+          <button 
+             onClick={() => setActiveTab('audio')}
+             className={`px-6 py-3 rounded-xl font-bold uppercase tracking-wider text-xs transition-all flex items-center gap-2 ${activeTab === 'audio' ? 'bg-rose-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Volume2 size={16} />
+            Audio Royalties
+          </button>
         </div>
       )}
 
@@ -193,6 +210,28 @@ export default function TransactionHistory({ profile }: { profile: any }) {
             </div>
             <div className="text-right">
                <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter">₦{totalAttendanceIncome.toLocaleString()}</span>
+            </div>
+         </motion.div>
+      )}
+
+      {/* Audio Income Overview Banner */}
+      {activeTab === 'audio' && (
+         <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-rose-50 border border-rose-100 rounded-[2rem] p-6 md:p-8 flex items-center justify-between shadow-sm"
+         >
+            <div className="flex items-center gap-4">
+               <div className="p-4 bg-rose-600 text-white rounded-2xl shadow-lg shadow-rose-600/20">
+                  <span className="font-serif text-2xl font-black">₦</span>
+               </div>
+               <div>
+                  <h3 className="text-lg font-black text-slate-900 tracking-tight">Total Audio Revenue</h3>
+                  <p className="text-rose-600 font-bold uppercase tracking-widest text-xs mt-1">From Premium Records</p>
+               </div>
+            </div>
+            <div className="text-right">
+               <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter">₦{totalAudioIncome.toLocaleString()}</span>
             </div>
          </motion.div>
       )}
@@ -243,6 +282,9 @@ export default function TransactionHistory({ profile }: { profile: any }) {
                       <span className="text-sm font-black text-slate-900 tracking-tight">{t.reference}</span>
                       {t.type === 'attendance_token' && t.metadata?.course_id && (
                         <span className="block text-[10px] font-bold text-indigo-500 mt-1 uppercase">Course: {t.metadata.course_id}</span>
+                      )}
+                      {t.type === 'audio_payment' && t.metadata?.record_name && (
+                        <span className="block text-[10px] font-bold text-rose-500 mt-1 uppercase">Record: {t.metadata.record_name}</span>
                       )}
                     </td>
                     {isAdmin && (

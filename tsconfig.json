@@ -21,9 +21,6 @@
       ]
     },
     "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "typeRoots": [
-      "./node_modules/@types"
-    ]
+    "noEmit": true
   }
 }
