@@ -8,13 +8,13 @@
   "theme_color": "#800000",
   "icons": [
     {
-      "src": "/gmijp-logo.png",
+      "src": "/pwa-icon.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/gmijp-logo.png",
+      "src": "/pwa-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
