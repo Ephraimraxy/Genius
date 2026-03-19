@@ -177,14 +177,14 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                    <div className="absolute top-0 right-0 w-96 h-96 rounded-full blur-[100px] -mr-48 -mt-48 opacity-20" style={{ backgroundColor: accentColor }} />
                    <div className="absolute bottom-0 left-0 w-80 h-80 bg-slate-900/40 rounded-full blur-[120px] -ml-40 -mb-40" />
                    
-                   <div className="relative z-10 flex flex-col h-full text-center">
-                      <div className="flex-1 flex flex-col items-center justify-center">
+                   <div className="relative z-10 flex flex-col h-full p-4">
+                      <div className="flex-1 flex flex-col items-center justify-center border-[10px] border-white rounded-[4rem] p-10 text-center">
                          <motion.div
                            initial={{ scale: 0.9, opacity: 0 }}
                            animate={{ scale: 1, opacity: 1 }}
                            className="mb-8"
                          >
-|                            <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-6" />
+                            <img src="/gmijp-logo.png" alt="Genius" className="w-24 h-24 object-contain shadow-2xl rounded-full bg-white p-6" />
                          </motion.div>
 
                          <div className="mb-8">
@@ -197,19 +197,19 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                              <span className="text-white/40">{isLecturer ? 'Workspace' : 'Research'}</span>
                          </h2>
                          
-                         <p className="text-white/60 font-medium leading-relaxed max-w-sm text-base mx-auto">
+                         <p className="text-white/60 font-medium leading-relaxed max-w-sm text-sm mx-auto">
                            {isLecturer 
                              ? 'Establish your school hub, manage student enrollments, and coordinate secure exam sessions across your department.' 
                              : 'Global benchmark for multidisciplinary research. Transform your ideas with neural-assisted validation and peer review.'}
                          </p>
-                      </div>
 
-                      <div className="mt-auto pt-6 border-t border-white/10">
-                         <div className="flex items-center justify-center gap-3">
-                            <ShieldCheck size={14} className="opacity-50" />
-                            <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-tight text-left">
-                               Secured by GMIJ <br/> Neural Encryption
-                            </p>
+                         <div className="mt-12 pt-6 border-t border-white/10 w-full">
+                            <div className="flex items-center justify-center gap-3">
+                               <ShieldCheck size={14} className="opacity-50" />
+                               <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-tight text-left">
+                                  Secured by GMIJ <br/> Neural Encryption
+                               </p>
+                            </div>
                          </div>
                       </div>
                    </div>
@@ -217,10 +217,10 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
 
                 {/* Right Side: Action Area */}
                 <div className={`w-full md:w-[60%] p-4 md:p-6 lg:p-10 flex flex-col justify-center bg-white relative z-10 overflow-y-auto ${!isLecturer ? 'md:bg-white bg-slate-50' : 'md:bg-white bg-blue-50/50'}`}>
-                    <div className={`max-w-md w-full mx-auto relative px-6 py-10 md:p-0 transition-all ${
+                    <div className={`max-w-md w-full mx-auto relative px-6 py-10 transition-all ${
                         !isLecturer 
-                        ? 'bg-white rounded-[4rem] border-[10px] border-[#800000] shadow-[0_40px_100px_-20px_rgba(128,0,0,0.15)] md:bg-transparent md:border-0 md:shadow-none' 
-                        : 'bg-white rounded-[4rem] border-[10px] border-[#1a237e] shadow-[0_40px_100px_-20px_rgba(26,35,126,0.15)] md:bg-transparent md:border-0 md:shadow-none'
+                        ? 'bg-white rounded-[4rem] border-[10px] border-[#800000] shadow-[0_40px_100px_-20px_rgba(128,0,0,0.15)]' 
+                        : 'bg-white rounded-[4rem] border-[10px] border-[#1a237e] shadow-[0_40px_100px_-20px_rgba(26,35,126,0.15)]'
                     }`}>
                         {/* Static Background Pattern */}
                         <div className="absolute -top-32 -right-32 text-slate-50 text-8xl font-black select-none pointer-events-none rotate-6 opacity-20">
