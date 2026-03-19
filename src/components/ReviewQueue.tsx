@@ -12,16 +12,22 @@ interface Paper {
   researcher_email: string;
 }
 
-export default function ReviewQueue({ profile }: { profile: any }) {
+export default function ReviewQueue({ profile, initialStatusFilter = 'pending' }: { profile: any, initialStatusFilter?: string }) {
   const adminStats = profile?.adminStats;
   const allPapers: Paper[] = adminStats?.allPapers || [];
-  const [statusFilter, setStatusFilter] = useState<string>('pending');
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [papers, setPapers] = useState<Paper[]>(allPapers);
 
   useEffect(() => {
     setPapers(allPapers);
   }, [allPapers]);
+
+  useEffect(() => {
+    if (initialStatusFilter) {
+      setStatusFilter(initialStatusFilter);
+    }
+  }, [initialStatusFilter]);
 
   const handleStatusChange = async (paperId: number, newStatus: string) => {
     setUpdatingId(paperId);
@@ -47,6 +53,7 @@ export default function ReviewQueue({ profile }: { profile: any }) {
     if (statusFilter === 'ready') return p.status === 'ready';
     if (statusFilter === 'published') return p.status === 'published';
     if (statusFilter === 'rejected') return p.status === 'rejected';
+    if (statusFilter === 'all') return true;
     return true;
   });
 

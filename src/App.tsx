@@ -36,7 +36,7 @@ import VideoLectures from './components/VideoLectures';
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -52,6 +52,7 @@ const TAB_LABELS: Record<Tab, string> = {
   records: 'Publication Records',
   users: 'User Management',
   tenants: 'Tenant Directory',
+  globalReviews: 'Global Reviews',
   reviewQueue: 'Review Queue',
   settings: 'Settings',
   courseManagement: 'Course Management',
@@ -477,7 +478,7 @@ export default function App() {
             case 'storage': return <ResourceHub addToast={addToast} token={token} />;
             case 'videoLectures': return <VideoLectures addToast={addToast} token={token} />;
             case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} />;
-            case 'reviewQueue': return <ReviewQueue profile={profile} />;
+            case 'reviewQueue': return <ReviewQueue initialStatusFilter="pending" profile={profile} />;
             case 'settings': return <LecturerSettings />;
             default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
         }
@@ -499,7 +500,8 @@ export default function App() {
       case 'users': return <UserManagement initialRoleFilter="user" addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
       case 'tenants': return <UserManagement initialRoleFilter="tenant_admin" addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
       case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
-      case 'reviewQueue': return <ReviewQueue profile={profile} />;
+      case 'reviewQueue': return <ReviewQueue initialStatusFilter="pending" profile={profile} />;
+      case 'globalReviews': return <ReviewQueue initialStatusFilter="all" profile={profile} />;
       case 'settings': return <AdminSettings />;
       case 'profile': return <ProfileView profile={profile} addToast={addToast} onProfileUpdate={() => {
         fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } })
