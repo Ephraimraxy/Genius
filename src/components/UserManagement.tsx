@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Users, Search, ShieldCheck, UserCheck, UserX, Mail, Building2, Calendar, ChevronDown, Filter, RefreshCw, Edit2, Trash2, X, MessageSquare, Save, KeyRound, Lock, CheckCircle } from 'lucide-react';
+import { Users, Search, ShieldCheck, UserCheck, UserX, Mail, Building2, Calendar, ChevronDown, Filter, RefreshCw, Edit2, Trash2, X, MessageSquare, Save, KeyRound, Lock, CheckCircle, GraduationCap } from 'lucide-react';
 
 interface User {
   id: number;
@@ -136,18 +136,35 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
     }
   };
 
-  const filtered = users.filter(u => {
-    const matchSearch = u.name?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase());
-    const matchRole = roleFilter === 'all' || (roleFilter === 'admin' && (u.role === 'admin' || u.role === 'super_admin')) || u.role === roleFilter;
-    return matchSearch && matchRole;
-  });
+  const isTenantView = initialRoleFilter === 'tenant_admin';
+  const isUserView = initialRoleFilter === 'user';
 
   const stats = {
     total: users.length,
     admins: users.filter(u => u.role === 'admin' || u.role === 'super_admin').length,
     researchers: users.filter(u => u.role === 'user').length,
     lecturers: users.filter(u => u.role === 'tenant_admin').length,
+    students: users.filter(u => u.role === 'student').length,
   };
+
+  const filtered = users.filter(u => {
+    const matchSearch = u.name?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase());
+    let matchRole = false;
+    if (roleFilter === 'all') {
+      if (isTenantView) {
+        matchRole = u.role === 'tenant_admin' || u.role === 'student';
+      } else if (isUserView) {
+        matchRole = u.role === 'user' || u.role === 'admin' || u.role === 'super_admin';
+      } else {
+        matchRole = true;
+      }
+    } else if (roleFilter === 'admin') {
+      matchRole = u.role === 'admin' || u.role === 'super_admin';
+    } else {
+      matchRole = u.role === roleFilter;
+    }
+    return matchSearch && matchRole;
+  });
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
@@ -160,20 +177,36 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
           <div className="flex items-center gap-3 mb-3">
             <span className="px-3 py-1 bg-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-widest rounded-lg border border-amber-500/30">Admin Only</span>
           </div>
-          <h2 className="text-4xl font-bold font-display mb-3 tracking-tight">User Management</h2>
+          <h2 className="text-4xl font-bold font-display mb-3 tracking-tight">
+            {isTenantView ? 'Tenant Directory' : isUserView ? 'User Directory' : 'User Management'}
+          </h2>
           <p className="text-slate-300 text-lg max-w-xl font-medium">
-            Manage <span className="text-white font-bold">{stats.total} registered users</span> — {stats.admins} admin{stats.admins !== 1 ? 's' : ''}, {stats.researchers} researcher{stats.researchers !== 1 ? 's' : ''}, {stats.lecturers} lecturer{stats.lecturers !== 1 ? 's' : ''}.
+            {isTenantView ? (
+              <>Managing <span className="text-white font-bold">{stats.lecturers + stats.students} registered accounts</span> — {stats.lecturers} lecturers and {stats.students} students.</>
+            ) : (
+              <>Managing <span className="text-white font-bold">{stats.researchers + stats.admins} registered users</span> — {stats.admins} administrators and {stats.researchers} researchers.</>
+            )}
           </p>
         </div>
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: 'Total Users', value: stats.total, icon: <Users className="text-indigo-600" size={24} />, color: 'bg-indigo-50', border: 'border-indigo-100' },
-          { label: 'Administrators', value: stats.admins, icon: <ShieldCheck className="text-amber-600" size={24} />, color: 'bg-amber-50', border: 'border-amber-100' },
-          { label: 'Lecturers', value: stats.lecturers, icon: <Building2 className="text-blue-600" size={24} />, color: 'bg-blue-50', border: 'border-blue-100' },
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        {isTenantView ? [
+          { label: 'Total Tenants', value: stats.lecturers + stats.students, icon: <Building2 className="text-indigo-600" size={24} />, color: 'bg-indigo-50', border: 'border-indigo-100' },
+          { label: 'Lecturers', value: stats.lecturers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-blue-50', border: 'border-blue-100' },
+          { label: 'Students', value: stats.students, icon: <GraduationCap className="text-emerald-600" size={24} />, color: 'bg-emerald-50', border: 'border-emerald-100' },
+        ].map((stat, i) => (
+          <motion.div key={i} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }}
+            className={`bg-white p-6 rounded-[2rem] shadow-sm border ${stat.border} hover:shadow-xl hover:shadow-slate-200/50 transition-all group`}>
+            <div className={`p-4 ${stat.color} rounded-2xl w-fit mb-4 group-hover:scale-110 transition-transform`}>{stat.icon}</div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{stat.label}</p>
+            <p className="text-4xl font-black text-slate-900 tracking-tighter mt-1">{stat.value}</p>
+          </motion.div>
+        )) : [
+          { label: 'Total Users', value: stats.researchers + stats.admins, icon: <Users className="text-indigo-600" size={24} />, color: 'bg-indigo-50', border: 'border-indigo-100' },
           { label: 'Researchers', value: stats.researchers, icon: <UserCheck className="text-emerald-600" size={24} />, color: 'bg-emerald-50', border: 'border-emerald-100' },
+          { label: 'Administrators', value: stats.admins, icon: <ShieldCheck className="text-amber-600" size={24} />, color: 'bg-amber-50', border: 'border-amber-100' },
         ].map((stat, i) => (
           <motion.div key={i} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }}
             className={`bg-white p-6 rounded-[2rem] shadow-sm border ${stat.border} hover:shadow-xl hover:shadow-slate-200/50 transition-all group`}>
@@ -193,12 +226,21 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            {(['all', 'user', 'tenant_admin', 'admin'] as const).map(role => (
-              <button key={role} onClick={() => setRoleFilter(role)}
-                className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all ${roleFilter === role ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
-                {role === 'all' ? 'All' : role === 'user' ? 'Researchers' : role === 'tenant_admin' ? 'Lecturers' : 'Admins'}
-              </button>
-            ))}
+            {isTenantView ? (
+              (['all', 'tenant_admin', 'student'] as const).map(role => (
+                <button key={role} onClick={() => setRoleFilter(role)}
+                  className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all ${roleFilter === role ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
+                  {role === 'all' ? 'All' : role === 'tenant_admin' ? 'Lecturers' : 'Students'}
+                </button>
+              ))
+            ) : (
+              (['all', 'user', 'admin'] as const).map(role => (
+                <button key={role} onClick={() => setRoleFilter(role)}
+                  className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all ${roleFilter === role ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
+                  {role === 'all' ? 'All' : role === 'user' ? 'Researchers' : 'Administrators'}
+                </button>
+              ))
+            )}
           </div>
           <button onClick={fetchUsers} className="p-2.5 bg-white border border-slate-200 rounded-xl shadow-sm hover:bg-slate-50 transition-colors">
             <RefreshCw size={18} className={`text-slate-500 ${loading ? 'animate-spin' : ''}`} />
