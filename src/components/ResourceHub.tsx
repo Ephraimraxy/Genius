@@ -13,9 +13,11 @@ import {
     FileUp,
     Download,
     Mic,
-    Volume2
+    Volume2,
+    Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import FilePreviewModal from './FilePreviewModal';
 import { ToastType } from './ToastSystem';
 
 interface Resource {
@@ -24,6 +26,9 @@ interface Resource {
     name: string;
     status: 'ready' | 'failed' | 'pending' | 'short';
     created_at: string;
+    is_available: boolean;
+    is_paid: boolean;
+    price: number;
 }
 
 interface ResourceHubProps {
@@ -37,6 +42,9 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [isUploading, setIsUploading] = useState(false);
     const [uploadType, setUploadType] = useState<'roster' | 'material' | 'audio'>('roster');
     const [fileHandle, setFileHandle] = useState<File | null>(null);
+    const [previewFile, setPreviewFile] = useState<File | string | null>(null);
+    const [previewName, setPreviewName] = useState<string>('');
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
     useEffect(() => {
         fetchResources();
@@ -66,13 +74,61 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         if (!fileHandle) return;
         setIsUploading(true);
 
+        // ─── AUDIO: Upload to Bunny Stream (same path as video) ───
+        if (uploadType === 'audio') {
+            try {
+                // Step 1: Create entry on Bunny Stream
+                const createRes = await fetch('/api/videos/create', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}` 
+                    },
+                    body: JSON.stringify({ title: `[Audio] ${fileHandle.name}` })
+                });
+                const { videoId, uploadUrl, cdnHost } = await createRes.json();
+                if (!videoId) throw new Error('Failed to create audio entry');
+
+                // Step 2: Upload audio file to Bunny
+                const uploadRes = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: fileHandle
+                });
+                if (!uploadRes.ok) throw new Error('Bunny upload failed');
+
+                // Step 3: Save reference in resources table (URL only, not the file)
+                const bunnyStreamUrl = `https://${cdnHost || 'vz-3d11f78c-1a6.b-cdn.net'}/${videoId}/play.mp4`;
+                await fetch('/api/resources/upload', {
+                    method: 'POST',
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        type: 'audio',
+                        name: fileHandle.name,
+                        content: JSON.stringify({ bunnyId: videoId, streamUrl: bunnyStreamUrl })
+                    })
+                });
+
+                addToast('Audio uploaded to Bunny Stream CDN successfully!', 'success');
+                fetchResources();
+                setFileHandle(null);
+            } catch (err: any) {
+                addToast(`Audio upload failed: ${err.message}`, 'error');
+            }
+            setIsUploading(false);
+            return;
+        }
+
+        // ─── ROSTER / MATERIAL: Keep existing PostgreSQL flow ───
         const reader = new FileReader();
         reader.onload = async (e) => {
             const rawContent = e.target?.result as string;
             let finalContent: any = rawContent;
 
             if (uploadType === 'roster') {
-                // Simplified roster parsing for the demo
                 const lines = rawContent.split('\n');
                 finalContent = lines.map(line => {
                     const [matric, email] = line.split(',');
@@ -107,15 +163,9 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             setIsUploading(false);
         };
 
-        if (uploadType === 'roster') reader.readAsText(fileHandle);
-        else if (uploadType === 'audio') {
-            // Simulate audio processing
-            setTimeout(() => {
-                reader.readAsDataURL(fileHandle); // Just to satisfy the flow
-            }, 500);
-        }
-        else reader.readAsText(fileHandle); // In real app, we'd handle PDF/DOCX
+        reader.readAsText(fileHandle);
     };
+
 
     const deleteResource = async (id: number) => {
         try {
@@ -129,6 +179,23 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             }
         } catch (err) {
             addToast('Delete failed', 'error');
+        }
+    };
+
+    const updateResourceSettings = async (id: number, settings: { price?: number; is_available?: boolean; is_paid?: boolean }) => {
+        try {
+            await fetch(`/api/resources/${id}/settings`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify(settings)
+            });
+            addToast('Settings updated', 'success');
+            fetchResources();
+        } catch (err) {
+            addToast('Update failed', 'error');
         }
     };
 
@@ -188,6 +255,19 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 <p className="font-bold text-sm">
                                     {fileHandle ? fileHandle.name : 'Choose File'}
                                 </p>
+                                {fileHandle && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPreviewFile(fileHandle);
+                                            setPreviewName(fileHandle.name);
+                                            setIsPreviewOpen(true);
+                                        }}
+                                        className="mt-4 flex items-center gap-2 mx-auto px-4 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold transition-all relative z-20"
+                                    >
+                                        <Eye size={14} /> Quick Preview
+                                    </button>
+                                )}
                             </div>
 
                             <button 
@@ -272,6 +352,45 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                         </div>
 
                                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {item.type !== 'roster' && (
+                                                <div className="flex items-center gap-2 mr-4 border-r pr-4 border-slate-200">
+                                                    <button
+                                                        onClick={() => updateResourceSettings(item.id, { is_paid: !item.is_paid })}
+                                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                                                            item.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'
+                                                        }`}
+                                                    >
+                                                        {item.is_paid ? 'Paid' : 'Free'}
+                                                    </button>
+                                                    {item.is_paid && (
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-[10px] font-black text-slate-400">₦</span>
+                                                            <input
+                                                                type="number"
+                                                                defaultValue={item.price || 0}
+                                                                onBlur={(e) => updateResourceSettings(item.id, { price: parseInt(e.target.value) || 0 })}
+                                                                className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-bold"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    <button
+                                                        onClick={() => updateResourceSettings(item.id, { is_available: !item.is_available })}
+                                                        className={`ml-2 w-8 h-4 rounded-full relative transition-colors ${item.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                                    >
+                                                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${item.is_available ? 'right-0.5' : 'left-0.5'}`} />
+                                                    </button>
+                                                </div>
+                                            )}
+                                            <button 
+                                                onClick={() => {
+                                                    setPreviewFile(`/api/resources/${item.id}/download`); // Assuming this endpoint exists or just use a placeholder
+                                                    setPreviewName(item.name);
+                                                    setIsPreviewOpen(true);
+                                                }}
+                                                className="p-3 bg-white text-slate-400 hover:text-indigo-600 rounded-2xl border border-slate-200 shadow-sm transition-all hover:scale-105"
+                                            >
+                                                <Eye size={18} />
+                                            </button>
                                             <button className="p-3 bg-white text-slate-400 hover:text-blue-600 rounded-2xl border border-slate-200 shadow-sm transition-all hover:scale-105">
                                                 <Download size={18} />
                                             </button>
@@ -289,6 +408,15 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                     </div>
                 </div>
             </div>
+
+            {previewFile && (
+                <FilePreviewModal
+                    file={previewFile}
+                    fileName={previewName}
+                    isOpen={isPreviewOpen}
+                    onClose={() => setIsPreviewOpen(false)}
+                />
+            )}
         </div>
     );
 }

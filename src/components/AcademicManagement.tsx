@@ -21,9 +21,12 @@ import {
     ShieldCheck,
     Mic,
     Volume2,
-    Coins
+    Coins,
+    Eye,
+    Download as DownloadIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import FilePreviewModal from './FilePreviewModal';
 import { ToastType } from './ToastSystem';
 
 interface Resource {
@@ -53,6 +56,9 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [records, setRecords] = useState<any[]>([]);
     const [students, setStudents] = useState<any[]>([]);
     const [isLoadingRecords, setIsLoadingRecords] = useState(false);
+    const [previewFile, setPreviewFile] = useState<File | string | null>(null);
+    const [previewName, setPreviewName] = useState<string>('');
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
     const fetchRecords = async () => {
         setIsLoadingRecords(true);
@@ -495,6 +501,17 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${item.is_available ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                                 {item.is_available ? 'Public' : 'Hidden'}
                             </div>
+                            <button 
+                                onClick={() => {
+                                    setPreviewFile(`/api/resources/${item.id}/download`);
+                                    setPreviewName(item.name);
+                                    setIsPreviewOpen(true);
+                                }}
+                                className="p-2 text-slate-400 hover:text-indigo-600 transition-all ml-2"
+                                title="Preview Material"
+                            >
+                                <Eye size={18} />
+                            </button>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-50">
@@ -570,6 +587,17 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${item.is_available ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                                 {item.is_available ? 'Active' : 'Private'}
                             </div>
+                            <button 
+                                onClick={() => {
+                                    setPreviewFile(`/api/resources/${item.id}/download`);
+                                    setPreviewName(item.name);
+                                    setIsPreviewOpen(true);
+                                }}
+                                className="p-2 text-slate-400 hover:text-rose-600 transition-all ml-2"
+                                title="Listen to Record"
+                            >
+                                <Eye size={18} />
+                            </button>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-50">
@@ -656,6 +684,15 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                     </div>
                 )}
             </AnimatePresence>
+
+            {previewFile && (
+                <FilePreviewModal
+                    file={previewFile}
+                    fileName={previewName}
+                    isOpen={isPreviewOpen}
+                    onClose={() => setIsPreviewOpen(false)}
+                />
+            )}
         </motion.div>
     );
 }

@@ -25,7 +25,8 @@ import {
   Info,
   GraduationCap,
   Database,
-  Volume2
+  Volume2,
+  Video
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -73,6 +74,7 @@ export default function Sidebar({
     { id: 'dashboard', label: 'Workspace Stats', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-5 h-5 object-contain rounded-full bg-white p-0.5" />, section: 'Management' },
     { id: 'storage', label: 'Resource Hub', icon: Database },
     { id: 'lectureRecords', label: 'Manage Records', icon: Volume2, section: 'Academic' },
+    { id: 'videoLectures', label: 'Video Lectures', icon: Video },
     { id: 'attendance', label: 'Attendance', icon: ClipboardList },
     { id: 'materials', label: 'Lecture Materials', icon: BookOpen },
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },

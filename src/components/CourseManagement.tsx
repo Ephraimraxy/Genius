@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Upload, FileDown, Users, BookOpen, BrainCircuit, CheckCircle, ShieldCheck } from 'lucide-react';
+import { Upload, FileDown, Users, BookOpen, BrainCircuit, CheckCircle, ShieldCheck, Eye } from 'lucide-react';
 import { motion } from 'motion/react';
+import FilePreviewModal from './FilePreviewModal';
 import { ToastType } from './ToastSystem';
 
 interface AdminCourseManagementProps {
@@ -12,6 +13,8 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
     const [rosterFile, setRosterFile] = useState<File | null>(null);
     const [materialFile, setMaterialFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [previewFile, setPreviewFile] = useState<File | null>(null);
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [assessmentType, setAssessmentType] = useState<'exam' | 'test' | 'assignment'>('exam');
     const [examTitle, setExamTitle] = useState('');
     
@@ -152,6 +155,18 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                         <p className="font-bold text-slate-700 text-sm">
                             {rosterFile ? rosterFile.name : 'Click or drag roster file here'}
                         </p>
+                        {rosterFile && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewFile(rosterFile);
+                                    setIsPreviewOpen(true);
+                                }}
+                                className="mt-2 text-indigo-600 text-xs font-bold hover:underline"
+                            >
+                                Preview Roster
+                            </button>
+                        )}
                         <p className="text-xs text-slate-400 mt-1">.csv or .xlsx (Max 5MB)</p>
                     </div>
 
@@ -214,6 +229,18 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                         <p className="font-bold text-slate-700 text-sm">
                             {materialFile ? materialFile.name : 'Click to upload lecture notes'}
                         </p>
+                        {materialFile && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewFile(materialFile);
+                                    setIsPreviewOpen(true);
+                                }}
+                                className="mt-2 text-amber-600 text-xs font-bold hover:underline"
+                            >
+                                Preview Material
+                            </button>
+                        )}
                         <p className="text-xs text-slate-400 mt-1">.pdf or .docx (Max 15MB)</p>
                     </div>
 
@@ -242,6 +269,14 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                     <p className="text-2xl font-black text-slate-900">{materialsUploaded}</p>
                 </div>
             </div>
+
+            {previewFile && (
+                <FilePreviewModal
+                    file={previewFile}
+                    isOpen={isPreviewOpen}
+                    onClose={() => setIsPreviewOpen(false)}
+                />
+            )}
         </div>
     );
 }

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye } from 'lucide-react';
+import FilePreviewModal from './FilePreviewModal';
 
 import { ToastType } from './ToastSystem';
 
@@ -20,6 +21,8 @@ export default function SmartUpload({
   const [isPaying, setIsPaying] = useState(false);
   const [paperId, setPaperId] = useState<number | null>(null);
   const [hasPaid, setHasPaid] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -58,6 +61,7 @@ export default function SmartUpload({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setSelectedFile(file);
     setIsUploading(true);
     setError(null);
 
@@ -277,6 +281,19 @@ export default function SmartUpload({
                   </div>
                 </div>
 
+                {selectedFile && (
+                  <button
+                    onClick={() => setIsPreviewOpen(true)}
+                    className="mb-8 flex items-center gap-3 px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-100 transition-all group w-full"
+                  >
+                    <div className="p-2 bg-white rounded-lg shadow-sm group-hover:scale-110 transition-transform">
+                      <Eye size={18} />
+                    </div>
+                    <span className="text-sm font-bold uppercase tracking-wider flex-1 text-left">Preview Original Manuscript</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-1 rounded-md">{selectedFile.name.split('.').pop()}</span>
+                  </button>
+                )}
+
                 <div className="space-y-8 relative z-10">
                   <div className="group">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 block">Manuscript Title</label>
@@ -404,6 +421,14 @@ export default function SmartUpload({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {selectedFile && (
+        <FilePreviewModal
+          file={selectedFile}
+          isOpen={isPreviewOpen}
+          onClose={() => setIsPreviewOpen(false)}
+        />
+      )}
     </motion.div>
   );
 }

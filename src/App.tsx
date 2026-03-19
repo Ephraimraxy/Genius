@@ -32,10 +32,11 @@ import PINSetup from './components/PINSetup';
 import SubscriptionModal from './components/SubscriptionModal'; // NEW
 import StudentMaterialView from './components/StudentMaterialView';
 import TokenStatusView from './components/TokenStatusView';
+import VideoLectures from './components/VideoLectures';
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords';
+export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -62,7 +63,8 @@ const TAB_LABELS: Record<Tab, string> = {
   exams: 'Exam Records',
   storage: 'Resource Hub',
   materials: 'Lecture Materials',
-  lectureRecords: 'Manage Records'
+  lectureRecords: 'Manage Records',
+  videoLectures: 'Video Lectures'
 };
 
 const SplashScreen = ({ onComplete, themeColor = '#800000', accentColor = '#ff4d4d' }: { onComplete: () => void, themeColor?: string, accentColor?: string }) => {
@@ -472,6 +474,7 @@ export default function App() {
             case 'materials': return <AcademicManagement mode="materials" addToast={addToast} token={token} />;
             case 'lectureRecords': return <AcademicManagement mode="records" addToast={addToast} token={token} />;
             case 'storage': return <ResourceHub addToast={addToast} token={token} />;
+            case 'videoLectures': return <VideoLectures addToast={addToast} token={token} />;
             case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} />;
             case 'reviewQueue': return <ReviewQueue profile={profile} />;
             case 'settings': return <LecturerSettings />;
@@ -515,6 +518,7 @@ export default function App() {
         if (activeTab === 'assignments') return 'Submission Manager';
         if (activeTab === 'materials') return 'Lecture Material Manager';
         if (activeTab === 'lectureRecords') return 'Audio Record Hub';
+        if (activeTab === 'videoLectures') return 'Video Lecture Studio';
         if (activeTab === 'storage') return 'Genius Resource Hub';
     }
     if (activeTab === 'dashboard') return isAdmin ? 'Admin Console' : 'Analytics Overview';

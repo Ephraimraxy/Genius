@@ -2293,6 +2293,139 @@ app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
   res.json({ success: true });
 });
 
+// ─── BUNNY STREAM VIDEO ENDPOINTS ───────────────────────────────────
+const BUNNY_STREAM_API_KEY = process.env.BUNNY_STREAM_API_KEY || '';
+const BUNNY_STREAM_LIBRARY_ID = process.env.BUNNY_STREAM_LIBRARY_ID || '620384';
+const BUNNY_CDN_HOST = process.env.BUNNY_CDN_HOST || 'vz-3d11f78c-1a6.b-cdn.net';
+
+// Webhook for Bunny Stream processing updates
+app.post('/api/webhooks/bunny', async (req: any, res: any) => {
+  try {
+    const { VideoGuid, Status, LibraryId } = req.body;
+    console.log(`[Bunny Stream Webhook] Video ${VideoGuid} in Library ${LibraryId} changed to status: ${Status}`);
+    
+    // In a full production app with a dedicated videos table, we'd do:
+    // await pool.query('UPDATE videos SET status = $1 WHERE guid = $2', [Status, VideoGuid]);
+    
+    res.json({ success: true, message: 'Webhook received' });
+  } catch (err: any) {
+    console.error('Bunny Webhook Error:', err);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// List all videos
+app.get('/api/videos', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  try {
+    const bunnyRes = await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos?page=1&itemsPerPage=100&orderBy=date`, {
+      headers: { 'AccessKey': BUNNY_STREAM_API_KEY }
+    });
+    const data = await bunnyRes.json();
+    const videos = (data.items || []).map((v: any) => ({
+      guid: v.guid,
+      title: v.title,
+      status: v.status,
+      length: v.length,
+      views: v.views,
+      dateUploaded: v.dateUploaded,
+      storageSize: v.storageSize,
+      thumbnailUrl: v.status === 4 ? `https://${BUNNY_CDN_HOST}/${v.guid}/thumbnail.jpg` : '',
+      is_available: v.metaTags?.find((t: any) => t.property === 'is_available')?.value === 'true',
+      is_paid: v.metaTags?.find((t: any) => t.property === 'is_paid')?.value === 'true',
+      price: parseInt(v.metaTags?.find((t: any) => t.property === 'price')?.value || '0'),
+    }));
+    res.json({ videos, cdnHost: BUNNY_CDN_HOST, libraryId: BUNNY_STREAM_LIBRARY_ID });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create video entry + return upload URL
+app.post('/api/videos/create', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { title } = req.body;
+    const bunnyRes = await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos`, {
+      method: 'POST',
+      headers: { 
+        'AccessKey': BUNNY_STREAM_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ title })
+    });
+    const data = await bunnyRes.json();
+    res.json({ 
+      videoId: data.guid, 
+      uploadUrl: `/api/videos/${data.guid}/upload`,
+      cdnHost: BUNNY_CDN_HOST
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Upload video file (proxy to Bunny)
+app.put('/api/videos/:guid/upload', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { guid } = req.params;
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', async () => {
+      const body = Buffer.concat(chunks);
+      const bunnyRes = await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos/${guid}`, {
+        method: 'PUT',
+        headers: { 'AccessKey': BUNNY_STREAM_API_KEY },
+        body: body
+      });
+      if (bunnyRes.ok) {
+        res.json({ success: true });
+      } else {
+        res.status(bunnyRes.status).json({ error: 'Upload to Bunny failed' });
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete video
+app.delete('/api/videos/:guid', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos/${req.params.guid}`, {
+      method: 'DELETE',
+      headers: { 'AccessKey': BUNNY_STREAM_API_KEY }
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update video settings (monetization metadata stored as metaTags)
+app.put('/api/videos/:guid/settings', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { price, is_available, is_paid } = req.body;
+    const metaTags = [
+      { property: 'is_available', value: String(is_available ?? true) },
+      { property: 'is_paid', value: String(is_paid ?? false) },
+      { property: 'price', value: String(price ?? 0) },
+    ];
+    await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos/${req.params.guid}`, {
+      method: 'POST',
+      headers: { 
+        'AccessKey': BUNNY_STREAM_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ metaTags })
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── MULTI-TENANT ACADEMIC ENDPOINTS ────────────────────────────────
 // ─── RESOURCE HUB ENDPOINTS ─────────────────────────────────────────
 app.get('/api/resources', authenticateToken, checkSubscription, async (req: any, res: any) => {
