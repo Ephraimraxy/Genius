@@ -325,8 +325,13 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                       `}>
                         {paper.status}
                       </span>
-                      <p className="text-xs text-slate-500 flex items-center gap-1 font-medium">
-                        <Clock size={12} /> {new Date(paper.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      <p className="text-xs text-slate-500 flex items-center gap-3 font-medium">
+                        <span className="flex items-center gap-1"><Clock size={12} /> {new Date(paper.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        {paper.status === 'published' && paper.volume && paper.issue && (
+                          <span className="text-indigo-600 font-bold tracking-tight bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100 italic">
+                            Vol {paper.volume} / No. {paper.issue}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>

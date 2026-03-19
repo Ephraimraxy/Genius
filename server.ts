@@ -213,6 +213,7 @@ async function initDB() {
       doi TEXT,
       volume TEXT,
       issue TEXT,
+      file_blob BYTEA,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
@@ -321,6 +322,7 @@ async function initDB() {
   
   try { await pool.query('ALTER TABLE papers ADD COLUMN volume TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN issue TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN file_blob BYTEA'); } catch (e) { }
   
   try { await pool.query('ALTER TABLE exams ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE exams ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
@@ -1069,14 +1071,15 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
     }
 
     const result = await pool.query(
-      'INSERT INTO papers (user_id, title, authors, abstract, content, metadata) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      'INSERT INTO papers (user_id, title, authors, abstract, content, metadata, file_blob) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
       [
         userId,
         metadata.title || 'Untitled',
         JSON.stringify(metadata.authors || []),
         metadata.abstract || '',
         textContent,
-        JSON.stringify(metadata)
+        JSON.stringify(metadata),
+        req.file.buffer
       ]
     );
 
@@ -1327,7 +1330,15 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     const issn = `2736-${Math.floor(1000 + Math.random() * 9000)}`;
     const url = doi.startsWith('10.GMIJ') ? `${process.env.APP_URL || ''}/article/${doi}` : `https://doi.org/${doi}`;
 
-    await pool.query('UPDATE papers SET status = $1, doi = $2, issn = $3 WHERE id = $4', ['published', doi, issn, id]);
+    // Automated Algorithm for Vol / Issue
+    const now = new Date();
+    const startYear = 2025; // Journal established year
+    const volume = Math.max(1, now.getFullYear() - startYear + 1).toString();
+    const issue = (Math.floor(now.getMonth() / 2) + 1).toString(); // Bi-monthly (1-6)
+
+    await pool.query('UPDATE papers SET status = $1, doi = $2, issn = $3, volume = $4, issue = $5 WHERE id = $6', 
+      ['published', doi, issn, volume, issue, id]
+    );
 
     const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
     const profile = profileResult.rows[0];
@@ -1954,6 +1965,29 @@ app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) =>
     res.json({ success: true, user: updated.rows[0] });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update user role' });
+  }
+});
+
+app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    // Only admins or the owner can view the file
+    const result = await pool.query('SELECT file_blob, title, metadata FROM papers WHERE id = $1', [id]);
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    const metadata = JSON.parse(paper.metadata || '{}');
+    const isOwnerResult = await pool.query('SELECT user_id FROM papers WHERE id = $1', [id]);
+    const isOwner = isOwnerResult.rows[0]?.user_id === req.user.id;
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Unauthorized' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
+    res.send(paper.file_blob);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch file' });
   }
 });
 
