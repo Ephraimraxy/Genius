@@ -400,6 +400,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
                     <option value="user">Researcher</option>
                     <option value="tenant_admin" disabled>Lecturer (Non-promotable)</option>
                     <option value="admin">Administrator</option>
+                    <option value="super_admin">Super Administrator</option>
                   </select>
                   {(editingUser.role === 'tenant_admin' || editingUser.role === 'student') && (
                     <p className="text-[10px] text-amber-600 mt-2 font-bold uppercase tracking-wider">

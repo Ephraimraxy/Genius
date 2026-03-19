@@ -1865,12 +1865,12 @@ app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
 
     if (name) { updates.push(`name = $${paramIdx++}`); values.push(name); }
     if (email) { updates.push(`email = $${paramIdx++}`); values.push(email); }
-    if (role && ['admin', 'user'].includes(role)) { 
+    if (role && ['admin', 'super_admin', 'user'].includes(role)) { 
       const userRes = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
       const currentRole = userRes.rows[0]?.role;
       
       // Restriction: Only users from the Research portal (role='user') can be made admins
-      if (role === 'admin' && currentRole !== 'user' && currentRole !== 'admin' && currentRole !== 'super_admin') {
+      if ((role === 'admin' || role === 'super_admin') && currentRole !== 'user' && currentRole !== 'admin' && currentRole !== 'super_admin') {
           return res.status(400).json({ error: "Only Research portal users can be assigned Admin roles." });
       }
 
@@ -1939,7 +1939,7 @@ app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) =>
     const { id } = idParamSchema.parse(req.params);
     const userRes = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
     const currentRole = userRes.rows[0]?.role;
-    if (role === 'admin' && currentRole !== 'user' && currentRole !== 'admin' && currentRole !== 'super_admin') {
+    if ((role === 'admin' || role === 'super_admin') && currentRole !== 'user' && currentRole !== 'admin' && currentRole !== 'super_admin') {
         return res.status(400).json({ error: "Only Research portal users can be assigned Admin roles." });
     }
 
