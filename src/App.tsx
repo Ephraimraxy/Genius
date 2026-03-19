@@ -153,7 +153,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [showNetworkStatus, setShowNetworkStatus] = useState(false);
+  const [showNetworkStatus, setShowNetworkStatus] = useState(true);
   const [isOnline, setIsOnline] = useState(window.navigator.onLine);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [chatNotifications, setChatNotifications] = useState<any[]>([]);
@@ -238,7 +238,6 @@ export default function App() {
     const handleOnline = () => {
       setIsOnline(true);
       setShowNetworkStatus(true);
-      setTimeout(() => setShowNetworkStatus(false), 5000);
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -823,21 +822,20 @@ export default function App() {
 
       <ToastSystem toasts={toasts} removeToast={removeToast} />
       <AnimatePresence>
-        {showNetworkStatus && (
           <motion.div
             initial={{ y: -50, opacity: 0 }}
             animate={{ y: 20, opacity: 1 }}
-            exit={{ y: -50, opacity: 0 }}
             className="fixed top-0 left-1/2 -translate-x-1/2 z-[200] pointer-events-none"
           >
-            <div className={`px-6 py-2.5 rounded-full shadow-2xl border flex items-center gap-3 font-black text-[10px] uppercase tracking-widest backdrop-blur-xl ${
-              isOnline ? 'bg-emerald-50/80 border-emerald-100 text-emerald-600' : 'bg-amber-50/80 border-amber-100 text-amber-600'
+            <div className={`px-4 py-1.5 rounded-full shadow-lg border flex items-center gap-2.5 font-black text-[9px] uppercase tracking-[0.15em] backdrop-blur-xl transition-all duration-500 ${
+              isOnline 
+                ? 'bg-emerald-50/60 border-emerald-100/50 text-emerald-600/80 shadow-emerald-500/5' 
+                : 'bg-amber-50/80 border-amber-100 text-amber-600 shadow-amber-500/10'
             }`}>
-              {isOnline ? <Wifi size={14} /> : <WifiOff size={14} className="animate-pulse" />}
-              {isOnline ? 'Neural Link Restored' : 'Neural Link Severed • Offline'}
+              <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500/50' : 'bg-amber-500 animate-pulse'}`}></div>
+              {isOnline ? 'Neural Link Active' : 'Neural Link Severed • Offline'}
             </div>
           </motion.div>
-        )}
       </AnimatePresence>
       <ConfirmModal {...confirmConfig} />
       <GlobalLoader show={isSyncing || (!!token && !profile)} />
