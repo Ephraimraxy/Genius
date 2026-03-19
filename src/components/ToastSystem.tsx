@@ -70,6 +70,20 @@ export default function ToastSystem({ toasts, removeToast }: ToastSystemProps) {
               >
                 <X size={16} />
               </button>
+
+              {/* Progress Bar */}
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-50">
+                <motion.div 
+                  initial={{ width: "0%" }}
+                  animate={{ width: "100%" }}
+                  transition={{ duration: 5, ease: "linear" }}
+                  className={`h-full ${
+                    toast.type === 'error' ? 'bg-rose-500' : 
+                    toast.type === 'success' ? 'bg-emerald-500' : 
+                    'bg-indigo-500'
+                  }`}
+                />
+              </div>
             </div>
           </motion.div>
         ))}

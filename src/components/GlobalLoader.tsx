@@ -10,7 +10,7 @@ export default function GlobalLoader({ show, message }: { show: boolean, message
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center"
+          className="fixed inset-0 z-[100] bg-white/60 backdrop-blur-xl flex flex-col items-center justify-center"
         >
           <div className="relative">
             {/* Pulsing ring */}

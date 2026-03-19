@@ -34,7 +34,7 @@ import StudentMaterialView from './components/StudentMaterialView';
 import TokenStatusView from './components/TokenStatusView';
 import VideoLectures from './components/VideoLectures';
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
-import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft } from 'lucide-react';
+import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures';
 
@@ -153,6 +153,8 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showNetworkStatus, setShowNetworkStatus] = useState(false);
+  const [isOnline, setIsOnline] = useState(window.navigator.onLine);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [chatNotifications, setChatNotifications] = useState<any[]>([]);
   const [forcedChatThread, setForcedChatThread] = useState<number | null>(null);
@@ -230,6 +232,26 @@ export default function App() {
     const handleLocationChange = () => setCurrentPath(window.location.pathname);
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setShowNetworkStatus(true);
+      setTimeout(() => setShowNetworkStatus(false), 5000);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      setShowNetworkStatus(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   useEffect(() => {
@@ -800,6 +822,23 @@ export default function App() {
       </AnimatePresence>
 
       <ToastSystem toasts={toasts} removeToast={removeToast} />
+      <AnimatePresence>
+        {showNetworkStatus && (
+          <motion.div
+            initial={{ y: -50, opacity: 0 }}
+            animate={{ y: 20, opacity: 1 }}
+            exit={{ y: -50, opacity: 0 }}
+            className="fixed top-0 left-1/2 -translate-x-1/2 z-[200] pointer-events-none"
+          >
+            <div className={`px-6 py-2.5 rounded-full shadow-2xl border flex items-center gap-3 font-black text-[10px] uppercase tracking-widest backdrop-blur-xl ${
+              isOnline ? 'bg-emerald-50/80 border-emerald-100 text-emerald-600' : 'bg-amber-50/80 border-amber-100 text-amber-600'
+            }`}>
+              {isOnline ? <Wifi size={14} /> : <WifiOff size={14} className="animate-pulse" />}
+              {isOnline ? 'Neural Link Restored' : 'Neural Link Severed • Offline'}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <ConfirmModal {...confirmConfig} />
       <GlobalLoader show={isSyncing || (!!token && !profile)} />
     </div>

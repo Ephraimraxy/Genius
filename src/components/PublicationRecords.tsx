@@ -79,6 +79,48 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     }
   };
 
+  const SkeletonRow = () => (
+    <tr className="animate-pulse border-b border-slate-50 last:border-none">
+      <td className="px-8 py-6">
+        <div className="h-4 bg-slate-100 rounded-md w-48 mb-2"></div>
+        <div className="h-3 bg-slate-50 rounded-md w-24"></div>
+      </td>
+      {isAdmin && (
+        <td className="px-8 py-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-slate-100 shrink-0"></div>
+            <div className="flex flex-col gap-1.5 w-full">
+              <div className="h-3 bg-slate-100 rounded-md w-24"></div>
+              <div className="h-2 bg-slate-50 rounded-md w-32"></div>
+            </div>
+          </div>
+        </td>
+      )}
+      <td className="px-8 py-6">
+        <div className="h-1.5 bg-slate-100 rounded-full w-full mb-2"></div>
+        <div className="h-2 bg-slate-50 rounded-md w-12"></div>
+      </td>
+      <td className="px-8 py-6">
+        <div className="h-5 bg-slate-100 rounded-full w-20"></div>
+      </td>
+      <td className="px-8 py-6">
+        <div className="h-4 bg-slate-50 rounded-md w-16"></div>
+      </td>
+      <td className="px-8 py-6">
+        <div className="h-4 bg-slate-100 rounded-md w-24"></div>
+      </td>
+      <td className="px-8 py-6">
+        <div className="h-3 bg-slate-50 rounded-md w-32"></div>
+      </td>
+      <td className="px-8 py-6">
+        <div className="h-4 bg-slate-50 rounded-md w-20"></div>
+      </td>
+      <td className="px-8 py-6 text-right">
+        <div className="h-8 bg-slate-50 rounded-xl w-8 ml-auto"></div>
+      </td>
+    </tr>
+  );
+
   const filteredPubs = publications.filter(p => 
     p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (p.researcher_name?.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -156,14 +198,11 @@ export default function PublicationRecords({ profile }: { profile: any }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr>
-                  <td colSpan={isAdmin ? 9 : 8} className="px-8 py-20 text-center">
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="w-10 h-10 border-4 border-[#800000] border-t-transparent rounded-full animate-spin"></div>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Synchronizing Records...</p>
-                    </div>
-                  </td>
-                </tr>
+                <>
+                  {[...Array(6)].map((_, i) => (
+                    <SkeletonRow key={i} />
+                  ))}
+                </>
               ) : filteredPubs.length === 0 ? (
                 <tr>
                   <td colSpan={isAdmin ? 9 : 8} className="px-8 py-20 text-center">
