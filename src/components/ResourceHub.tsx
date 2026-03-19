@@ -151,7 +151,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    addToast(`${uploadType === 'roster' ? 'Roster' : 'Material'} uploaded & sanitized successfully`, 'success');
+                    addToast(`${uploadType === 'roster' ? 'Student Data' : 'Material'} uploaded & sanitized successfully`, 'success');
                     fetchResources();
                     setFileHandle(null);
                 } else {
@@ -229,7 +229,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                     onClick={() => setUploadType('roster')}
                                     className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${uploadType === 'roster' ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white'}`}
                                 >
-                                    Student Roster
+                                    Student Data
                                 </button>
                                 <button 
                                     onClick={() => setUploadType('material')}
