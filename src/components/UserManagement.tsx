@@ -168,18 +168,18 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Total Users', value: stats.total, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-indigo-50', border: 'border-indigo-100' },
-          { label: 'Administrators', value: stats.admins, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-amber-50', border: 'border-amber-100' },
-          { label: 'Lecturers', value: stats.lecturers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-indigo-50', border: 'border-indigo-100' },
-          { label: 'Researchers', value: stats.researchers, icon: <img src="/gmijp-logo.png" className="w-6 h-6 object-contain" alt="Logo" />, color: 'bg-emerald-50', border: 'border-emerald-100' },
+          { label: 'Total Users', value: stats.total, icon: <Users className="text-indigo-600" size={24} />, color: 'bg-indigo-50', border: 'border-indigo-100' },
+          { label: 'Administrators', value: stats.admins, icon: <ShieldCheck className="text-amber-600" size={24} />, color: 'bg-amber-50', border: 'border-amber-100' },
+          { label: 'Lecturers', value: stats.lecturers, icon: <Building2 className="text-blue-600" size={24} />, color: 'bg-blue-50', border: 'border-blue-100' },
+          { label: 'Researchers', value: stats.researchers, icon: <UserCheck className="text-emerald-600" size={24} />, color: 'bg-emerald-50', border: 'border-emerald-100' },
         ].map((stat, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
-            className={`bg-white p-6 rounded-[1.5rem] shadow-sm border ${stat.border} hover:shadow-md transition-all`}>
-            <div className={`p-3 ${stat.color} rounded-xl w-fit mb-3`}>{stat.icon}</div>
-            <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">{stat.label}</p>
-            <p className="text-3xl font-bold text-slate-800 tracking-tight mt-1">{stat.value}</p>
+          <motion.div key={i} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }}
+            className={`bg-white p-6 rounded-[2rem] shadow-sm border ${stat.border} hover:shadow-xl hover:shadow-slate-200/50 transition-all group`}>
+            <div className={`p-4 ${stat.color} rounded-2xl w-fit mb-4 group-hover:scale-110 transition-transform`}>{stat.icon}</div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{stat.label}</p>
+            <p className="text-4xl font-black text-slate-900 tracking-tighter mt-1">{stat.value}</p>
           </motion.div>
         ))}
       </div>
