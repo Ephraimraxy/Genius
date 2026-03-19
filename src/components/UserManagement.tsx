@@ -15,13 +15,14 @@ interface UserManagementProps {
   addToast?: (msg: string, type?: any) => void;
   onOpenChat?: (userId: number) => void;
   confirm?: (config: any) => Promise<boolean>;
+  initialRoleFilter?: 'all' | 'user' | 'admin' | 'tenant_admin';
 }
 
-export default function UserManagement({ addToast, onOpenChat, confirm }: UserManagementProps) {
+export default function UserManagement({ addToast, onOpenChat, confirm, initialRoleFilter = 'all' }: UserManagementProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'user' | 'admin' | 'tenant_admin'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'user' | 'admin' | 'tenant_admin'>(initialRoleFilter);
   
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -46,6 +47,12 @@ export default function UserManagement({ addToast, onOpenChat, confirm }: UserMa
   };
 
   useEffect(() => { fetchUsers(); }, []);
+
+  useEffect(() => {
+    if (initialRoleFilter) {
+      setRoleFilter(initialRoleFilter);
+    }
+  }, [initialRoleFilter]);
 
   const handleSaveEdit = async () => {
     if (!editingUser) return;
