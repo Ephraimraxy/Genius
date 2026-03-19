@@ -211,6 +211,8 @@ async function initDB() {
       metadata JSONB,
       status TEXT DEFAULT 'uploaded',
       doi TEXT,
+      volume TEXT,
+      issue TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
@@ -316,6 +318,9 @@ async function initDB() {
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN metadata JSONB DEFAULT \'{}\''); } catch (e) { }
+  
+  try { await pool.query('ALTER TABLE papers ADD COLUMN volume TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN issue TEXT'); } catch (e) { }
   
   try { await pool.query('ALTER TABLE exams ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE exams ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
@@ -1949,6 +1954,18 @@ app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) =>
     res.json({ success: true, user: updated.rows[0] });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update user role' });
+  }
+});
+
+app.put('/api/admin/papers/:id/metadata', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  const { doi, volume, issue } = req.body;
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    await pool.query('UPDATE papers SET doi = $1, volume = $2, issue = $3 WHERE id = $4', [doi, volume, issue, id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update paper metadata' });
   }
 });
 

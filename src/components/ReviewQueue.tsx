@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FileText, CheckCircle, XCircle, Clock, User, AlertTriangle, Filter, RefreshCw, Eye, ChevronDown, ArrowUpRight } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Clock, User, AlertTriangle, Filter, RefreshCw, Eye, ChevronDown, ArrowUpRight, Edit2 } from 'lucide-react';
 
 interface Paper {
   id: number;
   title: string;
   status: string;
   doi: string;
+  volume: string;
+  issue: string;
   created_at: string;
   researcher_name: string;
   researcher_email: string;
@@ -18,6 +20,8 @@ export default function ReviewQueue({ profile, initialStatusFilter = 'pending' }
   const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [papers, setPapers] = useState<Paper[]>(allPapers);
+  const [editingPaper, setEditingPaper] = useState<Paper | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setPapers(allPapers);
@@ -45,6 +49,30 @@ export default function ReviewQueue({ profile, initialStatusFilter = 'pending' }
       console.error('Failed to update paper status', err);
     }
     setUpdatingId(null);
+  };
+
+  const handleUpdateMetadata = async () => {
+    if (!editingPaper) return;
+    setIsSaving(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/admin/papers/${editingPaper.id}/metadata`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doi: editingPaper.doi,
+          volume: editingPaper.volume,
+          issue: editingPaper.issue
+        })
+      });
+      if (res.ok) {
+        setPapers(prev => prev.map(p => p.id === editingPaper.id ? editingPaper : p));
+        setEditingPaper(null);
+      }
+    } catch (err) {
+      console.error('Failed to update paper metadata', err);
+    }
+    setIsSaving(false);
   };
 
   const pendingStatuses = ['uploaded', 'formatting', 'peer_review', 'integrity_check'];
@@ -118,6 +146,16 @@ export default function ReviewQueue({ profile, initialStatusFilter = 'pending' }
           <span className="text-xs font-bold text-slate-400">{filteredPapers.length} manuscripts</span>
         </div>
 
+        {/* Table Header Row */}
+        <div className="hidden lg:grid grid-cols-[1fr,120px,100px,100px,140px,180px] gap-4 px-8 py-3 bg-slate-100/50 border-b border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-500">
+          <div>Manuscript</div>
+          <div className="text-center">Vol / Issue</div>
+          <div className="text-center">Status</div>
+          <div className="text-center">Date</div>
+          <div className="text-center">DOI / ISSN</div>
+          <div className="text-right">Actions</div>
+        </div>
+
         <div className="divide-y divide-slate-100">
           {filteredPapers.length === 0 ? (
             <div className="p-16 text-center">
@@ -136,19 +174,49 @@ export default function ReviewQueue({ profile, initialStatusFilter = 'pending' }
                       <span className="text-[11px] text-slate-500 flex items-center gap-1">
                         <User size={12} /> {paper.researcher_name || 'Unknown'} · {paper.researcher_email}
                       </span>
-                      <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                        <Clock size={12} /> {new Date(paper.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
-                      <span className={`px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
-                        {cfg.label}
-                      </span>
                     </div>
+                  </div>
+
+                  {/* Volume / Issue */}
+                  <div className="hidden lg:flex items-center justify-center w-[120px] shrink-0">
+                    <span className="text-xs font-bold text-slate-600">
+                      {paper.volume ? `Vol ${paper.volume}` : '—'} / {paper.issue ? `No ${paper.issue}` : '—'}
+                    </span>
+                  </div>
+
+                  {/* Status Badge */}
+                  <div className="flex items-center justify-center w-[100px] shrink-0">
+                    <span className={`px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
+                      {cfg.label}
+                    </span>
+                  </div>
+
+                  {/* Date */}
+                  <div className="hidden lg:flex items-center justify-center w-[100px] shrink-0">
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      {new Date(paper.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </span>
+                  </div>
+
+                  {/* DOI / ISSN */}
+                  <div className="hidden lg:flex flex-col items-center justify-center w-[140px] shrink-0 text-center">
+                    <span className="text-[10px] font-bold text-indigo-600 truncate max-w-full">
+                      {paper.doi || 'No DOI'}
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-medium uppercase tracking-tighter">
+                      ISSN: 2476-892X
+                    </span>
                   </div>
 
                   {/* Action Buttons */}
                   <div className="flex items-center gap-2 shrink-0">
                     {paper.status !== 'published' && paper.status !== 'rejected' && (
                       <>
+                        <button
+                          onClick={() => setEditingPaper(paper)}
+                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">
+                          <Edit2 size={16} />
+                        </button>
                         <button
                           onClick={() => handleStatusChange(paper.id, 'ready')}
                           disabled={updatingId === paper.id || paper.status === 'ready'}
@@ -181,6 +249,64 @@ export default function ReviewQueue({ profile, initialStatusFilter = 'pending' }
           })}
         </div>
       </div>
+
+      <AnimatePresence>
+        {editingPaper && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200">
+              <div className="bg-slate-900 px-8 py-6 text-white flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-bold font-display">Edit Journal Metadata</h3>
+                  <p className="text-slate-400 text-xs mt-1">Update Volume, Issue, and DOI for this manuscript.</p>
+                </div>
+                <button onClick={() => setEditingPaper(null)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                  <XCircle size={24} />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Volume</label>
+                    <input type="text" value={editingPaper.volume || ''}
+                      onChange={e => setEditingPaper({ ...editingPaper, volume: e.target.value })}
+                      placeholder="e.g. 1"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Issue / Number</label>
+                    <input type="text" value={editingPaper.issue || ''}
+                      onChange={e => setEditingPaper({ ...editingPaper, issue: e.target.value })}
+                      placeholder="e.g. 2"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">DOI (Digital Object Identifier)</label>
+                  <input type="text" value={editingPaper.doi || ''}
+                    onChange={e => setEditingPaper({ ...editingPaper, doi: e.target.value })}
+                    placeholder="e.g. 10.5555/genius.123"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none" />
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button onClick={() => setEditingPaper(null)}
+                    className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all">
+                    Cancel
+                  </button>
+                  <button onClick={handleUpdateMetadata} disabled={isSaving}
+                    className="flex-2 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 flex items-center justify-center gap-2">
+                    {isSaving ? <RefreshCw className="animate-spin" size={16} /> : <CheckCircle size={16} />}
+                    Save Metadata
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
