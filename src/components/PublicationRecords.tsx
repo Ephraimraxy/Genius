@@ -13,8 +13,10 @@ import {
   Eye,
   ArrowUpRight,
   TrendingUp,
-  FileText
+  FileText,
+  XCircle
 } from 'lucide-react';
+import FilePreviewModal from './FilePreviewModal';
 
 interface Publication {
   id: number;
@@ -22,6 +24,9 @@ interface Publication {
   authors: string;
   status: string;
   doi?: string;
+  volume?: string;
+  issue?: string;
+  issn?: string;
   created_at: string;
   researcher_name?: string;
   researcher_email?: string;
@@ -31,7 +36,8 @@ export default function PublicationRecords({ profile }: { profile: any }) {
   const [publications, setPublications] = useState<Publication[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const isAdmin = profile?.user?.role === 'admin';
+  const [previewPaperId, setPreviewPaperId] = useState<number | null>(null);
+  const isAdmin = profile?.user?.role === 'super_admin' || profile?.user?.role === 'admin';
 
   useEffect(() => {
     fetchPublications();
@@ -142,14 +148,16 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Live Readiness</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Date</th>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Vol / Issue</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">DOI</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">ISSN</th>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={isAdmin ? 6 : 5} className="px-8 py-20 text-center">
+                  <td colSpan={isAdmin ? 9 : 8} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-4">
                       <div className="w-10 h-10 border-4 border-[#800000] border-t-transparent rounded-full animate-spin"></div>
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Synchronizing Records...</p>
@@ -158,7 +166,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 </tr>
               ) : filteredPubs.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 6 : 5} className="px-8 py-20 text-center">
+                  <td colSpan={isAdmin ? 9 : 8} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <FileText className="text-slate-200" size={48} />
                       <p className="text-sm font-bold text-slate-400">No records found matching your filter.</p>
@@ -230,6 +238,12 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                     </td>
 
                     <td className="px-8 py-6">
+                      <p className="text-xs font-bold text-slate-500 whitespace-nowrap">
+                        {pub.volume ? `Vol ${pub.volume}` : '—'} / {pub.issue ? `No ${pub.issue}` : '—'}
+                      </p>
+                    </td>
+
+                    <td className="px-8 py-6">
                       {pub.doi ? (
                         <a 
                           href={pub.doi.startsWith('10.GMIJ') ? `/article/${pub.doi}` : `https://doi.org/${pub.doi}`}
@@ -246,8 +260,18 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                     </td>
                     <td className="px-8 py-6">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                        {(pub as any).issn || 'Pending'}
+                        {pub.issn || 'Pending'}
                       </span>
+                    </td>
+                    <td className="px-8 py-6">
+                      <div className="flex items-center gap-2">
+                         <button 
+                           onClick={() => setPreviewPaperId(pub.id)}
+                           className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                           title="Preview Manuscript">
+                           <Eye size={18} />
+                         </button>
+                      </div>
                     </td>
                   </motion.tr>
                 ))
@@ -255,7 +279,17 @@ export default function PublicationRecords({ profile }: { profile: any }) {
             </tbody>
           </table>
         </div>
-      </div>
+        <AnimatePresence>
+        {previewPaperId && (
+          <FilePreviewModal 
+            isOpen={true}
+            onClose={() => setPreviewPaperId(null)}
+            file={`/api/papers/${previewPaperId}/file`}
+            fileName="manuscript.pdf"
+          />
+        )}
+      </AnimatePresence>
+    </div>
     </div>
   );
 }

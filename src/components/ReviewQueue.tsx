@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FileText, CheckCircle, XCircle, Clock, User, AlertTriangle, Filter, RefreshCw, Eye, ChevronDown, ArrowUpRight } from 'lucide-react';
-import FilePreviewModal from './FilePreviewModal';
+import { FileText, CheckCircle, XCircle, Clock, User, AlertTriangle, Filter, RefreshCw, ChevronDown, ArrowUpRight } from 'lucide-react';
 
 interface Paper {
   id: number;
@@ -21,7 +20,6 @@ export default function ReviewQueue({ profile, initialStatusFilter = 'pending' }
   const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [papers, setPapers] = useState<Paper[]>(allPapers);
-  const [previewPaperId, setPreviewPaperId] = useState<number | null>(null);
 
   useEffect(() => {
     setPapers(allPapers);
@@ -181,12 +179,6 @@ export default function ReviewQueue({ profile, initialStatusFilter = 'pending' }
                     {paper.status !== 'published' && paper.status !== 'rejected' && (
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => setPreviewPaperId(paper.id)}
-                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
-                          title="Preview Manuscript">
-                          <Eye size={18} />
-                        </button>
-                        <button
                           onClick={() => handleStatusChange(paper.id, 'ready')}
                           disabled={updatingId === paper.id || paper.status === 'ready'}
                           className="flex items-center gap-1.5 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-200 hover:bg-emerald-100 transition-all disabled:opacity-40">
@@ -219,16 +211,6 @@ export default function ReviewQueue({ profile, initialStatusFilter = 'pending' }
         </div>
       </div>
 
-      <AnimatePresence>
-        {previewPaperId && (
-          <FilePreviewModal 
-            isOpen={true}
-            onClose={() => setPreviewPaperId(null)}
-            file={`/api/papers/${previewPaperId}/file`}
-            fileName="manuscript.pdf"
-          />
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 }
