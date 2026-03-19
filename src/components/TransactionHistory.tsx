@@ -11,7 +11,8 @@ import {
   PlusCircle,
   Save,
   DollarSign,
-  Volume2
+  Volume2,
+  Video
 } from 'lucide-react';
 
 interface Transaction {
@@ -30,7 +31,7 @@ export default function TransactionHistory({ profile }: { profile: any }) {
   const [loading, setLoading] = useState(true);
   const [publicationPrice, setPublicationPrice] = useState<number>(0);
   const [newPrice, setNewPrice] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'standard' | 'attendance' | 'audio'>('standard');
+  const [activeTab, setActiveTab] = useState<'standard' | 'attendance' | 'audio' | 'video'>('standard');
   const isAdmin = profile?.user?.role === 'admin';
 
   useEffect(() => {
@@ -88,11 +89,13 @@ export default function TransactionHistory({ profile }: { profile: any }) {
 
   const attendanceTransactions = transactions.filter(t => t.type === 'attendance_token');
   const audioTransactions = transactions.filter(t => t.type === 'audio_payment');
-  const standardTransactions = transactions.filter(t => t.type !== 'attendance_token' && t.type !== 'audio_payment');
+  const videoTransactions = transactions.filter(t => t.type === 'video_payment');
+  const standardTransactions = transactions.filter(t => t.type !== 'attendance_token' && t.type !== 'audio_payment' && t.type !== 'video_payment');
   
   const displayedTransactions = 
     activeTab === 'attendance' ? attendanceTransactions : 
     activeTab === 'audio' ? audioTransactions : 
+    activeTab === 'video' ? videoTransactions :
     standardTransactions;
 
   const totalAttendanceIncome = attendanceTransactions
@@ -102,6 +105,16 @@ export default function TransactionHistory({ profile }: { profile: any }) {
   const totalAudioIncome = audioTransactions
     .filter(t => t.status === 'success')
     .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  const totalVideoIncome = videoTransactions
+    .filter(t => t.status === 'success')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  const totalStandardIncome = standardTransactions
+    .filter(t => t.status === 'success')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  const totalWalletBalance = totalAttendanceIncome + totalAudioIncome + totalVideoIncome + totalStandardIncome;
 
   return (
     <div className="space-y-8 h-full flex flex-col">
@@ -160,8 +173,12 @@ export default function TransactionHistory({ profile }: { profile: any }) {
             <CreditCard size={24} />
           </div>
           <div>
-            <p className="text-[10px] font-black text-white/60 uppercase tracking-widest">Current Price</p>
-            <p className="text-xl font-black text-white">₦{publicationPrice.toLocaleString()}</p>
+            <p className="text-[10px] font-black text-white/60 uppercase tracking-widest">
+              {isAdmin ? 'Publication Fee' : 'Total Wallet Balance'}
+            </p>
+            <p className="text-xl font-black text-white">
+              ₦{(isAdmin ? publicationPrice : totalWalletBalance).toLocaleString()}
+            </p>
           </div>
         </div>
       </div>
@@ -188,6 +205,13 @@ export default function TransactionHistory({ profile }: { profile: any }) {
           >
             <Volume2 size={16} />
             Audio Royalties
+          </button>
+          <button 
+             onClick={() => setActiveTab('video')}
+             className={`px-6 py-3 rounded-xl font-bold uppercase tracking-wider text-xs transition-all flex items-center gap-2 ${activeTab === 'video' ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Video size={16} />
+            Video Royalties
           </button>
         </div>
       )}
@@ -232,6 +256,28 @@ export default function TransactionHistory({ profile }: { profile: any }) {
             </div>
             <div className="text-right">
                <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter">₦{totalAudioIncome.toLocaleString()}</span>
+            </div>
+         </motion.div>
+      )}
+
+      {/* Video Income Overview Banner */}
+      {activeTab === 'video' && (
+         <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-amber-50 border border-amber-100 rounded-[2rem] p-6 md:p-8 flex items-center justify-between shadow-sm"
+         >
+            <div className="flex items-center gap-4">
+               <div className="p-4 bg-amber-600 text-white rounded-2xl shadow-lg shadow-amber-600/20">
+                  <span className="font-serif text-2xl font-black">₦</span>
+               </div>
+               <div>
+                  <h3 className="text-lg font-black text-slate-900 tracking-tight">Total Video Revenue</h3>
+                  <p className="text-amber-600 font-bold uppercase tracking-widest text-xs mt-1">From Studio Stream Access</p>
+               </div>
+            </div>
+            <div className="text-right">
+               <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter">₦{totalVideoIncome.toLocaleString()}</span>
             </div>
          </motion.div>
       )}
@@ -286,6 +332,9 @@ export default function TransactionHistory({ profile }: { profile: any }) {
                       {t.type === 'audio_payment' && t.metadata?.record_name && (
                         <span className="block text-[10px] font-bold text-rose-500 mt-1 uppercase">Record: {t.metadata.record_name}</span>
                       )}
+                      {t.type === 'video_payment' && t.metadata?.video_name && (
+                        <span className="block text-[10px] font-bold text-amber-500 mt-1 uppercase">Video: {t.metadata.video_name}</span>
+                      )}
                     </td>
                     {isAdmin && (
                       <td className="px-8 py-5">
@@ -293,7 +342,12 @@ export default function TransactionHistory({ profile }: { profile: any }) {
                       </td>
                     )}
                     <td className="px-8 py-5">
-                      <span className={`text-sm font-black ${t.type === 'attendance_token' ? 'text-indigo-600' : 'text-[#800000]'}`}>₦{t.amount.toLocaleString()}</span>
+                      <span className={`text-sm font-black ${
+                        t.type === 'attendance_token' ? 'text-indigo-600' : 
+                        t.type === 'audio_payment' ? 'text-rose-600' : 
+                        t.type === 'video_payment' ? 'text-amber-600' : 
+                        'text-[#800000]'
+                      }`}>₦{t.amount.toLocaleString()}</span>
                     </td>
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-2">
