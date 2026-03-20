@@ -12,7 +12,9 @@ import {
   Save,
   DollarSign,
   Volume2,
-  Video
+  Video,
+  Receipt,
+  ArrowUpRight
 } from 'lucide-react';
 
 interface Transaction {
@@ -26,7 +28,7 @@ interface Transaction {
   created_at: string;
 }
 
-export default function TransactionHistory({ profile }: { profile: any }) {
+export default function TransactionHistory({ profile, mode = 'lecturer' }: { profile: any; mode?: 'lecturer' | 'researcher' }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [publicationPrice, setPublicationPrice] = useState<number>(0);
@@ -116,6 +118,137 @@ export default function TransactionHistory({ profile }: { profile: any }) {
 
   const totalWalletBalance = totalAttendanceIncome + totalAudioIncome + totalVideoIncome + totalStandardIncome;
 
+  // ══════════════════════════════════════════════════════════════
+  // RESEARCHER MODE — Simple Payment History (No Wallet, No Tabs)
+  // ══════════════════════════════════════════════════════════════
+  if (mode === 'researcher') {
+    const totalSpent = standardTransactions
+      .filter(t => t.status === 'success')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+
+    return (
+      <div className="space-y-8 h-full flex flex-col">
+        {/* Researcher Stats Row */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-600">
+              <CheckCircle2 size={24} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Completed</p>
+              <p className="text-xl font-black text-slate-900">{standardTransactions.filter(t => t.status === 'success').length}</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
+              <Clock size={24} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending</p>
+              <p className="text-xl font-black text-slate-900">{standardTransactions.filter(t => t.status === 'pending').length}</p>
+            </div>
+          </div>
+          <div className="bg-slate-900 rounded-3xl p-6 border border-slate-800 shadow-xl flex items-center gap-4">
+            <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center text-white">
+              <Receipt size={24} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-white/50 uppercase tracking-widest">Total Spent</p>
+              <p className="text-xl font-black text-white">₦{totalSpent.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Transaction Table */}
+        <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm flex-1 flex flex-col overflow-hidden">
+          <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-white sticky top-0 z-10">
+            <div>
+              <h3 className="text-xl font-black text-slate-900 tracking-tight">Payment History</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Manuscript fees & subscription payments</p>
+            </div>
+            <div className="flex gap-2">
+              <button className="p-2.5 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
+                <Filter size={18} />
+              </button>
+              <button className="p-2.5 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
+                <Search size={18} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex-1 overflow-auto custom-scrollbar">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50/50">
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Reference</th>
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Description</th>
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Amount</th>
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Status</th>
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {loading ? (
+                  <tr>
+                     <td colSpan={5} className="px-8 py-12 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">
+                      Loading payment records...
+                    </td>
+                  </tr>
+                ) : standardTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-16 text-center">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
+                          <Receipt size={32} />
+                        </div>
+                        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">No payment records yet</p>
+                        <p className="text-slate-400 text-xs font-medium">Your manuscript fees and subscription payments will appear here</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  standardTransactions.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group">
+                      <td className="px-8 py-5">
+                        <span className="text-sm font-black text-slate-900 tracking-tight">{t.reference}</span>
+                      </td>
+                      <td className="px-8 py-5">
+                        <span className="text-sm font-medium text-slate-600">
+                          {t.type === 'subscription' ? 'Platform Subscription' : 
+                           t.type === 'publication_fee' ? 'Manuscript Upload Fee' : 
+                           t.type || 'Payment'}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5">
+                        <span className="text-sm font-black text-slate-900">₦{t.amount.toLocaleString()}</span>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(t.status)}
+                          <span className={`text-[10px] font-black uppercase tracking-wider ${t.status === 'success' ? 'text-green-600' : t.status === 'pending' ? 'text-amber-600' : 'text-red-500'}`}>
+                            {t.status}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <span className="text-xs font-bold text-slate-400">
+                          {new Date(t.created_at).toLocaleDateString()}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // LECTURER MODE — Full Wallet Dashboard (Default)
+  // ══════════════════════════════════════════════════════════════
   return (
     <div className="space-y-8 h-full flex flex-col">
       {/* Admin Action Bar */}
@@ -148,7 +281,7 @@ export default function TransactionHistory({ profile }: { profile: any }) {
         </div>
       )}
 
-      {/* Main Stats (Simplified for context) */}
+      {/* Main Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center gap-4">
           <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-600">
@@ -183,7 +316,7 @@ export default function TransactionHistory({ profile }: { profile: any }) {
         </div>
       </div>
 
-      {/* Optional: Tab switcher for Lecturers to see Attendance Income */}
+      {/* Tab switcher for Lecturers */}
       {!isAdmin && (
         <div className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm w-fit">
           <button 

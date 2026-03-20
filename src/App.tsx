@@ -499,6 +499,7 @@ export default function App() {
             case 'storage': return <ResourceHub addToast={addToast} token={token} />;
             case 'videoLectures': return <VideoLectures addToast={addToast} token={token} />;
             case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} />;
+            case 'transactions': return <TransactionHistory profile={profile} mode="lecturer" />;
             case 'reviewQueue': return <ReviewQueue initialStatusFilter="pending" profile={profile} />;
             case 'settings': return <LecturerSettings />;
             default: return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
@@ -516,7 +517,7 @@ export default function App() {
       case 'integrity': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <IntegrityChecks activePaperId={activePaperId} />;
       case 'journals': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <JournalRecommendations activePaperId={activePaperId} />;
       case 'reviews': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <PeerReviewSimulation activePaperId={activePaperId} />;
-      case 'transactions': return <TransactionHistory profile={profile} />;
+      case 'transactions': return <TransactionHistory profile={profile} mode="researcher" />;
       case 'records': return <PublicationRecords profile={profile} />;
       case 'users': return <UserManagement initialRoleFilter="user" addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
       case 'tenants': return <UserManagement initialRoleFilter="tenant_admin" addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
@@ -545,6 +546,7 @@ export default function App() {
         if (activeTab === 'lectureRecords') return 'Audio Record Hub';
         if (activeTab === 'videoLectures') return 'Video Lecture Studio';
         if (activeTab === 'storage') return 'Genius Resource Hub';
+        if (activeTab === 'transactions') return 'Wallet & Earnings';
     }
     if (activeTab === 'dashboard') return isAdmin ? 'Admin Console' : 'Analytics Overview';
     return TAB_LABELS[activeTab as keyof typeof TAB_LABELS] || activeTab;

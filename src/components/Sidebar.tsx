@@ -80,6 +80,7 @@ export default function Sidebar({
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },
     { id: 'assignments', label: 'Assignments', icon: FileUp },
     { id: 'exams', label: 'Exams', icon: GraduationCap },
+    { id: 'transactions', label: 'Transactions', icon: CreditCard, section: 'Finance' },
     { id: 'settings', label: 'Settings', icon: Settings, section: 'Preferences' },
   ];
 
