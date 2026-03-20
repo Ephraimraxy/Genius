@@ -186,9 +186,9 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-        {/* Style Selection - 4 Columns */}
-        <div className="lg:col-span-4 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start relative">
+        {/* Style Selection - 4 Columns - Sticky */}
+        <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-10">
           <div className="bg-white rounded-[2.5rem] p-8 shadow-xl shadow-slate-200/40 border border-slate-100">
             <h3 className="text-xl font-bold text-slate-900 mb-8 flex items-center gap-3">
               <div className="p-2 bg-slate-100 rounded-xl">
@@ -258,13 +258,27 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
                   <p className="text-rose-700 text-xs font-bold">{error}</p>
                 </div>
               )}
+
+              {/* Next Step Button Relocated Here */}
+              {formattedHtml && (
+                <div className="mt-6 pt-6 border-t border-slate-100">
+                  <button 
+                    onClick={handleSendToNext}
+                    disabled={isDownloading || isSending}
+                    className="group w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl shadow-2xl shadow-emerald-900/20 font-black tracking-widest uppercase text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Move to Assistant'}
+                    {!isSending && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Preview Area - 8 Columns */}
-        <div className="lg:col-span-8">
-          <div className="bg-slate-800 rounded-[3rem] p-6 lg:p-12 min-h-[800px] border border-slate-700 shadow-2xl relative overflow-hidden">
+        {/* Preview Area - 8 Columns - Scrollable Internal */}
+        <div className="lg:col-span-8 flex flex-col h-[85vh]">
+          <div className="bg-slate-800 rounded-[3rem] p-6 lg:p-12 border border-slate-700 shadow-2xl relative flex flex-col overflow-hidden h-full">
             <div className="absolute top-0 right-0 w-full h-1 premium-gradient opacity-50"></div>
 
             <div className="flex items-center justify-between mb-8">
@@ -282,7 +296,7 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
             <motion.div
               layout
               id="production-paper-preview"
-              className="bg-white w-full min-h-[1000px] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] rounded-sm p-8 lg:p-16 relative print:shadow-none print:p-0"
+              className="bg-white w-full shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] rounded-sm p-8 lg:p-16 relative print:shadow-none print:p-0 overflow-y-auto preview-scrollbar flex-1"
               animate={isFormatting ? { scale: 0.98, opacity: 0.7 } : { scale: 1, opacity: 1 }}
               transition={{ duration: 0.5, ease: "circOut" }}
             >
@@ -361,29 +375,21 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
             <AnimatePresence>
               {formattedHtml && (
                 <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="absolute bottom-12 right-12 z-30 print:hidden flex flex-col gap-3"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="absolute bottom-10 right-10 z-30 print:hidden"
                 >
                   <button 
                     onClick={handleDownloadPDF}
                     disabled={isDownloading || isSending}
-                    className="group w-full bg-slate-800 hover:bg-slate-700 text-white px-8 py-4 rounded-2xl shadow-xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
+                    className="group bg-slate-900/90 backdrop-blur-md hover:bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl border border-white/10 font-bold flex items-center justify-center gap-3 transition-all hover:scale-110 active:scale-90 disabled:opacity-50"
                   >
                     {isDownloading ? (
-                      <Loader2 size={22} className="animate-spin" />
+                      <Loader2 size={18} className="animate-spin" />
                     ) : (
-                      <Download size={22} className="group-hover:translate-y-0.5 transition-transform" />
+                      <Download size={18} className="group-hover:translate-y-0.5 transition-transform" />
                     )}
-                    {isDownloading ? 'Generating PDF...' : 'Download Production PDF'}
-                  </button>
-                  <button 
-                    onClick={handleSendToNext}
-                    disabled={isDownloading || isSending}
-                    className="group w-full bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-2xl shadow-2xl shadow-emerald-900/20 font-black tracking-widest uppercase text-xs flex items-center justify-center gap-3 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
-                  >
-                    {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Send to Writing Assistant'}
-                    {!isSending && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
+                    {isDownloading ? 'Processing...' : 'Export'}
                   </button>
                 </motion.div>
               )}
