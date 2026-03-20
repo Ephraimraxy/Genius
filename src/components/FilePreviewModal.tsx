@@ -15,7 +15,10 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Volume2
+  Volume2,
+  ShieldCheck,
+  Globe,
+  Star
 } from 'lucide-react';
 import * as docx from 'docx-preview';
 import * as XLSX from 'xlsx';
@@ -26,9 +29,17 @@ interface FilePreviewModalProps {
   fileName?: string;
   isOpen: boolean;
   onClose: () => void;
+  publicationDetails?: {
+    issn?: string;
+    doi?: string;
+    volume?: string;
+    issue?: string;
+    title?: string;
+    authors?: string;
+  };
 }
 
-export default function FilePreviewModal({ file, fileName, isOpen, onClose }: FilePreviewModalProps) {
+export default function FilePreviewModal({ file, fileName, isOpen, onClose, publicationDetails }: FilePreviewModalProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileType, setFileType] = useState<string>('');
@@ -357,8 +368,81 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose }: Fi
             </header>
 
             {/* Content Area */}
-            <div className="flex-1 overflow-hidden relative bg-slate-50/50">
-              {renderContent()}
+            <div className="flex-1 overflow-hidden relative bg-slate-100 flex flex-col">
+              {publicationDetails && (
+                <div className="shrink-0 bg-white text-slate-900 border-b-4 border-[#800000] relative overflow-hidden print:block shadow-md">
+                  <div className="px-6 md:px-10 py-8 relative z-10">
+                      {/* Top Row: Dual Logos and Journal Name */}
+                      <div className="flex items-center justify-between gap-4 w-full mb-6">
+                        {/* Left: Journal Logo */}
+                        <div className="flex items-center gap-3 shrink-0">
+                          <img src="/journal-logo.png" alt="GMIJP Logo" className="h-12 md:h-16 w-auto object-contain" />
+                          <div className="hidden md:block">
+                            <p className="text-[#800000] font-black text-[10px] uppercase tracking-wider leading-tight">Genius Multidisciplinary</p>
+                            <p className="text-slate-900 font-black text-sm md:text-base tracking-tighter">INTERNATIONAL JOURNAL</p>
+                          </div>
+                        </div>
+
+                        {/* Middle: Professional Metadata (Always visible but compact) */}
+                        <div className="flex flex-col items-center justify-center text-center px-4 flex-1">
+                          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+                            <span className="text-[#800000] font-black text-[10px] md:text-[11px] uppercase tracking-wider whitespace-nowrap">ISSN: {publicationDetails.issn || '2971-7760'}</span>
+                            <span className="text-slate-300 hidden sm:inline">|</span>
+                            <span className="text-slate-600 font-bold text-[10px] md:text-[11px] uppercase tracking-wider whitespace-nowrap">Vol: {publicationDetails.volume || '4'}</span>
+                            <span className="text-slate-300 hidden sm:inline">|</span>
+                            <span className="text-slate-600 font-bold text-[10px] md:text-[11px] uppercase tracking-wider whitespace-nowrap">No: {publicationDetails.issue || '1'}</span>
+                          </div>
+                          <p className="hidden md:block text-slate-400 font-bold text-[8px] uppercase tracking-[0.3em] mt-1">Verified Academic Record</p>
+                        </div>
+
+                        {/* Right: University Logo */}
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="hidden md:block text-right">
+                             <p className="text-slate-900 font-black text-[10px] uppercase tracking-tight whitespace-nowrap">Nasarawa State University</p>
+                             <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest">Keffi, Nigeria</p>
+                          </div>
+                          <img src="/university-logo.jpg" alt="NSUK Logo" className="h-12 md:h-16 w-auto object-contain" />
+                        </div>
+                      </div>
+
+                      {/* DOI & Site Info Line (Clean horizontal bar) */}
+                      <div className="flex items-center justify-between pt-4 border-t border-slate-100 w-full mb-8">
+                        <div className="flex items-center gap-2 text-indigo-600 font-mono font-bold text-[10px] md:text-xs">
+                          <Globe size={12} className="shrink-0" /> {publicationDetails.doi || '10.GMIJ/RES.2026.01'}
+                        </div>
+                        <div className="text-[#800000] font-black text-[9px] md:text-[10px] uppercase tracking-widest italic opacity-70">
+                          Official Publication Copy &bull; www.gmijp-edu.com
+                        </div>
+                      </div>
+
+                      {/* Title & Authors Section */}
+                      <div className="max-w-6xl mx-auto text-center md:text-left">
+                         <h2 className="text-xl md:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight leading-tight uppercase mb-3">
+                           {publicationDetails.title || fileName || 'Untitled Research'}
+                         </h2>
+                         <p className="text-slate-500 font-bold text-sm md:text-base italic">
+                           By {publicationDetails.authors || 'Genius Research Network'}
+                         </p>
+                      </div>
+                  </div>
+
+                  {/* Aesthetic backgrounds */}
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-[#800000]/5 rounded-full blur-3xl -mr-32 -mt-32" />
+                  <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl -ml-16 -mb-16" />
+                </div>
+              )}
+              
+              <div className="flex-1 overflow-hidden relative preview-scrollbar">
+                {/* Watermark for Published Papers */}
+                {publicationDetails && (
+                  <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden flex items-center justify-center select-none opacity-[0.03]">
+                    <div className="text-[200px] font-black text-slate-900 -rotate-45 whitespace-nowrap">
+                      GMIJP &bull; GMIJP &bull; GMIJP
+                    </div>
+                  </div>
+                )}
+                {renderContent()}
+              </div>
             </div>
           </motion.div>
         </div>

@@ -36,7 +36,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
   const [publications, setPublications] = useState<Publication[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [previewPaperId, setPreviewPaperId] = useState<number | null>(null);
+  const [previewPub, setPreviewPub] = useState<Publication | null>(null);
   const isAdmin = profile?.user?.role === 'super_admin' || profile?.user?.role === 'admin';
 
   useEffect(() => {
@@ -123,7 +123,9 @@ export default function PublicationRecords({ profile }: { profile: any }) {
 
   const filteredPubs = publications.filter(p => 
     p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.researcher_name?.toLowerCase().includes(searchTerm.toLowerCase()))
+    (p.researcher_name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (p.doi?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (p.issn?.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (
@@ -304,8 +306,8 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                     </td>
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-2">
-                         <button 
-                           onClick={() => setPreviewPaperId(pub.id)}
+                        <button 
+                           onClick={() => setPreviewPub(pub)}
                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
                            title="Preview Manuscript">
                            <Eye size={18} />
@@ -319,12 +321,20 @@ export default function PublicationRecords({ profile }: { profile: any }) {
           </table>
         </div>
         <AnimatePresence>
-        {previewPaperId && (
+        {previewPub && (
           <FilePreviewModal 
             isOpen={true}
-            onClose={() => setPreviewPaperId(null)}
-            file={`/api/papers/${previewPaperId}/file`}
-            fileName="manuscript.pdf"
+            onClose={() => setPreviewPub(null)}
+            file={`/api/papers/${previewPub.id}/file`}
+            fileName={`${previewPub.title.substring(0, 30)}.pdf`}
+            publicationDetails={previewPub.status === 'published' ? {
+              title: previewPub.title,
+              authors: previewPub.authors,
+              issn: previewPub.issn,
+              doi: previewPub.doi,
+              volume: previewPub.volume,
+              issue: previewPub.issue
+            } : undefined}
           />
         )}
       </AnimatePresence>
