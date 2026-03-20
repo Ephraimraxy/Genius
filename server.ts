@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 import mammoth from 'mammoth';
 import cors from 'cors';
-import { GoogleGenAI, Type } from '@google/genai';
+import OpenAI from 'openai';
 import { Pool } from 'pg';
 import * as cheerio from 'cheerio';
 import stringSimilarity from 'string-similarity';
@@ -115,8 +115,8 @@ app.use('/api/', globalLimiter);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-// Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Initialize OpenAI
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Initialize Database connection pool
 const pool = new Pool({
@@ -362,7 +362,7 @@ console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'PRESENT' : 'MISSING');
 if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('${{')) {
   console.warn('WARNING: DATABASE_URL contains unresolved placeholders: ' + process.env.DATABASE_URL);
 }
-console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'PRESENT' : 'MISSING');
+console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'PRESENT' : 'MISSING');
 console.log('-------------------------');
 
 // Health check endpoint
@@ -466,7 +466,7 @@ app.get('/api/diag', (req, res) => {
     env: {
       NODE_ENV: process.env.NODE_ENV,
       DATABASE_URL_FORMAT: obfuscate(process.env.DATABASE_URL),
-      GEMINI_API_KEY: obfuscate(process.env.GEMINI_API_KEY),
+      OPENAI_API_KEY: obfuscate(process.env.OPENAI_API_KEY),
       JWT_SECRET: obfuscate(process.env.JWT_SECRET),
       ZENODO_ACCESS_TOKEN: obfuscate(process.env.ZENODO_ACCESS_TOKEN),
       APP_URL: process.env.APP_URL
@@ -1045,36 +1045,25 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
     }
 
     if (!metadata || !metadata.title) {
-      console.log('Falling back to Gemini for metadata extraction...');
+      console.log('Falling back to OpenAI for metadata extraction...');
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.1-pro-preview',
-          contents: `Extract metadata from academic paper. Return JSON. Text: ${textContent.substring(0, 15000)}`,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                authors: { type: Type.ARRAY, items: { type: Type.STRING } },
-                abstract: { type: Type.STRING },
-                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-                sections: { type: Type.ARRAY, items: { type: Type.STRING } }
-              },
-              required: ['title', 'authors', 'abstract']
-            }
-          }
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (string[]), abstract (string), keywords (string[]), sections (string[]). Always include title, authors, abstract.' },
+            { role: 'user', content: `Extract metadata from this academic paper text:\n\n${textContent.substring(0, 15000)}` }
+          ]
         });
-        metadata = JSON.parse(response.text || '{}');
+        metadata = JSON.parse(response.choices[0]?.message?.content || '{}');
       } catch (aiError: any) {
-        console.error('Gemini Metadata Extraction Failed:', aiError.message);
-        if (aiError.message?.includes('429') || aiError.message?.includes('quota')) {
+        console.error('OpenAI Metadata Extraction Failed:', aiError.message);
+        if (aiError.status === 429) {
           return res.status(429).json({ 
             error: 'AI Services Busy', 
             details: 'The AI engine is currently at capacity. Please try again in 1 minute, or manually enter metadata in the next step.' 
           });
         }
-        // Basic fallback metadata if AI is totally down
         metadata = { title: req.file.originalname.replace(/\.[^/.]+$/, ""), authors: ['Author'], abstract: 'Abstract pending...' };
       }
     }
@@ -1108,27 +1097,17 @@ app.post('/api/validate/:id', authenticateToken, async (req: any, res) => {
 
     const metadata = JSON.parse(paper.metadata);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: `Analyze academic paper structure. Sections: ${JSON.stringify(metadata.sections)}`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              status: { type: Type.STRING },
-              msg: { type: Type.STRING }
-            },
-            required: ['name', 'status']
-          }
-        }
-      }
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: 'You are an academic paper structure validator. Return JSON with key "items" containing an array of objects with: name (string), status (string: "pass" or "fail" or "warning"), msg (string, optional feedback).' },
+        { role: 'user', content: `Analyze this academic paper structure. Sections: ${JSON.stringify(metadata.sections)}` }
+      ]
     });
 
-    const validation = JSON.parse(response.text || '[]');
+    const parsed = JSON.parse(response.choices[0]?.message?.content || '{"items":[]}');
+    const validation = parsed.items || parsed;
     res.json({ validation });
   } catch (error: any) {
     if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid ID' });
@@ -1144,28 +1123,17 @@ app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const textChunk = paper.content.substring(0, 3000);
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: `Improve academic text: ${textChunk}`,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              type: { type: Type.STRING },
-              original: { type: Type.STRING },
-              improved: { type: Type.STRING },
-              explanation: { type: Type.STRING }
-            },
-            required: ['type', 'original', 'improved', 'explanation']
-          }
-        }
-      }
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: 'You are an expert academic writing editor. Return JSON with key "suggestions" containing an array of objects with: type (string, e.g. "grammar", "clarity", "style"), original (string), improved (string), explanation (string).' },
+        { role: 'user', content: `Improve this academic text and provide suggestions:\n\n${textChunk}` }
+      ]
     });
 
-    const suggestions = JSON.parse(response.text || '[]');
+    const parsed = JSON.parse(response.choices[0]?.message?.content || '{"suggestions":[]}');
+    const suggestions = parsed.suggestions || parsed;
     res.json({ suggestions, textChunk });
   } catch (error) {
     res.status(500).json({ error: 'Failed to enhance' });
@@ -1301,12 +1269,15 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: `Format paper metadata into ${style} style HTML. Title: ${JSON.parse(paper.metadata).title}`,
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: 'You are an academic paper formatter. Format the given paper metadata into the requested citation/journal style as clean HTML.' },
+        { role: 'user', content: `Format this paper metadata into ${style} style HTML. Title: ${JSON.parse(paper.metadata).title}` }
+      ]
     });
 
-    res.json({ formattedHtml: response.text, style });
+    res.json({ formattedHtml: response.choices[0]?.message?.content, style });
   } catch (error) {
     res.status(500).json({ error: 'Failed to format' });
   }
@@ -1631,30 +1602,19 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
         }
       });
     } else {
-      // Fallback to Gemini if GROBID citations aren't available
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents: `Analyze the following academic paper metadata and identify any citation mismatches (e.g., references in text not in bibliography, or vice versa).
+      // Fallback to OpenAI if GROBID citations aren't available
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'You are an academic citation integrity checker. Return JSON with key "mismatches" containing an array of objects with: issue (string), details (string).' },
+          { role: 'user', content: `Analyze the following academic paper metadata and identify any citation mismatches (e.g., references in text not in bibliography, or vice versa).
         Sections: ${JSON.stringify(metadata.sections)}
-        References: ${JSON.stringify(metadata.references)}
-        
-        Return JSON with a list of mismatches.`,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                issue: { type: Type.STRING },
-                details: { type: Type.STRING }
-              },
-              required: ['issue', 'details']
-            }
-          }
-        }
+        References: ${JSON.stringify(metadata.references)}` }
+        ]
       });
-      citationMismatches = JSON.parse(response.text || '[]');
+      const parsed = JSON.parse(response.choices[0]?.message?.content || '{"mismatches":[]}');
+      citationMismatches = parsed.mismatches || parsed;
     }
 
     res.json({
@@ -1714,26 +1674,16 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
   const abstract = metadata.abstract || 'No abstract provided.';
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `You are an expert academic peer reviewer. Review the following paper abstract and provide a simulated peer review.
-      
-      Title: ${metadata.title}
-      Abstract: ${abstract}
-      
-      Provide a JSON response with the following structure:
-      {
-        "score": (integer from 1 to 10, where 10 is accept as is and 1 is reject),
-        "status": (one of: "accept", "minor_revision", "major_revision", "reject"),
-        "comments": "Detailed review comments including strengths, weaknesses, and suggestions for improvement."
-      }`,
-      config: {
-        responseMimeType: 'application/json',
-      }
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: 'You are an expert academic peer reviewer. Provide a simulated peer review. Return JSON with: score (integer 1-10, where 10=accept as is, 1=reject), status (one of: "accept", "minor_revision", "major_revision", "reject"), comments (string with detailed review including strengths, weaknesses, and suggestions).' },
+        { role: 'user', content: `Review this paper:\n\nTitle: ${metadata.title}\nAbstract: ${abstract}` }
+      ]
     });
 
-    const reviewData = JSON.parse(response.text);
+    const reviewData = JSON.parse(response.choices[0]?.message?.content || '{}');
 
     const result = await pool.query(`
       INSERT INTO reviews (paper_id, user_id, reviewer_name, status, score, comments)
