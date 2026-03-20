@@ -865,14 +865,27 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
     const title = $('titleStmt > title').text().trim();
     const abstract = $('profileDesc > abstract').text().trim();
 
-    const authors: string[] = [];
+    const authors: any[] = [];
     $('sourceDesc > biblStruct > analytic > author').each((_, el) => {
       const first = $(el).find('persName > forename').text().trim();
       const last = $(el).find('persName > surname').text().trim();
-      if (first || last) authors.push(`${first} ${last}`.trim());
+      const email = $(el).find('email').text().trim();
+      
+      const authorAffiliations: string[] = [];
+      $(el).find('affiliation > orgName').each((idx, affEl) => {
+        authorAffiliations.push($(affEl).text().trim());
+      });
+      
+      if (first || last) {
+        authors.push({
+          name: `${first} ${last}`.trim(),
+          email: email || null,
+          affiliations: authorAffiliations.length > 0 ? authorAffiliations : []
+        });
+      }
     });
 
-    const affiliations: string[] = [];
+    const affiliations: string[] = []; // Keep global list for compatibility
     $('affiliation > orgName').each((_, el) => {
       const aff = $(el).text().trim();
       if (aff && !affiliations.includes(aff)) affiliations.push(aff);
@@ -1056,7 +1069,12 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
           model: 'gpt-4o',
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (string[]), abstract (string), keywords (string[]), sections (string[]). Always include title, authors, abstract.' },
+            { 
+              role: 'system', 
+              content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (array of objects), abstract (string), keywords (string[]). ' +
+                       'Each author object MUST include: name (string), department (string), faculty (string), institution (string), email (string), phone (string). ' +
+                       'Examine the paper header carefully for "By", "Department", "Faculty", "Email", "Phone" or similar labels to extract these details accurately.'
+            },
             { role: 'user', content: `Extract metadata from this academic paper text:\n\n${textContent.substring(0, 15000)}` }
           ]
         });
@@ -1073,12 +1091,16 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       }
     }
 
+    // Ensure authors column remains a string array (names only) for compatibility, 
+    // while full objects are preserved in the metadata JSONB
+    const authorNames = (metadata.authors || []).map((a: any) => typeof a === 'string' ? a : a.name);
+
     const result = await pool.query(
       'INSERT INTO papers (user_id, title, authors, abstract, content, metadata, file_blob) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
       [
         userId,
         metadata.title || 'Untitled',
-        JSON.stringify(metadata.authors || []),
+        JSON.stringify(authorNames),
         metadata.abstract || '',
         textContent,
         JSON.stringify(metadata),

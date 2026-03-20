@@ -305,8 +305,17 @@ export default function SmartUpload({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="group">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 block">Corresponding Authors</label>
-                      <div className="p-6 bg-slate-50 border border-slate-100 rounded-[1.5rem] group-hover:bg-white group-hover:border-indigo-200 transition-all text-slate-800 font-bold">
-                        {metadata.authors?.join(', ') || 'Anonymous Researcher'}
+                      <div className="p-6 bg-slate-50 border border-slate-100 rounded-[1.5rem] group-hover:bg-white group-hover:border-indigo-200 transition-all text-slate-800 font-bold space-y-2">
+                        {metadata.authors && Array.isArray(metadata.authors) ? metadata.authors.map((author: any, i: number) => (
+                           <div key={i} className="flex flex-col">
+                              <span>{typeof author === 'string' ? author : author.name}</span>
+                              {typeof author !== 'string' && (author.email || author.department || author.institution) && (
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                  {[author.department, author.faculty, author.institution, author.email].filter(Boolean).join(' · ')}
+                                </span>
+                              )}
+                           </div>
+                        )) : 'Anonymous Researcher'}
                       </div>
                     </div>
                     <div className="group">
