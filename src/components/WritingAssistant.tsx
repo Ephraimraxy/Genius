@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wand2, Check, X, ArrowRightLeft, Sparkles, Loader2, AlertCircle, Bookmark, MessageSquarePlus, Zap } from 'lucide-react';
+import { Wand2, Check, X, ArrowRightLeft, Sparkles, Loader2, AlertCircle, Bookmark, MessageSquarePlus, Zap, ArrowRight } from 'lucide-react';
+import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function WritingAssistant({ activePaperId }: { activePaperId: number | null }) {
+export default function WritingAssistant({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
   const [activeSuggestion, setActiveSuggestion] = useState<number | null>(0);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [textChunk, setTextChunk] = useState<string>('');
@@ -12,6 +13,26 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSendToNext = async () => {
+    setIsSending(true);
+    try {
+      await fetch(`/api/papers/${activePaperId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ status: 'reference_intel' })
+      });
+      setActivePaperId(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   useEffect(() => {
     if (activePaperId) {
@@ -54,15 +75,13 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
 
   if (!activePaperId) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 gap-6">
-        <div className="p-6 bg-slate-50 rounded-full border-2 border-dashed border-slate-200">
-          <Wand2 size={48} className="text-slate-300" />
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-bold text-slate-800">Writing Assistant Offline</p>
-          <p className="text-slate-500 mt-2 font-medium">Upload a manuscript to initiate semantic enhancement.</p>
-        </div>
-      </div>
+      <WaitingDraftsQueue 
+        expectedStatus="writing_assistant" 
+        onSelect={setActivePaperId} 
+        title="AI Writing Hub Queue" 
+        icon={Wand2} 
+        emptyMessage="No manuscripts pending semantic review. Send documents here from the Format Architect." 
+      />
     );
   }
 
@@ -266,6 +285,17 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
                 {isLoadingMore ? 'Scanning...' : 'Scan Next Segment'}
               </button>
             )}
+
+            <div className="mt-8 pt-6 border-t border-slate-200">
+              <button
+                onClick={handleSendToNext}
+                disabled={isSending}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-[1.5rem] font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 shadow-xl shadow-emerald-900/20"
+              >
+                {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Complete & Send to Reference Intel'}
+                {!isSending && <ArrowRight size={18} />}
+              </button>
+            </div>
           </div>
         </div>
       </div>

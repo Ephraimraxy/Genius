@@ -1,17 +1,38 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, FileText, Download, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2 } from 'lucide-react'; // UI Icons
+import { Settings, FileText, Download, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight } from 'lucide-react'; // UI Icons
+import WaitingDraftsQueue from './WaitingDraftsQueue';
 
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 
-export default function FormattingEngine({ activePaperId }: { activePaperId: number | null }) {
+export default function FormattingEngine({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
   const [selectedStyle, setSelectedStyle] = useState('ieee');
   const [isFormatting, setIsFormatting] = useState(false);
   const [formattedHtml, setFormattedHtml] = useState<string | null>(null);
   const [branding, setBranding] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSendToNext = async () => {
+    setIsSending(true);
+    try {
+      await fetch(`/api/papers/${activePaperId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ status: 'writing_assistant' })
+      });
+      setActivePaperId(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const handleDownloadPDF = () => {
     const element = document.getElementById('production-paper-preview');
@@ -26,11 +47,28 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
       jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' as const }
     };
 
+    // Fix oklch error by injecting a style that overrides color functions html2canvas doesn't support
+    const style = document.createElement('style');
+    style.innerHTML = `
+      #production-paper-preview * {
+        color: inherit !important;
+        background-color: inherit !important;
+        border-color: inherit !important;
+      }
+      #production-paper-preview {
+        color: #000 !important;
+        background: #fff !important;
+      }
+    `;
+    document.head.appendChild(style);
+
     html2pdf().set(opt).from(element).save().then(() => {
       setIsDownloading(false);
+      document.head.removeChild(style);
     }).catch((err: any) => {
       console.error('PDF generation failed:', err);
       setIsDownloading(false);
+      if (document.head.contains(style)) document.head.removeChild(style);
     });
   };
 
@@ -67,15 +105,13 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
 
   if (!activePaperId) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 gap-6">
-        <div className="p-8 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
-          <Layout size={48} className="text-slate-300" />
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-black text-slate-900 font-display">Format Architect Offline</p>
-          <p className="text-slate-500 mt-2 font-medium">Upload a manuscript to enable neural structural alignment.</p>
-        </div>
-      </div>
+      <WaitingDraftsQueue 
+        expectedStatus="formatting" 
+        onSelect={setActivePaperId} 
+        title="Format Architect Queue" 
+        icon={Layout} 
+        emptyMessage="No manuscripts pending formatting. Upload a new document or send one from the previous stage to begin." 
+      />
     );
   }
 
@@ -321,12 +357,12 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute bottom-12 right-12 z-30 print:hidden"
+                  className="absolute bottom-12 right-12 z-30 print:hidden flex flex-col gap-3"
                 >
                   <button 
                     onClick={handleDownloadPDF}
-                    disabled={isDownloading}
-                    className="group bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl shadow-2xl shadow-black font-bold flex items-center gap-3 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                    disabled={isDownloading || isSending}
+                    className="group w-full bg-slate-800 hover:bg-slate-700 text-white px-8 py-4 rounded-2xl shadow-xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
                   >
                     {isDownloading ? (
                       <Loader2 size={22} className="animate-spin" />
@@ -334,6 +370,14 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
                       <Download size={22} className="group-hover:translate-y-0.5 transition-transform" />
                     )}
                     {isDownloading ? 'Generating PDF...' : 'Download Production PDF'}
+                  </button>
+                  <button 
+                    onClick={handleSendToNext}
+                    disabled={isDownloading || isSending}
+                    className="group w-full bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-2xl shadow-2xl shadow-emerald-900/20 font-black tracking-widest uppercase text-xs flex items-center justify-center gap-3 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+                  >
+                    {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Send to Writing Assistant'}
+                    {!isSending && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
                   </button>
                 </motion.div>
               )}

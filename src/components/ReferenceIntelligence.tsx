@@ -1,12 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Library, CheckCircle, XCircle, AlertTriangle, Loader2, ExternalLink, AlertCircle, Search, Microscope, Database, FileSearch, Sparkles } from 'lucide-react';
+import { Library, CheckCircle, XCircle, AlertTriangle, Loader2, ExternalLink, AlertCircle, Search, Microscope, Database, FileSearch, Sparkles, ArrowRight } from 'lucide-react';
+import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function ReferenceIntelligence({ activePaperId }: { activePaperId: number | null }) {
+export default function ReferenceIntelligence({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
   const [references, setReferences] = useState<any[]>([]);
   const [inTextCitations, setInTextCitations] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSendToNext = async () => {
+    setIsSending(true);
+    try {
+      await fetch(`/api/papers/${activePaperId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ status: 'integrity_check' })
+      });
+      setActivePaperId(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   useEffect(() => {
     if (activePaperId) {
@@ -29,15 +50,13 @@ export default function ReferenceIntelligence({ activePaperId }: { activePaperId
 
   if (!activePaperId) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 gap-6">
-        <div className="p-8 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
-          <Library size={48} className="text-slate-300" />
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-black text-slate-900 font-display">Reference Engine Standby</p>
-          <p className="text-slate-500 mt-2 font-medium">Ingest a manuscript to initiate Crossref citation validation.</p>
-        </div>
-      </div>
+      <WaitingDraftsQueue 
+        expectedStatus="reference_intel" 
+        onSelect={setActivePaperId} 
+        title="Reference Intelligence Queue" 
+        icon={Library} 
+        emptyMessage="No manuscripts pending bibliographic verification. Send documents here from the AI Writing Assistant." 
+      />
     );
   }
 
@@ -244,6 +263,17 @@ export default function ReferenceIntelligence({ activePaperId }: { activePaperId
               </div>
             </div>
           )}
+
+          <div className="mt-8 pt-6">
+            <button
+              onClick={handleSendToNext}
+              disabled={isSending}
+              className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-[1.5rem] font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 shadow-xl shadow-emerald-900/20"
+            >
+              {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Complete & Send to Integrity Check'}
+              {!isSending && <ArrowRight size={18} />}
+            </button>
+          </div>
         </div>
       )}
     </motion.div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FileText, CheckCircle, AlertTriangle, XCircle, RefreshCw, MessageSquare, Sparkles, Brain, Cpu, ArrowRight } from 'lucide-react';
+import { FileText, CheckCircle, AlertTriangle, XCircle, RefreshCw, MessageSquare, Sparkles, Brain, Cpu, ArrowRight, Loader2 } from 'lucide-react';
+import WaitingDraftsQueue from './WaitingDraftsQueue';
 
 interface Review {
   id: number;
@@ -11,10 +12,30 @@ interface Review {
   created_at: string;
 }
 
-export default function PeerReviewSimulation({ activePaperId }: { activePaperId: number | null }) {
+export default function PeerReviewSimulation({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSendToNext = async () => {
+    setIsSending(true);
+    try {
+      await fetch(`/api/papers/${activePaperId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ status: 'journal_discovery' })
+      });
+      setActivePaperId(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   useEffect(() => {
     if (activePaperId) {
@@ -87,15 +108,13 @@ export default function PeerReviewSimulation({ activePaperId }: { activePaperId:
 
   if (!activePaperId) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 gap-6">
-        <div className="p-6 bg-slate-50 rounded-full border-2 border-dashed border-slate-200">
-          <Brain size={48} className="text-slate-300" />
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-bold text-slate-800">Review Simulator Standby</p>
-          <p className="text-slate-500 mt-2 font-medium">Load a manuscript to initiate AI-driven peer assessment.</p>
-        </div>
-      </div>
+      <WaitingDraftsQueue 
+        expectedStatus="peer_review" 
+        onSelect={setActivePaperId} 
+        title="Peer Review Simulation Queue" 
+        icon={Brain} 
+        emptyMessage="No manuscripts pending peer simulation. Send documents here from the Integrity Audit stage." 
+      />
     );
   }
 
@@ -133,7 +152,7 @@ export default function PeerReviewSimulation({ activePaperId }: { activePaperId:
         </div>
       )}
 
-      <div className="space-y-8">
+      <div className="space-y-8 flex-1">
         {reviews.length === 0 ? (
           <div className="bg-white p-20 rounded-[3rem] text-center border border-slate-100 shadow-xl shadow-slate-200/40">
             <div className="w-20 h-20 bg-slate-50 text-slate-200 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -143,61 +162,73 @@ export default function PeerReviewSimulation({ activePaperId }: { activePaperId:
             <p className="text-slate-500 mt-2">Trigger a simulation to receive persona-based technical feedback.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-8">
-            <AnimatePresence mode="popLayout">
-              {reviews.map((review, idx) => (
-                <motion.div
-                  key={review.id}
-                  initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{ delay: idx * 0.1 }}
-                  className="bg-white rounded-[3rem] shadow-xl shadow-slate-200/40 border border-slate-100 overflow-hidden group"
-                >
-                  <div className="px-10 py-8 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="flex items-center gap-6">
-                      <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-xl font-black shadow-lg shadow-indigo-600/20 group-hover:rotate-6 transition-transform">
-                        {review.reviewer_name.charAt(0)}
+          <>
+            <div className="grid grid-cols-1 gap-8">
+              <AnimatePresence mode="popLayout">
+                {reviews.map((review, idx) => (
+                  <motion.div
+                    key={review.id}
+                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    className="bg-white rounded-[3rem] shadow-xl shadow-slate-200/40 border border-slate-100 overflow-hidden group"
+                  >
+                    <div className="px-10 py-8 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div className="flex items-center gap-6">
+                        <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-xl font-black shadow-lg shadow-indigo-600/20 group-hover:rotate-6 transition-transform">
+                          {review.reviewer_name.charAt(0)}
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{review.reviewer_name}</h3>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
+                            Node: {new Date(review.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{review.reviewer_name}</h3>
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
-                          Node: {new Date(review.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </p>
+
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Index Score</span>
+                          <span className="text-2xl font-black text-slate-900 italic">{review.score}<span className="text-slate-300 not-italic">/10</span></span>
+                        </div>
+                        <div className="h-10 w-px bg-slate-200 hidden md:block"></div>
+                        <div className={`flex items-center gap-3 px-5 py-2.5 rounded-2xl border font-black text-[10px] uppercase tracking-[0.2em] shadow-sm ${getStatusStyle(review.status)}`}>
+                          {getStatusIcon(review.status)}
+                          {getStatusText(review.status)}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-6">
-                      <div className="text-right">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Index Score</span>
-                        <span className="text-2xl font-black text-slate-900 italic">{review.score}<span className="text-slate-300 not-italic">/10</span></span>
+                    <div className="p-10 relative">
+                      <div className="absolute top-0 right-0 p-10 opacity-[0.03] pointer-events-none">
+                        <Brain size={120} />
                       </div>
-                      <div className="h-10 w-px bg-slate-200 hidden md:block"></div>
-                      <div className={`flex items-center gap-3 px-5 py-2.5 rounded-2xl border font-black text-[10px] uppercase tracking-[0.2em] shadow-sm ${getStatusStyle(review.status)}`}>
-                        {getStatusIcon(review.status)}
-                        {getStatusText(review.status)}
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6">Expert Appraisal Network Output</h4>
+                      <div className="text-slate-600 text-lg leading-relaxed font-medium bg-slate-50/50 p-8 rounded-[2rem] border border-slate-100 italic">
+                        “{review.comments}”
+                      </div>
+
+                      <div className="mt-8 flex items-center justify-end gap-3">
+                        <button className="text-[10px] font-black uppercase text-indigo-600 flex items-center gap-2 hover:translate-x-1 transition-transform">
+                          Detailed Action Plan <ArrowRight size={14} />
+                        </button>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="p-10 relative">
-                    <div className="absolute top-0 right-0 p-10 opacity-[0.03] pointer-events-none">
-                      <Brain size={120} />
-                    </div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6">Expert Appraisal Network Output</h4>
-                    <div className="text-slate-600 text-lg leading-relaxed font-medium bg-slate-50/50 p-8 rounded-[2rem] border border-slate-100 italic">
-                      “{review.comments}”
-                    </div>
-
-                    <div className="mt-8 flex items-center justify-end gap-3">
-                      <button className="text-[10px] font-black uppercase text-indigo-600 flex items-center gap-2 hover:translate-x-1 transition-transform">
-                        Detailed Action Plan <ArrowRight size={14} />
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+            <div className="mt-8 pt-6 border-t border-slate-100">
+              <button
+                onClick={handleSendToNext}
+                disabled={isSending || isSimulating}
+                className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-[2rem] font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 shadow-2xl shadow-emerald-900/20"
+              >
+                {isSending ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+                {isSending ? 'Moving Manuscript...' : 'Complete & Send to Journal Discovery'}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </motion.div>

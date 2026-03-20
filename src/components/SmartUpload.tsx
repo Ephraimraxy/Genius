@@ -477,10 +477,24 @@ export default function SmartUpload({
               </div>
               {onNavigate && (
                 <button
-                  onClick={() => onNavigate('formatting')}
+                  onClick={async () => {
+                    try {
+                      await fetch(`/api/papers/${paperId}/status`, {
+                        method: 'PUT',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({ status: 'formatting' })
+                      });
+                      onNavigate('formatting');
+                    } catch (e) {
+                      console.error('Failed to move to formatting queue', e);
+                    }
+                  }}
                   className="shrink-0 px-8 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-600/30 hover:scale-105 transition-all flex items-center gap-3"
                 >
-                  Continue to Formatting
+                  Send to Formatting Queue
                   <ArrowRight size={18} />
                 </button>
               )}

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BookMarked, ExternalLink, Star, TrendingUp, ShieldCheck, CheckCircle, Loader2, AlertCircle, ArrowRight, Sparkles, Send, Globe, Zap } from 'lucide-react';
+import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function JournalRecommendations({ activePaperId }: { activePaperId: number | null }) {
+export default function JournalRecommendations({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
   const [journals, setJournals] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,15 +48,13 @@ export default function JournalRecommendations({ activePaperId }: { activePaperI
 
   if (!activePaperId) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 gap-6">
-        <div className="p-8 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
-          <BookMarked size={48} className="text-slate-300" />
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-black text-slate-900 font-display">Targeting Engine Standby</p>
-          <p className="text-slate-500 mt-2 font-medium">Analyze a manuscript to identify optimal publication venues.</p>
-        </div>
-      </div>
+      <WaitingDraftsQueue 
+        expectedStatus="journal_discovery" 
+        onSelect={setActivePaperId} 
+        title="Journal Discovery Queue" 
+        icon={BookMarked} 
+        emptyMessage="No manuscripts pending journal matching. Send documents here from the Peer Review Simulator." 
+      />
     );
   }
 

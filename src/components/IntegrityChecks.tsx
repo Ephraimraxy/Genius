@@ -1,11 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldCheck, AlertTriangle, Search, FileSearch, CheckCircle, Loader2, AlertCircle, Fingerprint, Zap, ExternalLink, ArrowRight } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Search, FileSearch, CheckCircle, Loader2, AlertCircle, Fingerprint, Zap, ExternalLink, ArrowRight, Check } from 'lucide-react';
+import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function IntegrityChecks({ activePaperId }: { activePaperId: number | null }) {
+export default function IntegrityChecks({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
   const [report, setReport] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSendToNext = async () => {
+    setIsSending(true);
+    try {
+      await fetch(`/api/papers/${activePaperId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ status: 'peer_review' })
+      });
+      setActivePaperId(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   useEffect(() => {
     if (activePaperId) {
@@ -25,15 +46,13 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
 
   if (!activePaperId) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 gap-6">
-        <div className="p-8 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
-          <Fingerprint size={48} className="text-slate-300" />
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-black text-slate-900 font-display">Integrity Scanning Offline</p>
-          <p className="text-slate-500 mt-2 font-medium">Link a manuscript to initiate deep-tissue similarity auditing.</p>
-        </div>
-      </div>
+      <WaitingDraftsQueue 
+        expectedStatus="integrity_check" 
+        onSelect={setActivePaperId} 
+        title="Integrity Audit Queue" 
+        icon={ShieldCheck} 
+        emptyMessage="No manuscripts pending integrity scanning. Send documents here from the Reference Intelligence engine." 
+      />
     );
   }
 
@@ -249,6 +268,16 @@ export default function IntegrityChecks({ activePaperId }: { activePaperId: numb
                 )}
               </div>
             </div>
+          </div>
+          <div className="mt-8 pt-6">
+            <button
+              onClick={handleSendToNext}
+              disabled={isSending}
+              className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-[2rem] font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 shadow-2xl shadow-emerald-900/20"
+            >
+              {isSending ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+              {isSending ? 'Finalizing...' : 'Complete & Send to Peer Review Simulation'}
+            </button>
           </div>
         </div>
       ) : null}

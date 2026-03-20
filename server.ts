@@ -97,7 +97,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Basic Security Headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
@@ -1162,6 +1162,31 @@ app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
     res.json({ success: true, metadata });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== Pipeline Progression APIs =====
+app.get('/api/papers/queue/:status', authenticateToken, async (req: any, res) => {
+  try {
+    const { status } = req.params;
+    const result = await pool.query(
+      'SELECT id, title, created_at, status FROM papers WHERE user_id = $1 AND status = $2 ORDER BY created_at DESC',
+      [req.user.id, status]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch queue' });
+  }
+});
+
+app.put('/api/papers/:id/status', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const { status } = req.body;
+    await pool.query('UPDATE papers SET status = $1 WHERE id = $2 AND user_id = $3', [status, id, req.user.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update status' });
   }
 });
 

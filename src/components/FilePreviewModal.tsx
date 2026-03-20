@@ -46,6 +46,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
   const [excelData, setExcelData] = useState<{name: string, data: any[]}[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const docxRef = useRef<HTMLDivElement>(null);
 
   const getExtension = (name: string) => name.split('.').pop()?.toLowerCase() || '';
@@ -64,11 +65,19 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
       try {
         let blob: Blob;
         if (typeof file === 'string') {
-          const response = await fetch(file);
+          const response = await fetch(file, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          if (!response.ok) throw new Error('Unauthorized or file missing');
           blob = await response.blob();
         } else {
           blob = file;
         }
+        
+        const blobUrl = URL.createObjectURL(blob);
+        setPreviewBlobUrl(blobUrl);
 
         if (ext === 'docx') {
           if (docxRef.current) {
@@ -154,7 +163,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
       case 'pdf':
         return (
           <iframe 
-            src={typeof file === 'string' ? file : URL.createObjectURL(file)} 
+            src={previewBlobUrl || ''} 
             className="w-full h-full border-none rounded-b-2xl"
             title="PDF Preview"
             onLoad={() => setLoading(false)}
@@ -275,7 +284,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
         return (
           <div className="w-full h-full flex items-center justify-center p-10 bg-slate-900/5 backdrop-blur-sm">
             <img 
-              src={typeof file === 'string' ? file : URL.createObjectURL(file)} 
+              src={previewBlobUrl || ''} 
               alt="Preview" 
               className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
               onLoad={() => setLoading(false)}
