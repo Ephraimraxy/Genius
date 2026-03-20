@@ -348,6 +348,9 @@ async function initDB() {
   await pool.query(`INSERT INTO settings (key, value) VALUES ('current_volume', '1') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('current_issue', '1') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('journal_issn', '2971-7760') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('max_manuscripts_per_issue', '10') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('max_issues_per_volume', '3') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('max_pages_per_manuscript', '20') ON CONFLICT (key) DO NOTHING`);
 }
 initDB().catch(err => {
   console.error('CRITICAL: Database initialization failed');
@@ -1295,9 +1298,12 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
 
     const metadata = JSON.parse(paper.metadata);
 
-    // Rule: Manuscript should not exceed 20 pages
-    if (metadata.pageCount && metadata.pageCount > 20) {
-      return res.status(400).json({ error: 'Manuscript exceeds the 20-page limit for publication. Please upload a shorter version.' });
+    // Dynamic Rule: Manuscript page limit
+    const maxPageResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_pages_per_manuscript']);
+    const maxPagesAllowed = parseInt(maxPageResult.rows[0]?.value || '20');
+
+    if (metadata.pageCount && metadata.pageCount > maxPagesAllowed) {
+      return res.status(400).json({ error: `Manuscript exceeds the current ${maxPagesAllowed}-page limit for publication. Please upload a shorter version.` });
     }
 
     // Zenodo Integration
@@ -1320,11 +1326,16 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
     const issn = issnResult.rows[0]?.value || '2971-7760';
 
-    // 1. Fetch current global settings
+    // 1. Fetch current global settings and rules
     const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
     const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
+    const maxManuRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_manuscripts_per_issue']);
+    const maxIssRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_issues_per_volume']);
+
     let currentVolume = parseInt(volResult.rows[0]?.value || '1');
     let currentIssue = parseInt(issueResult.rows[0]?.value || '1');
+    const maxManuscriptsPerIssue = parseInt(maxManuRes.rows[0]?.value || '10');
+    const maxIssuesPerVolume = parseInt(maxIssRes.rows[0]?.value || '3');
 
     // 2. Check the count of published manuscripts in the current Issue
     const countResult = await pool.query(
@@ -1336,9 +1347,9 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     let finalVolume = currentVolume;
     let finalIssue = currentIssue;
 
-    // 3. Shift logic: 10 manuscripts = 1 issue, 3 issues = 1 Volume (Chapter)
-    if (publishedInIssue >= 10) {
-      if (currentIssue >= 3) {
+    // 3. Shift logic based on dynamic rules
+    if (publishedInIssue >= maxManuscriptsPerIssue) {
+      if (currentIssue >= maxIssuesPerVolume) {
         // "Chapter closes" - Move to next Volume and reset Issue
         finalVolume = currentVolume + 1;
         finalIssue = 1;
@@ -1350,7 +1361,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       // Update global journal settings for future publications
       await pool.query('UPDATE settings SET value = $1 WHERE key = $2', [finalVolume.toString(), 'current_volume']);
       await pool.query('UPDATE settings SET value = $1 WHERE key = $2', [finalIssue.toString(), 'current_issue']);
-      console.log(`Journal: Auto-shifted to Volume ${finalVolume}, Issue ${finalIssue} (Reached 10-manuscript limit)`);
+      console.log(`Journal: Auto-shifted to Volume ${finalVolume}, Issue ${finalIssue} (Reached ${maxManuscriptsPerIssue}-manuscript limit)`);
     }
 
     await pool.query('UPDATE papers SET status = $1, doi = $2, issn = $3, volume = $4, issue = $5 WHERE id = $6', 
@@ -2042,10 +2053,17 @@ app.get('/api/admin/config/journal', authenticateToken, async (req: any, res) =>
     const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
     const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
     const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+    const maxManuResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_manuscripts_per_issue']);
+    const maxIssResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_issues_per_volume']);
+    const maxPageResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_pages_per_manuscript']);
+    
     res.json({
       current_volume: volResult.rows[0]?.value || '1',
       current_issue: issueResult.rows[0]?.value || '1',
-      journal_issn: issnResult.rows[0]?.value || '2971-7760'
+      journal_issn: issnResult.rows[0]?.value || '2971-7760',
+      max_manuscripts_per_issue: parseInt(maxManuResult.rows[0]?.value || '10'),
+      max_issues_per_volume: parseInt(maxIssResult.rows[0]?.value || '3'),
+      max_pages_per_manuscript: parseInt(maxPageResult.rows[0]?.value || '20')
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -2054,11 +2072,19 @@ app.get('/api/admin/config/journal', authenticateToken, async (req: any, res) =>
 
 app.post('/api/admin/config/journal', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
-  const { current_volume, current_issue, journal_issn } = req.body;
+  const { 
+    current_volume, current_issue, journal_issn, 
+    max_manuscripts_per_issue, max_issues_per_volume, max_pages_per_manuscript 
+  } = req.body;
   try {
-    if (current_volume) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_volume', current_volume.toString()]);
-    if (current_issue) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_issue', current_issue.toString()]);
-    if (journal_issn) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_issn', journal_issn.toString()]);
+    if (current_volume !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_volume', current_volume.toString()]);
+    if (current_issue !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_issue', current_issue.toString()]);
+    if (journal_issn !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_issn', journal_issn.toString()]);
+    
+    if (max_manuscripts_per_issue !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_manuscripts_per_issue', max_manuscripts_per_issue.toString()]);
+    if (max_issues_per_volume !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_issues_per_volume', max_issues_per_volume.toString()]);
+    if (max_pages_per_manuscript !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_pages_per_manuscript', max_pages_per_manuscript.toString()]);
+    
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

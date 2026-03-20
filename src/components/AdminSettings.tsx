@@ -16,7 +16,13 @@ export default function AdminSettings() {
   const [journalVolume, setJournalVolume] = useState<string>('1');
   const [journalIssue, setJournalIssue] = useState<string>('1');
   const [journalIssn, setJournalIssn] = useState<string>('2971-7760');
-  const [origJournal, setOrigJournal] = useState({ volume: '1', issue: '1', issn: '2971-7760' });
+  const [maxManuscripts, setMaxManuscripts] = useState<string>('10');
+  const [maxIssues, setMaxIssues] = useState<string>('3');
+  const [maxPages, setMaxPages] = useState<string>('20');
+  const [origJournal, setOrigJournal] = useState({ 
+    volume: '1', issue: '1', issn: '2971-7760',
+    maxManuscripts: '10', maxIssues: '3', maxPages: '20'
+  });
   const [savingJournal, setSavingJournal] = useState(false);
   const [savedJournal, setSavedJournal] = useState(false);
 
@@ -44,7 +50,17 @@ export default function AdminSettings() {
         setJournalVolume(data.current_volume);
         setJournalIssue(data.current_issue);
         setJournalIssn(data.journal_issn);
-        setOrigJournal({ volume: data.current_volume, issue: data.current_issue, issn: data.journal_issn });
+        setMaxManuscripts(data.max_manuscripts_per_issue.toString());
+        setMaxIssues(data.max_issues_per_volume.toString());
+        setMaxPages(data.max_pages_per_manuscript.toString());
+        setOrigJournal({ 
+          volume: data.current_volume, 
+          issue: data.current_issue, 
+          issn: data.journal_issn,
+          maxManuscripts: data.max_manuscripts_per_issue.toString(),
+          maxIssues: data.max_issues_per_volume.toString(),
+          maxPages: data.max_pages_per_manuscript.toString()
+        });
       })
       .catch(console.error);
 
@@ -94,10 +110,24 @@ export default function AdminSettings() {
       const res = await fetch('/api/admin/config/journal', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current_volume: journalVolume, current_issue: journalIssue, journal_issn: journalIssn })
+        body: JSON.stringify({ 
+          current_volume: journalVolume, 
+          current_issue: journalIssue, 
+          journal_issn: journalIssn,
+          max_manuscripts_per_issue: parseInt(maxManuscripts),
+          max_issues_per_volume: parseInt(maxIssues),
+          max_pages_per_manuscript: parseInt(maxPages)
+        })
       });
       if (res.ok) {
-        setOrigJournal({ volume: journalVolume, issue: journalIssue, issn: journalIssn });
+        setOrigJournal({ 
+          volume: journalVolume, 
+          issue: journalIssue, 
+          issn: journalIssn,
+          maxManuscripts,
+          maxIssues,
+          maxPages
+        });
         setSavedJournal(true);
         setTimeout(() => setSavedJournal(false), 3000);
       }
@@ -107,7 +137,13 @@ export default function AdminSettings() {
     setSavingJournal(false);
   };
 
-  const journalChanged = journalVolume !== origJournal.volume || journalIssue !== origJournal.issue || journalIssn !== origJournal.issn;
+  const journalChanged = 
+    journalVolume !== origJournal.volume || 
+    journalIssue !== origJournal.issue || 
+    journalIssn !== origJournal.issn ||
+    maxManuscripts !== origJournal.maxManuscripts ||
+    maxIssues !== origJournal.maxIssues ||
+    maxPages !== origJournal.maxPages;
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
@@ -175,6 +211,45 @@ export default function AdminSettings() {
                   placeholder="2971-7760"
                 />
                 <p className="text-[9px] text-slate-400 mt-2 text-center font-bold uppercase tracking-wider">Permanent Journal ID</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 pt-6 border-t border-slate-50">
+              {/* Manuscripts per Issue */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">Manuscripts per Issue</label>
+                <input
+                  type="number" min="1"
+                  value={maxManuscripts}
+                  onChange={(e) => setMaxManuscripts(e.target.value)}
+                  className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all"
+                  placeholder="10"
+                />
+                <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Current: 10 per issue</p>
+              </div>
+              {/* Issues per Volume */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">Issues per Volume</label>
+                <input
+                  type="number" min="1"
+                  value={maxIssues}
+                  onChange={(e) => setMaxIssues(e.target.value)}
+                  className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all"
+                  placeholder="3"
+                />
+                <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Current: 3 issues per "Chapter"</p>
+              </div>
+              {/* Page Limit */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">Max Pages per Manuscript</label>
+                <input
+                  type="number" min="1"
+                  value={maxPages}
+                  onChange={(e) => setMaxPages(e.target.value)}
+                  className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all"
+                  placeholder="20"
+                />
+                <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Limit for automated check</p>
               </div>
             </div>
 
