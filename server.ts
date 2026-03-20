@@ -18,6 +18,7 @@ import cors from 'cors';
 import OpenAI from 'openai';
 import { Pool } from 'pg';
 import * as cheerio from 'cheerio';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import stringSimilarity from 'string-similarity';
 import natural from 'natural';
 import jwt from 'jsonwebtoken';
@@ -1368,12 +1369,119 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
+// ===== PDF Generation: Acceptance Letter =====
+async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTitle: string, manuscriptId: number, doi: string): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595, 842]); // A4
+  const { width, height } = page.getSize();
+  const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+  const maroon = rgb(0.5, 0, 0);
+  const black = rgb(0, 0, 0);
+  const gray = rgb(0.4, 0.4, 0.4);
+  const margin = 60;
+  let y = height - 60;
+
+  const refNumber = `GMIJP/${new Date().getFullYear()}/${manuscriptId.toString().padStart(4, '0')}`;
+  const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // Header
+  page.drawText('GENIUS MULTIDISCIPLINARY', { x: margin, y, size: 14, font: fontBold, color: maroon });
+  y -= 18;
+  page.drawText('INTERNATIONAL JOURNAL PUBLICATION', { x: margin, y, size: 14, font: fontBold, color: maroon });
+  y -= 16;
+  page.drawText('Nasarawa State University, Keffi', { x: margin, y, size: 10, font, color: gray });
+  y -= 6;
+  page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: 2, color: maroon });
+  y -= 30;
+
+  // Date & Reference
+  page.drawText(currentDate, { x: margin, y, size: 10, font: fontBold, color: black });
+  page.drawText(`Ref: ${refNumber}`, { x: width - margin - font.widthOfTextAtSize(`Ref: ${refNumber}`, 9), y, size: 9, font, color: gray });
+  y -= 14;
+  page.drawText('OFFICIAL ACCEPTANCE', { x: margin, y, size: 9, font: fontBold, color: rgb(0.02, 0.59, 0.4) });
+  y -= 30;
+
+  // Salutation
+  page.drawText(`Dear ${researcherName},`, { x: margin, y, size: 12, font: fontBold, color: black });
+  y -= 28;
+
+  // Subject
+  page.drawText('Subject: Acceptance of Publication in Genius Multidisciplinary', { x: margin, y, size: 10, font: fontBold, color: black });
+  y -= 14;
+  page.drawText('International Journal Publication', { x: margin + 52, y, size: 10, font: fontBold, color: black });
+  y -= 6;
+  page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+  y -= 24;
+
+  // Helper to draw wrapped text
+  const drawWrappedText = (text: string, usedFont = font, size = 10, lineHeight = 16, color = black) => {
+    const maxWidth = width - 2 * margin;
+    const words = text.split(' ');
+    let line = '';
+    for (const word of words) {
+      const testLine = line ? `${line} ${word}` : word;
+      if (usedFont.widthOfTextAtSize(testLine, size) > maxWidth) {
+        page.drawText(line, { x: margin, y, size, font: usedFont, color });
+        y -= lineHeight;
+        line = word;
+      } else {
+        line = testLine;
+      }
+    }
+    if (line) {
+      page.drawText(line, { x: margin, y, size, font: usedFont, color });
+      y -= lineHeight;
+    }
+  };
+
+  drawWrappedText('I hope this letter finds you well. On behalf of the editorial board of the Genius Multidisciplinary International Journal Publication, I am pleased to inform you that your research paper titled:');
+  y -= 8;
+
+  // Title block
+  page.drawLine({ start: { x: margin, y: y + 6 }, end: { x: margin, y: y - 24 }, thickness: 3, color: maroon });
+  drawWrappedText(`"${manuscriptTitle}"`, fontItalic, 11, 16, black);
+  if (doi) {
+    page.drawText(`DOI: ${doi}`, { x: margin + 8, y, size: 9, font, color: rgb(0.39, 0.38, 0.95) });
+    y -= 16;
+  }
+  y -= 8;
+
+  drawWrappedText('has been accepted for publication in our journal.');
+  y -= 8;
+  drawWrappedText('We would like to extend our congratulations on the quality of your work. Your research makes a significant contribution to the field, and we believe it will be of great interest to our readership. We appreciate the time and effort you have invested in this research project.');
+  y -= 8;
+  drawWrappedText('The final version of your manuscript: Please make any required revisions as per the feedback provided by the peer reviewers and ensure that your paper adheres to the formatting guidelines specified in our author instructions.');
+  y -= 8;
+  drawWrappedText('We hope to continue collaborating with you in the future. Should you have any questions or require further assistance, please do not hesitate to contact us.');
+  y -= 8;
+  drawWrappedText('Thank you once again for choosing the Genius Multidisciplinary International Journal as the platform to share your research.');
+  y -= 24;
+
+  // Sign-off
+  page.drawLine({ start: { x: margin, y: y + 8 }, end: { x: width - margin, y: y + 8 }, thickness: 0.5, color: rgb(0.9, 0.9, 0.9) });
+  page.drawText('Best regards,', { x: margin, y, size: 10, font, color: black });
+  y -= 30;
+  page.drawText('Dr. Danjuma Namo', { x: margin, y, size: 11, font: fontBold, color: black });
+  y -= 14;
+  page.drawText('Secretary (GMIJP)', { x: margin, y, size: 9, font: fontBold, color: maroon });
+
+  // Footer
+  page.drawText('Genius Multidisciplinary International Journal Publication \u2022 Research Excellence', {
+    x: margin, y: 30, size: 7, font, color: gray
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
+
 // ===== Resend Email: Acceptance Letter =====
 async function sendAcceptanceEmail(to: string, researcherName: string, manuscriptTitle: string, manuscriptId: number, doi: string) {
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
   const RESEND_FROM = process.env.RESEND_FROM_EMAIL || 'info@cssfarmstvet.ng';
   if (!RESEND_API_KEY) {
-    console.warn('RESEND_API_KEY not set — skipping acceptance email.');
+    console.warn('RESEND_API_KEY not set \u2014 skipping acceptance email.');
     return;
   }
 
@@ -1396,7 +1504,6 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
         <td width="80" style="text-align:right;"><img src="${nsukLogo}" alt="NSUK" width="64" height="64" style="display:block;border-radius:8px;" /></td>
       </tr></table>
     </div>
-
     <!-- Body -->
     <div style="padding: 36px 32px; color: #1e293b; font-size: 14px; line-height: 1.7;">
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -1411,45 +1518,34 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
           </td>
         </tr>
       </table>
-
       <p style="font-size:15px; font-weight:700;">Dear ${researcherName},</p>
-
-      <h3 style="font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:1px; color:#1e293b; border-bottom:1px solid #e2e8f0; padding-bottom:8px; margin-top:24px;">
-        Subject: Acceptance of Publication in Genius Multidisciplinary International Journal Publication
-      </h3>
-
+      <h3 style="font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:1px; color:#1e293b; border-bottom:1px solid #e2e8f0; padding-bottom:8px; margin-top:24px;">Subject: Acceptance of Publication in Genius Multidisciplinary International Journal Publication</h3>
       <p>I hope this letter finds you well. On behalf of the editorial board of the <strong>Genius Multidisciplinary International Journal Publication</strong>, I am pleased to inform you that your research paper titled:</p>
-
       <div style="background:#f8fafc; border-left:4px solid #800000; padding:16px 20px; margin:16px 0; border-radius:0 8px 8px 0;">
         <p style="font-weight:900; font-size:14px; color:#1e293b; margin:0; font-style:italic;">&ldquo;${manuscriptTitle}&rdquo;</p>
         ${doi ? `<p style="font-size:11px; margin:8px 0 0; color:#6366f1; font-weight:700;">DOI: ${doi}</p>` : ''}
       </div>
-
       <p>has been <strong>accepted for publication</strong> in our journal.</p>
-
-      <p>We would like to extend our congratulations on the quality of your work. Your research makes a significant contribution to the field, and we believe it will be of great interest to our readership. We appreciate the time and effort you have invested in this research project.</p>
-
+      <p>We would like to extend our congratulations on the quality of your work. Your research makes a significant contribution to the field, and we believe it will be of great interest to our readership.</p>
       <p><strong>The final version of your manuscript:</strong> Please make any required revisions as per the feedback provided by the peer reviewers and ensure that your paper adheres to the formatting guidelines specified in our author instructions.</p>
-
       <p>We hope to continue collaborating with you in the future. Should you have any questions or require further assistance, please do not hesitate to contact us.</p>
-
       <p>Thank you once again for choosing the <strong>Genius Multidisciplinary International Journal</strong> as the platform to share your research.</p>
-
-      <!-- Sign Off -->
       <div style="margin-top:32px; padding-top:20px; border-top:1px solid #e2e8f0;">
         <p style="margin:0; font-weight:700;">Best regards,</p>
         <p style="margin:16px 0 4px; font-weight:900; color:#1e293b;">Dr. Danjuma Namo</p>
         <p style="margin:0; font-size:12px; font-weight:700; color:#800000;">Secretary (GMIJP)</p>
       </div>
     </div>
-
-    <!-- Footer -->
     <div style="background:#f8fafc; padding:16px 32px; text-align:center; border-top:1px solid #e2e8f0;">
       <p style="font-size:8px; font-weight:900; color:#94a3b8; text-transform:uppercase; letter-spacing:3px; margin:0;">Genius Multidisciplinary International Journal Publication &bull; Research Excellence</p>
     </div>
   </div>`;
 
   try {
+    // Generate PDF attachment
+    const pdfBuffer = await generateAcceptanceLetterPDF(researcherName, manuscriptTitle, manuscriptId, doi);
+    const pdfBase64 = pdfBuffer.toString('base64');
+
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -1459,8 +1555,14 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
       body: JSON.stringify({
         from: `GMIJP <${RESEND_FROM}>`,
         to: [to],
-        subject: `Acceptance Letter — ${manuscriptTitle.substring(0, 80)}`,
-        html: htmlBody
+        subject: `Acceptance Letter \u2014 ${manuscriptTitle.substring(0, 80)}`,
+        html: htmlBody,
+        attachments: [
+          {
+            filename: `Acceptance_Letter_${manuscriptId}.pdf`,
+            content: pdfBase64
+          }
+        ]
       })
     });
 
@@ -1468,7 +1570,7 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
       const errText = await response.text();
       console.error('Resend email failed:', response.status, errText);
     } else {
-      console.log(`✅ Acceptance email sent to ${to} for paper #${manuscriptId}`);
+      console.log(`\u2705 Acceptance email + PDF sent to ${to} for paper #${manuscriptId}`);
     }
   } catch (error) {
     console.error('Resend email network error:', error);
