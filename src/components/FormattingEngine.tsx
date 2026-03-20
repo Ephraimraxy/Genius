@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, FileText, Download, Check, AlertCircle, FileCheck, RefreshCw, Layout } from 'lucide-react'; // UI Icons
+import { Settings, FileText, Download, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2 } from 'lucide-react'; // UI Icons
+
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 
 export default function FormattingEngine({ activePaperId }: { activePaperId: number | null }) {
   const [selectedStyle, setSelectedStyle] = useState('ieee');
@@ -8,6 +11,28 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
   const [formattedHtml, setFormattedHtml] = useState<string | null>(null);
   const [branding, setBranding] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadPDF = () => {
+    const element = document.getElementById('production-paper-preview');
+    if (!element) return;
+    
+    setIsDownloading(true);
+    const opt = {
+      margin:       [0.5, 0.5, 0.5, 0.5] as [number, number, number, number],
+      filename:     `GMIJP_Publication_${activePaperId}.pdf`,
+      image:        { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' as const }
+    };
+
+    html2pdf().set(opt).from(element).save().then(() => {
+      setIsDownloading(false);
+    }).catch((err: any) => {
+      console.error('PDF generation failed:', err);
+      setIsDownloading(false);
+    });
+  };
 
   const styles = [
     { id: 'ieee', name: 'IEEE Standards', desc: 'Double-column, strictly numbered citations for engineering and tech.', icon: Layout },
@@ -299,11 +324,16 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
                   className="absolute bottom-12 right-12 z-30 print:hidden"
                 >
                   <button 
-                    onClick={() => window.print()}
-                    className="group bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl shadow-2xl shadow-black font-bold flex items-center gap-3 transition-all hover:scale-105 active:scale-95"
+                    onClick={handleDownloadPDF}
+                    disabled={isDownloading}
+                    className="group bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl shadow-2xl shadow-black font-bold flex items-center gap-3 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-wait"
                   >
-                    <Download size={22} className="group-hover:translate-y-0.5 transition-transform" />
-                    Export Production PDF
+                    {isDownloading ? (
+                      <Loader2 size={22} className="animate-spin" />
+                    ) : (
+                      <Download size={22} className="group-hover:translate-y-0.5 transition-transform" />
+                    )}
+                    {isDownloading ? 'Generating PDF...' : 'Download Production PDF'}
                   </button>
                 </motion.div>
               )}

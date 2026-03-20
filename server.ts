@@ -1389,6 +1389,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
+      max_tokens: 16384,
       messages: [
         { 
           role: 'system', 
@@ -1403,7 +1404,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           6. PAGE BREAKS: Use <div class="page-break"> where natural section breaks occur.
           7. ABSOLUTE PRECISION: No content overlap. All text must be clearly separated and "fitted" perfectly.`
         },
-        { role: 'user', content: `Manuscript Title: ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nFull Text:\n\n${paper.content.substring(0, 20000)}` }
+        { role: 'user', content: `Manuscript Title: ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nFull Text:\n\n${paper.content}` }
       ]
     });
 
