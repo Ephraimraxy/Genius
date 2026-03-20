@@ -38,6 +38,7 @@ interface SidebarProps {
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
   profile?: any;
+  activePaperId?: number | null;
 }
 
 export default function Sidebar({ 
@@ -48,6 +49,7 @@ export default function Sidebar({
   isCollapsed, 
   setIsCollapsed, 
   profile,
+  activePaperId
 }: SidebarProps) {
   if (!profile) return null; // Prevent flash of default items
 
@@ -300,6 +302,44 @@ export default function Sidebar({
             )}
           </div>
         </div>
+
+        {/* ─── MANUSCRIPT PIPELINE (RESEARCHER ONLY) ─── */}
+        {activePaperId && !isAdmin && !isLecturer && !isStudent && !isCollapsed && (
+          <div className="mx-6 mb-6 p-4 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Pipeline Status</h4>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <div key={s} className={`w-1.5 h-1.5 rounded-full ${s <= (['upload', 'formatting', 'writing', 'references', 'integrity'].indexOf(activeTab) + 1) ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]' : 'bg-slate-700'}`} />
+                ))}
+              </div>
+            </div>
+            <div className="space-y-3">
+               {[
+                 { id: 'upload', label: 'Smart Upload' },
+                 { id: 'formatting', label: 'Format Architect' },
+                 { id: 'writing', label: 'AI Writing Hub' },
+                 { id: 'integrity', label: 'Integrity Check' }
+               ].map((step, idx) => {
+                 const stepIdx = ['upload', 'formatting', 'writing', 'integrity'].indexOf(step.id);
+                 const currentIdx = ['upload', 'formatting', 'writing', 'integrity'].indexOf(activeTab);
+                 const isCompleted = stepIdx < currentIdx;
+                 const isActiveStep = step.id === activeTab;
+                 
+                 return (
+                   <div key={step.id} className="flex items-center gap-3">
+                     <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black ${
+                       isCompleted ? 'bg-emerald-500 text-white' : isActiveStep ? 'bg-indigo-500 text-white shadow-[0_0_10px_rgba(99,102,241,0.5)]' : 'border border-slate-700 text-slate-500'
+                     }`}>
+                       {isCompleted ? '✓' : idx + 1}
+                     </div>
+                     <span className={`text-[10px] font-bold ${isActiveStep ? 'text-white' : 'text-slate-500'}`}>{step.label}</span>
+                   </div>
+                 );
+               })}
+            </div>
+          </div>
+        )}
       </aside>
     </>
   );

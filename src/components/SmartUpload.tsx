@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
 
 import { ToastType } from './ToastSystem';
@@ -23,7 +23,62 @@ export default function SmartUpload({
   const [hasPaid, setHasPaid] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedMetadata, setEditedMetadata] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (metadata) {
+      setEditedMetadata(JSON.parse(JSON.stringify(metadata)));
+    }
+  }, [metadata]);
+
+  const handleUpdateMetadata = async () => {
+    if (!paperId || !editedMetadata) return;
+    setIsSaving(true);
+    try {
+      const res = await fetch(`${(import.meta as any).env.VITE_API_URL || ''}/api/papers/${paperId}`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          title: editedMetadata.title,
+          authors: editedMetadata.authors,
+          abstract: editedMetadata.abstract
+        })
+      });
+      if (!res.ok) throw new Error('Failed to save changes');
+      const data = await res.json();
+      setMetadata(data.metadata);
+      setIsEditing(false);
+      addToast('Manuscript details synchronized!', 'success');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const updateAuthor = (idx: number, updates: any) => {
+    const newAuthors = [...editedMetadata.authors];
+    newAuthors[idx] = { ...newAuthors[idx], ...updates };
+    setEditedMetadata({ ...editedMetadata, authors: newAuthors });
+  };
+
+  const addAuthor = () => {
+    setEditedMetadata({
+      ...editedMetadata,
+      authors: [...(editedMetadata.authors || []), { name: 'New Author', email: '', department: '' }]
+    });
+  };
+
+  const removeAuthor = (idx: number) => {
+    const newAuthors = editedMetadata.authors.filter((_: any, i: number) => i !== idx);
+    setEditedMetadata({ ...editedMetadata, authors: newAuthors });
+  };
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -276,8 +331,22 @@ export default function SmartUpload({
                       <p className="text-sm text-slate-400 font-bold uppercase tracking-widest mt-0.5">Automated Extraction Results</p>
                     </div>
                   </div>
-                  <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-2xl border border-emerald-100 flex items-center gap-2 text-sm font-bold">
-                    <CheckCircle2 size={18} /> Verified Analysis
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => isEditing ? handleUpdateMetadata() : setIsEditing(true)}
+                      disabled={isSaving}
+                      className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all shadow-lg ${
+                        isEditing 
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-500/20' 
+                          : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                      }`}
+                    >
+                      {isSaving ? <Loader2 className="animate-spin" size={18} /> : (isEditing ? <Save size={18} /> : <Pencil size={18} />)}
+                      {isEditing ? 'Save Changes' : 'Quick Edit'}
+                    </button>
+                    <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-2xl border border-emerald-100 flex items-center gap-2 text-sm font-bold">
+                      <CheckCircle2 size={18} /> Verified Analysis
+                    </div>
                   </div>
                 </div>
 
@@ -297,26 +366,77 @@ export default function SmartUpload({
                 <div className="space-y-8 relative z-10">
                   <div className="group">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 block">Manuscript Title</label>
-                    <div className="text-2xl font-bold text-slate-900 p-6 bg-slate-50 border border-slate-100 rounded-[1.5rem] group-hover:bg-white group-hover:border-indigo-200 transition-all leading-snug">
-                      {metadata.title || 'Untitled Research'}
-                    </div>
+                    {isEditing ? (
+                      <input 
+                        value={editedMetadata?.title || ''}
+                        onChange={(e) => setEditedMetadata({...editedMetadata, title: e.target.value})}
+                        className="w-full text-2xl font-bold text-slate-900 p-6 bg-white border-2 border-indigo-200 rounded-[1.5rem] focus:ring-4 focus:ring-indigo-50 outline-none"
+                      />
+                    ) : (
+                      <div className="text-2xl font-bold text-slate-900 p-6 bg-slate-50 border border-slate-100 rounded-[1.5rem] group-hover:bg-white group-hover:border-indigo-200 transition-all leading-snug">
+                        {metadata.title || 'Untitled Research'}
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="group">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 block">Corresponding Authors</label>
-                      <div className="p-6 bg-slate-50 border border-slate-100 rounded-[1.5rem] group-hover:bg-white group-hover:border-indigo-200 transition-all text-slate-800 font-bold space-y-2">
-                        {metadata.authors && Array.isArray(metadata.authors) ? metadata.authors.map((author: any, i: number) => (
-                           <div key={i} className="flex flex-col">
-                              <span>{typeof author === 'string' ? author : author.name}</span>
-                              {typeof author !== 'string' && (author.email || author.department || author.institution) && (
-                                <span className="text-[10px] text-slate-400 font-medium">
-                                  {[author.department, author.faculty, author.institution, author.email].filter(Boolean).join(' · ')}
-                                </span>
-                              )}
-                           </div>
-                        )) : 'Anonymous Researcher'}
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Corresponding Authors</label>
+                        {isEditing && (
+                          <button onClick={addAuthor} className="text-[10px] font-black text-indigo-600 uppercase flex items-center gap-1 hover:text-indigo-500">
+                             <Plus size={12} /> Add
+                          </button>
+                        )}
                       </div>
+                      
+                      {isEditing ? (
+                        <div className="space-y-3">
+                          {editedMetadata?.authors?.map((author: any, idx: number) => (
+                            <div key={idx} className="p-4 bg-white border-2 border-indigo-100 rounded-2xl relative group/author">
+                              <input 
+                                value={typeof author === 'string' ? author : author.name}
+                                onChange={(e) => updateAuthor(idx, { name: e.target.value })}
+                                placeholder="Author Name"
+                                className="w-full font-bold text-slate-900 border-none p-0 focus:ring-0 text-sm mb-1"
+                              />
+                              <div className="flex gap-2">
+                                <input 
+                                  value={(typeof author !== 'string' && author.email) || ''}
+                                  onChange={(e) => updateAuthor(idx, { email: e.target.value })}
+                                  placeholder="Email"
+                                  className="flex-1 text-[10px] text-slate-500 border-none p-0 focus:ring-0"
+                                />
+                                <input 
+                                  value={(typeof author !== 'string' && author.department) || ''}
+                                  onChange={(e) => updateAuthor(idx, { department: e.target.value })}
+                                  placeholder="Dept"
+                                  className="flex-1 text-[10px] text-slate-500 border-none p-0 focus:ring-0 text-right"
+                                />
+                              </div>
+                              <button 
+                                onClick={() => removeAuthor(idx)}
+                                className="absolute -right-2 -top-2 p-1.5 bg-rose-50 text-rose-500 rounded-lg opacity-0 group-hover/author:opacity-100 transition-opacity"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-6 bg-slate-50 border border-slate-100 rounded-[1.5rem] group-hover:bg-white group-hover:border-indigo-200 transition-all text-slate-800 font-bold space-y-2">
+                          {metadata.authors && Array.isArray(metadata.authors) ? metadata.authors.map((author: any, i: number) => (
+                            <div key={i} className="flex flex-col">
+                                <span>{typeof author === 'string' ? author : author.name}</span>
+                                {typeof author !== 'string' && (author.email || author.department || author.institution) && (
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    {[author.department, author.faculty, author.institution, author.email].filter(Boolean).join(' · ')}
+                                  </span>
+                                )}
+                            </div>
+                          )) : 'Anonymous Researcher'}
+                        </div>
+                      )}
                     </div>
                     <div className="group">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 block">Professional Affiliations</label>
@@ -328,9 +448,17 @@ export default function SmartUpload({
 
                   <div className="group">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 block">Abstract Summary</label>
-                    <div className="p-8 bg-slate-50 border border-slate-100 rounded-[2rem] group-hover:bg-white group-hover:border-indigo-200 transition-all text-slate-600 text-lg leading-relaxed font-serif">
-                      {metadata.abstract || 'No abstract content detected in the manuscript.'}
-                    </div>
+                    {isEditing ? (
+                      <textarea 
+                        value={editedMetadata?.abstract || ''}
+                        onChange={(e) => setEditedMetadata({...editedMetadata, abstract: e.target.value})}
+                        className="w-full h-48 p-8 bg-white border-2 border-indigo-200 rounded-[2rem] focus:ring-4 focus:ring-indigo-50 outline-none text-slate-600 text-lg leading-relaxed font-serif"
+                      />
+                    ) : (
+                      <div className="p-8 bg-slate-50 border border-slate-100 rounded-[2rem] group-hover:bg-white group-hover:border-indigo-200 transition-all text-slate-600 text-lg leading-relaxed font-serif">
+                        {metadata.abstract || 'No abstract content detected in the manuscript.'}
+                      </div>
+                    )}
                   </div>
 
                   <div>

@@ -1108,10 +1108,41 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       ]
     );
 
-    res.json({ id: result.rows[0].id, metadata });
+    res.json({ 
+      id: result.rows[0].id,
+      title: metadata.title,
+      authors: metadata.authors,
+      abstract: metadata.abstract
+    });
   } catch (error: any) {
     console.error('Upload error:', error);
-    res.status(500).json({ error: 'Failed to process manuscript' });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const { title, authors, abstract } = req.body;
+    
+    const currentPaper = await pool.query('SELECT metadata FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (currentPaper.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
+    
+    let metadata = JSON.parse(currentPaper.rows[0].metadata || '{}');
+    if (title !== undefined) metadata.title = title;
+    if (authors !== undefined) metadata.authors = authors;
+    if (abstract !== undefined) metadata.abstract = abstract;
+
+    const authorNames = (metadata.authors || []).map((a: any) => typeof a === 'string' ? a : a.name);
+
+    await pool.query(
+      'UPDATE papers SET title = COALESCE($1, title), authors = $2, abstract = COALESCE($3, abstract), metadata = $4 WHERE id = $5 AND user_id = $6',
+      [title || null, JSON.stringify(authorNames), abstract || null, JSON.stringify(metadata), id, req.user.id]
+    );
+
+    res.json({ success: true, metadata });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
