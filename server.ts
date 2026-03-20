@@ -1368,6 +1368,113 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
+// ===== Resend Email: Acceptance Letter =====
+async function sendAcceptanceEmail(to: string, researcherName: string, manuscriptTitle: string, manuscriptId: number, doi: string) {
+  const RESEND_API_KEY = process.env.RESEND_API_KEY;
+  const RESEND_FROM = process.env.RESEND_FROM_EMAIL || 'info@cssfarmstvet.ng';
+  if (!RESEND_API_KEY) {
+    console.warn('RESEND_API_KEY not set — skipping acceptance email.');
+    return;
+  }
+
+  const refNumber = `GMIJP/${new Date().getFullYear()}/${manuscriptId.toString().padStart(4, '0')}`;
+  const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const appUrl = process.env.APP_URL || 'https://gmijp-edu.up.railway.app';
+  const gmijpLogo = `${appUrl}/gmijp-logo.png`;
+  const nsukLogo = `${appUrl}/university-logo.jpg`;
+
+  const htmlBody = `
+  <div style="font-family: Georgia, 'Times New Roman', serif; max-width: 700px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, #800000 0%, #4a0000 100%); padding: 28px 32px; display: flex; align-items: center; justify-content: space-between;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td width="80"><img src="${gmijpLogo}" alt="GMIJP" width="64" height="64" style="display:block;border-radius:8px;" /></td>
+        <td style="text-align: center; color: #fff;">
+          <h1 style="margin:0; font-size:16px; font-weight:900; text-transform:uppercase; letter-spacing:1px;">Genius Multidisciplinary International Journal Publication</h1>
+          <p style="margin:4px 0 0; font-size:13px; opacity:0.85;">Nasarawa State University, Keffi</p>
+        </td>
+        <td width="80" style="text-align:right;"><img src="${nsukLogo}" alt="NSUK" width="64" height="64" style="display:block;border-radius:8px;" /></td>
+      </tr></table>
+    </div>
+
+    <!-- Body -->
+    <div style="padding: 36px 32px; color: #1e293b; font-size: 14px; line-height: 1.7;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+        <tr>
+          <td style="background:#f8fafc; padding:10px 16px; border-radius:8px; border:1px solid #e2e8f0;">
+            <span style="font-size:9px; font-weight:900; color:#94a3b8; text-transform:uppercase; letter-spacing:2px;">Status</span><br/>
+            <span style="font-size:12px; font-weight:700; color:#059669;">OFFICIAL ACCEPTANCE</span>
+          </td>
+          <td style="text-align:right;">
+            <span style="font-size:13px; font-weight:700; color:#475569;">${currentDate}</span><br/>
+            <span style="font-size:9px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:2px;">Ref: ${refNumber}</span>
+          </td>
+        </tr>
+      </table>
+
+      <p style="font-size:15px; font-weight:700;">Dear ${researcherName},</p>
+
+      <h3 style="font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:1px; color:#1e293b; border-bottom:1px solid #e2e8f0; padding-bottom:8px; margin-top:24px;">
+        Subject: Acceptance of Publication in Genius Multidisciplinary International Journal Publication
+      </h3>
+
+      <p>I hope this letter finds you well. On behalf of the editorial board of the <strong>Genius Multidisciplinary International Journal Publication</strong>, I am pleased to inform you that your research paper titled:</p>
+
+      <div style="background:#f8fafc; border-left:4px solid #800000; padding:16px 20px; margin:16px 0; border-radius:0 8px 8px 0;">
+        <p style="font-weight:900; font-size:14px; color:#1e293b; margin:0; font-style:italic;">&ldquo;${manuscriptTitle}&rdquo;</p>
+        ${doi ? `<p style="font-size:11px; margin:8px 0 0; color:#6366f1; font-weight:700;">DOI: ${doi}</p>` : ''}
+      </div>
+
+      <p>has been <strong>accepted for publication</strong> in our journal.</p>
+
+      <p>We would like to extend our congratulations on the quality of your work. Your research makes a significant contribution to the field, and we believe it will be of great interest to our readership. We appreciate the time and effort you have invested in this research project.</p>
+
+      <p><strong>The final version of your manuscript:</strong> Please make any required revisions as per the feedback provided by the peer reviewers and ensure that your paper adheres to the formatting guidelines specified in our author instructions.</p>
+
+      <p>We hope to continue collaborating with you in the future. Should you have any questions or require further assistance, please do not hesitate to contact us.</p>
+
+      <p>Thank you once again for choosing the <strong>Genius Multidisciplinary International Journal</strong> as the platform to share your research.</p>
+
+      <!-- Sign Off -->
+      <div style="margin-top:32px; padding-top:20px; border-top:1px solid #e2e8f0;">
+        <p style="margin:0; font-weight:700;">Best regards,</p>
+        <p style="margin:16px 0 4px; font-weight:900; color:#1e293b;">Dr. Danjuma Namo</p>
+        <p style="margin:0; font-size:12px; font-weight:700; color:#800000;">Secretary (GMIJP)</p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#f8fafc; padding:16px 32px; text-align:center; border-top:1px solid #e2e8f0;">
+      <p style="font-size:8px; font-weight:900; color:#94a3b8; text-transform:uppercase; letter-spacing:3px; margin:0;">Genius Multidisciplinary International Journal Publication &bull; Research Excellence</p>
+    </div>
+  </div>`;
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: `GMIJP <${RESEND_FROM}>`,
+        to: [to],
+        subject: `Acceptance Letter — ${manuscriptTitle.substring(0, 80)}`,
+        html: htmlBody
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Resend email failed:', response.status, errText);
+    } else {
+      console.log(`✅ Acceptance email sent to ${to} for paper #${manuscriptId}`);
+    }
+  } catch (error) {
+    console.error('Resend email network error:', error);
+  }
+}
+
 app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -1457,6 +1564,17 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     }
 
     res.json({ success: true, doi, url });
+
+    // Fire-and-forget: Send acceptance letter email
+    try {
+      const userResult = await pool.query('SELECT name, email FROM users WHERE id = $1', [userId]);
+      const user = userResult.rows[0];
+      if (user?.email) {
+        sendAcceptanceEmail(user.email, user.name || 'Researcher', metadata.title || paper.title, id, doi);
+      }
+    } catch (emailErr) {
+      console.error('Acceptance email trigger error (non-fatal):', emailErr);
+    }
   } catch (error: any) {
     console.error('Publishing error:', error);
     res.status(500).json({ error: error.message || 'Failed to publish paper via Zenodo' });

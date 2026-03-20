@@ -1,21 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
 
 import { ToastType } from './ToastSystem';
 
 export default function SmartUpload({ 
   onUploadComplete, 
-  addToast 
+  addToast,
+  profile
 }: { 
   onUploadComplete: (id: number) => void,
-  addToast: (message: string, type?: ToastType) => void 
+  addToast: (message: string, type?: ToastType) => void,
+  profile?: any
 }) {
   const [isUploading, setIsUploading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [metadata, setMetadata] = useState<any>(null);
   const [validation, setValidation] = useState<any>(null);
+  const [isConfirmingDetails, setIsConfirmingDetails] = useState(false);
+  const [researcherName, setResearcherName] = useState(profile?.name || '');
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [price, setPrice] = useState<number>(0);
   const [isPaying, setIsPaying] = useState(false);
@@ -108,14 +113,23 @@ export default function SmartUpload({
     }
   }, []);
 
-  useState(() => {
+  useEffect(() => {
     fetch('/api/settings/price').then(res => res.json()).then(data => setPrice(data.price));
-  });
+  }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setResearcherName(profile?.name || '');
+    setPendingFile(file);
+    setIsConfirmingDetails(true);
+  };
+
+  const proceedWithUpload = async () => {
+    if (!pendingFile) return;
+    const file = pendingFile;
+    setIsConfirmingDetails(false);
     setSelectedFile(file);
     setIsUploading(true);
     setError(null);
@@ -565,6 +579,67 @@ export default function SmartUpload({
           onClose={() => setIsPreviewOpen(false)}
         />
       )}
+
+      {/* Detail Confirmation Modal */}
+      <AnimatePresence>
+        {isConfirmingDetails && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl border border-slate-100"
+            >
+              <div className="flex items-center gap-4 mb-8">
+                <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+                  <User size={32} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 leading-tight">Confirm Identity</h3>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Acceptance Letter Details</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Full Name (Editable)</label>
+                  <input 
+                    type="text" 
+                    value={researcherName}
+                    onChange={(e) => setResearcherName(e.target.value)}
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 focus:ring-4 focus:ring-indigo-50 focus:border-indigo-400 outline-none transition-all"
+                    placeholder="Enter full name"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Email Address (Registry Default)</label>
+                  <div className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-400 cursor-not-allowed italic">
+                    {profile?.email}
+                  </div>
+                  <p className="text-[9px] font-bold text-amber-600 mt-2 italic flex items-center gap-1">
+                    <AlertCircle size={10} /> To ensure integrity, the account email cannot be changed.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-10 flex gap-4">
+                <button 
+                  onClick={() => setIsConfirmingDetails(false)}
+                  className="flex-1 py-4 bg-slate-50 text-slate-500 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-100 transition-all border border-slate-100"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={proceedWithUpload}
+                  className="flex-3 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-indigo-600 transition-all shadow-xl shadow-slate-900/20"
+                >
+                  Verify & Proceed
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
