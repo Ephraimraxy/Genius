@@ -13,10 +13,13 @@ import {
   Eye,
   ArrowUpRight,
   TrendingUp,
-  FileText,
-  XCircle
+  FileText, 
+  XCircle,
+  FileBadge,
+  Printer
 } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
+import AcceptanceLetter from './AcceptanceLetter';
 
 interface Publication {
   id: number;
@@ -37,10 +40,15 @@ export default function PublicationRecords({ profile }: { profile: any }) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [previewPub, setPreviewPub] = useState<Publication | null>(null);
+  const [acceptancePub, setAcceptancePub] = useState<Publication | null>(null);
   const isAdmin = profile?.user?.role === 'super_admin' || profile?.user?.role === 'admin';
 
   useEffect(() => {
     fetchPublications();
+    
+    const handleAfterPrint = () => setAcceptancePub(null);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
   }, []);
 
   const fetchPublications = async () => {
@@ -311,7 +319,20 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
                            title="Preview Manuscript">
                            <Eye size={18} />
-                         </button>
+                        </button>
+                        
+                        {(pub.status === 'published' || pub.status === 'ready' || pub.status === 'peer_review') && (
+                          <button 
+                            onClick={() => {
+                              setAcceptancePub(pub);
+                              // Small delay to ensure content is rendered before print dialog
+                              setTimeout(() => window.print(), 300);
+                            }}
+                            className="p-2 text-slate-400 hover:text-[#800000] hover:bg-red-50 rounded-xl transition-all"
+                            title="Download Acceptance Letter">
+                            <FileBadge size={18} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </motion.tr>
@@ -319,6 +340,17 @@ export default function PublicationRecords({ profile }: { profile: any }) {
               )}
             </tbody>
           </table>
+        </div>
+        
+        {/* Printable Acceptance Letter (Hidden from view, visible for printing) */}
+        <div className="hidden print:block fixed inset-0 z-[9999] bg-white">
+          {acceptancePub && (
+            <AcceptanceLetter 
+              manuscriptId={acceptancePub.id}
+              title={acceptancePub.title}
+              authors={acceptancePub.authors}
+            />
+          )}
         </div>
         <AnimatePresence>
         {previewPub && (
