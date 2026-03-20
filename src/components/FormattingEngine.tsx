@@ -6,6 +6,7 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
   const [selectedStyle, setSelectedStyle] = useState('ieee');
   const [isFormatting, setIsFormatting] = useState(false);
   const [formattedHtml, setFormattedHtml] = useState<string | null>(null);
+  const [branding, setBranding] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   const styles = [
@@ -31,6 +32,7 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
       if (!res.ok) throw new Error('Document reconstruction failed');
       const data = await res.json();
       setFormattedHtml(data.formattedHtml);
+      setBranding(data.branding);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -58,6 +60,58 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
       animate={{ opacity: 1, y: 0 }}
       className="max-w-7xl mx-auto space-y-8 pb-20"
     >
+      <style>{`
+        @media print {
+          body { background: white !important; }
+          .print\\:hidden, header, nav, aside, button { display: none !important; }
+          #production-paper-preview {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          .export-only { display: block !important; }
+        }
+        
+        .academic-content {
+          font-family: serif;
+          line-height: 1.6;
+        }
+        .academic-content h1, .academic-content h2, .academic-content h3 {
+          color: #0f172a;
+          margin-top: 1.5em;
+          margin-bottom: 0.5em;
+        }
+        .academic-content table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 2rem 0;
+          font-family: sans-serif;
+          font-size: 0.875rem;
+        }
+        .academic-content th, .academic-content td {
+          border: 1px solid #cbd5e1;
+          padding: 0.75rem;
+          text-align: left;
+        }
+        .academic-content th {
+          background-color: #f8fafc;
+          font-weight: bold;
+        }
+        .academic-content .academic-figure {
+          margin: 2.5rem 0;
+          text-align: center;
+          padding: 1rem;
+          background: #f8fafc;
+          border-radius: 0.5rem;
+          border: 1px dashed #cbd5e1;
+        }
+      `}</style>
+
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h2 className="text-4xl font-bold text-slate-900 tracking-tight font-display">Format Architect</h2>
@@ -160,7 +214,8 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
 
             <motion.div
               layout
-              className="bg-white w-full min-h-[1000px] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] rounded-sm p-12 lg:p-20 relative"
+              id="production-paper-preview"
+              className="bg-white w-full min-h-[1000px] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] rounded-sm p-8 lg:p-16 relative print:shadow-none print:p-0"
               animate={isFormatting ? { scale: 0.98, opacity: 0.7 } : { scale: 1, opacity: 1 }}
               transition={{ duration: 0.5, ease: "circOut" }}
             >
@@ -182,12 +237,47 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
               </AnimatePresence>
 
               {formattedHtml ? (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="prose prose-slate prose-lg max-w-none font-serif"
-                  dangerouslySetInnerHTML={{ __html: formattedHtml.replace(/```html|```/g, '') }}
-                />
+                <div className="flex flex-col">
+                  {/* Production Branding Header */}
+                  {branding && (
+                    <div className="mb-10 pb-8 border-b-2 border-[#800000] flex flex-col gap-6 select-none export-only">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <img src="/journal-logo.png" alt="Genius" className="h-10 md:h-14 w-auto object-contain" />
+                          <div className="hidden sm:block">
+                            <p className="text-[#800000] font-black text-[9px] uppercase tracking-wider leading-none">Genius Multidisciplinary</p>
+                            <p className="text-slate-900 font-black text-xs md:text-sm tracking-tighter">INTERNATIONAL JOURNAL</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-center text-center px-2">
+                           <div className="flex flex-wrap items-center justify-center gap-2 text-[9px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                             <span>ISSN: {branding.issn}</span>
+                             <span className="opacity-20">|</span>
+                             <span>Vol: {branding.volume} No: {branding.issue}</span>
+                           </div>
+                           <p className="text-indigo-600 font-mono text-[8px] md:text-[9px] mt-1 font-bold">{branding.doi}</p>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                           <div className="hidden sm:block text-right">
+                              <p className="text-slate-900 font-black text-[9px] uppercase tracking-tight">University Logo</p>
+                              <p className="text-slate-400 font-bold text-[8px] uppercase tracking-widest">Global Partner</p>
+                           </div>
+                           <img src="/university-logo.jpg" alt="NSUK" className="h-10 md:h-14 w-auto object-contain" />
+                        </div>
+                      </div>
+                      <div className="h-px bg-slate-100 w-full" />
+                    </div>
+                  )}
+
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="prose prose-slate prose-lg max-w-none font-serif academic-content"
+                    dangerouslySetInnerHTML={{ __html: formattedHtml.replace(/```html|```/g, '') }}
+                  />
+                </div>
               ) : (
                 <div className="h-full min-h-[600px] flex flex-col items-center justify-center text-slate-300 gap-6">
                   <div className="w-24 h-24 rounded-[2rem] border-2 border-dashed border-slate-200 flex items-center justify-center">
@@ -206,9 +296,12 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute bottom-12 right-12 z-30"
+                  className="absolute bottom-12 right-12 z-30 print:hidden"
                 >
-                  <button className="group bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl shadow-2xl shadow-black font-bold flex items-center gap-3 transition-all hover:scale-105 active:scale-95">
+                  <button 
+                    onClick={() => window.print()}
+                    className="group bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl shadow-2xl shadow-black font-bold flex items-center gap-3 transition-all hover:scale-105 active:scale-95"
+                  >
                     <Download size={22} className="group-hover:translate-y-0.5 transition-transform" />
                     Export Production PDF
                   </button>

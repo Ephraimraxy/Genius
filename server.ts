@@ -1296,15 +1296,42 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
+    // Fetch branding metadata for the formatter
+    const issnRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+    const volRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
+    const issRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
+    
+    const branding = {
+      issn: paper.issn || issnRes.rows[0]?.value || '2971-7760',
+      volume: paper.volume || volRes.rows[0]?.value || '1',
+      issue: paper.issue || issRes.rows[0]?.value || '1',
+      doi: paper.doi || '10.GMIJ/PENDING'
+    };
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        { role: 'system', content: 'You are an academic paper formatter. Format the given paper metadata into the requested citation/journal style as clean HTML.' },
-        { role: 'user', content: `Format this paper metadata into ${style} style HTML. Title: ${JSON.parse(paper.metadata).title}` }
+        { 
+          role: 'system', 
+          content: `You are an expert academic paper formatter. Format the given paper content into professional, production-ready HTML according to the ${style.toUpperCase()} style.
+          
+          RULES:
+          1. STRUCTURE: Include Title, Authors, Abstract, Keywords, and all content sections (Intro, Methods, etc.).
+          2. TABLES: Identify any tabular data and render as clean <table> tags with professional styling (center aligned, borders, padding).
+          3. FIGURES: Identify image placeholders or figure mentions and wrap them in <div class="academic-figure"> tags.
+          4. REFERENCES: Format citations and the reference list strictly according to ${style} style.
+          5. LAYOUT: Ensure the output is SEMANTIC HTML. Do NOT include logos or journal headers (those are handled by the system wrapper).
+          6. PAGE BREAKS: Use <div class="page-break"> where natural section breaks occur.
+          7. ABSOLUTE PRECISION: No content overlap. All text must be clearly separated and "fitted" perfectly.`
+        },
+        { role: 'user', content: `Manuscript Title: ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nFull Text:\n\n${paper.content.substring(0, 20000)}` }
       ]
     });
 
-    res.json({ formattedHtml: response.choices[0]?.message?.content, style });
+    res.json({ 
+      formattedHtml: response.choices[0]?.message?.content || '',
+      branding 
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to format' });
   }
