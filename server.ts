@@ -1123,6 +1123,10 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       [newPaperId, userId]
     );
 
+    // Send Acceptance Letter
+    sendAcceptanceEmail(req.user.email, req.body.researcherName || 'Researcher', metadata.title || 'Untitled', newPaperId);
+
+
     res.json({ 
       id: newPaperId,
       title: metadata.title,
@@ -1210,6 +1214,27 @@ app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
     res.json({ suggestions, textChunk });
   } catch (error) {
     res.status(500).json({ error: 'Failed to enhance' });
+  }
+});
+
+app.post('/api/enhance/:id/commit', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const { original, improved } = req.body;
+    
+    const result = await pool.query('SELECT content FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    // Simple string replacement for the commit
+    const newContent = paper.content.replace(original, improved);
+    
+    await pool.query('UPDATE papers SET content = $1 WHERE id = $2 AND user_id = $3', [newContent, id, req.user.id]);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Enhance commit error:', error);
+    res.status(500).json({ error: 'Failed to commit change' });
   }
 });
 
@@ -1384,7 +1409,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
 });
 
 // ===== PDF Generation: Acceptance Letter =====
-async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTitle: string, manuscriptId: number, doi: string): Promise<Buffer> {
+async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTitle: string, manuscriptId: number): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595, 842]); // A4
   const { width, height } = page.getSize();
@@ -1456,10 +1481,6 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   // Title block
   page.drawLine({ start: { x: margin, y: y + 6 }, end: { x: margin, y: y - 24 }, thickness: 3, color: maroon });
   drawWrappedText(`"${manuscriptTitle}"`, fontItalic, 11, 16, black);
-  if (doi) {
-    page.drawText(`DOI: ${doi}`, { x: margin + 8, y, size: 9, font, color: rgb(0.39, 0.38, 0.95) });
-    y -= 16;
-  }
   y -= 8;
 
   drawWrappedText('has been accepted for publication in our journal.');
@@ -1491,7 +1512,7 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
 }
 
 // ===== Resend Email: Acceptance Letter =====
-async function sendAcceptanceEmail(to: string, researcherName: string, manuscriptTitle: string, manuscriptId: number, doi: string) {
+async function sendAcceptanceEmail(to: string, researcherName: string, manuscriptTitle: string, manuscriptId: number) {
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
   const RESEND_FROM = process.env.RESEND_FROM_EMAIL || 'info@cssfarmstvet.ng';
   if (!RESEND_API_KEY) {
@@ -1537,7 +1558,6 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
       <p>I hope this letter finds you well. On behalf of the editorial board of the <strong>Genius Multidisciplinary International Journal Publication</strong>, I am pleased to inform you that your research paper titled:</p>
       <div style="background:#f8fafc; border-left:4px solid #800000; padding:16px 20px; margin:16px 0; border-radius:0 8px 8px 0;">
         <p style="font-weight:900; font-size:14px; color:#1e293b; margin:0; font-style:italic;">&ldquo;${manuscriptTitle}&rdquo;</p>
-        ${doi ? `<p style="font-size:11px; margin:8px 0 0; color:#6366f1; font-weight:700;">DOI: ${doi}</p>` : ''}
       </div>
       <p>has been <strong>accepted for publication</strong> in our journal.</p>
       <p>We would like to extend our congratulations on the quality of your work. Your research makes a significant contribution to the field, and we believe it will be of great interest to our readership.</p>
@@ -1557,7 +1577,7 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
 
   try {
     // Generate PDF attachment
-    const pdfBuffer = await generateAcceptanceLetterPDF(researcherName, manuscriptTitle, manuscriptId, doi);
+    const pdfBuffer = await generateAcceptanceLetterPDF(researcherName, manuscriptTitle, manuscriptId);
     const pdfBase64 = pdfBuffer.toString('base64');
 
     const response = await fetch('https://api.resend.com/emails', {
@@ -1681,16 +1701,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
 
     res.json({ success: true, doi, url });
 
-    // Fire-and-forget: Send acceptance letter email
-    try {
-      const userResult = await pool.query('SELECT name, email FROM users WHERE id = $1', [userId]);
-      const user = userResult.rows[0];
-      if (user?.email) {
-        sendAcceptanceEmail(user.email, user.name || 'Researcher', metadata.title || paper.title, id, doi);
-      }
-    } catch (emailErr) {
-      console.error('Acceptance email trigger error (non-fatal):', emailErr);
-    }
+    // Note: Acceptance email is now sent at the /api/upload step
   } catch (error: any) {
     console.error('Publishing error:', error);
     res.status(500).json({ error: error.message || 'Failed to publish paper via Zenodo' });

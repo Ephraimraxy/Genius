@@ -43,6 +43,37 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
     );
   }
 
+  const handleCommit = async (sug: any, idx: number) => {
+    if (!activePaperId) return;
+    
+    // Optimistic UI update
+    const newSuggestions = suggestions.filter((_, i) => i !== idx);
+    setSuggestions(newSuggestions);
+    setActiveSuggestion(newSuggestions.length > 0 ? 0 : null);
+    setTextChunk(prev => prev.replace(sug.original, sug.improved));
+
+    try {
+      const res = await fetch(`/api/enhance/${activePaperId}/commit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ original: sug.original, improved: sug.improved })
+      });
+      if (!res.ok) throw new Error('Commit failed');
+    } catch (err) {
+      // Revert if failed (simplified error handling)
+      console.error(err);
+    }
+  };
+
+  const handleDismiss = (idx: number) => {
+    const newSuggestions = suggestions.filter((_, i) => i !== idx);
+    setSuggestions(newSuggestions);
+    setActiveSuggestion(newSuggestions.length > 0 ? 0 : null);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -166,10 +197,16 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
                             "{sug.explanation}"
                           </p>
                           <div className="flex gap-4">
-                            <button className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl shadow-black">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleCommit(sug, idx); }}
+                              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl shadow-black"
+                            >
                               <Check size={20} /> Commit Change
                             </button>
-                            <button className="p-4 bg-slate-700 hover:bg-slate-600 text-white rounded-2xl transition-all border border-slate-600">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleDismiss(idx); }}
+                              className="p-4 bg-slate-700 hover:bg-slate-600 text-white rounded-2xl transition-all border border-slate-600"
+                            >
                               <X size={20} />
                             </button>
                           </div>

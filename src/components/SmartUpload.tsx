@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User, Copy, Clock } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User, Copy, Clock, PartyPopper } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
 
 import { ToastType } from './ToastSystem';
@@ -8,11 +8,13 @@ import { ToastType } from './ToastSystem';
 export default function SmartUpload({ 
   onUploadComplete, 
   addToast,
-  profile
+  profile,
+  onNavigate
 }: { 
   onUploadComplete: (id: number) => void,
   addToast: (message: string, type?: ToastType) => void,
-  profile?: any
+  profile?: any,
+  onNavigate?: (tab: string) => void
 }) {
   const [isUploading, setIsUploading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -154,6 +156,7 @@ export default function SmartUpload({
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('researcherName', researcherName);
 
     try {
       const res = await fetch('/api/upload', {
@@ -455,8 +458,35 @@ export default function SmartUpload({
             key="analysis-results"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-8"
+            className="space-y-8"
           >
+            {/* Success Banner */}
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gradient-to-r from-emerald-50 via-emerald-50 to-teal-50 rounded-[2.5rem] border border-emerald-200 p-8 md:p-10 shadow-lg shadow-emerald-100/50 flex flex-col md:flex-row items-center gap-6 md:gap-8"
+            >
+              <div className="w-16 h-16 md:w-20 md:h-20 bg-emerald-100 rounded-3xl flex items-center justify-center shrink-0">
+                <PartyPopper size={36} className="text-emerald-600" />
+              </div>
+              <div className="flex-1 text-center md:text-left">
+                <h3 className="text-xl md:text-2xl font-black text-emerald-900 tracking-tight">Manuscript Uploaded Successfully!</h3>
+                <p className="text-emerald-700 font-medium mt-1 text-sm md:text-base">
+                  Your document has been ingested and analyzed. Please check your email inbox for your official <strong>Acceptance Letter</strong>. You can review the extracted metadata below, then proceed to <strong>Formatting</strong> to prepare your manuscript for publication.
+                </p>
+              </div>
+              {onNavigate && (
+                <button
+                  onClick={() => onNavigate('formatting')}
+                  className="shrink-0 px-8 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-600/30 hover:scale-105 transition-all flex items-center gap-3"
+                >
+                  Continue to Formatting
+                  <ArrowRight size={18} />
+                </button>
+              )}
+            </motion.div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Extracted Metadata Card */}
             <div className="lg:col-span-8 space-y-8">
               <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 p-10 overflow-hidden relative">
@@ -695,6 +725,7 @@ export default function SmartUpload({
                   <p className="text-[10px] text-slate-400 text-center mt-4 font-bold uppercase tracking-wider">Secure Payment via Paystack</p>
                 </div>
               </div>
+            </div>
             </div>
           </motion.div>
         )}
