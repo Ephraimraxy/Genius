@@ -115,6 +115,19 @@ export default function SmartUpload({
         }
       };
       verifyPayment();
+    } else {
+      // No URL reference — check for unused publication credit from a previous payment
+      (async () => {
+        try {
+          const res = await fetch('/api/payment/credit', {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          });
+          const data = await res.json();
+          if (data.hasCredit) {
+            setHasPaid(true);
+          }
+        } catch (e) { /* silent */ }
+      })();
     }
   }, []);
 

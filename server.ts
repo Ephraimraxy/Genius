@@ -320,6 +320,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN metadata JSONB DEFAULT \'{}\''); } catch (e) { }
+  try { await pool.query('ALTER TABLE transactions ADD COLUMN paper_id INTEGER REFERENCES papers(id)'); } catch (e) { }
   
   try { await pool.query('ALTER TABLE papers ADD COLUMN volume TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN issue TEXT'); } catch (e) { }
@@ -1109,8 +1110,21 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       ]
     );
 
+    const newPaperId = result.rows[0].id;
+
+    // Link the oldest unused publication credit to this paper
+    await pool.query(
+      `UPDATE transactions SET paper_id = $1 
+       WHERE id = (
+         SELECT id FROM transactions 
+         WHERE user_id = $2 AND type = 'publication' AND status = 'success' AND paper_id IS NULL 
+         ORDER BY created_at ASC LIMIT 1
+       )`,
+      [newPaperId, userId]
+    );
+
     res.json({ 
-      id: result.rows[0].id,
+      id: newPaperId,
       title: metadata.title,
       authors: metadata.authors,
       abstract: metadata.abstract
@@ -2556,6 +2570,26 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
 });
 
 // Secure Webhook for PaymentPoint (per official docs)
+
+// Check if the user has an unused publication credit (paid but not yet linked to a paper)
+app.get('/api/payment/credit', authenticateToken, async (req: any, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT reference FROM transactions 
+       WHERE user_id = $1 AND type = 'publication' AND status = 'success' AND paper_id IS NULL
+       ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    if (result.rows.length > 0) {
+      res.json({ hasCredit: true, reference: result.rows[0].reference });
+    } else {
+      res.json({ hasCredit: false });
+    }
+  } catch (error) {
+    console.error('Credit check error:', error);
+    res.status(500).json({ hasCredit: false, error: 'Failed to check credit' });
+  }
+});
 
 app.get('/api/transactions', authenticateToken, async (req: any, res) => {
   let query, params;
