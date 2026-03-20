@@ -250,7 +250,6 @@ export default function SmartUpload({
             >
               {isPaying ? <Loader2 className="animate-spin" size={20} /> : <><span className="text-xl font-bold">₦</span> Initialize Checkout</>}
             </button>
-            <p className="mt-6 text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] relative z-10">Neural Authentication Secured via Paystack</p>
           </motion.div>
         ) : !metadata ? (
           <motion.div
