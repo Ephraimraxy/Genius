@@ -1199,19 +1199,20 @@ app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const textChunk = paper.content.substring(0, 3000);
+    const fullText = paper.content;
+    const aiChunk = fullText.substring(0, 4000);
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: 'You are an expert academic writing editor. Return JSON with key "suggestions" containing an array of objects with: type (string, e.g. "grammar", "clarity", "style"), original (string), improved (string), explanation (string).' },
-        { role: 'user', content: `Improve this academic text and provide suggestions:\n\n${textChunk}` }
+        { role: 'user', content: `Improve this academic text and provide suggestions:\n\n${aiChunk}` }
       ]
     });
 
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{"suggestions":[]}');
     const suggestions = parsed.suggestions || parsed;
-    res.json({ suggestions, textChunk });
+    res.json({ suggestions, textChunk: fullText });
   } catch (error) {
     res.status(500).json({ error: 'Failed to enhance' });
   }
