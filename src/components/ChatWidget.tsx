@@ -21,6 +21,7 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
   const scrollRef = useRef<HTMLDivElement>(null);
   
   const isAdmin = profile?.user?.role === 'admin';
+  const isLecturer = profile?.user?.role === 'lecturer';
 
   // Force open chat when clicking "Message User" from UserManagement or Notifications
   useEffect(() => {
@@ -111,7 +112,7 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
             className="absolute bottom-16 right-0 w-[280px] sm:w-[400px] h-[50vh] sm:h-[600px] max-h-[800px] bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl shadow-[#800000]/20 border border-slate-100 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className={`p-6 ${isAdmin ? 'bg-gradient-to-br from-slate-900 to-[#800000]' : 'premium-gradient'} text-white flex items-center justify-between shrink-0`}>
+            <div className={`p-6 ${isAdmin ? 'bg-gradient-to-br from-slate-900 to-[#800000]' : isLecturer ? 'bg-gradient-to-br from-indigo-900 to-indigo-600' : 'premium-gradient'} text-white flex items-center justify-between shrink-0`}>
               <div className="flex items-center gap-3">
                 {isAdmin && activeThread ? (
                   <button onClick={() => setActiveThread(null)} className="p-2 hover:bg-white/10 rounded-lg transition-colors -ml-2">
@@ -192,7 +193,7 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
                 <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-slate-50/50">
                   {messages.length === 0 && (
                     <div className="h-full flex flex-col items-center justify-center text-center p-8">
-                      <div className="w-16 h-16 bg-[#800000]/5 rounded-full flex items-center justify-center text-[#800000] mb-4">
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${isLecturer ? 'bg-indigo-900/5 text-indigo-900' : 'bg-[#800000]/5 text-[#800000]'}`}>
                         <MessageCircle size={32} />
                       </div>
                       <h5 className="font-black text-slate-900 text-sm mb-2">{isAdmin ? 'Start Conversation' : 'How can we help?'}</h5>
@@ -210,7 +211,7 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
                       <div key={i} className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[80%] p-4 rounded-2xl text-xs font-medium leading-relaxed shadow-sm ${
                           isOwnMessage 
-                            ? (isAdmin ? 'bg-slate-900 text-white rounded-tr-none' : 'bg-[#800000] text-white rounded-tr-none')
+                            ? (isAdmin ? 'bg-slate-900 text-white rounded-tr-none' : isLecturer ? 'bg-indigo-900 text-white rounded-tr-none' : 'bg-[#800000] text-white rounded-tr-none')
                             : 'bg-white text-slate-700 border border-slate-200 shadow-sm rounded-tl-none'
                         }`}>
                           {!isOwnMessage && (
@@ -230,7 +231,7 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
                 </div>
 
                 <form onSubmit={handleSend} className="p-4 border-t border-slate-100 bg-white shrink-0">
-                  <div className="flex items-center gap-2 bg-slate-50 rounded-2xl p-2 border border-slate-100 focus-within:ring-2 focus-within:ring-[#800000]/10 transition-all">
+                  <div className={`flex items-center gap-2 bg-slate-50 rounded-2xl p-2 border border-slate-100 focus-within:ring-2 transition-all ${isLecturer ? 'focus-within:ring-indigo-900/10' : 'focus-within:ring-[#800000]/10'}`}>
                     <input
                       type="text"
                       value={input}
@@ -241,7 +242,7 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
                     <button 
                       type="submit"
                       disabled={loading || !input.trim()}
-                      className={`p-3 text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:scale-100 ${isAdmin ? 'bg-slate-900 hover:scale-105' : 'premium-gradient shadow-[#800000]/20 hover:scale-105'}`}
+                      className={`p-3 text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:scale-100 ${isAdmin ? 'bg-slate-900 hover:scale-105' : isLecturer ? 'bg-indigo-900 hover:scale-105 shadow-indigo-900/20' : 'premium-gradient shadow-[#800000]/20 hover:scale-105'}`}
                     >
                       {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                     </button>
@@ -258,7 +259,7 @@ export default function ChatWidget({ profile, forcedOpenThread = null }: { profi
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
         className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-white transition-all transform duration-300 ${
-          isOpen ? 'bg-[#1e293b] rotate-90' : 'premium-gradient shadow-[#800000]/30'
+          isOpen ? 'bg-[#1e293b] rotate-90' : isLecturer ? 'bg-gradient-to-br from-indigo-900 to-indigo-600 shadow-indigo-900/30' : 'premium-gradient shadow-[#800000]/30'
         }`}
       >
         {isOpen ? <X size={24} /> : <MessageCircle size={24} />}

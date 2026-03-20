@@ -271,7 +271,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
               </div>
               <button 
                 onClick={handleUpdatePrice}
-                className="flex items-center gap-2 px-6 py-2.5 premium-gradient text-white rounded-xl shadow-lg shadow-[#800000]/20 hover:scale-105 transition-all text-xs font-black uppercase tracking-wider"
+                className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-xl shadow-lg shadow-slate-900/20 hover:scale-105 transition-all text-xs font-black uppercase tracking-wider"
               >
                 <Save size={14} />
                 Update Price
@@ -301,7 +301,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
             <p className="text-xl font-black text-slate-900">{transactions.filter(t => t.status === 'pending').length}</p>
           </div>
         </div>
-        <div className="bg-[#800000] rounded-3xl p-6 border border-[#800000]/10 shadow-xl shadow-[#800000]/10 flex items-center gap-4">
+        <div className="bg-indigo-900 rounded-3xl p-6 border border-indigo-800 shadow-xl shadow-indigo-900/20 flex items-center gap-4">
           <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center text-white">
             <CreditCard size={24} />
           </div>
@@ -321,7 +321,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
         <div className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm w-fit">
           <button 
             onClick={() => setActiveTab('standard')}
-            className={`px-6 py-3 rounded-xl font-bold uppercase tracking-wider text-xs transition-all ${activeTab === 'standard' ? 'bg-[#800000] text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+            className={`px-6 py-3 rounded-xl font-bold uppercase tracking-wider text-xs transition-all ${activeTab === 'standard' ? 'bg-indigo-900 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             Payments & Subscriptions
           </button>
@@ -479,7 +479,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
                         t.type === 'attendance_token' ? 'text-indigo-600' : 
                         t.type === 'audio_payment' ? 'text-rose-600' : 
                         t.type === 'video_payment' ? 'text-amber-600' : 
-                        'text-[#800000]'
+                        'text-indigo-900'
                       }`}>₦{t.amount.toLocaleString()}</span>
                     </td>
                     <td className="px-8 py-5">
@@ -496,7 +496,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
                       </span>
                     </td>
                     <td className="px-8 py-5">
-                      <button className="p-2 text-slate-400 hover:text-[#800000] hover:bg-[#800000]/5 rounded-lg transition-all opacity-0 group-hover:opacity-100">
+                      <button className="p-2 text-slate-400 hover:text-indigo-900 hover:bg-indigo-900/5 rounded-lg transition-all opacity-0 group-hover:opacity-100">
                         <ExternalLink size={16} />
                       </button>
                     </td>
