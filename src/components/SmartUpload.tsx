@@ -34,6 +34,8 @@ export default function SmartUpload({
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
   const [paymentRef, setPaymentRef] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState<string>('--:--');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -199,6 +201,7 @@ export default function SmartUpload({
         setBankAccounts(data.bankAccounts);
         setPaymentRef(data.reference);
         setIsVerifying(true);
+        setExpiresAt(new Date(Date.now() + 30 * 60000).toISOString());
         addToast('Virtual accounts created. Transfer the exact amount to proceed.', 'info');
       } else if (data.authorization_url) {
         window.location.href = data.authorization_url;
@@ -213,7 +216,7 @@ export default function SmartUpload({
     }
   };
 
-  // Poll for payment confirmation after virtual accounts are shown
+// Poll for payment confirmation after virtual accounts are shown
   useEffect(() => {
     if (!isVerifying || !paymentRef) return;
     const interval = setInterval(async () => {
@@ -226,6 +229,7 @@ export default function SmartUpload({
           setHasPaid(true);
           setIsVerifying(false);
           setBankAccounts([]);
+          setExpiresAt(null);
           addToast('Payment confirmed! You can now upload your manuscript.', 'success');
           clearInterval(interval);
         }
@@ -233,6 +237,33 @@ export default function SmartUpload({
     }, 8000);
     return () => clearInterval(interval);
   }, [isVerifying, paymentRef]);
+
+  // Countdown Timer Effect
+  useEffect(() => {
+    if (!expiresAt) return;
+    const timer = setInterval(() => {
+      const now = new Date().getTime();
+      const exp = new Date(expiresAt).getTime();
+      const difference = exp - now;
+
+      if (difference <= 0) {
+        clearInterval(timer);
+        setIsVerifying(false);
+        setBankAccounts([]);
+        setPaymentRef(null);
+        setExpiresAt(null);
+        setError('Virtual account expired. Please initialize checkout again.');
+        setTimeLeft('00:00');
+        return;
+      }
+
+      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+      setTimeLeft(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [expiresAt]);
 
   return (
     <motion.div
@@ -297,11 +328,17 @@ export default function SmartUpload({
 
             {bankAccounts.length > 0 ? (
               <div className="w-full max-w-lg relative z-10 space-y-6">
-                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex items-center gap-3">
-                  <Clock size={20} className="text-emerald-600 animate-pulse" />
-                  <div>
-                    <p className="text-sm font-black text-emerald-800">Transfer ₦{price.toLocaleString()} to complete</p>
-                    <p className="text-xs text-emerald-600 font-medium">Payment will auto-confirm after transfer. Do NOT close this page.</p>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <Clock size={20} className="text-emerald-600 animate-pulse" />
+                    <div>
+                      <p className="text-sm font-black text-emerald-800">Transfer ₦{price.toLocaleString()} to complete</p>
+                      <p className="text-xs text-emerald-600 font-medium">Payment will auto-confirm after transfer.</p>
+                    </div>
+                  </div>
+                  <div className="bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-lg flex flex-col items-center justify-center border border-emerald-200 shadow-sm min-w-[70px]">
+                     <span className="text-[9px] uppercase tracking-wider font-extrabold opacity-70 mb-0.5">Expires In</span>
+                     <span className="font-mono text-sm font-black grid place-items-center w-full">{timeLeft}</span>
                   </div>
                 </div>
 
