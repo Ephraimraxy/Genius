@@ -43,32 +43,38 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
       margin:       [0.5, 0.5, 0.5, 0.5] as [number, number, number, number],
       filename:     `GMIJP_Publication_${activePaperId}.pdf`,
       image:        { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
+      html2canvas:  { 
+        scale: 2, 
+        useCORS: true,
+        onclone: (clonedDoc: Document) => {
+          // Robustly strip oklch from the cloned document before html2canvas parses it
+          const elements = clonedDoc.getElementsByTagName("*");
+          for (let i = 0; i < elements.length; i++) {
+            const el = elements[i] as HTMLElement;
+            const styles = window.getComputedStyle(el);
+            
+            // Critical properties that often use oklch in Tailwind v4
+            const props = ['color', 'backgroundColor', 'borderColor', 'outlineColor', 'fill', 'stroke'];
+            props.forEach(prop => {
+              const val = el.style.getPropertyValue(prop) || styles.getPropertyValue(prop);
+              if (val && val.includes('oklch')) {
+                // Force a safe fallback if oklch is detected
+                if (prop === 'color') el.style.setProperty(prop, '#000000', 'important');
+                else if (prop === 'backgroundColor') el.style.setProperty(prop, '#ffffff', 'important');
+                else el.style.setProperty(prop, 'transparent', 'important');
+              }
+            });
+          }
+        }
+      },
       jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' as const }
     };
 
-    // Fix oklch error by injecting a style that overrides color functions html2canvas doesn't support
-    const style = document.createElement('style');
-    style.innerHTML = `
-      #production-paper-preview * {
-        color: inherit !important;
-        background-color: inherit !important;
-        border-color: inherit !important;
-      }
-      #production-paper-preview {
-        color: #000 !important;
-        background: #fff !important;
-      }
-    `;
-    document.head.appendChild(style);
-
     html2pdf().set(opt).from(element).save().then(() => {
       setIsDownloading(false);
-      document.head.removeChild(style);
     }).catch((err: any) => {
       console.error('PDF generation failed:', err);
       setIsDownloading(false);
-      if (document.head.contains(style)) document.head.removeChild(style);
     });
   };
 
