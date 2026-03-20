@@ -479,7 +479,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
     // Hardcode specific email to always be admin
     const accountRole = data.email.toLowerCase() === 'burstbrainconcept@gmail.com' ? 'super_admin' : 'user';
-    const hashedPassword = await bcrypt.hash(data.password, 10);
+    const hashedPassword = await bcrypt.hash(data.password.trim(), 10);
     const result = await pool.query(
       'INSERT INTO users (email, password, name, affiliation, role, tenant_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
       [data.email, hashedPassword, data.name, data.affiliation || '', accountRole, null]
@@ -525,7 +525,7 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
     const tenantId = tenantResult.rows[0].id;
 
     // 2. Create Tenant Admin User
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password.trim(), 10);
     const userResult = await pool.query(
       'INSERT INTO users (email, phone, password, name, role, tenant_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
       [email, phone, hashedPassword, name, 'tenant_admin', tenantId]
@@ -730,10 +730,14 @@ app.post('/api/admin/users/:id/reset-password', authenticateToken, async (req: a
     if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
     const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
-    const result = await pool.query('UPDATE users SET password = $1 WHERE id = $2 RETURNING id, email, name', [hashedPassword, parseInt(id)]);
+    const result = await pool.query(
+      'UPDATE users SET password = $1 WHERE id = $2 RETURNING id, email, name, role', 
+      [hashedPassword, parseInt(id)]
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
-    res.json({ success: true, message: `Password for ${result.rows[0].email} has been reset.` });
+    const user = result.rows[0];
+    res.json({ success: true, message: `Password for ${user.name} (${user.role}) has been overridden successfully.` });
   } catch (error) {
     console.error('Admin reset password error:', error);
     res.status(500).json({ error: 'Failed to reset password' });

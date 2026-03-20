@@ -184,7 +184,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
             {isTenantView ? (
               <>Managing <span className="text-white font-bold">{stats.lecturers + stats.students} registered accounts</span> — {stats.lecturers} lecturers and {stats.students} students.</>
             ) : (
-              <>Managing <span className="text-white font-bold">{stats.researchers + stats.admins} registered users</span> — {stats.admins} administrators and {stats.researchers} researchers.</>
+              <>Managing <span className="text-white font-bold">{stats.researchers + stats.admins} registered users</span> — {stats.admins} super admins and {stats.researchers} researchers.</>
             )}
           </p>
         </div>
@@ -206,7 +206,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
         )) : [
           { label: 'Total Users', value: stats.researchers + stats.admins, icon: <Users className="text-indigo-600" size={24} />, color: 'bg-indigo-50', border: 'border-indigo-100' },
           { label: 'Researchers', value: stats.researchers, icon: <UserCheck className="text-emerald-600" size={24} />, color: 'bg-emerald-50', border: 'border-emerald-100' },
-          { label: 'Administrators', value: stats.admins, icon: <ShieldCheck className="text-amber-600" size={24} />, color: 'bg-amber-50', border: 'border-amber-100' },
+          { label: 'Super Admins', value: stats.admins, icon: <ShieldCheck className="text-amber-600" size={24} />, color: 'bg-amber-50', border: 'border-amber-100' },
         ].map((stat, i) => (
           <motion.div key={i} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }}
             className={`bg-white p-6 rounded-[2rem] shadow-sm border ${stat.border} hover:shadow-xl hover:shadow-slate-200/50 transition-all group`}>
@@ -234,10 +234,10 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
                 </button>
               ))
             ) : (
-              (['all', 'user', 'admin'] as const).map(role => (
-                <button key={role} onClick={() => setRoleFilter(role)}
-                  className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all ${roleFilter === role ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
-                  {role === 'all' ? 'All' : role === 'user' ? 'Researchers' : 'Administrators'}
+              (['all', 'user', 'super_admin'] as const).map(role => (
+                <button key={role} onClick={() => setRoleFilter(role === 'super_admin' ? 'admin' : role as any)}
+                  className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all ${roleFilter === (role === 'super_admin' ? 'admin' : role) ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
+                  {role === 'all' ? 'All' : role === 'user' ? 'Researchers' : 'Super Admins'}
                 </button>
               ))
             )}
@@ -300,7 +300,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
                         user.role === 'tenant_admin' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 
                         'bg-slate-50 text-slate-500 border-slate-200'
                     }`}>
-                      {(user.role === 'admin' || user.role === 'super_admin') ? 'Admin' : user.role === 'tenant_admin' ? 'Lecturer' : 'Researcher'}
+                      {user.role === 'super_admin' ? 'Super Admin' : user.role === 'admin' ? 'Admin' : user.role === 'tenant_admin' ? 'Lecturer' : 'Researcher'}
                     </span>
                   </td>
                   <td className="px-8 py-5">
@@ -399,7 +399,6 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
                   >
                     <option value="user">Researcher</option>
                     <option value="tenant_admin" disabled>Lecturer (Non-promotable)</option>
-                    <option value="admin">Administrator</option>
                     <option value="super_admin">Super Administrator</option>
                   </select>
                   {(editingUser.role === 'tenant_admin' || editingUser.role === 'student') && (
