@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, ShieldCheck, ArrowLeft, KeyRound, CheckCircle, MessageSquare, Send, Phone } from 'lucide-react';
+import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, ShieldCheck, ArrowLeft, KeyRound, CheckCircle, MessageSquare, Send, Phone, Eye, EyeOff } from 'lucide-react';
 
 import { ToastType } from './ToastSystem';
 
@@ -40,6 +40,8 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
     const [resetLoading, setResetLoading] = useState(false);
     const [resetMessage, setResetMessage] = useState('');
     const [contactMessage, setContactMessage] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -392,13 +394,20 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                         <div className="relative group">
                                                             <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
                                                             <input
-                                                                type="password"
+                                                                type={showPassword ? "text" : "password"}
                                                                 required
                                                                 value={password}
                                                                 onChange={(e) => setPassword(e.target.value)}
-                                                                className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                                className={`w-full pl-16 pr-14 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
                                                                 placeholder="••••••••"
                                                             />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShowPassword(!showPassword)}
+                                                                className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-600 transition-colors"
+                                                            >
+                                                                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                                            </button>
                                                         </div>
                                                     </div>
 
@@ -459,13 +468,20 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                 <div className="relative group">
                                                     <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
                                                     <input
-                                                        type="password"
+                                                        type={showPassword ? "text" : "password"}
                                                         required
                                                         value={password}
                                                         onChange={(e) => setPassword(e.target.value)}
-                                                        className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                        className={`w-full pl-16 pr-14 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
                                                         placeholder="••••••••"
                                                     />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowPassword(!showPassword)}
+                                                        className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-600 transition-colors"
+                                                    >
+                                                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                                    </button>
                                                 </div>
                                             </div>
 
@@ -561,13 +577,22 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                         style={{ color: themeColor }}
                                                         placeholder="000000"
                                                      />
-                                                     <input 
-                                                        type="password" 
-                                                        value={newPassword}
-                                                        onChange={(e) => setNewPassword(e.target.value)}
-                                                        className={`w-full px-6 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold ${focusRing}`}
-                                                        placeholder="New Secure Password"
-                                                     />
+                                                     <div className="relative group">
+                                                         <input 
+                                                            type={showNewPassword ? "text" : "password"} 
+                                                            value={newPassword}
+                                                            onChange={(e) => setNewPassword(e.target.value)}
+                                                            className={`w-full pl-6 pr-14 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold ${focusRing}`}
+                                                            placeholder="New Secure Password"
+                                                         />
+                                                         <button
+                                                            type="button"
+                                                            onClick={() => setShowNewPassword(!showNewPassword)}
+                                                            className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-600 transition-colors"
+                                                         >
+                                                            {showNewPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                                         </button>
+                                                     </div>
                                                      <button onClick={handleVerifyCode} disabled={resetLoading || resetCode.length !== 6 || newPassword.length < 6} className="w-full text-white font-black py-4 rounded-2xl" style={{ backgroundColor: themeColor }}>
                                                          {resetLoading ? <Loader2 size={18} className="animate-spin" /> : <span>UPDATE PASSWORD</span>}
                                                      </button>

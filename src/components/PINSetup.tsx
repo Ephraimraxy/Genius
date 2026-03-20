@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldCheck, Lock, ArrowRight, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Lock, ArrowRight, Loader2, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 interface PINSetupProps {
   onBackToLanding: () => void;
@@ -15,6 +15,7 @@ export default function PINSetup({ onBackToLanding, addToast }: PINSetupProps) {
   const [confirmPin, setConfirmPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPin, setShowPin] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -107,15 +108,22 @@ export default function PINSetup({ onBackToLanding, addToast }: PINSetupProps) {
                   <div className="relative group">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#800000] transition-colors" size={18} />
                     <input
-                      type="password"
+                      type={showPin ? "text" : "password"}
                       maxLength={4}
                       inputMode="numeric"
                       value={pin}
                       onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#800000]/10 transition-all font-mono text-xl tracking-[1em] text-center"
+                      className="w-full pl-12 pr-12 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#800000]/10 transition-all font-mono text-xl tracking-[1em] text-center"
                       placeholder="••••"
                       required
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPin(!showPin)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-600 transition-colors"
+                    >
+                      {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                 </div>
 
@@ -124,15 +132,22 @@ export default function PINSetup({ onBackToLanding, addToast }: PINSetupProps) {
                   <div className="relative group">
                     <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#800000] transition-colors" size={18} />
                     <input
-                      type="password"
+                      type={showPin ? "text" : "password"}
                       maxLength={4}
                       inputMode="numeric"
                       value={confirmPin}
                       onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
-                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#800000]/10 transition-all font-mono text-xl tracking-[1em] text-center"
+                      className="w-full pl-12 pr-12 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#800000]/10 transition-all font-mono text-xl tracking-[1em] text-center"
                       placeholder="••••"
                       required
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPin(!showPin)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-600 transition-colors"
+                    >
+                      {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                 </div>
               </div>

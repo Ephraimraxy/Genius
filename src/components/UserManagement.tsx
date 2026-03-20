@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Users, Search, ShieldCheck, UserCheck, UserX, Mail, Building2, Calendar, ChevronDown, Filter, RefreshCw, Edit2, Trash2, X, MessageSquare, Save, KeyRound, Lock, CheckCircle, GraduationCap } from 'lucide-react';
+import { Users, Search, ShieldCheck, UserCheck, UserX, Mail, Building2, Calendar, ChevronDown, Filter, RefreshCw, Edit2, Trash2, X, MessageSquare, Save, KeyRound, Lock, CheckCircle, GraduationCap, Eye, EyeOff } from 'lucide-react';
 
 interface User {
   id: number;
@@ -30,6 +30,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
   const [resetPassword, setResetPassword] = useState('');
   const [isResettingPw, setIsResettingPw] = useState(false);
   const [pwResetSuccess, setPwResetSuccess] = useState('');
+  const [showResetPw, setShowResetPw] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -420,15 +421,22 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
                     </div>
                   )}
                   <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
+                    <div className="relative flex-1 group">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                       <input
-                        type="text"
+                        type={showResetPw ? "text" : "password"}
                         value={resetPassword}
                         onChange={e => setResetPassword(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-400 transition-all outline-none text-slate-700"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-10 py-2.5 text-sm font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-400 transition-all outline-none text-slate-700"
                         placeholder="New temporary password"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowResetPw(!showResetPw)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 transition-colors"
+                      >
+                        {showResetPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
                     </div>
                     <button
                       onClick={handleResetPassword}

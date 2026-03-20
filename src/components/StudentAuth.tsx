@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, Key, Loader2, ShieldCheck, ArrowRight, UserCircle, GraduationCap } from 'lucide-react';
+import { LogIn, Key, Loader2, ShieldCheck, ArrowRight, UserCircle, GraduationCap, Eye, EyeOff } from 'lucide-react';
 
 import { ToastType } from './ToastSystem';
 
@@ -19,6 +19,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [showPin, setShowPin] = useState(false);
 
     const formatMatricInput = (value: string) => {
         // Automatically uppercase and clean input
@@ -166,15 +167,22 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                 <div className="relative group">
                                     <Key className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#1a237e] transition-colors" size={20} />
                                     <input
-                                        type="password"
+                                        type={showPin ? "text" : "password"}
                                         required
                                         maxLength={4}
                                         inputMode="numeric"
                                         value={pin}
                                         onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                                        className="w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono text-xl tracking-[0.8em] text-center"
+                                        className="w-full pl-16 pr-12 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-mono text-xl tracking-[0.8em] text-center"
                                         placeholder="••••"
                                     />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPin(!showPin)}
+                                        className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-600 transition-colors"
+                                    >
+                                        {showPin ? <EyeOff size={20} /> : <Eye size={20} />}
+                                    </button>
                                 </div>
                             </div>
 
