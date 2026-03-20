@@ -318,6 +318,9 @@ export default function App() {
     setAuthRole(lastRole);
     setAuthIsLogin(true); // Always take to login form first
     setShowLanding(false); // Take them directly to the last used portal's login form
+    setActiveTab('dashboard');
+    setActivePaperId(null);
+    setOpenChatUserId(null);
   };
 
   const onAuthSuccess = (newToken: string, user: any) => {
@@ -326,6 +329,7 @@ export default function App() {
     setToken(newToken);
     setShowLanding(false);
     setShowStudentAuth(false);
+    setActiveTab('dashboard');
   };
 
   const handleOpenChatWithUser = (userId: number) => {
