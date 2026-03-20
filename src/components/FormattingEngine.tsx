@@ -51,19 +51,32 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
           const elements = clonedDoc.getElementsByTagName("*");
           for (let i = 0; i < elements.length; i++) {
             const el = elements[i] as HTMLElement;
-            const styles = window.getComputedStyle(el);
             
-            // Critical properties that often use oklch in Tailwind v4
-            const props = ['color', 'backgroundColor', 'borderColor', 'outlineColor', 'fill', 'stroke'];
-            props.forEach(prop => {
-              const val = el.style.getPropertyValue(prop) || styles.getPropertyValue(prop);
-              if (val && val.includes('oklch')) {
-                // Force a safe fallback if oklch is detected
-                if (prop === 'color') el.style.setProperty(prop, '#000000', 'important');
-                else if (prop === 'backgroundColor') el.style.setProperty(prop, '#ffffff', 'important');
-                else el.style.setProperty(prop, 'transparent', 'important');
+            try {
+              const styles = window.getComputedStyle(el);
+              // Traverse ALL physical style properties that might contain colors
+              const props = ['color', 'backgroundColor', 'borderColor', 'outlineColor', 'fill', 'stroke', 'boxShadow', 'textShadow'];
+              
+              props.forEach(prop => {
+                // Check both inline and computed (computed is what html2canvas usually reads)
+                const val = el.style.getPropertyValue(prop) || styles.getPropertyValue(prop);
+                
+                if (val && val.toString().includes('oklch')) {
+                  // Fallback mapping
+                  if (prop === 'backgroundColor') el.style.setProperty(prop, '#ffffff', 'important');
+                  else if (prop.toLowerCase().includes('border') || prop.toLowerCase().includes('shadow')) el.style.setProperty(prop, '#e2e8f0', 'important');
+                  else el.style.setProperty(prop, '#000000', 'important');
+                }
+              });
+
+              // Also check for background-image which might contain oklch gradients
+              const bgImg = el.style.backgroundImage || styles.backgroundImage;
+              if (bgImg && bgImg.includes('oklch')) {
+                el.style.setProperty('background-image', 'none', 'important');
               }
-            });
+            } catch (e) {
+              // Silently skip if style access fails
+            }
           }
         }
       },

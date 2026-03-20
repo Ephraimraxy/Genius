@@ -3510,6 +3510,21 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    // Log missing files to help debug MIME type errors (404s that fallback to HTML)
+    app.use('/assets', async (req, res, next) => {
+      try {
+        const fs = (await import('fs')).default;
+        const path = (await import('path')).default;
+        const assetPath = path.join(process.cwd(), 'dist/assets', req.path);
+        if (!fs.existsSync(assetPath)) {
+          console.warn(`[Static Asset 404]: ${req.path} not found at ${assetPath}`);
+        }
+      } catch (e) {
+        // Ignore logging errors
+      }
+      next();
+    });
+    
     app.use(express.static('dist'));
     app.get('*', (req, res) => {
       res.sendFile('dist/index.html', { root: '.' });
