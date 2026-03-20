@@ -1037,6 +1037,8 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       metadata = await parseWithGrobid(req.file.buffer);
       const data = await pdfParse(req.file.buffer);
       textContent = data.text;
+      if (!metadata) metadata = {};
+      metadata.pageCount = data.numpages;
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       const result = await mammoth.extractRawText({ buffer: req.file.buffer });
       textContent = result.value;
@@ -1293,6 +1295,11 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
 
     const metadata = JSON.parse(paper.metadata);
 
+    // Rule: Manuscript should not exceed 20 pages
+    if (metadata.pageCount && metadata.pageCount > 20) {
+      return res.status(400).json({ error: 'Manuscript exceeds the 20-page limit for publication. Please upload a shorter version.' });
+    }
+
     // Zenodo Integration
     const zenodoToken = process.env.ZENODO_ACCESS_TOKEN;
     if (!zenodoToken) {
@@ -1309,16 +1316,45 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     
     const url = doi.startsWith('10.GMIJ') ? `${process.env.APP_URL || ''}/article/${doi}` : `https://doi.org/${doi}`;
 
-    // Read admin-defined journal settings for Volume, Issue, and ISSN
+    // Automatic Volume/Issue Management Logic
     const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+    const issn = issnResult.rows[0]?.value || '2971-7760';
+
+    // 1. Fetch current global settings
     const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
     const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
-    const issn = issnResult.rows[0]?.value || '2971-7760';
-    const volume = volResult.rows[0]?.value || '1';
-    const issue = issueResult.rows[0]?.value || '1';
+    let currentVolume = parseInt(volResult.rows[0]?.value || '1');
+    let currentIssue = parseInt(issueResult.rows[0]?.value || '1');
+
+    // 2. Check the count of published manuscripts in the current Issue
+    const countResult = await pool.query(
+      "SELECT COUNT(*) FROM papers WHERE volume = $1 AND issue = $2 AND status = 'published'",
+      [currentVolume.toString(), currentIssue.toString()]
+    );
+    const publishedInIssue = parseInt(countResult.rows[0].count);
+
+    let finalVolume = currentVolume;
+    let finalIssue = currentIssue;
+
+    // 3. Shift logic: 10 manuscripts = 1 issue, 3 issues = 1 Volume (Chapter)
+    if (publishedInIssue >= 10) {
+      if (currentIssue >= 3) {
+        // "Chapter closes" - Move to next Volume and reset Issue
+        finalVolume = currentVolume + 1;
+        finalIssue = 1;
+      } else {
+        // Just move to the next Issue
+        finalIssue = currentIssue + 1;
+      }
+
+      // Update global journal settings for future publications
+      await pool.query('UPDATE settings SET value = $1 WHERE key = $2', [finalVolume.toString(), 'current_volume']);
+      await pool.query('UPDATE settings SET value = $1 WHERE key = $2', [finalIssue.toString(), 'current_issue']);
+      console.log(`Journal: Auto-shifted to Volume ${finalVolume}, Issue ${finalIssue} (Reached 10-manuscript limit)`);
+    }
 
     await pool.query('UPDATE papers SET status = $1, doi = $2, issn = $3, volume = $4, issue = $5 WHERE id = $6', 
-      ['published', doi, issn, volume, issue, id]
+      ['published', doi, issn, finalVolume.toString(), finalIssue.toString(), id]
     );
 
     const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
@@ -2988,15 +3024,62 @@ app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
 });
 
 // ─── SaaS MONETIZATION & SUBSCRIPTIONS ─────────────────────────────
-// Super Admin: Set Lecturer Subscription Price
-app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res) => {
+// Super Admin: Pricing Configuration
+app.get('/api/admin/config/pricing', authenticateToken, async (req: any, res: any) => {
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const { price } = req.body;
-    await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['lecturer_subscription_price', price.toString()]);
-    res.json({ success: true, price });
+    const pubPrice = await pool.query('SELECT value FROM settings WHERE key = $1', ['publication_price']);
+    const subPrice = await pool.query('SELECT value FROM settings WHERE key = $1', ['lecturer_subscription_price']);
+    res.json({
+      publication_price: parseInt(pubPrice.rows[0]?.value || '5000'),
+      subscription_price: parseInt(subPrice.rows[0]?.value || '15000')
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch pricing' });
+  }
+});
+
+app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { key, value } = req.body;
+    if (!['publication_price', 'lecturer_subscription_price'].includes(key)) {
+      return res.status(400).json({ error: 'Invalid pricing key' });
+    }
+    await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value.toString()]);
+    res.json({ success: true, key, value });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update pricing' });
+  }
+});
+
+// Super Admin: Journal Registry Configuration
+app.get('/api/admin/config/journal', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const vol = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
+    const issue = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
+    const issn = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+    res.json({
+      current_volume: vol.rows[0]?.value || '1',
+      current_issue: issue.rows[0]?.value || '1',
+      journal_issn: issn.rows[0]?.value || '2971-7760'
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch journal settings' });
+  }
+});
+
+app.post('/api/admin/config/journal', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { current_volume, current_issue, journal_issn } = req.body;
+    await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_volume', current_volume.toString()]);
+    await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_issue', current_issue.toString()]);
+    await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_issn', journal_issn.toString()]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update journal settings' });
   }
 });
 
