@@ -2540,7 +2540,19 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
 
 
 app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, res) => {
-  // ... (unchanged)
+  try {
+    const { reference } = req.params;
+    const result = await pool.query(
+      'SELECT status, amount, type FROM transactions WHERE reference = $1 AND user_id = $2',
+      [reference, req.user.id]
+    );
+    const txn = result.rows[0];
+    if (!txn) return res.status(404).json({ status: 'not_found', error: 'Transaction not found' });
+    res.json({ status: txn.status, amount: txn.amount, type: txn.type });
+  } catch (error) {
+    console.error('Payment verify error:', error);
+    res.status(500).json({ status: 'error', error: 'Verification failed' });
+  }
 });
 
 // Secure Webhook for PaymentPoint (per official docs)

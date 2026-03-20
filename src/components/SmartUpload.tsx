@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User, Copy, Clock } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
 
 import { ToastType } from './ToastSystem';
@@ -31,6 +31,9 @@ export default function SmartUpload({
   const [isEditing, setIsEditing] = useState(false);
   const [editedMetadata, setEditedMetadata] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+  const [paymentRef, setPaymentRef] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -181,6 +184,7 @@ export default function SmartUpload({
 
   const handlePayment = async () => {
     setIsPaying(true);
+    setError(null);
     try {
       const res = await fetch('/api/payment/initialize', {
         method: 'POST',
@@ -191,17 +195,44 @@ export default function SmartUpload({
         body: JSON.stringify({ amount: price })
       });
       const data = await res.json();
-      if (data.authorization_url) {
+      if (data.bankAccounts && data.bankAccounts.length > 0) {
+        setBankAccounts(data.bankAccounts);
+        setPaymentRef(data.reference);
+        setIsVerifying(true);
+        addToast('Virtual accounts created. Transfer the exact amount to proceed.', 'info');
+      } else if (data.authorization_url) {
         window.location.href = data.authorization_url;
       } else {
-        throw new Error('Could not initialize payment');
+        throw new Error(data.error || 'Payment gateway error. Please try again.');
       }
     } catch (err: any) {
       setError(err.message);
+      addToast(err.message || 'Payment initialization failed', 'error');
     } finally {
       setIsPaying(false);
     }
   };
+
+  // Poll for payment confirmation after virtual accounts are shown
+  useEffect(() => {
+    if (!isVerifying || !paymentRef) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/payment/verify/${paymentRef}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          setHasPaid(true);
+          setIsVerifying(false);
+          setBankAccounts([]);
+          addToast('Payment confirmed! You can now upload your manuscript.', 'success');
+          clearInterval(interval);
+        }
+      } catch (e) { /* silent poll */ }
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [isVerifying, paymentRef]);
 
   return (
     <motion.div
@@ -257,13 +288,60 @@ export default function SmartUpload({
                </div>
             </div>
 
-            <button
-              onClick={handlePayment}
-              disabled={isPaying}
-              className="px-12 py-5 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-[#800000]/30 hover:scale-105 transition-all flex items-center gap-4 disabled:opacity-50 relative z-10"
-            >
-              {isPaying ? <Loader2 className="animate-spin" size={20} /> : <><span className="text-xl font-bold">₦</span> Initialize Checkout</>}
-            </button>
+            {error && (
+              <div className="mb-8 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 relative z-10 max-w-md w-full">
+                <AlertCircle size={18} className="text-rose-500 shrink-0" />
+                <p className="text-sm font-bold text-rose-700">{error}</p>
+              </div>
+            )}
+
+            {bankAccounts.length > 0 ? (
+              <div className="w-full max-w-lg relative z-10 space-y-6">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex items-center gap-3">
+                  <Clock size={20} className="text-emerald-600 animate-pulse" />
+                  <div>
+                    <p className="text-sm font-black text-emerald-800">Transfer ₦{price.toLocaleString()} to complete</p>
+                    <p className="text-xs text-emerald-600 font-medium">Payment will auto-confirm after transfer. Do NOT close this page.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {bankAccounts.map((acct: any, idx: number) => (
+                    <div key={idx} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{acct.bankName || 'Bank Account'}</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(acct.accountNumber);
+                            addToast('Account number copied!', 'success');
+                          }}
+                          className="flex items-center gap-1 px-3 py-1 bg-slate-50 text-slate-500 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-100 transition-all border border-slate-100"
+                        >
+                          <Copy size={12} /> Copy
+                        </button>
+                      </div>
+                      <p className="text-3xl font-black text-slate-900 tracking-wider font-mono">{acct.accountNumber}</p>
+                      <p className="text-xs font-bold text-slate-500 mt-2">{acct.accountName || 'GMIJP Publication'}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {isVerifying && (
+                  <div className="flex items-center justify-center gap-3 py-4">
+                    <Loader2 className="animate-spin text-[#800000]" size={20} />
+                    <span className="text-sm font-bold text-slate-500">Listening for payment confirmation...</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={handlePayment}
+                disabled={isPaying}
+                className="px-12 py-5 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-[#800000]/30 hover:scale-105 transition-all flex items-center gap-4 disabled:opacity-50 relative z-10"
+              >
+                {isPaying ? <Loader2 className="animate-spin" size={20} /> : <><span className="text-xl font-bold">₦</span> Initialize Checkout</>}
+              </button>
+            )}
           </motion.div>
         ) : !metadata ? (
           <motion.div
