@@ -254,14 +254,14 @@ export default function FormattingEngine({ activePaperId }: { activePaperId: num
                            <div className="flex flex-wrap items-center justify-center gap-2 text-[9px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                              <span>ISSN: {branding.issn}</span>
                              <span className="opacity-20">|</span>
-                             <span>Vol: {branding.volume} No: {branding.issue}</span>
+                             <span>Volume {branding.volume}, issue {branding.issue}</span>
                            </div>
                            <p className="text-indigo-600 font-mono text-[8px] md:text-[9px] mt-1 font-bold">{branding.doi}</p>
                         </div>
 
                         <div className="flex items-center gap-3">
                            <div className="hidden sm:block text-right">
-                              <p className="text-slate-900 font-black text-[9px] uppercase tracking-tight">University Logo</p>
+                              <p className="text-slate-900 font-black text-[9px] uppercase tracking-tight">Nasarawa State University Keffi</p>
                               <p className="text-slate-400 font-bold text-[8px] uppercase tracking-widest">Global Partner</p>
                            </div>
                            <img src="/university-logo.jpg" alt="NSUK" className="h-10 md:h-14 w-auto object-contain" />
