@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Settings, Banknote, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity, CreditCard } from 'lucide-react';
+import { Settings, Banknote, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity, CreditCard, BookOpen, Hash, Layers } from 'lucide-react';
 
 export default function AdminSettings() {
   const [pubPrice, setPubPrice] = useState<number>(5000);
@@ -12,9 +12,17 @@ export default function AdminSettings() {
   const [health, setHealth] = useState<any>(null);
   const [loadingHealth, setLoadingHealth] = useState(true);
 
+  // Journal Settings State
+  const [journalVolume, setJournalVolume] = useState<string>('1');
+  const [journalIssue, setJournalIssue] = useState<string>('1');
+  const [journalIssn, setJournalIssn] = useState<string>('2971-7760');
+  const [origJournal, setOrigJournal] = useState({ volume: '1', issue: '1', issn: '2971-7760' });
+  const [savingJournal, setSavingJournal] = useState(false);
+  const [savedJournal, setSavedJournal] = useState(false);
+
   useEffect(() => {
-    // Fetch current prices
     const token = localStorage.getItem('token');
+    // Fetch current prices
     fetch('/api/admin/config/pricing', {
       headers: { 'Authorization': `Bearer ${token}` }
     })
@@ -24,6 +32,19 @@ export default function AdminSettings() {
         setNewPubPrice(data.publication_price.toString());
         setSubPrice(data.subscription_price);
         setNewSubPrice(data.subscription_price.toString());
+      })
+      .catch(console.error);
+
+    // Fetch journal settings
+    fetch('/api/admin/config/journal', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setJournalVolume(data.current_volume);
+        setJournalIssue(data.current_issue);
+        setJournalIssn(data.journal_issn);
+        setOrigJournal({ volume: data.current_volume, issue: data.current_issue, issn: data.journal_issn });
       })
       .catch(console.error);
 
@@ -66,6 +87,28 @@ export default function AdminSettings() {
     setSaving(false);
   };
 
+  const handleSaveJournal = async () => {
+    setSavingJournal(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/admin/config/journal', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_volume: journalVolume, current_issue: journalIssue, journal_issn: journalIssn })
+      });
+      if (res.ok) {
+        setOrigJournal({ volume: journalVolume, issue: journalIssue, issn: journalIssn });
+        setSavedJournal(true);
+        setTimeout(() => setSavedJournal(false), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to save journal settings', err);
+    }
+    setSavingJournal(false);
+  };
+
+  const journalChanged = journalVolume !== origJournal.volume || journalIssue !== origJournal.issue || journalIssn !== origJournal.issn;
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
       {/* Header */}
@@ -76,11 +119,83 @@ export default function AdminSettings() {
             <span className="px-3 py-1 bg-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-widest rounded-lg border border-amber-500/30">Admin Only</span>
           </div>
           <h2 className="text-4xl font-bold font-display mb-3 tracking-tight">Platform Settings</h2>
-          <p className="text-slate-300 text-lg max-w-xl font-medium">Configure publication pricing, monitor system health, and manage platform parameters.</p>
+          <p className="text-slate-300 text-lg max-w-xl font-medium">Configure publication pricing, journal metadata, system health, and platform parameters.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Journal Settings — NEW */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden lg:col-span-2">
+          <div className="px-8 py-6 border-b border-slate-100 bg-gradient-to-r from-[#800000]/5 to-transparent">
+            <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
+              <BookOpen size={20} className="text-[#800000]" /> Journal Registry Settings
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">These values are automatically applied to every newly published manuscript.</p>
+          </div>
+          <div className="p-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              {/* Volume */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 flex items-center gap-1.5">
+                  <Layers size={12} /> Current Volume
+                </label>
+                <input
+                  type="number" min="1" step="1"
+                  value={journalVolume}
+                  onChange={(e) => setJournalVolume(e.target.value)}
+                  className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-2xl font-black text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all text-center"
+                  placeholder="1"
+                />
+                <p className="text-[9px] text-slate-400 mt-2 text-center font-bold uppercase tracking-wider">Increment yearly</p>
+              </div>
+              {/* Issue */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 flex items-center gap-1.5">
+                  <Hash size={12} /> Current Issue Number
+                </label>
+                <input
+                  type="number" min="1" step="1"
+                  value={journalIssue}
+                  onChange={(e) => setJournalIssue(e.target.value)}
+                  className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-2xl font-black text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all text-center"
+                  placeholder="1"
+                />
+                <p className="text-[9px] text-slate-400 mt-2 text-center font-bold uppercase tracking-wider">Increment per batch</p>
+              </div>
+              {/* ISSN */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 flex items-center gap-1.5">
+                  <Shield size={12} /> Official ISSN
+                </label>
+                <input
+                  type="text"
+                  value={journalIssn}
+                  onChange={(e) => setJournalIssn(e.target.value)}
+                  className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-2xl font-black text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all text-center font-mono"
+                  placeholder="2971-7760"
+                />
+                <p className="text-[9px] text-slate-400 mt-2 text-center font-bold uppercase tracking-wider">Permanent Journal ID</p>
+              </div>
+            </div>
+
+            {/* Preview & Save */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-slate-100">
+              <div className="flex items-center gap-3 bg-slate-50 px-5 py-3 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Next Paper Stamp:</span>
+                <span className="text-sm font-black text-[#800000]">ISSN {journalIssn} &bull; Vol {journalVolume} &bull; No {journalIssue}</span>
+              </div>
+              <button
+                onClick={handleSaveJournal}
+                disabled={savingJournal || !journalChanged}
+                className="flex items-center gap-2 px-8 py-3 bg-[#800000] text-white rounded-xl font-bold text-sm hover:bg-[#600000] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
+              >
+                {savingJournal ? <RefreshCw size={16} className="animate-spin" /> : savedJournal ? <CheckCircle size={16} /> : <Save size={16} />}
+                {savingJournal ? 'Saving...' : savedJournal ? 'Saved!' : 'Update Journal Settings'}
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Publication Pricing */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
           <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
@@ -211,3 +326,4 @@ export default function AdminSettings() {
     </motion.div>
   );
 }
+

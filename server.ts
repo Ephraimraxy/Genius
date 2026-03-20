@@ -343,6 +343,11 @@ async function initDB() {
     VALUES ('publication_price', '5000')
     ON CONFLICT (key) DO NOTHING
   `);
+
+  // Set default journal settings if not exists
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('current_volume', '1') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('current_issue', '1') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('journal_issn', '2971-7760') ON CONFLICT (key) DO NOTHING`);
 }
 initDB().catch(err => {
   console.error('CRITICAL: Database initialization failed');
@@ -1331,14 +1336,15 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       doi = `10.GMIJ/${Date.now()}.${Math.floor(Math.random() * 1000)}`;
     }
     
-    const issn = `2736-${Math.floor(1000 + Math.random() * 9000)}`;
     const url = doi.startsWith('10.GMIJ') ? `${process.env.APP_URL || ''}/article/${doi}` : `https://doi.org/${doi}`;
 
-    // Automated Algorithm for Vol / Issue
-    const now = new Date();
-    const startYear = 2025; // Journal established year
-    const volume = Math.max(1, now.getFullYear() - startYear + 1).toString();
-    const issue = (Math.floor(now.getMonth() / 2) + 1).toString(); // Bi-monthly (1-6)
+    // Read admin-defined journal settings for Volume, Issue, and ISSN
+    const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+    const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
+    const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
+    const issn = issnResult.rows[0]?.value || '2971-7760';
+    const volume = volResult.rows[0]?.value || '1';
+    const issue = issueResult.rows[0]?.value || '1';
 
     await pool.query('UPDATE papers SET status = $1, doi = $2, issn = $3, volume = $4, issue = $5 WHERE id = $6', 
       ['published', doi, issn, volume, issue, id]
@@ -2042,6 +2048,35 @@ app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res) =
   
   await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value.toString()]);
   res.json({ success: true, key, value });
+});
+
+// Journal Settings (Volume, Issue, ISSN)
+app.get('/api/admin/config/journal', authenticateToken, async (req: any, res) => {
+  try {
+    const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
+    const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
+    const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+    res.json({
+      current_volume: volResult.rows[0]?.value || '1',
+      current_issue: issueResult.rows[0]?.value || '1',
+      journal_issn: issnResult.rows[0]?.value || '2971-7760'
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/config/journal', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  const { current_volume, current_issue, journal_issn } = req.body;
+  try {
+    if (current_volume) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_volume', current_volume.toString()]);
+    if (current_issue) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_issue', current_issue.toString()]);
+    if (journal_issn) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_issn', journal_issn.toString()]);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // LEGACY (Keep for compatibility if needed, but point to new pricing)
