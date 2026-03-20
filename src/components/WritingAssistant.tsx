@@ -9,25 +9,48 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   useEffect(() => {
     if (activePaperId) {
-      setIsLoading(true);
-      fetch(`/api/enhance/${activePaperId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-        .then(res => res.json())
-        .then(data => {
-          setSuggestions(data.suggestions || []);
-          setTextChunk(data.textChunk || '');
-          if (data.suggestions?.length > 0) setActiveSuggestion(0);
-        })
-        .catch(err => setError('Neural processing failed. Please retry.'))
-        .finally(() => setIsLoading(false));
+      setOffset(0);
+      setHasMore(true);
+      setSuggestions([]);
+      fetchBatch(0, true);
     }
   }, [activePaperId]);
+
+  const fetchBatch = (currentOffset: number, isInitial = false) => {
+    if (isInitial) setIsLoading(true);
+    else setIsLoadingMore(true);
+
+    fetch(`/api/enhance/${activePaperId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({ offset: currentOffset })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setSuggestions(prev => {
+          const newSugs = isInitial ? (data.suggestions || []) : [...prev, ...(data.suggestions || [])];
+          if (newSugs.length > 0 && isInitial) setActiveSuggestion(0);
+          return newSugs;
+        });
+        if (isInitial) setTextChunk(data.textChunk || '');
+        setHasMore(data.hasMore ?? false);
+        setOffset(currentOffset + 4000);
+      })
+      .catch(err => setError('Neural processing failed. Please retry.'))
+      .finally(() => {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      });
+  };
 
   if (!activePaperId) {
     return (
@@ -43,6 +66,12 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
     );
   }
 
+  const checkNextBatch = (remaining: number, currentHasMore: boolean, currentIsLoading: boolean) => {
+    if (remaining === 0 && currentHasMore && !currentIsLoading) {
+      fetchBatch(offset);
+    }
+  };
+
   const handleCommit = async (sug: any, idx: number) => {
     if (!activePaperId) return;
     
@@ -51,6 +80,7 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
     setSuggestions(newSuggestions);
     setActiveSuggestion(newSuggestions.length > 0 ? 0 : null);
     setTextChunk(prev => prev.replace(sug.original, sug.improved));
+    checkNextBatch(newSuggestions.length, hasMore, isLoadingMore);
 
     try {
       const res = await fetch(`/api/enhance/${activePaperId}/commit`, {
@@ -72,6 +102,7 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
     const newSuggestions = suggestions.filter((_, i) => i !== idx);
     setSuggestions(newSuggestions);
     setActiveSuggestion(newSuggestions.length > 0 ? 0 : null);
+    checkNextBatch(newSuggestions.length, hasMore, isLoadingMore);
   };
 
   return (
@@ -139,13 +170,20 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
                   <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
                 </div>
               ) : suggestions.length === 0 ? (
-                <div className="text-center py-20 px-10">
-                  <div className="w-16 h-16 bg-slate-800 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                    <Check className="text-slate-500" size={32} />
+                hasMore || isLoadingMore ? (
+                  <div className="flex flex-col items-center justify-center py-20 px-10 gap-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+                    <h4 className="text-white font-bold text-lg">Scanning Next Segment...</h4>
                   </div>
-                  <h4 className="text-white font-bold text-xl">Perfect Prose Detected</h4>
-                  <p className="text-slate-500 mt-2 font-medium">No significant enhancement opportunities identified in this cluster.</p>
-                </div>
+                ) : (
+                  <div className="text-center py-20 px-10">
+                    <div className="w-16 h-16 bg-slate-800 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                      <Check className="text-slate-500" size={32} />
+                    </div>
+                    <h4 className="text-white font-bold text-xl">Perfect Prose Detected</h4>
+                    <p className="text-slate-500 mt-2 font-medium">No significant enhancement opportunities identified in this cluster.</p>
+                  </div>
+                )
               ) : suggestions.map((sug, idx) => {
                 const isActive = activeSuggestion === idx;
                 return (
@@ -217,6 +255,17 @@ export default function WritingAssistant({ activePaperId }: { activePaperId: num
                 );
               })}
             </AnimatePresence>
+
+            {hasMore && suggestions.length > 0 && (
+              <button
+                onClick={() => fetchBatch(offset)}
+                disabled={isLoadingMore}
+                className="w-full mt-4 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all border border-slate-700 disabled:opacity-50"
+              >
+                {isLoadingMore ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRightLeft className="w-5 h-5" />}
+                {isLoadingMore ? 'Scanning...' : 'Scan Next Segment'}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -1195,24 +1195,31 @@ app.post('/api/validate/:id', authenticateToken, async (req: any, res) => {
 app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
+    const { offset = 0 } = req.body || {};
     const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const fullText = paper.content;
-    const aiChunk = fullText.substring(0, 4000);
+    const aiChunk = fullText.substring(offset, offset + 4000);
+    const hasMore = offset + 4000 < fullText.length;
+
+    if (!aiChunk.trim()) {
+      return res.json({ suggestions: [], textChunk: fullText, hasMore: false });
+    }
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'You are an expert academic writing editor. Return JSON with key "suggestions" containing an array of objects with: type (string, e.g. "grammar", "clarity", "style"), original (string), improved (string), explanation (string).' },
+        { role: 'system', content: 'You are an expert academic writing editor. Return JSON with key "suggestions" containing an array of objects with: type (string, e.g. "grammar", "clarity", "style"), original (string), improved (string), explanation (string). Do not return more than 10 suggestions per batch.' },
         { role: 'user', content: `Improve this academic text and provide suggestions:\n\n${aiChunk}` }
       ]
     });
 
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{"suggestions":[]}');
     const suggestions = parsed.suggestions || parsed;
-    res.json({ suggestions, textChunk: fullText });
+    res.json({ suggestions, textChunk: fullText, hasMore });
   } catch (error) {
     res.status(500).json({ error: 'Failed to enhance' });
   }
