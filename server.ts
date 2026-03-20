@@ -590,8 +590,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
           return res.status(403).json({ error: 'Admin access is restricted to the Publication portal only.' });
       }
 
-      if (email === 'burstbrainconcept@gmail.com' && requestedRole === 'researcher') {
-          // Allow admin to match their actual high-privilege role in the researcher portal
+      if (requestedRole === 'researcher') {
+          // Allow any admin/super_admin to login through the researcher portal
           query += " AND (role = 'super_admin' OR role = 'admin' OR role = 'user')";
       } else {
           query += ' AND role = $2';
