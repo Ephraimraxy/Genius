@@ -4,7 +4,7 @@
   "description": "The global benchmark for multidisciplinary research excellence.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#800000",
   "theme_color": "#800000",
   "icons": [
     {
@@ -20,7 +20,7 @@
       "purpose": "maskable"
     },
     {
-      "src": "/gmijp-logo.png",
+      "src": "/Untitled design.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
