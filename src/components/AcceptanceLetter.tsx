@@ -31,7 +31,7 @@ export default function AcceptanceLetter({ manuscriptId, title, authors, recipie
     <div className="bg-white p-12 max-w-[800px] mx-auto shadow-2xl min-h-[1050px] font-serif text-slate-800 print:shadow-none print:p-8" id="acceptance-letter">
       {/* Header */}
       <div className="flex items-center justify-between border-b-2 border-[#800000] pb-6 mb-8 relative">
-        <img src="/gmijp-logo.png" alt="GMIJP Logo" className="w-20 h-20 object-contain" />
+        <img src="/journal-logo.png" alt="GMIJP Logo" className="h-20 w-auto object-contain shrink-0" />
         
         <div className="text-center flex-1 mx-4">
           <h1 className="text-lg font-black text-slate-900 leading-tight uppercase tracking-tight">
@@ -41,7 +41,7 @@ export default function AcceptanceLetter({ manuscriptId, title, authors, recipie
           <h2 className="text-base font-bold text-[#800000]">NASARAWA STATE UNIVERSITY, KEFFI</h2>
         </div>
 
-        <img src="/university-logo.jpg" alt="NSUK Logo" className="w-20 h-20 object-contain" />
+        <img src="/university-logo.jpg" alt="NSUK Logo" className="h-20 w-auto object-contain shrink-0" />
       </div>
 
       <div className="flex justify-between items-start mb-8">
