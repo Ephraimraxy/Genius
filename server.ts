@@ -1418,7 +1418,7 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
     }
 
     if (/^h[1-6]$/.test(tag)) {
-      const text = $node.text().trim();
+      const text = $node.text().trim().replace(/[\r\n]+/g, ' ');
       if (text) {
         y -= 12;
         ensureSpace(25);
@@ -1474,7 +1474,8 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
       y -= 10;
       ensureSpace(40);
       const figHeading = $node.find('figcaption, .caption').text().trim() || $node.text().trim() || 'Figure';
-      const figRef = `[ ${sanitizePdfText(figHeading)} ]`;
+      const cleanHeading = figHeading.replace(/[\r\n]+/g, ' ');
+      const figRef = `[ ${sanitizePdfText(cleanHeading)} ]`;
       currentPage.drawText(figRef, {
         x: PAGE_W / 2 - fontItalic.widthOfTextAtSize(figRef, 9) / 2,
         y,
