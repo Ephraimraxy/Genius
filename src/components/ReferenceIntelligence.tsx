@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Library, CheckCircle, XCircle, AlertTriangle, Loader2, ExternalLink, AlertCircle, Search, Microscope, Database, FileSearch, Sparkles, ArrowRight } from 'lucide-react';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function ReferenceIntelligence({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
+export default function ReferenceIntelligence({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
   const [references, setReferences] = useState<any[]>([]);
   const [inTextCitations, setInTextCitations] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -21,7 +21,11 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId 
         },
         body: JSON.stringify({ status: 'integrity_check' })
       });
-      setActivePaperId(null);
+      if (onNavigate) {
+        onNavigate('integrity');
+      } else {
+        setActivePaperId(null);
+      }
     } catch (e) {
       console.error(e);
     } finally {

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Wand2, Check, X, ArrowRightLeft, Sparkles, Loader2, AlertCircle, Bookmark, MessageSquarePlus, Zap, ArrowRight } from 'lucide-react';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function WritingAssistant({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
+export default function WritingAssistant({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
   const [activeSuggestion, setActiveSuggestion] = useState<number | null>(0);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [textChunk, setTextChunk] = useState<string>('');
@@ -26,7 +26,11 @@ export default function WritingAssistant({ activePaperId, setActivePaperId }: { 
         },
         body: JSON.stringify({ status: 'reference_intel' })
       });
-      setActivePaperId(null);
+      if (onNavigate) {
+        onNavigate('references');
+      } else {
+        setActivePaperId(null);
+      }
     } catch (e) {
       console.error(e);
     } finally {

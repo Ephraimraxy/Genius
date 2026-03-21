@@ -12,7 +12,7 @@ interface Review {
   created_at: string;
 }
 
-export default function PeerReviewSimulation({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
+export default function PeerReviewSimulation({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +29,11 @@ export default function PeerReviewSimulation({ activePaperId, setActivePaperId }
         },
         body: JSON.stringify({ status: 'journal_discovery' })
       });
-      setActivePaperId(null);
+      if (onNavigate) {
+        onNavigate('journals');
+      } else {
+        setActivePaperId(null);
+      }
     } catch (e) {
       console.error(e);
     } finally {

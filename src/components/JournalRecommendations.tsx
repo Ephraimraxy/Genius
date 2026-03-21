@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { BookMarked, ExternalLink, Star, TrendingUp, ShieldCheck, CheckCircle, Loader2, AlertCircle, ArrowRight, Sparkles, Send, Globe, Zap } from 'lucide-react';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function JournalRecommendations({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
+export default function JournalRecommendations({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
   const [journals, setJournals] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

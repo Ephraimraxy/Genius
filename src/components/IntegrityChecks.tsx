@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, AlertTriangle, Search, FileSearch, CheckCircle, Loader2, AlertCircle, Fingerprint, Zap, ExternalLink, ArrowRight, Check } from 'lucide-react';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function IntegrityChecks({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
+export default function IntegrityChecks({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
   const [report, setReport] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +20,11 @@ export default function IntegrityChecks({ activePaperId, setActivePaperId }: { a
         },
         body: JSON.stringify({ status: 'peer_review' })
       });
-      setActivePaperId(null);
+      if (onNavigate) {
+        onNavigate('reviews');
+      } else {
+        setActivePaperId(null);
+      }
     } catch (e) {
       console.error(e);
     } finally {

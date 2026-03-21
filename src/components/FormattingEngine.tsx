@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight } from 'lucide-react'; // UI Icons
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function FormattingEngine({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
+export default function FormattingEngine({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
   const [selectedStyle, setSelectedStyle] = useState('ieee');
   const [isFormatting, setIsFormatting] = useState(false);
   const [formattedHtml, setFormattedHtml] = useState<string | null>(null);
@@ -22,7 +22,11 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
         },
         body: JSON.stringify({ status: 'writing_assistant' })
       });
-      setActivePaperId(null);
+      if (onNavigate) {
+        onNavigate('writing');
+      } else {
+        setActivePaperId(null);
+      }
     } catch (e) {
       console.error(e);
     } finally {
