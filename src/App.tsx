@@ -41,8 +41,8 @@ export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'reference
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
   upload: 'Smart Upload',
-  formatting: 'Formatting Engine',
   writing: 'Writing Assistant',
+  formatting: 'Formatting Engine',
   references: 'Reference Intelligence',
   integrity: 'Integrity Checks',
   journals: 'Journal Match',

@@ -24,10 +24,10 @@ export default function WritingAssistant({ activePaperId, setActivePaperId, onNa
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ status: 'reference_intel' })
+        body: JSON.stringify({ status: 'formatting' })
       });
       if (onNavigate) {
-        onNavigate('references');
+        onNavigate('formatting');
       } else {
         setActivePaperId(null);
       }
@@ -84,7 +84,7 @@ export default function WritingAssistant({ activePaperId, setActivePaperId, onNa
         onSelect={setActivePaperId} 
         title="AI Writing Hub Queue" 
         icon={Wand2} 
-        emptyMessage="No manuscripts pending semantic review. Send documents here from the Format Architect." 
+        emptyMessage="No manuscripts pending semantic review. Send documents here from the Smart Upload stage." 
       />
     );
   }
@@ -296,7 +296,7 @@ export default function WritingAssistant({ activePaperId, setActivePaperId, onNa
                 disabled={isSending}
                 className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-[1.5rem] font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 shadow-xl shadow-emerald-900/20"
               >
-                {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Complete & Send to Reference Intel'}
+                {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Complete & Send to Format Architect'}
                 {!isSending && <ArrowRight size={18} />}
               </button>
             </div>

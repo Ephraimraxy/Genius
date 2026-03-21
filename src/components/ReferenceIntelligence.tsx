@@ -59,7 +59,7 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
         onSelect={setActivePaperId} 
         title="Reference Intelligence Queue" 
         icon={Library} 
-        emptyMessage="No manuscripts pending bibliographic verification. Send documents here from the AI Writing Assistant." 
+        emptyMessage="No manuscripts pending bibliographic verification. Send documents here from the Format Architect." 
       />
     );
   }

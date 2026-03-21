@@ -90,8 +90,8 @@ export default function Sidebar({
   const researcherNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard, section: 'Research Hub' },
     { id: 'upload', label: 'Smart Upload', icon: FileUp, section: 'Manuscript Pipeline' },
-    { id: 'formatting', label: 'Formatting', icon: FileText },
     { id: 'writing', label: 'Writing Assistant', icon: PenTool },
+    { id: 'formatting', label: 'Formatting', icon: FileText },
     { id: 'references', label: 'Reference Intel', icon: Library },
     { id: 'integrity', label: 'Integrity Check', icon: ShieldCheck },
     { id: 'reviews', label: 'Peer Review', icon: MessageSquare, section: 'Publishing' },
@@ -310,19 +310,19 @@ export default function Sidebar({
               <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Pipeline Status</h4>
               <div className="flex gap-1">
                 {[1, 2, 3, 4, 5].map((s) => (
-                  <div key={s} className={`w-1.5 h-1.5 rounded-full ${s <= (['upload', 'formatting', 'writing', 'references', 'integrity'].indexOf(activeTab) + 1) ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]' : 'bg-slate-700'}`} />
+                  <div key={s} className={`w-1.5 h-1.5 rounded-full ${s <= (['upload', 'writing', 'formatting', 'references', 'integrity'].indexOf(activeTab) + 1) ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]' : 'bg-slate-700'}`} />
                 ))}
               </div>
             </div>
             <div className="space-y-3">
                {[
                  { id: 'upload', label: 'Smart Upload' },
-                 { id: 'formatting', label: 'Format Architect' },
                  { id: 'writing', label: 'AI Writing Hub' },
+                 { id: 'formatting', label: 'Format Architect' },
                  { id: 'integrity', label: 'Integrity Check' }
                ].map((step, idx) => {
-                 const stepIdx = ['upload', 'formatting', 'writing', 'integrity'].indexOf(step.id);
-                 const currentIdx = ['upload', 'formatting', 'writing', 'integrity'].indexOf(activeTab);
+                 const stepIdx = ['upload', 'writing', 'formatting', 'integrity'].indexOf(step.id);
+                 const currentIdx = ['upload', 'writing', 'formatting', 'integrity'].indexOf(activeTab);
                  const isCompleted = stepIdx < currentIdx;
                  const isActiveStep = step.id === activeTab;
                  

@@ -31,10 +31,10 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ status: 'writing_assistant' })
+        body: JSON.stringify({ status: 'reference_intel' })
       });
       if (onNavigate) {
-        onNavigate('writing');
+        onNavigate('references');
       } else {
         setActivePaperId(null);
       }
@@ -84,7 +84,7 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
         onSelect={setActivePaperId} 
         title="Format Architect Queue" 
         icon={Layout} 
-        emptyMessage="No manuscripts pending formatting. Upload a new document or send one from the previous stage to begin." 
+        emptyMessage="No manuscripts pending formatting. Send documents here from the AI Writing Assistant." 
       />
     );
   }
@@ -235,7 +235,7 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
                     disabled={isSending}
                     className="group w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl shadow-2xl shadow-emerald-900/20 font-black tracking-widest uppercase text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                   >
-                    {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Move to Assistant'}
+                    {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Move to Reference Intel'}
                     {!isSending && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
                   </button>
                 </div>
