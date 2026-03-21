@@ -36,6 +36,7 @@ interface FilePreviewModalProps {
     issue?: string;
     title?: string;
     authors?: string;
+    date?: string;
   };
 }
 
@@ -438,8 +439,15 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
 
                       {/* DOI & Site Info Line (Clean horizontal bar) */}
                       <div className="flex items-center justify-between pt-4 border-t border-slate-100 w-full mb-8">
-                        <div className="flex items-center gap-2 text-indigo-600 font-mono font-bold text-[10px] md:text-xs">
-                          <Globe size={12} className="shrink-0" /> {publicationDetails.doi || '10.GMIJ/RES.2026.01'}
+                        <div className="flex flex-col gap-1 items-start text-indigo-600 font-mono font-bold text-[10px] md:text-xs">
+                          <div className="flex items-center gap-2">
+                            <Globe size={12} className="shrink-0" /> {publicationDetails.doi || '10.GMIJ/RES.2026.01'}
+                          </div>
+                          {publicationDetails.date && (
+                            <div className="text-slate-500 font-sans text-[9px] md:text-[10px] uppercase tracking-widest pl-5">
+                               Published: {new Date(publicationDetails.date).toLocaleDateString('en-GB')}
+                            </div>
+                          )}
                         </div>
                         <div className="text-[#800000] font-black text-[9px] md:text-[10px] uppercase tracking-widest italic opacity-70">
                           Official Publication Copy &bull; www.gmijp-edu.com
@@ -463,7 +471,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
                 </div>
               )}
               
-              <div className="flex-1 overflow-hidden relative preview-scrollbar">
+              <div className="flex-1 overflow-y-auto relative preview-scrollbar">
                 {/* Watermark for Published Papers */}
                 {publicationDetails && (
                   <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden flex items-center justify-center select-none opacity-[0.03]">

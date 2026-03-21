@@ -41,7 +41,7 @@ export default function AcceptanceLetter({ manuscriptId, title, authors, recipie
           <h2 className="text-base font-bold text-[#800000]">NASARAWA STATE UNIVERSITY, KEFFI</h2>
         </div>
 
-        <img src="/university-logo.jpg" alt="NSUK Logo" className="w-20 h-20 object-contain" crossOrigin="anonymous" />
+        <img src="/university-logo.jpg" alt="NSUK Logo" className="w-20 h-20 object-contain" />
       </div>
 
       <div className="flex justify-between items-start mb-8">
@@ -51,7 +51,6 @@ export default function AcceptanceLetter({ manuscriptId, title, authors, recipie
         </div>
         <div className="text-right">
            <p className="text-sm font-bold text-slate-600">{date}</p>
-           <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Ref: GMIJP/{new Date().getFullYear()}/{manuscriptId.toString().padStart(4, '0')}</p>
         </div>
       </div>
 

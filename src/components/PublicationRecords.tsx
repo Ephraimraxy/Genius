@@ -112,9 +112,6 @@ export default function PublicationRecords({ profile }: { profile: any }) {
         <div className="h-5 bg-slate-100 rounded-full w-20"></div>
       </td>
       <td className="px-8 py-6">
-        <div className="h-4 bg-slate-50 rounded-md w-16"></div>
-      </td>
-      <td className="px-8 py-6">
         <div className="h-4 bg-slate-100 rounded-md w-24"></div>
       </td>
       <td className="px-8 py-6">
@@ -199,7 +196,6 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 {isAdmin && <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Researcher</th>}
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Live Readiness</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
-                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Date</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Vol / Issue</th>
                  <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">DOI</th>
                  <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Published Date</th>
@@ -216,7 +212,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 </>
               ) : filteredPubs.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 9 : 8} className="px-8 py-20 text-center">
+                  <td colSpan={isAdmin ? 8 : 7} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <FileText className="text-slate-200" size={48} />
                       <p className="text-sm font-bold text-slate-400">No records found matching your filter.</p>
@@ -282,11 +278,6 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                         {pub.status}
                       </span>
                     </td>
-
-                    <td className="px-8 py-6">
-                      <p className="text-xs font-bold text-slate-500">{new Date(pub.created_at).toLocaleDateString()}</p>
-                    </td>
-
                     <td className="px-8 py-6">
                       <p className="text-xs font-bold text-slate-500 whitespace-nowrap">
                         {pub.volume ? `Vol ${pub.volume}` : '—'} / {pub.issue ? `No ${pub.issue}` : '—'}
@@ -372,7 +363,8 @@ export default function PublicationRecords({ profile }: { profile: any }) {
               volume: previewPub.volume,
               issue: previewPub.issue,
               title: previewPub.title,
-              authors: previewPub.authors
+              authors: previewPub.authors,
+              date: previewPub.published_at || previewPub.created_at
             }}
           />
         )}

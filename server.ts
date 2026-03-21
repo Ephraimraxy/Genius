@@ -1208,7 +1208,9 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
     // Sanitize filename to prevent header injection or invalid characters
     const safeTitle = (paper.title || 'manuscript').replace(/[^a-zA-Z0-9\s-_]/g, '').substring(0, 100);
     
-    res.setHeader('Content-Type', metadata.mimetype || 'application/octet-stream');
+    const mimetype = metadata.mimetype || (ext === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    
+    res.setHeader('Content-Type', mimetype);
     res.setHeader('Content-Disposition', `inline; filename="${safeTitle}.${ext}"`);
     res.send(paper.file_blob);
   } catch (error: any) {
