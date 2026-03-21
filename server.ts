@@ -981,7 +981,7 @@ async function publishToZenodo(paper: any, zenodoToken: string) {
     if (!uploadRes.ok) throw new Error(`Zenodo File Upload Failed: ${uploadRes.statusText}`);
 
     // 3. Attach Genius Metadata (DataCite JSON schema)
-    const metadata = JSON.parse(paper.metadata);
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const zenodoMetadata = {
       metadata: {
         title: metadata.title || 'Untitled Genius Publication',
@@ -1197,7 +1197,7 @@ app.post('/api/validate/:id', authenticateToken, async (req: any, res) => {
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found or unauthorized' });
 
-    const metadata = JSON.parse(paper.metadata);
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -1283,7 +1283,7 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
     const refsResult = await pool.query('SELECT * FROM paper_references WHERE paper_id = $1', [paperId]);
     const existingRefs = refsResult.rows;
 
-    const metadata = JSON.parse(paper.metadata);
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const inTextCitations = metadata.inTextCitations || [];
 
     if (existingRefs.length > 0) {
@@ -1357,7 +1357,7 @@ app.post('/api/recommend-journals/:id', authenticateToken, async (req: any, res)
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const metadata = JSON.parse(paper.metadata);
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const keywords = metadata.keywords?.join('+') || metadata.title?.replace(/\s+/g, '+') || 'science';
 
     // Query Crossref real journal API
@@ -1653,7 +1653,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const metadata = JSON.parse(paper.metadata);
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
 
     // Dynamic Rule: Manuscript page limit
     const maxPageResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_pages_per_manuscript']);
@@ -1728,7 +1728,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
     const profile = profileResult.rows[0];
     if (profile) {
-      const pubs = JSON.parse(profile.publications || '[]');
+      const pubs = (typeof profile.publications === 'string' ? JSON.parse(profile.publications || '[]') : (profile.publications || []));
       pubs.push({ title: metadata.title, doi, date: new Date().toISOString() });
       await pool.query('UPDATE profiles SET publications = $1 WHERE id = $2', [JSON.stringify(pubs), profile.id]);
     }
@@ -1893,7 +1893,7 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
     const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const metadata = JSON.parse(paper.metadata);
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const textContent = paper.content;
 
     // Real Similarity Detection Algorithm
@@ -2050,7 +2050,7 @@ app.get('/api/papers/:id/export/bibtex', authenticateToken, async (req: any, res
   const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
   const paper = paperResult.rows[0];
   if (!paper) return res.status(404).send('Not found');
-  const metadata = JSON.parse(paper.metadata);
+  const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
 
   const bibtex = `@article{genius${paper.id},
   title={${metadata.title || 'Untitled'}},
@@ -2076,7 +2076,7 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
   const paper = paperResult.rows[0];
   if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-  const metadata = JSON.parse(paper.metadata);
+  const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
   const abstract = metadata.abstract || 'No abstract provided.';
 
   try {
@@ -2115,7 +2115,7 @@ app.get('/api/papers/:id/export/ris', authenticateToken, async (req: any, res) =
   const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
   const paper = paperResult.rows[0];
   if (!paper) return res.status(404).send('Not found');
-  const metadata = JSON.parse(paper.metadata);
+  const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
 
   let ris = `TY  - JOUR\nTI  - ${metadata.title || 'Untitled'}\n`;
   (metadata.authors || []).forEach((a: string) => {
@@ -2133,7 +2133,7 @@ app.get('/article/:doi(*)', async (req, res) => {
   const paper = paperResult.rows[0];
   if (!paper) return res.status(404).send('Article not found');
 
-  const metadata = JSON.parse(paper.metadata);
+  const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
   const canonicalRefsResult = await pool.query('SELECT * FROM paper_references WHERE paper_id = $1', [paper.id]);
   const canonicalRefs = canonicalRefsResult.rows;
 
@@ -2342,7 +2342,7 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const metadata = JSON.parse(paper.metadata || '{}');
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata || '{}') : (paper.metadata || {}));
     const isOwnerResult = await pool.query('SELECT user_id FROM papers WHERE id = $1', [id]);
     const isOwner = isOwnerResult.rows[0]?.user_id === req.user.id;
     const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
