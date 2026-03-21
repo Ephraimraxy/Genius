@@ -41,7 +41,7 @@ export default function AcceptanceLetter({ manuscriptId, title, authors, recipie
           <h2 className="text-base font-bold text-[#800000]">NASARAWA STATE UNIVERSITY, KEFFI</h2>
         </div>
 
-        <img src="/university-logo.jpg" alt="NSUK Logo" className="w-20 h-20 object-contain shrink-0" />
+        <img src="/Nasarawa-State-University.jpg" alt="NSUK Logo" className="w-20 h-20 object-contain shrink-0" />
       </div>
 
       <div className="flex justify-between items-start mb-8">

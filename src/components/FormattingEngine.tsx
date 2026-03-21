@@ -302,7 +302,7 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
                               <p className="text-slate-900 font-black text-[9px] uppercase tracking-tight">Nasarawa State University Keffi</p>
                               <p className="text-slate-400 font-bold text-[8px] uppercase tracking-widest">Global Partner</p>
                            </div>
-                           <img src="/university-logo.jpg" alt="NSUK" className="h-10 md:h-14 w-auto object-contain" />
+                           <img src="/Nasarawa-State-University.jpg" alt="NSUK" className="h-10 md:h-14 w-auto object-contain" />
                         </div>
                       </div>
                       <div className="h-px bg-slate-100 w-full" />

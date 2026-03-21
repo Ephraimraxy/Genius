@@ -433,7 +433,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
                              <p className="text-slate-900 font-black text-[10px] uppercase tracking-tight whitespace-nowrap">Nasarawa State University</p>
                              <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest">Keffi, Nigeria</p>
                           </div>
-                          <img src="/university-logo.jpg" alt="NSUK Logo" className="h-12 md:h-16 w-auto object-contain" />
+                          <img src="/Nasarawa-State-University.jpg" alt="NSUK Logo" className="h-12 md:h-16 w-auto object-contain" />
                         </div>
                       </div>
 
