@@ -2359,10 +2359,10 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
 
 app.put('/api/admin/papers/:id/metadata', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
-  const { doi, volume, issue } = req.body;
+  const { doi, volume, issue, issn } = req.body;
   try {
     const { id } = idParamSchema.parse(req.params);
-    await pool.query('UPDATE papers SET doi = $1, volume = $2, issue = $3 WHERE id = $4', [doi, volume, issue, id]);
+    await pool.query('UPDATE papers SET doi = $1, volume = $2, issue = $3, issn = $4 WHERE id = $5', [doi, volume, issue, issn || null, id]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update paper metadata' });
@@ -2656,9 +2656,10 @@ app.get('/api/transactions', authenticateToken, async (req: any, res) => {
 app.get('/api/publications', authenticateToken, async (req: any, res) => {
   const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
   const query = isAdmin
-    ? `SELECT p.id, p.title, p.authors, p.status, p.doi, p.created_at, u.name as researcher_name, u.email as researcher_email 
+    ? `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.created_at, u.name as researcher_name, u.email as researcher_email 
        FROM papers p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC`
-    : `SELECT id, title, authors, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC`;
+    : `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.created_at, u.name as researcher_name, u.email as researcher_email 
+       FROM papers p JOIN users u ON p.user_id = u.id WHERE p.user_id = $1 ORDER BY p.created_at DESC`;
   const params = isAdmin ? [] : [req.user.id];
 
   try {

@@ -349,6 +349,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
               manuscriptId={acceptancePub.id}
               title={acceptancePub.title}
               authors={acceptancePub.authors}
+              recipientName={acceptancePub.researcher_name}
             />
           )}
         </div>

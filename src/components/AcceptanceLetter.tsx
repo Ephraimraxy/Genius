@@ -5,10 +5,28 @@ interface AcceptanceLetterProps {
   manuscriptId: number;
   title: string;
   authors: string;
+  recipientName?: string;
   date?: string;
 }
 
-export default function AcceptanceLetter({ manuscriptId, title, authors, date = new Date().toLocaleDateString('en-GB') }: AcceptanceLetterProps) {
+export default function AcceptanceLetter({ manuscriptId, title, authors, recipientName, date = new Date().toLocaleDateString('en-GB') }: AcceptanceLetterProps) {
+  // Smart author formatting: handle JSON arrays, stringified arrays, or plain text
+  const formatAuthors = (raw: string): string => {
+    if (!raw) return 'Researcher';
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(Boolean).join(', ');
+      }
+      return String(parsed);
+    } catch {
+      // Already a plain string - just clean up any stray brackets
+      return raw.replace(/^\["?|"?\]$/g, '').replace(/","/g, ', ');
+    }
+  };
+
+  const displayName = recipientName || formatAuthors(authors);
+
   return (
     <div className="bg-white p-12 max-w-[800px] mx-auto shadow-2xl min-h-[1050px] font-serif text-slate-800 print:shadow-none print:p-8" id="acceptance-letter">
       {/* Header */}
@@ -23,7 +41,7 @@ export default function AcceptanceLetter({ manuscriptId, title, authors, date = 
           <h2 className="text-base font-bold text-[#800000]">NASARAWA STATE UNIVERSITY, KEFFI</h2>
         </div>
 
-        <img src="/university-logo.jpg" alt="NSUK Logo" className="w-20 h-20 object-contain" />
+        <img src="/university-logo.jpg" alt="NSUK Logo" className="w-20 h-20 object-contain" crossOrigin="anonymous" />
       </div>
 
       <div className="flex justify-between items-start mb-8">
@@ -39,7 +57,7 @@ export default function AcceptanceLetter({ manuscriptId, title, authors, date = 
 
       {/* Salutation */}
       <div className="mb-8">
-        <p className="font-bold text-lg mb-1">Dear {authors},</p>
+        <p className="font-bold text-lg mb-1">Dear {displayName},</p>
       </div>
 
       {/* Subject */}
