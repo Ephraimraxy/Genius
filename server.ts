@@ -360,6 +360,7 @@ async function initDB() {
   await pool.query(`INSERT INTO settings (key, value) VALUES ('max_manuscripts_per_issue', '10') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('max_issues_per_volume', '3') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('max_pages_per_manuscript', '20') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('journal_signature', '') ON CONFLICT (key) DO NOTHING`);
 }
 initDB().catch(err => {
   console.error('CRITICAL: Database initialization failed');
@@ -997,9 +998,10 @@ async function publishToZenodo(paper: any, zenodoToken: string) {
         description: metadata.abstract || "Published via Genius App Research Pipeline.",
         publication_date: new Date().toISOString().split('T')[0],
         access_right: "open",
-        creators: (metadata.authors || []).map((a: string) => {
-          // Zenodo prefers "Family, Given"
-          const trimmed = a.trim();
+        creators: (metadata.authors || []).map((a: any) => {
+          // Zenodo prefers "Family, Given". Handle string or object.
+          const authName = typeof a === 'string' ? a : (a.name || 'Unknown Author');
+          const trimmed = authName.trim();
           if (trimmed.includes(',')) return { name: trimmed }; // Already formatted
           const parts = trimmed.split(/\s+/);
           if (parts.length > 1) {
@@ -1373,13 +1375,31 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
 
   const drawTextBlock = (text: string, usedFont: any, size: number, color: any, lineHeight: number, indent = 0) => {
     const lines = wrapText(text, usedFont, size, contentW - indent);
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       ensureSpace(lineHeight);
       if (line === '') {
         y -= lineHeight * 0.5;
         continue;
       }
-      currentPage.drawText(line, { x: MARGIN + indent, y, size, font: usedFont, color });
+
+      // Justify if not the last line of a paragraph segment
+      const isLastLine = i === lines.length - 1 || lines[i+1] === '';
+      const words = line.trim().split(/\s+/);
+      
+      if (!isLastLine && words.length > 1) {
+        const totalWordWidth = words.reduce((acc, w) => acc + usedFont.widthOfTextAtSize(w, size), 0);
+        const totalGapWidth = (contentW - indent) - totalWordWidth;
+        const gapSize = totalGapWidth / (words.length - 1);
+        
+        let currentX = MARGIN + indent;
+        for (const word of words) {
+          currentPage.drawText(word, { x: currentX, y, size, font: usedFont, color });
+          currentX += usedFont.widthOfTextAtSize(word, size) + gapSize;
+        }
+      } else {
+        currentPage.drawText(line, { x: MARGIN + indent, y, size, font: usedFont, color });
+      }
       y -= lineHeight;
     }
   };
@@ -2102,7 +2122,35 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   // Sign-off
   page.drawLine({ start: { x: margin, y: y + 8 }, end: { x: width - margin, y: y + 8 }, thickness: 0.5, color: rgb(0.9, 0.9, 0.9) });
   page.drawText('Best regards,', { x: margin, y, size: 10, font, color: black });
-  y -= 30;
+  y -= 40; // Space for signature
+
+  // Signature Implementation
+  try {
+    const sigRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_signature']);
+    const sigBase64 = sigRes.rows[0]?.value;
+    if (sigBase64 && sigBase64.startsWith('data:image')) {
+      const base64Data = sigBase64.split(',')[1];
+      const sigImgBytes = Buffer.from(base64Data, 'base64');
+      let sigImg;
+      if (sigBase64.includes('image/png')) {
+        sigImg = await pdfDoc.embedPng(sigImgBytes);
+      } else {
+        sigImg = await pdfDoc.embedJpg(sigImgBytes);
+      }
+      
+      const sigDims = sigImg.scaleToFit(150, 60);
+      page.drawImage(sigImg, {
+        x: margin,
+        y: y + 10, // Adjusted to sit between lines
+        width: sigDims.width,
+        height: sigDims.height,
+      });
+      y -= (sigDims.height - 20); // Adjust Y based on signature height if needed, but keeping it flexible
+    }
+  } catch (err) {
+    console.error('Failed to embed signature image:', err);
+  }
+
   page.drawText('Dr. Danjuma Namo', { x: margin, y, size: 11, font: fontBold, color: black });
   y -= 14;
   page.drawText('Secretary (GMIJP)', { x: margin, y, size: 9, font: fontBold, color: maroon });
@@ -4093,10 +4141,12 @@ app.get('/api/admin/config/journal', authenticateToken, async (req: any, res: an
     const vol = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
     const issue = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
     const issn = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+    const signature = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_signature']);
     res.json({
       current_volume: vol.rows[0]?.value || '1',
       current_issue: issue.rows[0]?.value || '1',
-      journal_issn: issn.rows[0]?.value || '2971-7760'
+      journal_issn: issn.rows[0]?.value || '2971-7760',
+      journal_signature: signature.rows[0]?.value || ''
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch journal settings' });
@@ -4106,10 +4156,13 @@ app.get('/api/admin/config/journal', authenticateToken, async (req: any, res: an
 app.post('/api/admin/config/journal', authenticateToken, async (req: any, res: any) => {
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const { current_volume, current_issue, journal_issn } = req.body;
+    const { current_volume, current_issue, journal_issn, journal_signature } = req.body;
     await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_volume', current_volume.toString()]);
     await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_issue', current_issue.toString()]);
     await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_issn', journal_issn.toString()]);
+    if (journal_signature !== undefined) {
+      await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_signature', journal_signature]);
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update journal settings' });

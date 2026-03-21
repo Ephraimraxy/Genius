@@ -19,9 +19,11 @@ export default function AdminSettings() {
   const [maxManuscripts, setMaxManuscripts] = useState<string>('10');
   const [maxIssues, setMaxIssues] = useState<string>('3');
   const [maxPages, setMaxPages] = useState<string>('20');
+  const [journalSignature, setJournalSignature] = useState<string>('');
   const [origJournal, setOrigJournal] = useState({ 
     volume: '1', issue: '1', issn: '2971-7760',
-    maxManuscripts: '10', maxIssues: '3', maxPages: '20'
+    maxManuscripts: '10', maxIssues: '3', maxPages: '20',
+    signature: ''
   });
   const [savingJournal, setSavingJournal] = useState(false);
   const [savedJournal, setSavedJournal] = useState(false);
@@ -53,13 +55,15 @@ export default function AdminSettings() {
         setMaxManuscripts(data.max_manuscripts_per_issue.toString());
         setMaxIssues(data.max_issues_per_volume.toString());
         setMaxPages(data.max_pages_per_manuscript.toString());
+        setJournalSignature(data.journal_signature || '');
         setOrigJournal({ 
           volume: data.current_volume, 
           issue: data.current_issue, 
           issn: data.journal_issn,
           maxManuscripts: data.max_manuscripts_per_issue.toString(),
           maxIssues: data.max_issues_per_volume.toString(),
-          maxPages: data.max_pages_per_manuscript.toString()
+          maxPages: data.max_pages_per_manuscript.toString(),
+          signature: data.journal_signature || ''
         });
       })
       .catch(console.error);
@@ -78,6 +82,16 @@ export default function AdminSettings() {
       setHealth({ status: 'error', database: 'unknown' });
     }
     setLoadingHealth(false);
+  };
+
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setJournalSignature(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSavePrice = async (key: 'publication_price' | 'lecturer_subscription_price', value: string) => {
@@ -116,7 +130,8 @@ export default function AdminSettings() {
           journal_issn: journalIssn,
           max_manuscripts_per_issue: parseInt(maxManuscripts),
           max_issues_per_volume: parseInt(maxIssues),
-          max_pages_per_manuscript: parseInt(maxPages)
+          max_pages_per_manuscript: parseInt(maxPages),
+          journal_signature: journalSignature
         })
       });
       if (res.ok) {
@@ -126,7 +141,8 @@ export default function AdminSettings() {
           issn: journalIssn,
           maxManuscripts,
           maxIssues,
-          maxPages
+          maxPages,
+          signature: journalSignature
         });
         setSavedJournal(true);
         setTimeout(() => setSavedJournal(false), 3000);
@@ -143,7 +159,8 @@ export default function AdminSettings() {
     journalIssn !== origJournal.issn ||
     maxManuscripts !== origJournal.maxManuscripts ||
     maxIssues !== origJournal.maxIssues ||
-    maxPages !== origJournal.maxPages;
+    maxPages !== origJournal.maxPages ||
+    journalSignature !== origJournal.signature;
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
@@ -250,6 +267,53 @@ export default function AdminSettings() {
                   placeholder="20"
                 />
                 <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Limit for automated check</p>
+              </div>
+
+              {/* Signature Upload — NEW */}
+              <div className="md:col-span-3 pt-6 border-t border-slate-50">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-4 flex items-center gap-1.5">
+                  <Shield size={12} /> Official Journal Signature Image
+                </label>
+                <div className="flex flex-col md:flex-row items-start gap-8">
+                  <div className="flex-1 w-full">
+                    <div className="relative group cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleSignatureUpload}
+                        className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer"
+                      />
+                      <div className="w-full h-32 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center gap-2 group-hover:border-[#800000]/30 group-hover:bg-[#800000]/5 transition-all bg-slate-50/50">
+                        <Layers className="text-slate-400 group-hover:text-[#800000] transition-colors" size={32} />
+                        <p className="text-sm font-bold text-slate-500 group-hover:text-[#800000]">Click or drag to upload signature</p>
+                        <p className="text-[10px] text-slate-400 font-medium">PNG or JPG (Recommended: 300x120 transparent)</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="w-full md:w-64">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Current Signature Preview</p>
+                    <div className="h-32 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center overflow-hidden p-4 relative">
+                      {journalSignature ? (
+                        <div className="relative group w-full h-full flex items-center justify-center">
+                          <img src={journalSignature} alt="Signature" className="max-w-full max-h-full object-contain mix-blend-multiply" />
+                          <button 
+                            onClick={() => setJournalSignature('')}
+                            className="absolute top-1 right-1 p-1.5 bg-white/90 text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-sm border border-slate-100"
+                          >
+                            <AlertCircle size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-center">
+                          <AlertCircle size={20} className="text-slate-300 mx-auto mb-2" />
+                          <p className="text-[10px] font-bold text-slate-400 uppercase italic">No signature set</p>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[9px] text-slate-400 mt-3 italic text-center">Appears aligned on Acceptance Letters</p>
+                  </div>
+                </div>
               </div>
             </div>
 
