@@ -2042,6 +2042,29 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
     const pdfBuffer = await generateAcceptanceLetterPDF(researcherName, manuscriptTitle, manuscriptId);
     const pdfBase64 = pdfBuffer.toString('base64');
 
+    // Load static Journal Preliminary attachment
+    let secondAttachment = null;
+    try {
+      const preliminaryPath = path.join(process.cwd(), 'tools', 'Journal Preliminary.pdf');
+      if (fs.existsSync(preliminaryPath)) {
+        const preliminaryBuffer = fs.readFileSync(preliminaryPath);
+        secondAttachment = {
+          filename: 'Journal_Preliminary.pdf',
+          content: preliminaryBuffer.toString('base64')
+        };
+      }
+    } catch (err) {
+      console.warn('Failed to load Journal Preliminary.pdf attachment:', err);
+    }
+
+    const attachments = [
+      {
+        filename: `Acceptance_Letter_${manuscriptId}.pdf`,
+        content: pdfBase64
+      }
+    ];
+    if (secondAttachment) attachments.push(secondAttachment);
+
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -2053,12 +2076,7 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
         to: [to],
         subject: `Acceptance Letter \u2014 ${manuscriptTitle.substring(0, 80)}`,
         html: htmlBody,
-        attachments: [
-          {
-            filename: `Acceptance_Letter_${manuscriptId}.pdf`,
-            content: pdfBase64
-          }
-        ]
+        attachments
       })
     });
 
