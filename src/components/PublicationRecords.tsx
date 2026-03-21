@@ -339,8 +339,8 @@ export default function PublicationRecords({ profile }: { profile: any }) {
           </table>
         </div>
         
-        {/* Printable Acceptance Letter (Hidden from view, visible for printing) */}
-        <div className="hidden print:block fixed inset-0 z-[9999] bg-white">
+        {/* Printable Acceptance Letter (Positioned off-screen to ensure images load, visible for printing) */}
+        <div className="opacity-0 pointer-events-none fixed -left-[9999px] print:opacity-100 print:pointer-events-auto print:left-0 print:inset-0 print:z-[9999] bg-white">
           {acceptancePub && (
             <AcceptanceLetter 
               manuscriptId={acceptancePub.id}
