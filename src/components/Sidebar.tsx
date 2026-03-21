@@ -94,8 +94,8 @@ export default function Sidebar({
     { id: 'writing', label: 'Writing Assistant', icon: PenTool },
     { id: 'references', label: 'Reference Intel', icon: Library },
     { id: 'integrity', label: 'Integrity Check', icon: ShieldCheck },
-    { id: 'journals', label: 'Journal Match', icon: BookMarked, section: 'Publishing' },
-    { id: 'reviews', label: 'Peer Review', icon: MessageSquare },
+    { id: 'reviews', label: 'Peer Review', icon: MessageSquare, section: 'Publishing' },
+    { id: 'journals', label: 'Journal Match', icon: BookMarked },
     { id: 'records', label: 'Pub. Records', icon: History },
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
   ];

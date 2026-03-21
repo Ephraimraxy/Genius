@@ -158,7 +158,13 @@ export default function JournalRecommendations({ activePaperId, setActivePaperId
             </div>
           </div>
 
-          <button className="shrink-0 bg-white text-slate-900 hover:bg-slate-50 px-8 py-4 rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95 relative z-10">
+          <button 
+            onClick={() => {
+              const e = new CustomEvent('toast', { detail: { message: 'Advanced analytics tracking initialized for this submission.', type: 'info' } });
+              window.dispatchEvent(e);
+            }}
+            className="shrink-0 bg-white text-slate-900 hover:bg-slate-50 px-8 py-4 rounded-[1.5rem] text-sm font-black uppercase tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95 relative z-10"
+          >
             View Analytics
           </button>
         </div>
@@ -179,7 +185,15 @@ export default function JournalRecommendations({ activePaperId, setActivePaperId
               <AlertCircle size={40} />
             </div>
             <p className="text-xl font-bold text-slate-900">No Direct Matches Found</p>
-            <p className="text-slate-500 mt-2">Adjust your manuscript keywords to refresh the discovery engine.</p>
+            <p className="text-slate-500 mt-2 mb-8">Adjust your manuscript keywords to refresh the discovery engine.</p>
+            <button
+              onClick={handlePublish}
+              disabled={isPublishing}
+              className="mx-auto flex items-center justify-center gap-3 bg-indigo-600 hover:bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+            >
+              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={18} />} 
+              {isPublishing ? 'Broadcasting...' : 'Force Direct Broadcast'}
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6">
