@@ -214,6 +214,7 @@ async function initDB() {
       doi TEXT,
       volume TEXT,
       issue TEXT,
+      formatted_content TEXT,
       file_blob BYTEA,
       published_at TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -327,6 +328,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE papers ADD COLUMN issue TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN file_blob BYTEA'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN published_at TIMESTAMP'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN formatted_content TEXT'); } catch (e) { }
   
   try { await pool.query('ALTER TABLE exams ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE exams ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
@@ -1218,6 +1220,231 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
   }
 });
 
+// ===== Published PDF Generation (clean journal-branded PDF for preview/download) =====
+app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query(
+      'SELECT id, title, authors, abstract, content, formatted_content, metadata, doi, volume, issue, issn, published_at, created_at FROM papers WHERE id = $1',
+      [id]
+    );
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+    const issn = paper.issn || '2971-7760';
+    const volume = paper.volume || '1';
+    const issue = paper.issue || '1';
+    const doi = paper.doi || '';
+    const pubDate = paper.published_at || paper.created_at;
+    const dateStr = pubDate ? new Date(pubDate).toLocaleDateString('en-GB') : '';
+    const title = paper.title || 'Untitled';
+    const authorsRaw = paper.authors;
+    let authorsList: string[] = [];
+    try { authorsList = typeof authorsRaw === 'string' ? JSON.parse(authorsRaw) : (authorsRaw || []); } catch { authorsList = [String(authorsRaw)]; }
+    const authorsStr = authorsList.map((a: any) => typeof a === 'string' ? a : a.name).join(', ');
+    const abstract = paper.abstract || metadata.abstract || '';
+    
+    let bodyText = paper.content || '';
+    if (paper.formatted_content) {
+      const $ = cheerio.load(paper.formatted_content);
+      // Append newlines to block elements to preserve structure when extracting text
+      $('p, h1, h2, h3, h4, h5, h6, li, br, div').append('\\n');
+      bodyText = $.text().replace(/\\n\\s*\\n/g, '\\n\\n').trim();
+    }
+
+    // Build PDF
+    const pdfDoc = await PDFDocument.create();
+    const fontRegular = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+    const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+    const fontBoldItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
+
+    const PAGE_W = 595; // A4
+    const PAGE_H = 842;
+    const MARGIN = 55;
+    const contentW = PAGE_W - 2 * MARGIN;
+    const maroon = rgb(0.5, 0, 0);
+    const black = rgb(0, 0, 0);
+    const gray = rgb(0.35, 0.35, 0.35);
+    const lightGray = rgb(0.6, 0.6, 0.6);
+    const indigo = rgb(0.26, 0.27, 0.53);
+
+    // Helper: word-wrap text and return lines
+    const wrapText = (text: string, font: any, size: number, maxWidth: number): string[] => {
+      const lines: string[] = [];
+      const paragraphs = text.split(/\n/);
+      for (const para of paragraphs) {
+        if (!para.trim()) { lines.push(''); continue; }
+        const words = para.split(/\s+/);
+        let line = '';
+        for (const word of words) {
+          const testLine = line ? `${line} ${word}` : word;
+          try {
+            if (font.widthOfTextAtSize(testLine, size) > maxWidth) {
+              if (line) lines.push(line);
+              line = word;
+            } else {
+              line = testLine;
+            }
+          } catch {
+            line = testLine;
+          }
+        }
+        if (line) lines.push(line);
+      }
+      return lines;
+    };
+
+    // Helper: draw text block, auto-paginate, return current y and page
+    let currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
+    let y = PAGE_H - MARGIN;
+
+    const ensureSpace = (needed: number) => {
+      if (y - needed < MARGIN + 30) {
+        // Draw page footer before moving on
+        const pageNum = pdfDoc.getPageCount();
+        currentPage.drawText(`— ${pageNum} —`, {
+          x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— ${pageNum} —`, 8) / 2,
+          y: 25, size: 8, font: fontRegular, color: lightGray
+        });
+        currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
+        y = PAGE_H - MARGIN;
+      }
+    };
+
+    const drawTextBlock = (text: string, usedFont: any, size: number, color: any, lineHeight: number, indent = 0) => {
+      const lines = wrapText(text, usedFont, size, contentW - indent);
+      for (const line of lines) {
+        ensureSpace(lineHeight);
+        if (line === '') { y -= lineHeight * 0.5; continue; }
+        currentPage.drawText(line, { x: MARGIN + indent, y, size, font: usedFont, color });
+        y -= lineHeight;
+      }
+    };
+
+    // ======== PAGE HEADER ========
+    // Journal name
+    currentPage.drawText('GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL', {
+      x: MARGIN, y, size: 11, font: fontBold, color: maroon
+    });
+    y -= 14;
+    currentPage.drawText('PUBLICATION (GMIJP)', {
+      x: MARGIN, y, size: 11, font: fontBold, color: maroon
+    });
+
+    // Right-aligned university
+    const uniText = 'Nasarawa State University, Keffi';
+    const uniW = fontRegular.widthOfTextAtSize(uniText, 9);
+    currentPage.drawText(uniText, { x: PAGE_W - MARGIN - uniW, y: y + 14, size: 9, font: fontRegular, color: gray });
+
+    y -= 8;
+    // Decorative line
+    currentPage.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 2, color: maroon });
+    y -= 18;
+
+    // Metadata row: ISSN | Vol | Issue
+    const metaLine = `ISSN: ${issn}    |    Vol: ${volume}    |    No: ${issue}`;
+    currentPage.drawText(metaLine, { x: MARGIN, y, size: 9, font: fontBold, color: gray });
+    y -= 14;
+
+    // DOI
+    if (doi) {
+      currentPage.drawText(`DOI: ${doi}`, { x: MARGIN, y, size: 9, font: fontRegular, color: indigo });
+      y -= 13;
+    }
+    // Published date
+    if (dateStr) {
+      currentPage.drawText(`Published: ${dateStr}`, { x: MARGIN, y, size: 9, font: fontRegular, color: gray });
+      y -= 13;
+    }
+
+    // Official Publication notice (right-aligned)
+    const officialText = 'Official Publication Copy • www.gmijp-edu.com';
+    const officialW = fontItalic.widthOfTextAtSize(officialText, 8);
+    currentPage.drawText(officialText, { x: PAGE_W - MARGIN - officialW, y: y + 13, size: 8, font: fontItalic, color: maroon });
+
+    y -= 6;
+    currentPage.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
+    y -= 24;
+
+    // ======== TITLE ========
+    const titleLines = wrapText(title.toUpperCase(), fontBold, 16, contentW);
+    for (const line of titleLines) {
+      ensureSpace(20);
+      currentPage.drawText(line, { x: MARGIN, y, size: 16, font: fontBold, color: black });
+      y -= 20;
+    }
+    y -= 8;
+
+    // ======== AUTHORS ========
+    drawTextBlock(authorsStr, fontItalic, 11, gray, 15);
+    y -= 16;
+
+    // ======== ABSTRACT ========
+    currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+    ensureSpace(16);
+    currentPage.drawText('ABSTRACT', { x: MARGIN, y, size: 10, font: fontBold, color: maroon });
+    y -= 16;
+    drawTextBlock(abstract, fontRegular, 10, gray, 14, 0);
+    y -= 10;
+    currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+    y -= 20;
+
+    // ======== KEYWORDS ========
+    const keywords = metadata.keywords || [];
+    if (keywords.length > 0) {
+      ensureSpace(16);
+      currentPage.drawText('Keywords: ', { x: MARGIN, y, size: 9, font: fontBold, color: black });
+      const kwX = MARGIN + fontBold.widthOfTextAtSize('Keywords: ', 9);
+      currentPage.drawText(keywords.join(', '), { x: kwX, y, size: 9, font: fontItalic, color: gray });
+      y -= 20;
+    }
+
+    // ======== BODY TEXT ========
+    // Split the body into paragraphs and render them. Detect section headings (ALL CAPS lines or short lines).
+    const bodyParagraphs = bodyText.split(/\n\n+/);
+    for (const para of bodyParagraphs) {
+      const trimmed = para.trim();
+      if (!trimmed) continue;
+
+      // Heuristic: if the paragraph is short and mostly uppercase, treat as a section heading
+      const isHeading = trimmed.length < 120 && (
+        trimmed === trimmed.toUpperCase() ||
+        /^\d+\.\s+[A-Z]/.test(trimmed) ||
+        /^(INTRODUCTION|METHODOLOGY|METHODS|RESULTS|DISCUSSION|CONCLUSION|RECOMMENDATIONS|REFERENCES|LITERATURE REVIEW|ABSTRACT|ACKNOWLEDGEMENT|BACKGROUND|FINDINGS)/i.test(trimmed)
+      );
+
+      if (isHeading) {
+        y -= 8;
+        ensureSpace(20);
+        currentPage.drawText(trimmed.toUpperCase(), { x: MARGIN, y, size: 11, font: fontBold, color: black });
+        y -= 16;
+      } else {
+        drawTextBlock(trimmed, fontRegular, 10, black, 14, 0);
+        y -= 6;
+      }
+    }
+
+    // ======== FINAL PAGE FOOTER ========
+    const finalPageNum = pdfDoc.getPageCount();
+    currentPage.drawText(`— ${finalPageNum} —`, {
+      x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— ${finalPageNum} —`, 8) / 2,
+      y: 25, size: 8, font: fontRegular, color: lightGray
+    });
+
+    // Serialize & send
+    const pdfBytes = await pdfDoc.save();
+    const safeTitle = title.replace(/[^a-zA-Z0-9\s\-_]/g, '').substring(0, 100);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${safeTitle}_Published.pdf"`);
+    res.send(Buffer.from(pdfBytes));
+  } catch (error: any) {
+    console.error('Published PDF generation error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate published PDF' });
+  }
+});
+
 app.post('/api/validate/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -1470,6 +1697,24 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to format' });
+  }
+});
+
+app.post('/api/format/:id/save', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const { formattedHtml } = z.object({ formattedHtml: z.string() }).parse(req.body);
+    
+    // Update the database with the finalized HTML structure from Format Architect
+    await pool.query(
+      'UPDATE papers SET formatted_content = $1 WHERE id = $2 AND user_id = $3',
+      [formattedHtml, id, req.user.id]
+    );
+
+    res.json({ success: true, message: 'Formatted content securely saved.' });
+  } catch (error) {
+    console.error('Format Save endpoint error:', error);
+    res.status(500).json({ error: 'Failed to save formatted manuscript' });
   }
 });
 
@@ -2697,9 +2942,9 @@ app.get('/api/transactions', authenticateToken, async (req: any, res) => {
 app.get('/api/publications', authenticateToken, async (req: any, res) => {
   const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
   const query = isAdmin
-    ? `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.metadata, p.created_at, u.name as researcher_name, u.email as researcher_email 
+    ? `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.metadata, p.created_at, p.published_at, u.name as researcher_name, u.email as researcher_email 
        FROM papers p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC`
-    : `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.metadata, p.created_at, u.name as researcher_name, u.email as researcher_email 
+    : `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.metadata, p.created_at, p.published_at, u.name as researcher_name, u.email as researcher_email 
        FROM papers p JOIN users u ON p.user_id = u.id WHERE p.user_id = $1 ORDER BY p.created_at DESC`;
   const params = isAdmin ? [] : [req.user.id];
 

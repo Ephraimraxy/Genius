@@ -31,6 +31,8 @@ interface Publication {
   issue?: string;
   issn?: string;
   created_at: string;
+  published_at?: string;
+  metadata?: any;
   researcher_name?: string;
   researcher_email?: string;
 }
@@ -355,8 +357,8 @@ export default function PublicationRecords({ profile }: { profile: any }) {
           <FilePreviewModal
             isOpen={!!previewPub}
             onClose={() => setPreviewPub(null)}
-            file={`/api/papers/${previewPub.id}/file`}
-            fileName={`${previewPub.title}.${(previewPub.metadata?.mimetype === 'application/pdf' ? 'pdf' : (previewPub.metadata?.mimetype?.includes('word') ? 'docx' : 'pdf'))}`}
+            file={`/api/papers/${previewPub.id}/published-pdf`}
+            fileName={`${previewPub.title}.pdf`}
             publicationDetails={{
               issn: previewPub.issn,
               doi: previewPub.doi,

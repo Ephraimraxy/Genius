@@ -14,6 +14,17 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
   const handleSendToNext = async () => {
     setIsSending(true);
     try {
+      if (formattedHtml) {
+        await fetch(`/api/format/${activePaperId}/save`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({ formattedHtml })
+        });
+      }
+
       await fetch(`/api/papers/${activePaperId}/status`, {
         method: 'PUT',
         headers: {
