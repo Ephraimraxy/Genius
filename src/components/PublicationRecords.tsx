@@ -19,7 +19,7 @@ import {
   Printer
 } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
-import AcceptanceLetter from './AcceptanceLetter';
+// AcceptanceLetter import removed since we now use the PDF endpoint
 
 interface Publication {
   id: number;
@@ -324,8 +324,6 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                           <button 
                             onClick={() => {
                               setAcceptancePub(pub);
-                              // Small delay to ensure content is rendered before print dialog
-                              setTimeout(() => window.print(), 300);
                             }}
                             className="p-2 text-slate-400 hover:text-[#800000] hover:bg-red-50 rounded-xl transition-all"
                             title="Download Acceptance Letter">
@@ -341,17 +339,17 @@ export default function PublicationRecords({ profile }: { profile: any }) {
           </table>
         </div>
         
-        {/* Printable Acceptance Letter (Positioned off-screen to ensure images load, visible for printing) */}
-        <div className="opacity-0 pointer-events-none fixed -left-[9999px] print:opacity-100 print:pointer-events-auto print:left-0 print:inset-0 print:z-[9999] bg-white">
+        {/* Acceptance Letter PDF Preview Modal */}
+        <AnimatePresence>
           {acceptancePub && (
-            <AcceptanceLetter 
-              manuscriptId={acceptancePub.id}
-              title={acceptancePub.title}
-              authors={acceptancePub.authors}
-              recipientName={acceptancePub.researcher_name}
+            <FilePreviewModal
+              isOpen={!!acceptancePub}
+              onClose={() => setAcceptancePub(null)}
+              file={`/api/papers/${acceptancePub.id}/acceptance-letter`}
+              fileName={`Acceptance_Letter_${acceptancePub.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`}
             />
           )}
-        </div>
+        </AnimatePresence>
         <AnimatePresence>
         {previewPub && (
           <FilePreviewModal

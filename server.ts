@@ -1718,6 +1718,35 @@ app.post('/api/format/:id/save', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.get('/api/papers/:id/acceptance-letter', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query('SELECT p.*, u.name as researcher_name FROM papers p JOIN users u ON p.user_id = u.id WHERE p.id = $1', [id]);
+    const paper = result.rows[0];
+    
+    if (!paper) {
+      return res.status(404).json({ error: 'Paper not found' });
+    }
+    
+    // Admins can view any, normal users can only view their own
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin' && paper.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const titleStr = paper.title || 'Untitled';
+    const nameStr = paper.researcher_name || 'Researcher';
+    
+    const pdfBuffer = await generateAcceptanceLetterPDF(nameStr, titleStr, paper.id);
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Acceptance_Letter_${paper.id}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Acceptance letter generation error:', error);
+    res.status(500).json({ error: 'Failed to generate acceptance letter PDF' });
+  }
+});
+
 // ===== PDF Generation: Acceptance Letter =====
 async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTitle: string, manuscriptId: number): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
