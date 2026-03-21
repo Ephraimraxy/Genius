@@ -1190,6 +1190,27 @@ app.put('/api/papers/:id/status', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query('SELECT file_blob, title, metadata FROM papers WHERE id = $1', [id]);
+    const paper = result.rows[0];
+    
+    if (!paper || !paper.file_blob) {
+      return res.status(404).json({ error: 'File data not found on server' });
+    }
+
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+    const ext = metadata.mimetype === 'application/pdf' ? 'pdf' : 'docx';
+    
+    res.setHeader('Content-Type', metadata.mimetype || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${paper.title}.${ext}"`);
+    res.send(paper.file_blob);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/validate/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -1411,6 +1432,8 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
       issue: paper.issue || issRes.rows[0]?.value || '1',
       doi: paper.doi || '10.GMIJ/PENDING'
     };
+
+    console.log(`[DEBUG] Formatting paper ${id}: PaperVol=${paper.volume}, SettingVol=${volRes.rows[0]?.value}, FinalVol=${branding.volume}`);
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -2659,9 +2682,9 @@ app.get('/api/transactions', authenticateToken, async (req: any, res) => {
 app.get('/api/publications', authenticateToken, async (req: any, res) => {
   const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
   const query = isAdmin
-    ? `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.created_at, u.name as researcher_name, u.email as researcher_email 
+    ? `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.metadata, p.created_at, u.name as researcher_name, u.email as researcher_email 
        FROM papers p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC`
-    : `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.created_at, u.name as researcher_name, u.email as researcher_email 
+    : `SELECT p.id, p.title, p.authors, p.status, p.doi, p.volume, p.issue, p.issn, p.metadata, p.created_at, u.name as researcher_name, u.email as researcher_email 
        FROM papers p JOIN users u ON p.user_id = u.id WHERE p.user_id = $1 ORDER BY p.created_at DESC`;
   const params = isAdmin ? [] : [req.user.id];
 

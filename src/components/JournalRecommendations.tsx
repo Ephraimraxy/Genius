@@ -26,6 +26,30 @@ export default function JournalRecommendations({ activePaperId, setActivePaperId
     }
   }, [activePaperId]);
 
+  const handleDownloadCredentials = () => {
+    if (!publishedInfo) return;
+    const content = `GENIUS RESEARCH REGISTRY - PUBLICATION CREDENTIALS
+--------------------------------------------------
+Title: ${publishedInfo.title || 'Untitled'}
+DOI: ${publishedInfo.doi}
+Registry URL: ${publishedInfo.url}
+Status: Published & Verified
+Verification Date: ${new Date().toLocaleString()}
+--------------------------------------------------
+This document serves as cryptographic proof of publication 
+on the Genius Global Network.`;
+
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Publication_Credentials_${publishedInfo.doi.replace(/\//g, '_')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handlePublish = async () => {
     if (!activePaperId) return;
     setIsPublishing(true);
@@ -109,7 +133,10 @@ export default function JournalRecommendations({ activePaperId, setActivePaperId
               </div>
               <p className="text-xs font-bold text-slate-500">Live on Global Genius Nodes</p>
             </div>
-            <button className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-sm font-bold hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20">
+            <button 
+              onClick={handleDownloadCredentials}
+              className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-sm font-bold hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20"
+            >
               Download Credentials
             </button>
           </div>

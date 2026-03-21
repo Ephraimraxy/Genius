@@ -54,8 +54,8 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
   useEffect(() => {
     if (!isOpen) return;
     
-    const name = typeof file === 'string' ? (fileName || file.split('/').pop() || 'file') : file.name;
-    const ext = getExtension(name);
+    const name = typeof file === 'string' ? (fileName || (file.split('/').includes('file') ? 'paper.pdf' : (file.split('/').pop() || 'file'))) : file.name;
+    const ext = fileName ? getExtension(fileName) : getExtension(name);
     setFileType(ext);
     setLoading(true);
     setError(null);

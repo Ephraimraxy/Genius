@@ -355,19 +355,19 @@ export default function PublicationRecords({ profile }: { profile: any }) {
         </div>
         <AnimatePresence>
         {previewPub && (
-          <FilePreviewModal 
-            isOpen={true}
+          <FilePreviewModal
+            isOpen={!!previewPub}
             onClose={() => setPreviewPub(null)}
             file={`/api/papers/${previewPub.id}/file`}
-            fileName={`${previewPub.title.substring(0, 30)}.pdf`}
-            publicationDetails={previewPub.status === 'published' ? {
-              title: previewPub.title,
-              authors: previewPub.authors,
+            fileName={`${previewPub.title}.${(previewPub.metadata?.mimetype === 'application/pdf' ? 'pdf' : (previewPub.metadata?.mimetype?.includes('word') ? 'docx' : 'pdf'))}`}
+            publicationDetails={{
               issn: previewPub.issn,
               doi: previewPub.doi,
               volume: previewPub.volume,
-              issue: previewPub.issue
-            } : undefined}
+              issue: previewPub.issue,
+              title: previewPub.title,
+              authors: previewPub.authors
+            }}
           />
         )}
       </AnimatePresence>
