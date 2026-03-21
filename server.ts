@@ -1387,53 +1387,95 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
       currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
       y -= 25;
 
-      // Body Traversal
-      $('body').children().each((_, el) => {
-        const tag = el.name;
-        const txt = $(el).text().trim();
-        if (!txt && tag !== 'table') return;
+    const processNode = async (node: any) => {
+      const tag = node.name;
+      const $node = $(node);
 
-        if (tag === 'h1' || tag === 'h2' || tag === 'h3') {
-          y -= 10;
-          ensureSpace(20);
-          currentPage.drawText(sanitizePdfText(txt).toUpperCase(), { x: MARGIN, y, size: 11, font: fontBold, color: black });
-          y -= 16;
-        } else if (tag === 'table') {
-          y -= 10;
-          ensureSpace(30);
-          // Table Top Border
-          currentPage.drawLine({ start: { x: MARGIN + 10, y: y + 5 }, end: { x: PAGE_W - MARGIN - 10, y: y + 5 }, thickness: 1, color: black });
-          
-          $(el).find('tr').each((idx, tr) => {
-            const cells = $(tr).find('td, th').map((_, td) => $(td).text().trim()).get();
-            if (cells.length === 0) return;
-            const rTxt = cells.join('    |    ');
-            const isHeader = idx === 0 || $(tr).find('th').length > 0;
-            
-            drawTextBlock(rTxt, isHeader ? fontBold : fontRegular, 8.5, black, 12, 15);
-            
-            // Row Divider
-            currentPage.drawLine({ 
-              start: { x: MARGIN + 10, y: y + 2 }, 
-              end: { x: PAGE_W - MARGIN - 10, y: y + 2 }, 
-              thickness: 0.3, color: lightGray 
-            });
-          });
-          y -= 15;
-        } else if (tag === 'figure' || tag === 'img' || $(el).hasClass('academic-figure')) {
-          y -= 10;
-          ensureSpace(40);
-          const figText = `[ ${txt || 'Figure / Illustration'} ]`;
-          currentPage.drawText(figText, { 
-            x: PAGE_W / 2 - fontItalic.widthOfTextAtSize(figText, 9) / 2, 
-            y, size: 9, font: fontItalic, color: gray 
-          });
-          y -= 20;
-        } else {
-          drawTextBlock(txt, fontRegular, 10, black, 14);
+      if (!tag && node.type === 'text') {
+        const text = node.data.trim();
+        if (text && text.length > 0) {
+          drawTextBlock(text, fontRegular, 10, black, 14);
           y -= 6;
         }
-      });
+        return;
+      }
+
+      if (/^h[1-6]$/.test(tag)) {
+        const text = $node.text().trim();
+        if (text) {
+          y -= 12;
+          ensureSpace(25);
+          currentPage.drawText(sanitizePdfText(text).toUpperCase(), { x: MARGIN, y, size: 10.5, font: fontBold, color: black });
+          y -= 16;
+        }
+      } else if (tag === 'p') {
+        const text = $node.text().trim();
+        if (text) {
+          drawTextBlock(text, fontRegular, 10, black, 14);
+          y -= 8;
+        }
+      } else if (tag === 'table') {
+        y -= 10;
+        ensureSpace(40);
+        const rows = $node.find('tr').get();
+        if (rows.length > 0) {
+          // Calculate column widths based on the first row
+          const firstRowCells = $(rows[0]).find('td, th').get();
+          const colCount = Math.max(firstRowCells.length, 1);
+          const colW = contentW / colCount;
+
+          // Draw Table Top
+          currentPage.drawLine({ start: { x: MARGIN, y: y + 5 }, end: { x: PAGE_W - MARGIN, y: y + 5 }, thickness: 1, color: black });
+
+          for (const row of rows) {
+            const cells = $(row).find('td, th').map((_, td) => $(td).text().trim()).get();
+            let rowMaxLines = 1;
+            const cellWrappedStrings = cells.map(c => {
+               const lines = wrapText(c, fontRegular, 8.5, colW - 10);
+               rowMaxLines = Math.max(rowMaxLines, lines.length);
+               return lines;
+            });
+
+            const rowHeight = (rowMaxLines * 11) + 6;
+            ensureSpace(rowHeight + 5);
+
+            cells.forEach((_, idx) => {
+              const cellX = MARGIN + (idx * colW);
+              const lines = cellWrappedStrings[idx];
+              lines.forEach((line, lIdx) => {
+                currentPage.drawText(line, { x: cellX + 5, y: y - (lIdx * 11), size: 8.5, font: fontRegular, color: black });
+              });
+            });
+
+            y -= rowHeight;
+            currentPage.drawLine({ start: { x: MARGIN, y: y + 2 }, end: { x: PAGE_W - MARGIN, y: y + 2 }, thickness: 0.3, color: lightGray });
+          }
+        }
+        y -= 15;
+      } else if (tag === 'figure' || tag === 'img' || $node.hasClass('academic-figure')) {
+        y -= 10;
+        ensureSpace(40);
+        const figHeading = $node.find('figcaption, .caption').text().trim() || $node.text().trim() || 'Figure';
+        const figRef = `[ ${sanitizePdfText(figHeading)} ]`;
+        currentPage.drawText(figRef, { 
+          x: PAGE_W / 2 - fontItalic.widthOfTextAtSize(figRef, 9) / 2, 
+          y, size: 9, font: fontItalic, color: gray 
+        });
+        y -= 20;
+      } else {
+        // Recurse into containers (div, section, article, span, etc.)
+        const children = $node.contents().get();
+        for (const child of children) {
+          await processNode(child);
+        }
+      }
+    };
+
+    // Begin Recursive Traversal from Body
+    const bodyContents = $('body').contents().get();
+    for (const node of bodyContents) {
+      await processNode(node);
+    }
     } else {
       // Fallback
       drawTextBlock(paper.content || '', fontRegular, 10, black, 14);
@@ -1683,6 +1725,22 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
 
     console.log(`[DEBUG] Formatting paper ${id}: PaperVol=${paper.volume}, SettingVol=${volRes.rows[0]?.value}, FinalVol=${branding.volume}`);
 
+    // High-fidelity structural extraction for the AI
+    let sourceContent = paper.content;
+    if (paper.file_blob) {
+      try {
+        // Only attempt mammoth if it looks like a DOCX (buffer starts with PK)
+        if (paper.file_blob.slice(0, 2).toString() === 'PK') {
+          const { value } = await mammoth.convertToHtml({ buffer: paper.file_blob });
+          if (value && value.trim().length > 100) {
+            sourceContent = value;
+          }
+        }
+      } catch (err) {
+        console.warn('Structural HTML extraction failed, falling back to raw text');
+      }
+    }
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       max_tokens: 16384,
@@ -1691,21 +1749,23 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           role: 'system', 
           content: `You are an expert academic paper formatter. Format the given paper content into professional, production-ready HTML according to the ${style.toUpperCase()} style.
           
-          RULES:
-          1. STRUCTURE: Include Title, Authors, Abstract, Keywords, and all content sections (Intro, Methods, etc.).
-          2. TABLES: Identify any tabular data and render as clean <table> tags with professional styling (center aligned, borders, padding).
-          3. FIGURES: Identify image placeholders or figure mentions and wrap them in <div class="academic-figure"> tags.
-          4. REFERENCES: Format citations and the reference list strictly according to ${style} style.
-          5. LAYOUT: Ensure the output is SEMANTIC HTML. Do NOT include logos or journal headers (those are handled by the system wrapper).
-          6. PAGE BREAKS: Use <div class="page-break"> where natural section breaks occur.
-          7. ABSOLUTE PRECISION: No content overlap. All text must be clearly separated and "fitted" perfectly.`
+          CRITICAL RULES:
+          1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the JSON or HTML in triple backticks (\`\`\`html).
+          2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead>.
+          3. FIDELITY: You MUST preserve 100% of the manuscript text. Do NOT truncate or summarize a single sentence.
+          4. STRUCTURE: Use semantic <section>, <h1>, <h2>, and <p> tags.
+          5. FIGURES: Wrap illustrations in <div class="academic-figure">.`
         },
-        { role: 'user', content: `Manuscript Title: ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nFull Text:\n\n${paper.content}` }
+        { role: 'user', content: `Manuscript Title: ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
       ]
     });
 
+    // Strip any lingering markdown backticks if the AI failed to follow instruction 1
+    let formattedHtml = response.choices[0]?.message?.content || '';
+    formattedHtml = formattedHtml.replace(/^```html\n?/, '').replace(/\n?```$/, '');
+
     res.json({ 
-      formattedHtml: response.choices[0]?.message?.content || '',
+      formattedHtml,
       branding 
     });
   } catch (error) {
