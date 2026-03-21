@@ -121,11 +121,33 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
     processFile();
   }, [file, isOpen, fileName]);
 
-  const handleDownload = () => {
-    const url = typeof file === 'string' ? file : URL.createObjectURL(file);
+  const handleDownload = async () => {
+    const downloadName = typeof file === 'string' ? (fileName || 'download') : file.name;
+    let url: string;
+
+    if (typeof file === 'string') {
+      // For API URLs, use the already-fetched blob or fetch again with auth
+      if (previewBlobUrl) {
+        url = previewBlobUrl;
+      } else {
+        try {
+          const response = await fetch(file, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          });
+          if (!response.ok) throw new Error('Download failed');
+          const blob = await response.blob();
+          url = URL.createObjectURL(blob);
+        } catch {
+          return; // Silently fail if download fails
+        }
+      }
+    } else {
+      url = URL.createObjectURL(file);
+    }
+
     const link = document.createElement('a');
     link.href = url;
-    link.download = typeof file === 'string' ? (fileName || 'download') : file.name;
+    link.download = downloadName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

@@ -2342,12 +2342,15 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata || '{}') : (paper.metadata || {}));
     const isOwnerResult = await pool.query('SELECT user_id FROM papers WHERE id = $1', [id]);
     const isOwner = isOwnerResult.rows[0]?.user_id === req.user.id;
     const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
 
     if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Unauthorized' });
+
+    if (!paper.file_blob) {
+      return res.status(404).json({ error: 'PDF file not available for this paper. It may have been uploaded before file storage was enabled.' });
+    }
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
