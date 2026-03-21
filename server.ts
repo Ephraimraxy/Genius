@@ -215,6 +215,7 @@ async function initDB() {
       volume TEXT,
       issue TEXT,
       file_blob BYTEA,
+      published_at TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
@@ -325,6 +326,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE papers ADD COLUMN volume TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN issue TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN file_blob BYTEA'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN published_at TIMESTAMP'); } catch (e) { }
   
   try { await pool.query('ALTER TABLE exams ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE exams ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
@@ -1185,8 +1187,8 @@ app.put('/api/papers/:id/status', authenticateToken, async (req: any, res) => {
     const { status } = req.body;
     await pool.query('UPDATE papers SET status = $1 WHERE id = $2 AND user_id = $3', [status, id, req.user.id]);
     res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update status' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1203,8 +1205,11 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const ext = metadata.mimetype === 'application/pdf' ? 'pdf' : 'docx';
     
+    // Sanitize filename to prevent header injection or invalid characters
+    const safeTitle = (paper.title || 'manuscript').replace(/[^a-zA-Z0-9\s-_]/g, '').substring(0, 100);
+    
     res.setHeader('Content-Type', metadata.mimetype || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${paper.title}.${ext}"`);
+    res.setHeader('Content-Disposition', `inline; filename="${safeTitle}.${ext}"`);
     res.send(paper.file_blob);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1430,7 +1435,8 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
       issn: paper.issn || issnRes.rows[0]?.value || '2971-7760',
       volume: paper.volume || volRes.rows[0]?.value || '1',
       issue: paper.issue || issRes.rows[0]?.value || '1',
-      doi: paper.doi || '10.GMIJ/PENDING'
+      doi: paper.doi || '10.GMIJ/PENDING',
+      date: (paper.published_at || paper.created_at || new Date()).toLocaleDateString('en-GB')
     };
 
     console.log(`[DEBUG] Formatting paper ${id}: PaperVol=${paper.volume}, SettingVol=${volRes.rows[0]?.value}, FinalVol=${branding.volume}`);
@@ -1744,7 +1750,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       console.log(`Journal: Auto-shifted to Volume ${finalVolume}, Issue ${finalIssue} (Reached ${maxManuscriptsPerIssue}-manuscript limit)`);
     }
 
-    await pool.query('UPDATE papers SET status = $1, doi = $2, issn = $3, volume = $4, issue = $5 WHERE id = $6', 
+    await pool.query('UPDATE papers SET status = $1, doi = $2, issn = $3, volume = $4, issue = $5, published_at = CURRENT_TIMESTAMP WHERE id = $6', 
       ['published', doi, issn, finalVolume.toString(), finalIssue.toString(), id]
     );
 
@@ -2181,7 +2187,7 @@ app.get('/article/:doi(*)', async (req, res) => {
       <title>${metadata.title} - Genius App</title>
       <meta name="citation_title" content="${metadata.title}">
       ${(metadata.authors || []).map((a: string) => `<meta name="citation_author" content="${a}">`).join('\n      ')}
-      <meta name="citation_publication_date" content="${new Date(paper.created_at).getFullYear()}">
+      <meta name="citation_publication_date" content="${new Date(paper.published_at || paper.created_at).getFullYear()}">
       <meta name="citation_journal_title" content="Genius Open Access">
       <meta name="citation_issn" content="${process.env.JOURNAL_ISSN || '0000-0000'}">
       <meta name="citation_doi" content="${paper.doi}">
@@ -2223,7 +2229,7 @@ app.get('/article/:doi(*)', async (req, res) => {
       
       <div class="metadata">
         <p><strong>DOI:</strong> ${paper.doi}</p>
-        <p><strong>Published:</strong> ${new Date(paper.created_at).toLocaleDateString()}</p>
+        <p><strong>Published:</strong> ${new Date(paper.published_at || paper.created_at).toLocaleDateString()}</p>
         <p><strong>Publisher:</strong> Genius Open Access</p>
         <p><strong>ISSN:</strong> ${process.env.JOURNAL_ISSN || '0000-0000'}</p>
       </div>
@@ -2402,7 +2408,14 @@ app.put('/api/admin/papers/:id/status', authenticateToken, async (req: any, res)
   if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
   try {
     const { id } = idParamSchema.parse(req.params);
-    await pool.query('UPDATE papers SET status = $1 WHERE id = $2', [status, id]);
+    // Update paper status and published date
+    let updateQuery = 'UPDATE papers SET status = $1';
+    const queryParams = [status];
+    if (status === 'published') {
+      updateQuery += ', published_at = CURRENT_TIMESTAMP';
+    }
+    queryParams.push(id);
+    await pool.query(`${updateQuery} WHERE id = $${queryParams.length}`, queryParams);
     const updated = await pool.query(`
       SELECT p.id, p.title, p.status, p.doi, p.created_at, u.name as researcher_name, u.email as researcher_email
       FROM papers p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = $1

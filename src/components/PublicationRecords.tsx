@@ -201,8 +201,9 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Date</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Vol / Issue</th>
-                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">DOI</th>
-                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">ISSN</th>
+                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">DOI</th>
+                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Published Date</th>
+                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">ISSN</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Actions</th>
               </tr>
             </thead>
@@ -224,11 +225,11 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 </tr>
               ) : (
                 filteredPubs.map((pub, idx) => (
-                  <motion.tr 
+                  <motion.tr
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: idx * 0.05 }}
-                    key={pub.id} 
+                    key={pub.id}
                     className="hover:bg-slate-50/50 transition-colors group"
                   >
                     <td className="px-8 py-6">
@@ -237,7 +238,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                         <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">ID: #{pub.id}</p>
                       </div>
                     </td>
-                    
+
                     {isAdmin && (
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-3">
@@ -261,7 +262,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                           <span className="text-slate-900">{getStatusProgress(pub.status)}%</span>
                         </div>
                         <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                          <motion.div 
+                          <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${getStatusProgress(pub.status)}%` }}
                             className={`h-full ${getStatusColor(pub.status)} transition-all duration-1000 ease-out shadow-sm`}
@@ -272,8 +273,8 @@ export default function PublicationRecords({ profile }: { profile: any }) {
 
                     <td className="px-8 py-6">
                       <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
-                        pub.status === 'published' 
-                        ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+                        pub.status === 'published'
+                        ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
                         : pub.status === 'ready'
                         ? 'bg-indigo-50 text-indigo-600 border-indigo-100 font-black animate-pulse'
                         : 'bg-slate-50 text-slate-500 border-slate-100'
@@ -294,18 +295,23 @@ export default function PublicationRecords({ profile }: { profile: any }) {
 
                     <td className="px-8 py-6">
                       {pub.doi ? (
-                        <a 
+                        <a
                           href={pub.doi.startsWith('10.GMIJ') ? `/article/${pub.doi}` : `https://doi.org/${pub.doi}`}
-                          target="_blank" 
+                          target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-[10px] font-black text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-widest"
+                          className="text-[#800000] font-mono text-[10px] font-black hover:underline tracking-tight"
                         >
                           {pub.doi}
-                          <ArrowUpRight size={12} />
                         </a>
                       ) : (
-                        <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">Not Assigned</span>
+                        <span className="text-[10px] font-bold text-slate-300">PENDING</span>
                       )}
+                    </td>
+
+                    <td className="px-8 py-6">
+                      <p className="text-xs font-bold text-slate-500 whitespace-nowrap">
+                        {pub.published_at ? new Date(pub.published_at).toLocaleDateString('en-GB') : (pub.status === 'published' ? new Date(pub.created_at).toLocaleDateString('en-GB') : '—')}
+                      </p>
                     </td>
                     <td className="px-8 py-6">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
