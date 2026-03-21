@@ -1251,9 +1251,15 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
     if (paper.formatted_content) {
       const $ = cheerio.load(paper.formatted_content);
       // Append newlines to block elements to preserve structure when extracting text
-      $('p, h1, h2, h3, h4, h5, h6, li, br, div').append('\\n');
-      bodyText = $.text().replace(/\\n\\s*\\n/g, '\\n\\n').trim();
+      $('p, h1, h2, h3, h4, h5, h6, li, br, div').append('\n');
+      bodyText = $.text().replace(/\n\s*\n/g, '\n\n').trim();
     }
+
+    // Sanitize all text for standard PDF fonts to prevent 500 crashes
+    const safeTitle = sanitizePdfText(title);
+    const safeAuthors = sanitizePdfText(authorsStr);
+    const safeAbstract = sanitizePdfText(abstract);
+    const safeBody = sanitizePdfText(bodyText);
 
     // Build PDF
     const pdfDoc = await PDFDocument.create();
@@ -1371,7 +1377,7 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
     y -= 24;
 
     // ======== TITLE ========
-    const titleLines = wrapText(title.toUpperCase(), fontBold, 16, contentW);
+    const titleLines = wrapText(safeTitle.toUpperCase(), fontBold, 16, contentW);
     for (const line of titleLines) {
       ensureSpace(20);
       currentPage.drawText(line, { x: MARGIN, y, size: 16, font: fontBold, color: black });
@@ -1380,7 +1386,7 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
     y -= 8;
 
     // ======== AUTHORS ========
-    drawTextBlock(authorsStr, fontItalic, 11, gray, 15);
+    drawTextBlock(safeAuthors, fontItalic, 11, gray, 15);
     y -= 16;
 
     // ======== ABSTRACT ========
@@ -1388,7 +1394,7 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
     ensureSpace(16);
     currentPage.drawText('ABSTRACT', { x: MARGIN, y, size: 10, font: fontBold, color: maroon });
     y -= 16;
-    drawTextBlock(abstract, fontRegular, 10, gray, 14, 0);
+    drawTextBlock(safeAbstract, fontRegular, 10, gray, 14, 0);
     y -= 10;
     currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
     y -= 20;
@@ -1405,7 +1411,7 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
 
     // ======== BODY TEXT ========
     // Split the body into paragraphs and render them. Detect section headings (ALL CAPS lines or short lines).
-    const bodyParagraphs = bodyText.split(/\n\n+/);
+    const bodyParagraphs = safeBody.split(/\n\n+/);
     for (const para of bodyParagraphs) {
       const trimmed = para.trim();
       if (!trimmed) continue;
@@ -1437,9 +1443,9 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
 
     // Serialize & send
     const pdfBytes = await pdfDoc.save();
-    const safeTitle = title.replace(/[^a-zA-Z0-9\s\-_]/g, '').substring(0, 100);
+    const fileNameTitle = safeTitle.replace(/[^a-zA-Z0-9\s\-_]/g, '').substring(0, 100);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${safeTitle}_Published.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="${fileNameTitle}_Published.pdf"`);
     res.send(Buffer.from(pdfBytes));
   } catch (error: any) {
     console.error('Published PDF generation error:', error);
@@ -1748,6 +1754,17 @@ app.get('/api/papers/:id/acceptance-letter', authenticateToken, async (req: any,
     res.status(500).json({ error: 'Failed to generate acceptance letter PDF' });
   }
 });
+
+// Helper to sanitize text for standard PDF fonts (replace unsupported characters to prevent 500 errors)
+const sanitizePdfText = (text: string): string => {
+  if (!text) return '';
+  return text
+    .replace(/[\u201C\u201D]/g, '"') // Fancy double quotes
+    .replace(/[\u2018\u2019]/g, "'") // Fancy single quotes
+    .replace(/[\u2013\u2014]/g, '-') // En and Em dashes
+    .replace(/\u00A0/g, ' ')         // Non-breaking space
+    .replace(/[^\x00-\x7F]/g, '?');  // Fallback for everything else non-ASCII
+};
 
 // ===== PDF Generation: Acceptance Letter =====
 async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTitle: string, manuscriptId: number): Promise<Buffer> {
