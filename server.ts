@@ -13,6 +13,8 @@ import multer from 'multer';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
+const fs = require('fs');
+const path = require('path');
 import mammoth from 'mammoth';
 import cors from 'cors';
 import OpenAI from 'openai';
@@ -1759,24 +1761,63 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   const black = rgb(0, 0, 0);
   const gray = rgb(0.4, 0.4, 0.4);
   const margin = 60;
-  let y = height - 60;
+  let y = height - 50;
 
-  const refNumber = `GMIJP/${new Date().getFullYear()}/${manuscriptId.toString().padStart(4, '0')}`;
-  const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  // Load and embed logos
+  try {
+    const logoPathLeft = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
+    const logoPathRight = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
+    
+    if (fs.existsSync(logoPathLeft)) {
+      const logoLeftBytes = fs.readFileSync(logoPathLeft);
+      const logoLeft = await pdfDoc.embedJpg(logoLeftBytes);
+      page.drawImage(logoLeft, { x: margin, y: y - 50, width: 50, height: 50 });
+    }
+    
+    if (fs.existsSync(logoPathRight)) {
+      const logoRightBytes = fs.readFileSync(logoPathRight);
+      const logoRight = await pdfDoc.embedJpg(logoRightBytes);
+      page.drawImage(logoRight, { x: width - margin - 50, y: y - 50, width: 50, height: 50 });
+    }
+  } catch (err) {
+    console.error('Error embedding logos in acceptance letter:', err);
+  }
 
-  // Header
-  page.drawText('GENIUS MULTIDISCIPLINARY', { x: margin, y, size: 14, font: fontBold, color: maroon });
-  y -= 18;
-  page.drawText('INTERNATIONAL JOURNAL PUBLICATION', { x: margin, y, size: 14, font: fontBold, color: maroon });
-  y -= 16;
-  page.drawText('Nasarawa State University, Keffi', { x: margin, y, size: 10, font, color: gray });
-  y -= 6;
+  // Header Title
+  const title1 = 'GENIUS MULTIDISCIPLINARY';
+  const title2 = 'INTERNATIONAL JOURNAL PUBLICATION';
+  const uniNameText = 'Nasarawa State University, Keffi';
+
+  page.drawText(title1, { 
+    x: width / 2 - fontBold.widthOfTextAtSize(title1, 14) / 2, 
+    y: y - 15, 
+    size: 14, 
+    font: fontBold, 
+    color: maroon 
+  });
+  page.drawText(title2, { 
+    x: width / 2 - fontBold.widthOfTextAtSize(title2, 14) / 2, 
+    y: y - 35, 
+    size: 14, 
+    font: fontBold, 
+    color: maroon 
+  });
+  page.drawText(uniNameText, { 
+    x: width / 2 - font.widthOfTextAtSize(uniNameText, 10) / 2, 
+    y: y - 52, 
+    size: 10, 
+    font: font, 
+    color: gray 
+  });
+
+  y -= 65;
   page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: 2, color: maroon });
   y -= 30;
 
-  // Date & Reference
+  const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // Date & Official Acceptance
   page.drawText(currentDate, { x: margin, y, size: 10, font: fontBold, color: black });
-  page.drawText(`Ref: ${refNumber}`, { x: width - margin - font.widthOfTextAtSize(`Ref: ${refNumber}`, 9), y, size: 9, font, color: gray });
   y -= 14;
   page.drawText('OFFICIAL ACCEPTANCE', { x: margin, y, size: 9, font: fontBold, color: rgb(0.02, 0.59, 0.4) });
   y -= 30;
