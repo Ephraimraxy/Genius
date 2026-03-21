@@ -219,7 +219,7 @@ on the Genius Global Network.`;
               className="mx-auto flex items-center justify-center gap-3 bg-indigo-600 hover:bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
             >
               {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={18} />} 
-              {isPublishing ? 'Broadcasting...' : 'Force Direct Broadcast'}
+              {isPublishing ? 'Broadcasting...' : 'Submit to Global Genius Registry'}
             </button>
           </div>
         ) : (

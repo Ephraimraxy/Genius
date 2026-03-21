@@ -319,10 +319,11 @@ export default function Sidebar({
                  { id: 'upload', label: 'Smart Upload' },
                  { id: 'writing', label: 'AI Writing Hub' },
                  { id: 'formatting', label: 'Format Architect' },
+                 { id: 'references', label: 'Reference Intel' },
                  { id: 'integrity', label: 'Integrity Check' }
                ].map((step, idx) => {
-                 const stepIdx = ['upload', 'writing', 'formatting', 'integrity'].indexOf(step.id);
-                 const currentIdx = ['upload', 'writing', 'formatting', 'integrity'].indexOf(activeTab);
+                 const stepIdx = ['upload', 'writing', 'formatting', 'references', 'integrity'].indexOf(step.id);
+                 const currentIdx = ['upload', 'writing', 'formatting', 'references', 'integrity'].indexOf(activeTab);
                  const isCompleted = stepIdx < currentIdx;
                  const isActiveStep = step.id === activeTab;
                  
