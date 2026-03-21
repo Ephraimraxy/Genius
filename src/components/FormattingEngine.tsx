@@ -1,10 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, FileText, Download, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight } from 'lucide-react'; // UI Icons
+import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight } from 'lucide-react'; // UI Icons
 import WaitingDraftsQueue from './WaitingDraftsQueue';
-
-// @ts-ignore
-import html2pdf from 'html2pdf.js';
 
 export default function FormattingEngine({ activePaperId, setActivePaperId }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void }) {
   const [selectedStyle, setSelectedStyle] = useState('ieee');
@@ -12,7 +9,6 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
   const [formattedHtml, setFormattedHtml] = useState<string | null>(null);
   const [branding, setBranding] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
   const handleSendToNext = async () => {
@@ -34,62 +30,6 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
     }
   };
 
-  const handleDownloadPDF = () => {
-    const element = document.getElementById('production-paper-preview');
-    if (!element) return;
-    
-    setIsDownloading(true);
-    const opt = {
-      margin:       [0.5, 0.5, 0.5, 0.5] as [number, number, number, number],
-      filename:     `GMIJP_Publication_${activePaperId}.pdf`,
-      image:        { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas:  { 
-        scale: 2, 
-        useCORS: true,
-        onclone: (clonedDoc: Document) => {
-          // Robustly strip oklch from the cloned document before html2canvas parses it
-          const elements = clonedDoc.getElementsByTagName("*");
-          for (let i = 0; i < elements.length; i++) {
-            const el = elements[i] as HTMLElement;
-            
-            try {
-              const styles = window.getComputedStyle(el);
-              // Traverse ALL physical style properties that might contain colors
-              const props = ['color', 'backgroundColor', 'borderColor', 'outlineColor', 'fill', 'stroke', 'boxShadow', 'textShadow'];
-              
-              props.forEach(prop => {
-                // Check both inline and computed (computed is what html2canvas usually reads)
-                const val = el.style.getPropertyValue(prop) || styles.getPropertyValue(prop);
-                
-                if (val && val.toString().includes('oklch')) {
-                  // Fallback mapping
-                  if (prop === 'backgroundColor') el.style.setProperty(prop, '#ffffff', 'important');
-                  else if (prop.toLowerCase().includes('border') || prop.toLowerCase().includes('shadow')) el.style.setProperty(prop, '#e2e8f0', 'important');
-                  else el.style.setProperty(prop, '#000000', 'important');
-                }
-              });
-
-              // Also check for background-image which might contain oklch gradients
-              const bgImg = el.style.backgroundImage || styles.backgroundImage;
-              if (bgImg && bgImg.includes('oklch')) {
-                el.style.setProperty('background-image', 'none', 'important');
-              }
-            } catch (e) {
-              // Silently skip if style access fails
-            }
-          }
-        }
-      },
-      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' as const }
-    };
-
-    html2pdf().set(opt).from(element).save().then(() => {
-      setIsDownloading(false);
-    }).catch((err: any) => {
-      console.error('PDF generation failed:', err);
-      setIsDownloading(false);
-    });
-  };
 
   const styles = [
     { id: 'ieee', name: 'IEEE Standards', desc: 'Double-column, strictly numbered citations for engineering and tech.', icon: Layout },
@@ -277,7 +217,7 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
                 <div className="mt-6 pt-6 border-t border-slate-100">
                   <button 
                     onClick={handleSendToNext}
-                    disabled={isDownloading || isSending}
+                    disabled={isSending}
                     className="group w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl shadow-2xl shadow-emerald-900/20 font-black tracking-widest uppercase text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                   >
                     {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Move to Assistant'}
@@ -385,28 +325,7 @@ export default function FormattingEngine({ activePaperId, setActivePaperId }: { 
               )}
             </motion.div>
 
-            <AnimatePresence>
-              {formattedHtml && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="absolute bottom-10 right-10 z-30 print:hidden"
-                >
-                  <button 
-                    onClick={handleDownloadPDF}
-                    disabled={isDownloading || isSending}
-                    className="group bg-slate-900/90 backdrop-blur-md hover:bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl border border-white/10 font-bold flex items-center justify-center gap-3 transition-all hover:scale-110 active:scale-90 disabled:opacity-50"
-                  >
-                    {isDownloading ? (
-                      <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                      <Download size={18} className="group-hover:translate-y-0.5 transition-transform" />
-                    )}
-                    {isDownloading ? 'Processing...' : 'Export'}
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+
           </div>
         </div>
       </div>
