@@ -1246,27 +1246,12 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
     try { authorsList = typeof authorsRaw === 'string' ? JSON.parse(authorsRaw) : (authorsRaw || []); } catch { authorsList = [String(authorsRaw)]; }
     const authorsStr = authorsList.map((a: any) => typeof a === 'string' ? a : a.name).join(', ');
     const abstract = paper.abstract || metadata.abstract || '';
-    
-    let bodyText = paper.content || '';
-    if (paper.formatted_content) {
-      const $ = cheerio.load(paper.formatted_content);
-      // Append newlines to block elements to preserve structure when extracting text
-      $('p, h1, h2, h3, h4, h5, h6, li, br, div').append('\n');
-      bodyText = $.text().replace(/\n\s*\n/g, '\n\n').trim();
-    }
-
-    // Sanitize all text for standard PDF fonts to prevent 500 crashes
-    const safeTitle = sanitizePdfText(title);
-    const safeAuthors = sanitizePdfText(authorsStr);
-    const safeAbstract = sanitizePdfText(abstract);
-    const safeBody = sanitizePdfText(bodyText);
 
     // Build PDF
     const pdfDoc = await PDFDocument.create();
     const fontRegular = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
     const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
-    const fontBoldItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
 
     const PAGE_W = 595; // A4
     const PAGE_H = 842;
@@ -1278,10 +1263,72 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
     const lightGray = rgb(0.6, 0.6, 0.6);
     const indigo = rgb(0.26, 0.27, 0.53);
 
-    // Helper: word-wrap text and return lines
+    // Dynamic Logo Loading
+    let logoLeft: any = null;
+    let logoRight: any = null;
+    try {
+      const lpL = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
+      const lpR = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
+      if (fs.existsSync(lpL)) logoLeft = await pdfDoc.embedJpg(fs.readFileSync(lpL));
+      if (fs.existsSync(lpR)) logoRight = await pdfDoc.embedJpg(fs.readFileSync(lpR));
+    } catch (e) { console.error('Logo load failed:', e); }
+
+    // Helper: Draw professional journal header on any page
+    const drawPageHeader = (p: any) => {
+      // Branding Header
+      if (logoLeft) p.drawImage(logoLeft, { x: MARGIN, y: PAGE_H - 45, width: 35, height: 35 });
+      if (logoRight) p.drawImage(logoRight, { x: PAGE_W - MARGIN - 35, y: PAGE_H - 45, width: 35, height: 35 });
+
+      p.drawText('GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL', {
+        x: PAGE_W / 2 - fontBold.widthOfTextAtSize('GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL', 9) / 2,
+        y: PAGE_H - 25, size: 9, font: fontBold, color: maroon
+      });
+      p.drawText('PUBLICATION (GMIJP)', {
+        x: PAGE_W / 2 - fontBold.widthOfTextAtSize('PUBLICATION (GMIJP)', 9) / 2,
+        y: PAGE_H - 36, size: 9, font: fontBold, color: maroon
+      });
+
+      const metaText = `ISSN: ${issn}   |   VOL: ${volume}   |   NO: ${issue}`;
+      p.drawText(metaText, {
+        x: PAGE_W / 2 - fontBold.widthOfTextAtSize(metaText, 8) / 2,
+        y: PAGE_H - 48, size: 8, font: fontBold, color: gray
+      });
+
+      if (doi || dateStr) {
+        const lineText = `${doi ? 'DOI: ' + doi : ''}${doi && dateStr ? '   •   ' : ''}${dateStr ? 'Published: ' + dateStr : ''}`;
+        p.drawText(lineText, {
+          x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(lineText, 7) / 2,
+          y: PAGE_H - 58, size: 7, font: fontRegular, color: indigo
+        });
+      }
+
+      p.drawLine({
+        start: { x: MARGIN, y: PAGE_H - 65 },
+        end: { x: PAGE_W - MARGIN, y: PAGE_H - 65 },
+        thickness: 0.5, color: rgb(0.8, 0.8, 0.8)
+      });
+      return PAGE_H - 85; 
+    };
+
+    let currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
+    let y = drawPageHeader(currentPage);
+
+    const ensureSpace = (needed: number) => {
+      if (y - needed < MARGIN + 40) {
+        const pageNum = pdfDoc.getPageCount();
+        currentPage.drawText(`— Page ${pageNum} —`, {
+          x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— Page ${pageNum} —`, 8) / 2,
+          y: 25, size: 8, font: fontRegular, color: lightGray
+        });
+        currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
+        y = drawPageHeader(currentPage);
+      }
+    };
+
     const wrapText = (text: string, font: any, size: number, maxWidth: number): string[] => {
+      const sanitized = sanitizePdfText(text).replace(/```[\s\S]*?```/g, ''); // Filter code artifacts
       const lines: string[] = [];
-      const paragraphs = text.split(/\n/);
+      const paragraphs = sanitized.split(/\n/);
       for (const para of paragraphs) {
         if (!para.trim()) { lines.push(''); continue; }
         const words = para.split(/\s+/);
@@ -1295,30 +1342,11 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
             } else {
               line = testLine;
             }
-          } catch {
-            line = testLine;
-          }
+          } catch { line = testLine; }
         }
         if (line) lines.push(line);
       }
       return lines;
-    };
-
-    // Helper: draw text block, auto-paginate, return current y and page
-    let currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
-    let y = PAGE_H - MARGIN;
-
-    const ensureSpace = (needed: number) => {
-      if (y - needed < MARGIN + 30) {
-        // Draw page footer before moving on
-        const pageNum = pdfDoc.getPageCount();
-        currentPage.drawText(`— ${pageNum} —`, {
-          x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— ${pageNum} —`, 8) / 2,
-          y: 25, size: 8, font: fontRegular, color: lightGray
-        });
-        currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
-        y = PAGE_H - MARGIN;
-      }
     };
 
     const drawTextBlock = (text: string, usedFont: any, size: number, color: any, lineHeight: number, indent = 0) => {
@@ -1331,125 +1359,102 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
       }
     };
 
-    // ======== PAGE HEADER ========
-    // Journal name
-    currentPage.drawText('GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL', {
-      x: MARGIN, y, size: 11, font: fontBold, color: maroon
-    });
-    y -= 14;
-    currentPage.drawText('PUBLICATION (GMIJP)', {
-      x: MARGIN, y, size: 11, font: fontBold, color: maroon
-    });
-
-    // Right-aligned university
-    const uniText = 'Nasarawa State University, Keffi';
-    const uniW = fontRegular.widthOfTextAtSize(uniText, 9);
-    currentPage.drawText(uniText, { x: PAGE_W - MARGIN - uniW, y: y + 14, size: 9, font: fontRegular, color: gray });
-
-    y -= 8;
-    // Decorative line
-    currentPage.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 2, color: maroon });
-    y -= 18;
-
-    // Metadata row: ISSN | Vol | Issue
-    const metaLine = `ISSN: ${issn}    |    Vol: ${volume}    |    No: ${issue}`;
-    currentPage.drawText(metaLine, { x: MARGIN, y, size: 9, font: fontBold, color: gray });
-    y -= 14;
-
-    // DOI
-    if (doi) {
-      currentPage.drawText(`DOI: ${doi}`, { x: MARGIN, y, size: 9, font: fontRegular, color: indigo });
-      y -= 13;
-    }
-    // Published date
-    if (dateStr) {
-      currentPage.drawText(`Published: ${dateStr}`, { x: MARGIN, y, size: 9, font: fontRegular, color: gray });
-      y -= 13;
-    }
-
-    // Official Publication notice (right-aligned)
-    const officialText = 'Official Publication Copy • www.gmijp-edu.com';
-    const officialW = fontItalic.widthOfTextAtSize(officialText, 8);
-    currentPage.drawText(officialText, { x: PAGE_W - MARGIN - officialW, y: y + 13, size: 8, font: fontItalic, color: maroon });
-
-    y -= 6;
-    currentPage.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
-    y -= 24;
-
-    // ======== TITLE ========
-    const titleLines = wrapText(safeTitle.toUpperCase(), fontBold, 16, contentW);
-    for (const line of titleLines) {
-      ensureSpace(20);
-      currentPage.drawText(line, { x: MARGIN, y, size: 16, font: fontBold, color: black });
-      y -= 20;
-    }
-    y -= 8;
-
-    // ======== AUTHORS ========
-    drawTextBlock(safeAuthors, fontItalic, 11, gray, 15);
-    y -= 16;
-
-    // ======== ABSTRACT ========
-    currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-    ensureSpace(16);
-    currentPage.drawText('ABSTRACT', { x: MARGIN, y, size: 10, font: fontBold, color: maroon });
-    y -= 16;
-    drawTextBlock(safeAbstract, fontRegular, 10, gray, 14, 0);
-    y -= 10;
-    currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-    y -= 20;
-
-    // ======== KEYWORDS ========
-    const keywords = metadata.keywords || [];
-    if (keywords.length > 0) {
-      ensureSpace(16);
-      currentPage.drawText('Keywords: ', { x: MARGIN, y, size: 9, font: fontBold, color: black });
-      const kwX = MARGIN + fontBold.widthOfTextAtSize('Keywords: ', 9);
-      currentPage.drawText(keywords.join(', '), { x: kwX, y, size: 9, font: fontItalic, color: gray });
-      y -= 20;
-    }
-
-    // ======== BODY TEXT ========
-    // Split the body into paragraphs and render them. Detect section headings (ALL CAPS lines or short lines).
-    const bodyParagraphs = safeBody.split(/\n\n+/);
-    for (const para of bodyParagraphs) {
-      const trimmed = para.trim();
-      if (!trimmed) continue;
-
-      // Heuristic: if the paragraph is short and mostly uppercase, treat as a section heading
-      const isHeading = trimmed.length < 120 && (
-        trimmed === trimmed.toUpperCase() ||
-        /^\d+\.\s+[A-Z]/.test(trimmed) ||
-        /^(INTRODUCTION|METHODOLOGY|METHODS|RESULTS|DISCUSSION|CONCLUSION|RECOMMENDATIONS|REFERENCES|LITERATURE REVIEW|ABSTRACT|ACKNOWLEDGEMENT|BACKGROUND|FINDINGS)/i.test(trimmed)
-      );
-
-      if (isHeading) {
-        y -= 8;
-        ensureSpace(20);
-        currentPage.drawText(trimmed.toUpperCase(), { x: MARGIN, y, size: 11, font: fontBold, color: black });
-        y -= 16;
-      } else {
-        drawTextBlock(trimmed, fontRegular, 10, black, 14, 0);
-        y -= 6;
+    // Advanced Extraction
+    if (paper.formatted_content) {
+      const $ = cheerio.load(paper.formatted_content);
+      
+      // Title
+      const safeT = sanitizePdfText(title).toUpperCase();
+      const tLines = wrapText(safeT, fontBold, 15, contentW);
+      for (const l of tLines) {
+        ensureSpace(18);
+        currentPage.drawText(l, { x: MARGIN, y, size: 15, font: fontBold, color: black });
+        y -= 18;
       }
+      y -= 10;
+
+      // Authors
+      drawTextBlock(authorsStr, fontItalic, 11, gray, 15);
+      y -= 15;
+
+      // Abstract
+      currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+      ensureSpace(16);
+      currentPage.drawText('ABSTRACT', { x: MARGIN, y, size: 10, font: fontBold, color: maroon });
+      y -= 16;
+      drawTextBlock(abstract, fontRegular, 9.5, gray, 13);
+      y -= 8;
+      currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+      y -= 25;
+
+      // Body Traversal
+      $('body').children().each((_, el) => {
+        const tag = el.name;
+        const txt = $(el).text().trim();
+        if (!txt && tag !== 'table') return;
+
+        if (tag === 'h1' || tag === 'h2' || tag === 'h3') {
+          y -= 10;
+          ensureSpace(20);
+          currentPage.drawText(sanitizePdfText(txt).toUpperCase(), { x: MARGIN, y, size: 11, font: fontBold, color: black });
+          y -= 16;
+        } else if (tag === 'table') {
+          y -= 10;
+          ensureSpace(30);
+          // Table Top Border
+          currentPage.drawLine({ start: { x: MARGIN + 10, y: y + 5 }, end: { x: PAGE_W - MARGIN - 10, y: y + 5 }, thickness: 1, color: black });
+          
+          $(el).find('tr').each((idx, tr) => {
+            const cells = $(tr).find('td, th').map((_, td) => $(td).text().trim()).get();
+            if (cells.length === 0) return;
+            const rTxt = cells.join('    |    ');
+            const isHeader = idx === 0 || $(tr).find('th').length > 0;
+            
+            drawTextBlock(rTxt, isHeader ? fontBold : fontRegular, 8.5, black, 12, 15);
+            
+            // Row Divider
+            currentPage.drawLine({ 
+              start: { x: MARGIN + 10, y: y + 2 }, 
+              end: { x: PAGE_W - MARGIN - 10, y: y + 2 }, 
+              thickness: 0.3, color: lightGray 
+            });
+          });
+          y -= 15;
+        } else if (tag === 'figure' || tag === 'img' || $(el).hasClass('academic-figure')) {
+          y -= 10;
+          ensureSpace(40);
+          const figText = `[ ${txt || 'Figure / Illustration'} ]`;
+          currentPage.drawText(figText, { 
+            x: PAGE_W / 2 - fontItalic.widthOfTextAtSize(figText, 9) / 2, 
+            y, size: 9, font: fontItalic, color: gray 
+          });
+          y -= 20;
+        } else {
+          drawTextBlock(txt, fontRegular, 10, black, 14);
+          y -= 6;
+        }
+      });
+    } else {
+      // Fallback
+      drawTextBlock(paper.content || '', fontRegular, 10, black, 14);
     }
 
-    // ======== FINAL PAGE FOOTER ========
-    const finalPageNum = pdfDoc.getPageCount();
-    currentPage.drawText(`— ${finalPageNum} —`, {
-      x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— ${finalPageNum} —`, 8) / 2,
+    // Final Footer on last page
+    const lastNum = pdfDoc.getPageCount();
+    currentPage.drawText(`— Page ${lastNum} —`, {
+      x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— Page ${lastNum} —`, 8) / 2,
       y: 25, size: 8, font: fontRegular, color: lightGray
     });
 
-    // Serialize & send
-    const pdfBytes = await pdfDoc.save();
-    const fileNameTitle = safeTitle.replace(/[^a-zA-Z0-9\s\-_]/g, '').substring(0, 100);
+    const pdfB = await pdfDoc.save();
+    const sfT = (sanitizePdfText(title).replace(/[^a-zA-Z0-9\s]/g, '') || 'Manuscript').substring(0, 80);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${fileNameTitle}_Published.pdf"`);
-    res.send(Buffer.from(pdfBytes));
+    res.setHeader('Content-Disposition', `inline; filename="${sfT}_Published.pdf"`);
+    res.send(Buffer.from(pdfB));
+
   } catch (error: any) {
-    console.error('Published PDF generation error:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate published PDF' });
+    console.error('Published PDF error:', error);
+    res.status(500).json({ error: error.message || 'Generation Failed' });
   }
 });
 
