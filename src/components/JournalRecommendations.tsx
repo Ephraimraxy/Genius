@@ -9,6 +9,7 @@ export default function JournalRecommendations({ activePaperId, setActivePaperId
   const [error, setError] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishedInfo, setPublishedInfo] = useState<any>(null);
+  const [isRefiningKeywords, setIsRefiningKeywords] = useState(false);
 
   useEffect(() => {
     if (activePaperId) {
@@ -67,6 +68,40 @@ on the Genius Global Network.`;
       alert(err.message);
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  const handleRefineKeywords = async () => {
+    if (!activePaperId) return;
+    setIsRefiningKeywords(true);
+    try {
+      const res = await fetch(`/api/papers/${activePaperId}/refine-keywords`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Refinement failed.');
+      
+      // Refresh recommendations
+      setIsLoading(true);
+      const recRes = await fetch(`/api/recommend-journals/${activePaperId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const recData = await recRes.json();
+      setJournals(recData.journals || []);
+      
+      const e = new CustomEvent('toast', { detail: { message: 'Keywords optimized! Matching engine refreshed.', type: 'success' } });
+      window.dispatchEvent(e);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsRefiningKeywords(false);
+      setIsLoading(false);
     }
   };
 
@@ -213,14 +248,24 @@ on the Genius Global Network.`;
             </div>
             <p className="text-xl font-bold text-slate-900">No Direct Matches Found</p>
             <p className="text-slate-500 mt-2 mb-8">Adjust your manuscript keywords to refresh the discovery engine.</p>
-            <button
-              onClick={handlePublish}
-              disabled={isPublishing}
-              className="mx-auto flex items-center justify-center gap-3 bg-indigo-600 hover:bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
-            >
-              {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={18} />} 
-              {isPublishing ? 'Broadcasting...' : 'Submit to Global Genius Registry'}
-            </button>
+            <div className="flex flex-col md:flex-row items-center justify-center gap-4">
+              <button
+                onClick={handleRefineKeywords}
+                disabled={isRefiningKeywords || isLoading}
+                className="flex items-center justify-center gap-3 bg-white border-2 border-indigo-100 text-indigo-600 hover:border-indigo-600 px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+              >
+                {isRefiningKeywords ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={18} />} 
+                {isRefiningKeywords ? 'Refining...' : 'Optimize Keywords via AI'}
+              </button>
+              <button
+                onClick={handlePublish}
+                disabled={isPublishing}
+                className="flex items-center justify-center gap-3 bg-indigo-600 hover:bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+              >
+                {isPublishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={18} />} 
+                {isPublishing ? 'Broadcasting...' : 'Submit to Global Genius Registry'}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6">

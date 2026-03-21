@@ -1702,6 +1702,41 @@ app.post('/api/recommend-journals/:id', authenticateToken, async (req: any, res)
   }
 });
 
+app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      messages: [
+        { 
+          role: 'system', 
+          content: 'You are an academic discovery expert. Extract 5-8 high-impact, specific scientific keywords from the paper title and abstract provided. These keywords will be used to search for matching journals in the Crossref registry. Return JSON with key "keywords" as an array of strings.' 
+        },
+        { role: 'user', content: `Title: ${paper.title}\nAbstract: ${paper.abstract}` }
+      ]
+    });
+
+    const parsed = JSON.parse(response.choices[0]?.message?.content || '{"keywords":[]}');
+    const newKeywords = parsed.keywords || [];
+
+    if (newKeywords.length > 0) {
+      const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+      metadata.keywords = newKeywords;
+      await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [JSON.stringify(metadata), id]);
+    }
+
+    res.json({ success: true, keywords: newKeywords });
+  } catch (error) {
+    console.error('Keyword refinement error:', error);
+    res.status(500).json({ error: 'Failed to refine keywords' });
+  }
+});
+
 app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
