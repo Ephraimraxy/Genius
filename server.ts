@@ -20,6 +20,7 @@ import cors from 'cors';
 import OpenAI from 'openai';
 import { Pool } from 'pg';
 import * as cheerio from 'cheerio';
+import { Resend } from 'resend';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import stringSimilarity from 'string-similarity';
 import natural from 'natural';
@@ -1222,278 +1223,385 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
   }
 });
 
-// ===== Published PDF Generation (clean journal-branded PDF for preview/download) =====
-app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res) => {
+// ===== SHARED PDF GENERATION HELPERS =====
+async function generatePublishedArticlePDF(paperId: number | string): Promise<{ buffer: Buffer; filename: string }> {
+  const result = await pool.query(
+    'SELECT id, title, authors, abstract, content, formatted_content, metadata, doi, volume, issue, issn, published_at, created_at FROM papers WHERE id = $1',
+    [paperId]
+  );
+  const paper = result.rows[0];
+  if (!paper) throw new Error('Paper not found');
+
+  const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+  const issn = paper.issn || '2971-7760';
+  const volume = paper.volume || '1';
+  const issue = paper.issue || '1';
+  const doi = paper.doi || '';
+  const pubDate = paper.published_at || paper.created_at;
+  const dateStr = pubDate ? new Date(pubDate).toLocaleDateString('en-GB') : '';
+  const title = paper.title || 'Untitled';
+  const authorsRaw = paper.authors;
+  let authorsList: string[] = [];
+  try { authorsList = typeof authorsRaw === 'string' ? JSON.parse(authorsRaw) : (authorsRaw || []); } catch { authorsList = [String(authorsRaw)]; }
+  const authorsStr = authorsList.map((a: any) => typeof a === 'string' ? a : a.name).join(', ');
+  const abstract = paper.abstract || metadata.abstract || '';
+
+  // Build PDF
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+
+  const PAGE_W = 595; // A4
+  const PAGE_H = 842;
+  const MARGIN = 55;
+  const contentW = PAGE_W - 2 * MARGIN;
+  const maroon = rgb(0.5, 0, 0);
+  const black = rgb(0, 0, 0);
+  const gray = rgb(0.35, 0.35, 0.35);
+  const lightGray = rgb(0.6, 0.6, 0.6);
+  const indigo = rgb(0.26, 0.27, 0.53);
+
+  // Dynamic Logo Loading
+  let logoLeft: any = null;
+  let logoRight: any = null;
   try {
-    const { id } = idParamSchema.parse(req.params);
-    const result = await pool.query(
-      'SELECT id, title, authors, abstract, content, formatted_content, metadata, doi, volume, issue, issn, published_at, created_at FROM papers WHERE id = $1',
-      [id]
-    );
-    const paper = result.rows[0];
-    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    const lpL = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
+    const lpR = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
+    if (fs.existsSync(lpL)) logoLeft = await pdfDoc.embedJpg(fs.readFileSync(lpL));
+    if (fs.existsSync(lpR)) logoRight = await pdfDoc.embedJpg(fs.readFileSync(lpR));
+  } catch (e) {
+    console.error('Logo load failed:', e);
+  }
 
-    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
-    const issn = paper.issn || '2971-7760';
-    const volume = paper.volume || '1';
-    const issue = paper.issue || '1';
-    const doi = paper.doi || '';
-    const pubDate = paper.published_at || paper.created_at;
-    const dateStr = pubDate ? new Date(pubDate).toLocaleDateString('en-GB') : '';
-    const title = paper.title || 'Untitled';
-    const authorsRaw = paper.authors;
-    let authorsList: string[] = [];
-    try { authorsList = typeof authorsRaw === 'string' ? JSON.parse(authorsRaw) : (authorsRaw || []); } catch { authorsList = [String(authorsRaw)]; }
-    const authorsStr = authorsList.map((a: any) => typeof a === 'string' ? a : a.name).join(', ');
-    const abstract = paper.abstract || metadata.abstract || '';
+  // Helper: Draw professional journal header on any page
+  const drawPageHeader = (p: any) => {
+    // Branding Header
+    if (logoLeft) p.drawImage(logoLeft, { x: MARGIN, y: PAGE_H - 45, width: 35, height: 35 });
+    if (logoRight) p.drawImage(logoRight, { x: PAGE_W - MARGIN - 35, y: PAGE_H - 45, width: 35, height: 35 });
 
-    // Build PDF
-    const pdfDoc = await PDFDocument.create();
-    const fontRegular = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-    const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-    const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+    p.drawText('GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL', {
+      x: PAGE_W / 2 - fontBold.widthOfTextAtSize('GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL', 9) / 2,
+      y: PAGE_H - 25,
+      size: 9,
+      font: fontBold,
+      color: maroon,
+    });
+    p.drawText('PUBLICATION (GMIJP)', {
+      x: PAGE_W / 2 - fontBold.widthOfTextAtSize('PUBLICATION (GMIJP)', 9) / 2,
+      y: PAGE_H - 36,
+      size: 9,
+      font: fontBold,
+      color: maroon,
+    });
 
-    const PAGE_W = 595; // A4
-    const PAGE_H = 842;
-    const MARGIN = 55;
-    const contentW = PAGE_W - 2 * MARGIN;
-    const maroon = rgb(0.5, 0, 0);
-    const black = rgb(0, 0, 0);
-    const gray = rgb(0.35, 0.35, 0.35);
-    const lightGray = rgb(0.6, 0.6, 0.6);
-    const indigo = rgb(0.26, 0.27, 0.53);
+    const metaText = `ISSN: ${issn}   |   VOL: ${volume}   |   NO: ${issue}`;
+    p.drawText(metaText, {
+      x: PAGE_W / 2 - fontBold.widthOfTextAtSize(metaText, 8) / 2,
+      y: PAGE_H - 48,
+      size: 8,
+      font: fontBold,
+      color: gray,
+    });
 
-    // Dynamic Logo Loading
-    let logoLeft: any = null;
-    let logoRight: any = null;
-    try {
-      const lpL = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
-      const lpR = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
-      if (fs.existsSync(lpL)) logoLeft = await pdfDoc.embedJpg(fs.readFileSync(lpL));
-      if (fs.existsSync(lpR)) logoRight = await pdfDoc.embedJpg(fs.readFileSync(lpR));
-    } catch (e) { console.error('Logo load failed:', e); }
-
-    // Helper: Draw professional journal header on any page
-    const drawPageHeader = (p: any) => {
-      // Branding Header
-      if (logoLeft) p.drawImage(logoLeft, { x: MARGIN, y: PAGE_H - 45, width: 35, height: 35 });
-      if (logoRight) p.drawImage(logoRight, { x: PAGE_W - MARGIN - 35, y: PAGE_H - 45, width: 35, height: 35 });
-
-      p.drawText('GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL', {
-        x: PAGE_W / 2 - fontBold.widthOfTextAtSize('GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL', 9) / 2,
-        y: PAGE_H - 25, size: 9, font: fontBold, color: maroon
+    if (doi || dateStr) {
+      const lineText = `${doi ? 'DOI: ' + doi : ''}${doi && dateStr ? '   •   ' : ''}${dateStr ? 'Published: ' + dateStr : ''}`;
+      p.drawText(lineText, {
+        x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(lineText, 7) / 2,
+        y: PAGE_H - 58,
+        size: 7,
+        font: fontRegular,
+        color: indigo,
       });
-      p.drawText('PUBLICATION (GMIJP)', {
-        x: PAGE_W / 2 - fontBold.widthOfTextAtSize('PUBLICATION (GMIJP)', 9) / 2,
-        y: PAGE_H - 36, size: 9, font: fontBold, color: maroon
+    }
+
+    p.drawLine({
+      start: { x: MARGIN, y: PAGE_H - 65 },
+      end: { x: PAGE_W - MARGIN, y: PAGE_H - 65 },
+      thickness: 0.5,
+      color: rgb(0.8, 0.8, 0.8),
+    });
+    return PAGE_H - 85;
+  };
+
+  let currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
+  let y = drawPageHeader(currentPage);
+
+  const ensureSpace = (needed: number) => {
+    if (y - needed < MARGIN + 40) {
+      const pageNum = pdfDoc.getPageCount();
+      currentPage.drawText(`— Page ${pageNum} —`, {
+        x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— Page ${pageNum} —`, 8) / 2,
+        y: 25,
+        size: 8,
+        font: fontRegular,
+        color: lightGray,
       });
+      currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
+      y = drawPageHeader(currentPage);
+    }
+  };
 
-      const metaText = `ISSN: ${issn}   |   VOL: ${volume}   |   NO: ${issue}`;
-      p.drawText(metaText, {
-        x: PAGE_W / 2 - fontBold.widthOfTextAtSize(metaText, 8) / 2,
-        y: PAGE_H - 48, size: 8, font: fontBold, color: gray
-      });
-
-      if (doi || dateStr) {
-        const lineText = `${doi ? 'DOI: ' + doi : ''}${doi && dateStr ? '   •   ' : ''}${dateStr ? 'Published: ' + dateStr : ''}`;
-        p.drawText(lineText, {
-          x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(lineText, 7) / 2,
-          y: PAGE_H - 58, size: 7, font: fontRegular, color: indigo
-        });
+  const wrapText = (text: string, font: any, size: number, maxWidth: number): string[] => {
+    const sanitizedArr = sanitizePdfText(text).replace(/```[\s\S]*?```/g, ''); // Filter code artifacts
+    const lines: string[] = [];
+    const paragraphs = sanitizedArr.split(/\n/);
+    for (const para of paragraphs) {
+      if (!para.trim()) {
+        lines.push('');
+        continue;
       }
-
-      p.drawLine({
-        start: { x: MARGIN, y: PAGE_H - 65 },
-        end: { x: PAGE_W - MARGIN, y: PAGE_H - 65 },
-        thickness: 0.5, color: rgb(0.8, 0.8, 0.8)
-      });
-      return PAGE_H - 85; 
-    };
-
-    let currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
-    let y = drawPageHeader(currentPage);
-
-    const ensureSpace = (needed: number) => {
-      if (y - needed < MARGIN + 40) {
-        const pageNum = pdfDoc.getPageCount();
-        currentPage.drawText(`— Page ${pageNum} —`, {
-          x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— Page ${pageNum} —`, 8) / 2,
-          y: 25, size: 8, font: fontRegular, color: lightGray
-        });
-        currentPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
-        y = drawPageHeader(currentPage);
-      }
-    };
-
-    const wrapText = (text: string, font: any, size: number, maxWidth: number): string[] => {
-      const sanitized = sanitizePdfText(text).replace(/```[\s\S]*?```/g, ''); // Filter code artifacts
-      const lines: string[] = [];
-      const paragraphs = sanitized.split(/\n/);
-      for (const para of paragraphs) {
-        if (!para.trim()) { lines.push(''); continue; }
-        const words = para.split(/\s+/);
-        let line = '';
-        for (const word of words) {
-          const testLine = line ? `${line} ${word}` : word;
-          try {
-            if (font.widthOfTextAtSize(testLine, size) > maxWidth) {
-              if (line) lines.push(line);
-              line = word;
-            } else {
-              line = testLine;
-            }
-          } catch { line = testLine; }
-        }
-        if (line) lines.push(line);
-      }
-      return lines;
-    };
-
-    const drawTextBlock = (text: string, usedFont: any, size: number, color: any, lineHeight: number, indent = 0) => {
-      const lines = wrapText(text, usedFont, size, contentW - indent);
-      for (const line of lines) {
-        ensureSpace(lineHeight);
-        if (line === '') { y -= lineHeight * 0.5; continue; }
-        currentPage.drawText(line, { x: MARGIN + indent, y, size, font: usedFont, color });
-        y -= lineHeight;
-      }
-    };
-
-    // Advanced Extraction
-    if (paper.formatted_content) {
-      const $ = cheerio.load(paper.formatted_content);
-      
-      // Title
-      const safeT = sanitizePdfText(title).toUpperCase();
-      const tLines = wrapText(safeT, fontBold, 15, contentW);
-      for (const l of tLines) {
-        ensureSpace(18);
-        currentPage.drawText(l, { x: MARGIN, y, size: 15, font: fontBold, color: black });
-        y -= 18;
-      }
-      y -= 10;
-
-      // Authors
-      drawTextBlock(authorsStr, fontItalic, 11, gray, 15);
-      y -= 15;
-
-      // Abstract
-      currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-      ensureSpace(16);
-      currentPage.drawText('ABSTRACT', { x: MARGIN, y, size: 10, font: fontBold, color: maroon });
-      y -= 16;
-      drawTextBlock(abstract, fontRegular, 9.5, gray, 13);
-      y -= 8;
-      currentPage.drawLine({ start: { x: MARGIN, y: y + 4 }, end: { x: PAGE_W - MARGIN, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-      y -= 25;
-
-    const processNode = async (node: any) => {
-      const tag = node.name;
-      const $node = $(node);
-
-      if (!tag && node.type === 'text') {
-        const text = node.data.trim();
-        if (text && text.length > 0) {
-          drawTextBlock(text, fontRegular, 10, black, 14);
-          y -= 6;
-        }
-        return;
-      }
-
-      if (/^h[1-6]$/.test(tag)) {
-        const text = $node.text().trim();
-        if (text) {
-          y -= 12;
-          ensureSpace(25);
-          currentPage.drawText(sanitizePdfText(text).toUpperCase(), { x: MARGIN, y, size: 10.5, font: fontBold, color: black });
-          y -= 16;
-        }
-      } else if (tag === 'p') {
-        const text = $node.text().trim();
-        if (text) {
-          drawTextBlock(text, fontRegular, 10, black, 14);
-          y -= 8;
-        }
-      } else if (tag === 'table') {
-        y -= 10;
-        ensureSpace(40);
-        const rows = $node.find('tr').get();
-        if (rows.length > 0) {
-          // Calculate column widths based on the first row
-          const firstRowCells = $(rows[0]).find('td, th').get();
-          const colCount = Math.max(firstRowCells.length, 1);
-          const colW = contentW / colCount;
-
-          // Draw Table Top
-          currentPage.drawLine({ start: { x: MARGIN, y: y + 5 }, end: { x: PAGE_W - MARGIN, y: y + 5 }, thickness: 1, color: black });
-
-          for (const row of rows) {
-            const cells = $(row).find('td, th').map((_, td) => $(td).text().trim()).get();
-            let rowMaxLines = 1;
-            const cellWrappedStrings = cells.map(c => {
-               const lines = wrapText(c, fontRegular, 8.5, colW - 10);
-               rowMaxLines = Math.max(rowMaxLines, lines.length);
-               return lines;
-            });
-
-            const rowHeight = (rowMaxLines * 11) + 6;
-            ensureSpace(rowHeight + 5);
-
-            cells.forEach((_, idx) => {
-              const cellX = MARGIN + (idx * colW);
-              const lines = cellWrappedStrings[idx];
-              lines.forEach((line, lIdx) => {
-                currentPage.drawText(line, { x: cellX + 5, y: y - (lIdx * 11), size: 8.5, font: fontRegular, color: black });
-              });
-            });
-
-            y -= rowHeight;
-            currentPage.drawLine({ start: { x: MARGIN, y: y + 2 }, end: { x: PAGE_W - MARGIN, y: y + 2 }, thickness: 0.3, color: lightGray });
+      const words = para.split(/\s+/);
+      let line = '';
+      for (const word of words) {
+        const testLine = line ? `${line} ${word}` : word;
+        try {
+          if (font.widthOfTextAtSize(testLine, size) > maxWidth) {
+            if (line) lines.push(line);
+            line = word;
+          } else {
+            line = testLine;
           }
-        }
-        y -= 15;
-      } else if (tag === 'figure' || tag === 'img' || $node.hasClass('academic-figure')) {
-        y -= 10;
-        ensureSpace(40);
-        const figHeading = $node.find('figcaption, .caption').text().trim() || $node.text().trim() || 'Figure';
-        const figRef = `[ ${sanitizePdfText(figHeading)} ]`;
-        currentPage.drawText(figRef, { 
-          x: PAGE_W / 2 - fontItalic.widthOfTextAtSize(figRef, 9) / 2, 
-          y, size: 9, font: fontItalic, color: gray 
-        });
-        y -= 20;
-      } else {
-        // Recurse into containers (div, section, article, span, etc.)
-        const children = $node.contents().get();
-        for (const child of children) {
-          await processNode(child);
+        } catch {
+          line = testLine;
         }
       }
-    };
+      if (line) lines.push(line);
+    }
+    return lines;
+  };
+
+  const drawTextBlock = (text: string, usedFont: any, size: number, color: any, lineHeight: number, indent = 0) => {
+    const lines = wrapText(text, usedFont, size, contentW - indent);
+    for (const line of lines) {
+      ensureSpace(lineHeight);
+      if (line === '') {
+        y -= lineHeight * 0.5;
+        continue;
+      }
+      currentPage.drawText(line, { x: MARGIN + indent, y, size, font: usedFont, color });
+      y -= lineHeight;
+    }
+  };
+
+  const processNode = async (node: any, $: any) => {
+    const tag = node.name;
+    const $node = $(node);
+
+    if (!tag && node.type === 'text') {
+      const text = node.data.trim();
+      if (text && text.length > 0) {
+        drawTextBlock(text, fontRegular, 10, black, 14);
+        y -= 6;
+      }
+      return;
+    }
+
+    if (/^h[1-6]$/.test(tag)) {
+      const text = $node.text().trim();
+      if (text) {
+        y -= 12;
+        ensureSpace(25);
+        currentPage.drawText(sanitizePdfText(text).toUpperCase(), { x: MARGIN, y, size: 10.5, font: fontBold, color: black });
+        y -= 16;
+      }
+    } else if (tag === 'p') {
+      const text = $node.text().trim();
+      if (text) {
+        drawTextBlock(text, fontRegular, 10, black, 14);
+        y -= 8;
+      }
+    } else if (tag === 'table') {
+      y -= 10;
+      ensureSpace(40);
+      const rows = $node.find('tr').get();
+      if (rows.length > 0) {
+        const firstRowCells = $(rows[0]).find('td, th').get();
+        const colCount = Math.max(firstRowCells.length, 1);
+        const colW = contentW / colCount;
+
+        currentPage.drawLine({ start: { x: MARGIN, y: y + 5 }, end: { x: PAGE_W - MARGIN, y: y + 5 }, thickness: 1, color: black });
+
+        for (const row of rows) {
+          const cells = $(row)
+            .find('td, th')
+            .map((_, td) => $(td).text().trim())
+            .get();
+          let rowMaxLines = 1;
+          const cellWrappedStrings = cells.map((c) => {
+            const lines = wrapText(c, fontRegular, 8.5, colW - 10);
+            rowMaxLines = Math.max(rowMaxLines, lines.length);
+            return lines;
+          });
+
+          const rowHeight = rowMaxLines * 11 + 6;
+          ensureSpace(rowHeight + 5);
+
+          cells.forEach((_, idx) => {
+            const cellX = MARGIN + idx * colW;
+            const lines = cellWrappedStrings[idx];
+            lines.forEach((line, lIdx) => {
+              currentPage.drawText(line, { x: cellX + 5, y: y - lIdx * 11, size: 8.5, font: fontRegular, color: black });
+            });
+          });
+
+          y -= rowHeight;
+          currentPage.drawLine({ start: { x: MARGIN, y: y + 2 }, end: { x: PAGE_W - MARGIN, y: y + 2 }, thickness: 0.3, color: lightGray });
+        }
+      }
+      y -= 15;
+    } else if (tag === 'figure' || tag === 'img' || $node.hasClass('academic-figure')) {
+      y -= 10;
+      ensureSpace(40);
+      const figHeading = $node.find('figcaption, .caption').text().trim() || $node.text().trim() || 'Figure';
+      const figRef = `[ ${sanitizePdfText(figHeading)} ]`;
+      currentPage.drawText(figRef, {
+        x: PAGE_W / 2 - fontItalic.widthOfTextAtSize(figRef, 9) / 2,
+        y,
+        size: 9,
+        font: fontItalic,
+        color: gray,
+      });
+      y -= 20;
+    } else {
+      const children = $node.contents().get();
+      for (const child of children) {
+        await processNode(child, $);
+      }
+    }
+  };
+
+  // Advanced Extraction
+  if (paper.formatted_content) {
+    const $ = cheerio.load(paper.formatted_content);
+
+    // Title
+    const safeT = sanitizePdfText(title).toUpperCase();
+    const tLines = wrapText(safeT, fontBold, 15, contentW);
+    for (const l of tLines) {
+      ensureSpace(18);
+      currentPage.drawText(l, { x: MARGIN, y, size: 15, font: fontBold, color: black });
+      y -= 18;
+    }
+    y -= 10;
+
+    // Authors
+    drawTextBlock(authorsStr, fontItalic, 11, gray, 15);
+    y -= 15;
+
+    // Abstract
+    currentPage.drawLine({
+      start: { x: MARGIN, y: y + 4 },
+      end: { x: PAGE_W - MARGIN, y: y + 4 },
+      thickness: 0.5,
+      color: rgb(0.85, 0.85, 0.85),
+    });
+    ensureSpace(16);
+    currentPage.drawText('ABSTRACT', { x: MARGIN, y, size: 10, font: fontBold, color: maroon });
+    y -= 16;
+    drawTextBlock(abstract, fontRegular, 9.5, gray, 13);
+    y -= 8;
+    currentPage.drawLine({
+      start: { x: MARGIN, y: y + 4 },
+      end: { x: PAGE_W - MARGIN, y: y + 4 },
+      thickness: 0.5,
+      color: rgb(0.85, 0.85, 0.85),
+    });
+    y -= 25;
 
     // Begin Recursive Traversal from Body
     const bodyContents = $('body').contents().get();
     for (const node of bodyContents) {
-      await processNode(node);
+      await processNode(node, $);
     }
-    } else {
-      // Fallback
-      drawTextBlock(paper.content || '', fontRegular, 10, black, 14);
-    }
+  } else {
+    // Fallback
+    drawTextBlock(paper.content || '', fontRegular, 10, black, 14);
+  }
 
-    // Final Footer on last page
-    const lastNum = pdfDoc.getPageCount();
-    currentPage.drawText(`— Page ${lastNum} —`, {
-      x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— Page ${lastNum} —`, 8) / 2,
-      y: 25, size: 8, font: fontRegular, color: lightGray
+  // Final Footer on last page
+  const lastNum = pdfDoc.getPageCount();
+  currentPage.drawText(`— Page ${lastNum} —`, {
+    x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(`— Page ${lastNum} —`, 8) / 2,
+    y: 25,
+    size: 8,
+    font: fontRegular,
+    color: lightGray,
+  });
+
+  const pdfB = await pdfDoc.save();
+  const sfT = (sanitizePdfText(title).replace(/[^a-zA-Z0-9\s]/g, '') || 'Manuscript').substring(0, 80);
+  return { buffer: Buffer.from(pdfB), filename: `${sfT}_Published.pdf` };
+}
+
+async function sendPublicationEmail(to: string, researcherName: string, manuscriptTitle: string, doi: string, url: string, pdfBuffer: Buffer) {
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    
+    await resend.emails.send({
+      from: `Genius Global Registry <${fromEmail}>`,
+      to: [to],
+      subject: `CONGRATULATIONS: Your Manuscript has been Published [DOI: ${doi}]`,
+      html: `
+        <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
+          <div style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 40px; border-radius: 24px 24px 0 0; text-align: center;">
+            <div style="background: #fbbf24; width: 60px; height: 60px; border-radius: 20px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+              <span style="font-size: 30px;">🎓</span>
+            </div>
+            <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">Scientific Breakthrough</h1>
+            <p style="color: #e0e7ff; margin-top: 10px; font-size: 14px; opacity: 0.8;">Genius Global Research Registry</p>
+          </div>
+          <div style="background: white; padding: 40px; border-radius: 0 0 24px 24px; border: 1px solid #e2e8f0; border-top: none;">
+            <h2 style="color: #0f172a; margin-top: 0;">Congratulations, ${researcherName}!</h2>
+            <p>We are thrilled to inform you that your manuscript has been successfully broadcast to the <strong>Genius Global Network</strong> and is now officially published.</p>
+            
+            <div style="background: #f8fafc; padding: 25px; border-radius: 16px; margin: 30px 0; border: 1px solid #f1f5f9;">
+              <p style="margin: 0; font-size: 13px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Manuscript Title</p>
+              <p style="margin: 8px 0 20px 0; font-weight: 700; color: #0f172a; font-size: 16px;">${manuscriptTitle}</p>
+              
+              <p style="margin: 0; font-size: 13px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Digital Object Identifier (DOI)</p>
+              <p style="margin: 8px 0 0 0; font-family: monospace; font-weight: 700; color: #4338ca;">${doi}</p>
+            </div>
+
+            <p>Your research is now part of the global scientific record, digitally fingerprinted, and accessible via the registry link below.</p>
+            
+            <div style="text-align: center; margin: 40px 0;">
+              <a href="${url}" style="background: #4338ca; color: white; padding: 16px 32px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 14px; display: inline-block; box-shadow: 0 10px 15px -3px rgba(67, 56, 202, 0.25);">View Live Publication</a>
+            </div>
+
+            <p style="font-size: 14px; color: #64748b;">A copy of your official published manuscript is attached to this email for your records.</p>
+            
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 40px 0;" />
+            
+            <p style="font-size: 12px; color: #94a3b8; text-align: center;">
+              This is an automated delivery from the Genius Publication System.<br/>
+              © ${new Date().getFullYear()} Genius Mindspark Global Hub
+            </p>
+          </div>
+        </div>
+      `,
+      attachments: [
+        {
+          filename: `Published_Manuscript_${doi.replace(/\//g, '_')}.pdf`,
+          content: pdfBuffer.toString('base64'),
+        }
+      ]
     });
+    console.log(`Publication email sent successfully to ${to}`);
+  } catch (error) {
+    console.error('Failed to send publication email:', error);
+  }
+}
 
-    const pdfB = await pdfDoc.save();
-    const sfT = (sanitizePdfText(title).replace(/[^a-zA-Z0-9\s]/g, '') || 'Manuscript').substring(0, 80);
+// ===== Published PDF Generation (clean journal-branded PDF for preview/download) =====
+app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const { buffer, filename } = await generatePublishedArticlePDF(id);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${sfT}_Published.pdf"`);
-    res.send(Buffer.from(pdfB));
-
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.send(buffer);
   } catch (error: any) {
     console.error('Published PDF error:', error);
     res.status(500).json({ error: error.message || 'Generation Failed' });
@@ -2212,6 +2320,22 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       const pubs = (typeof profile.publications === 'string' ? JSON.parse(profile.publications || '[]') : (profile.publications || []));
       pubs.push({ title: metadata.title, doi, date: new Date().toISOString() });
       await pool.query('UPDATE profiles SET publications = $1 WHERE id = $2', [JSON.stringify(pubs), profile.id]);
+    }
+
+    // Dispatch automated publication email (fire and forget after response)
+    const paperUserResult = await pool.query('SELECT u.email, u.name FROM papers p JOIN users u ON p.user_id = u.id WHERE p.id = $1', [id]);
+    const paperUser = paperUserResult.rows[0];
+    if (paperUser) {
+      generatePublishedArticlePDF(id).then(({ buffer }) => {
+        sendPublicationEmail(
+          paperUser.email, 
+          paperUser.name, 
+          metadata.title || paper.title, 
+          doi, 
+          url, 
+          buffer
+        );
+      }).catch(e => console.error('Emailed publication PDF generation failed:', e));
     }
 
     res.json({ success: true, doi, url });

@@ -140,9 +140,9 @@ on the Genius Global Network.`;
           />
         </div>
 
-        <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Manuscript Broadcast Successful</h2>
+        <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight uppercase italic">Scientific Breakthrough!</h2>
         <p className="text-xl text-slate-500 max-w-xl font-medium leading-relaxed">
-          Your research has been digitally fingerprinted, validated via Registry, and submitted to the Genius Global Network.
+          Congratulations! Your research has been successfully broadcast to the Genius Global Network. <span className="text-indigo-600 font-bold italic">Check your email for the final published manuscript.</span>
         </p>
 
         <div className="mt-12 bg-white p-10 rounded-[3rem] shadow-2xl shadow-slate-200/50 border border-slate-100 w-full max-w-2xl text-left relative overflow-hidden">
