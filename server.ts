@@ -1873,7 +1873,7 @@ function getStyleGuidelines(style: string) {
     - PAGINATION: You MUST wrap every ~500-800 words (or logical page) in a <div class="paper-sheet">.
     - PAGE NUMBERS: If the source text contains page numbers (e.g. "Page 1", "1", etc.), preserve them at the bottom of each <div class="paper-sheet"> inside a <div class="page-footer">.
     - FIGURES: Wrap illustrations in <div class="academic-figure"> with a centered caption below.
-    - TABLES: Use <table>, <thead>, and <tbody> for all data tables.
+    - TABLES: You MUST wrap every <table> element in a <div class="table-wrapper"> tag to ensure responsiveness. Use <thead> and <tbody>.
   `;
 
   switch (style.toLowerCase()) {

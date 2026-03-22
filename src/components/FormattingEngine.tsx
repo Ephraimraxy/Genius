@@ -128,9 +128,18 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
         .academic-content table {
           width: 100%;
           border-collapse: collapse;
-          margin: 2rem 0;
+          margin: 1rem 0;
           font-family: sans-serif;
-          font-size: 0.875rem;
+          font-size: 0.75rem;
+          table-layout: auto;
+        }
+        .table-wrapper {
+          width: 100%;
+          overflow-x: auto;
+          margin: 2rem 0;
+          background: #fcfcfc;
+          border: 1px solid #f1f5f9;
+          border-radius: 4px;
         }
         .academic-content th, .academic-content td {
           border: 1px solid #cbd5e1;
