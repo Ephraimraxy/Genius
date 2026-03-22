@@ -2065,6 +2065,7 @@ const sanitizePdfText = (text: string): string => {
     .replace(/[\u2018\u2019]/g, "'") // Fancy single quotes
     .replace(/[\u2013\u2014]/g, '-') // En and Em dashes
     .replace(/\u00A0/g, ' ')         // Non-breaking space
+    .replace(/[\r\n]+/g, ' ')       // NEW: Replace newlines and CRs with spaces to prevent WinAnsi crash
     .replace(/[^\x00-\x7F]/g, '?');  // Fallback for everything else non-ASCII
 };
 
@@ -2318,7 +2319,8 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
   for (let i = 0; i < elements.length; i++) {
     const el = $(elements[i]);
     const tagName = el.prop('tagName').toLowerCase();
-    const text = el.text().trim().replace(/&nbsp;/g, ' ');
+    const rawText = el.text().trim();
+    const text = sanitizePdfText(rawText);
     if (!text && tagName !== 'table') continue;
 
     let fontSize = 11;
@@ -2337,7 +2339,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
       el.find('tr').each((_, tr) => {
         const row: string[] = [];
         $(tr).find('td, th').each((_, td) => {
-          row.push($(td).text().trim().replace(/&nbsp;/g, ' '));
+          row.push(sanitizePdfText($(td).text().trim()));
         });
         if (row.length > 0) rows.push(row);
       });
