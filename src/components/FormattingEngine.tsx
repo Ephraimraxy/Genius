@@ -188,6 +188,26 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
           border-radius: 0 0 4px 4px;
           border-top: 1px dashed #f1f5f9;
         }
+        .sheet-header {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: space-between;
+          align-items: center;
+          gap: 1rem;
+          padding-bottom: 0.75rem;
+          margin-bottom: 2rem;
+          border-bottom: 1px solid #f1f5f9;
+          font-size: 9px;
+          color: #94a3b8;
+          font-weight: bold;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          select-none;
+        }
+        .sheet-header .doi-text {
+          color: #6366f1;
+          font-family: monospace;
+        }
         .page-footer {
           position: absolute;
           bottom: 1.5rem;

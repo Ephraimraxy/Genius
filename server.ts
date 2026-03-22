@@ -1866,11 +1866,13 @@ app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, 
   }
 });
 
-function getStyleGuidelines(style: string) {
+function getStyleGuidelines(style: string, branding: any) {
+  const metaHeader = `<div class="sheet-header"><span>ISSN: ${branding.issn}</span><span>Vol ${branding.volume}, Iss ${branding.issue}</span><span>Published: ${branding.date}</span><span class="doi-text">${branding.doi}</span></div>`;
   const common = `
     - TITLE: The manuscript topic/title must be BOLD (<strong>) and at the very top.
     - ABSTRACT: The Abstract content must be entirely ITALICIZED (<em> or <i>).
     - PAGINATION: You MUST wrap every ~500-800 words (or logical page) in a <div class="paper-sheet">.
+    - RECURSIVE HEADER: EVERY <div class="paper-sheet"> you create MUST start with this EXACT HTML block: ${metaHeader}
     - PAGE NUMBERS: If the source text contains page numbers (e.g. "Page 1", "1", etc.), preserve them at the bottom of each <div class="paper-sheet"> inside a <div class="page-footer">.
     - FIGURES: Wrap illustrations in <div class="academic-figure"> with a centered caption below.
     - TABLES: You MUST wrap every <table> element in a <div class="table-wrapper"> tag to ensure responsiveness. Use <thead> and <tbody>.
@@ -1944,7 +1946,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
       }
     }
 
-    const styleGuidelines = getStyleGuidelines(style);
+    const styleGuidelines = getStyleGuidelines(style, branding);
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
