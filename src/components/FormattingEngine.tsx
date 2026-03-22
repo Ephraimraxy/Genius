@@ -115,6 +115,10 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
         .academic-content {
           font-family: serif;
           line-height: 1.6;
+          text-align: justify;
+        }
+        .academic-content p {
+          text-align: justify;
         }
         .academic-content h1, .academic-content h2, .academic-content h3 {
           color: #0f172a;
