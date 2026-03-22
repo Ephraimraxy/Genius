@@ -1898,7 +1898,6 @@ function getStyleGuidelines(style: string, branding: any) {
     - ABSTRACT: The Abstract content must be entirely ITALICIZED (<em> or <i>).
     - PAGINATION: You MUST wrap the content in <div class="paper-sheet"> blocks (~500-800 words per block).
     - RECURSIVE HEADER: EVERY <div class="paper-sheet"> block EXCEPT THE FIRST ONE (i.e. starting from Page 2 onwards) MUST start with this EXACT HTML block: ${metaHeader}
-    - PAGE NUMBERS: EVERY <div class="paper-sheet"> you create MUST end with a <div class="page-footer">Page X</div> where X is the sequential page number (e.g. Page 1, Page 2, etc.).
     - FIGURES: Wrap illustrations in <div class="academic-figure"> with a centered caption below.
     - TABLES: Wrap every <table> element in a <div class="table-wrapper"> tag.
   `;
