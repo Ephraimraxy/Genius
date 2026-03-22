@@ -101,8 +101,8 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
     >
       <style>{`
         @media print {
-          body { background: white !important; }
-          .print\\:hidden, header, nav, aside, button { display: none !important; }
+          body * { visibility: hidden !important; }
+          #production-paper-preview, #production-paper-preview * { visibility: visible !important; }
           #production-paper-preview {
             position: absolute !important;
             left: 0 !important;
@@ -110,10 +110,24 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
+            background: white !important;
+          }
+          .header-sheet-full {
+             page-break-after: avoid !important;
+             margin-top: 0 !important;
+             box-shadow: none !important;
+             border: none !important;
+          }
+          .paper-sheet {
+            margin: 0 auto !important;
+            padding: 4rem !important;
             box-shadow: none !important;
             border: none !important;
+            page-break-after: always !important;
+            width: 100% !important;
+            max-width: 850px !important;
           }
-          .export-only { display: block !important; }
+          .no-print, button, header, nav, footer { display: none !important; }
         }
         
         .academic-content {
