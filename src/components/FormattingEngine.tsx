@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight, Download } from 'lucide-react'; // UI Icons
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
 export default function FormattingEngine({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
@@ -10,9 +12,34 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
   const [branding, setBranding] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  const handleDownloadPdf = () => {
-    window.print();
+  const handleDownloadPdf = async () => {
+    const element = document.getElementById('formatted-manuscript-content');
+    if (!element) return;
+    
+    setIsDownloading(true);
+    try {
+      const opt = {
+        margin: 0,
+        filename: `Genius_Manuscript_${activePaperId}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true,
+          logging: false,
+          letterRendering: true
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      // @ts-ignore
+      await html2pdf().set(opt).from(element).save();
+    } catch (err) {
+      console.error('PDF Generation Error:', err);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleSendToNext = async () => {
@@ -359,10 +386,15 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
                 <div className="mt-8 flex flex-col gap-3">
                   <button 
                     onClick={handleDownloadPdf}
-                    className="group w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 border border-slate-200"
+                    disabled={isDownloading}
+                    className="group w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl shadow-slate-900/10 disabled:opacity-50"
                   >
-                    <Download size={18} className="group-hover:-translate-y-1 transition-transform" />
-                    Download Formatted PDF
+                    {isDownloading ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <Download size={18} className="group-hover:-translate-y-1 transition-transform" />
+                    )}
+                    {isDownloading ? 'Generating PDF...' : 'Download Formatted PDF'}
                   </button>
 
                   <div className="pt-6 border-t border-slate-100">
@@ -423,7 +455,7 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
               </AnimatePresence>
 
               {formattedHtml ? (
-                <div className="flex flex-col">
+                <div id="formatted-manuscript-content" className="flex flex-col">
                   {/* Production Branding Header - Now Styled as the top of the first page */}
                   {branding && (
                     <div className="header-sheet flex flex-col gap-6 select-none export-only">
