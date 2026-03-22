@@ -38,6 +38,9 @@ export default function SmartUpload({
   const [isVerifying, setIsVerifying] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string>('--:--');
+  const [showAgreement, setShowAgreement] = useState(false);
+  const [agreedGuidelines, setAgreedGuidelines] = useState(false);
+  const [agreedRefund, setAgreedRefund] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -201,6 +204,10 @@ export default function SmartUpload({
   };
 
   const handlePayment = async () => {
+    if (!agreedGuidelines || !agreedRefund) {
+      setShowAgreement(true);
+      return;
+    }
     setIsPaying(true);
     setError(null);
     try {
@@ -808,6 +815,106 @@ export default function SmartUpload({
                 >
                   Verify & Proceed
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Call for Papers Agreement Modal */}
+      <AnimatePresence>
+        {showAgreement && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-2xl bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col my-auto"
+            >
+              <div className="p-10 pb-0 shrink-0">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-14 h-14 bg-[#800000]/10 text-[#800000] rounded-2xl flex items-center justify-center">
+                    <AlertCircle size={30} />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900 leading-tight">Author Agreement</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">GMIJP Submission Guidelines</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-10 py-0 overflow-y-auto max-h-[50vh] scroll-smooth">
+                <div className="prose prose-slate prose-sm max-w-none space-y-4">
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 font-medium text-slate-600 space-y-4 leading-relaxed">
+                    <h4 className="font-black text-[#800000] uppercase tracking-wider text-xs">Call for Papers</h4>
+                    <p>Genius Multidisciplinary International Journal Publication wish to invite and welcome articles to be published in its bi-annual (January – June and July – December edition). More specifically, the journal provides coverage for contemplary research and issues across the globe from various disciplines. To ensure high quality of articles published in the journal, all submitted manuscripts shall undergo a double-blind peer-review process.</p>
+                    
+                    <h4 className="font-black text-[#800000] uppercase tracking-wider text-xs">Guideline for Authors</h4>
+                    <ul className="list-decimal list-inside space-y-2">
+                      <li>The title page should contain the title of the article; capitalize the first letter of each word in the title and name(s), Email addresses, and phone numbers of the authors.</li>
+                      <li>All manuscripts must include a brief informative abstract not exceeding 200 words describing the Background, method, results and conclusion.</li>
+                      <li>Key words (maximum of 5) should be provided below the abstract.</li>
+                      <li>Introduction: should articulate the problem and provide sufficient background info.</li>
+                      <li>Methods: should be concise, but provide sufficient details of design.</li>
+                      <li>Results: should be presented in tables and figures in a logical sequence.</li>
+                      <li>Discussion: should be made in relation to hypotheses/questions.</li>
+                      <li>Conclusion: should be precise and based on the outcome of the study.</li>
+                    </ul>
+
+                    <h4 className="font-black text-[#800000] uppercase tracking-wider text-xs">Submission Requirements</h4>
+                    <p>Manuscripts should follow recent APA format 7th edition. Maximum of 4,500 words (including references) using Times New Roman, font 12 and 1.5 line spacing.</p>
+                    
+                    <h4 className="font-black text-[#800000] uppercase tracking-wider text-xs">Assessment Fees</h4>
+                    <p>Any article submitted to GMIJP shall attract N5,000.00 ($12 USD) non-refundable fee for Paper Assessment. If accepted, a publication fee of N30,000.00 ($51 USD) applies.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-10 pt-8 shrink-0 space-y-6">
+                <div className="space-y-3">
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      className="mt-1 w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      checked={agreedGuidelines}
+                      onChange={(e) => setAgreedGuidelines(e.target.checked)}
+                    />
+                    <span className="text-sm font-bold text-slate-700 group-hover:text-slate-900 transition-colors">
+                      I have read and adhered to all Author Guidelines and formatting requirements.
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      className="mt-1 w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      checked={agreedRefund}
+                      onChange={(e) => setAgreedRefund(e.target.checked)}
+                    />
+                    <span className="text-sm font-bold text-slate-700 group-hover:text-slate-900 transition-colors">
+                      I understand the assessment fee is non-refundable regardless of the peer-review outcome.
+                    </span>
+                  </label>
+                </div>
+
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setShowAgreement(false)}
+                    className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-200 transition-all"
+                  >
+                    Close & Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (agreedGuidelines && agreedRefund) {
+                        setShowAgreement(false);
+                        handlePayment();
+                      }
+                    }}
+                    disabled={!agreedGuidelines || !agreedRefund}
+                    className="flex-[2] py-4 bg-[#800000] text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all disabled:opacity-30"
+                  >
+                    I Accept & Proceed to Pay
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

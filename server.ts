@@ -2238,6 +2238,176 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   return Buffer.from(pdfBytes);
 }
 
+// ===== PDF Generation: Formatted Manuscript (Server-Side) =====
+async function generateFormattedManuscriptPDF(formattedHtml: string, branding: any): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+  const margin = 60;
+  const width = 595; // A4
+  const height = 842;
+  const maxWidth = width - (2 * margin);
+  const maroon = rgb(0.5, 0, 0);
+  const black = rgb(0, 0, 0);
+  const gray = rgb(0.4, 0.4, 0.4);
+
+  let pageIndex = 0;
+  let page = pdfDoc.addPage([width, height]);
+  let y = height - 50;
+
+  const drawHeader = async (p: any, isFirst: boolean) => {
+    let curY = height - 50;
+    try {
+      const logoPathLeft = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
+      const logoPathRight = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
+      if (fs.existsSync(logoPathLeft)) {
+        const logo = await pdfDoc.embedJpg(fs.readFileSync(logoPathLeft));
+        p.drawImage(logo, { x: margin, y: curY - 50, width: 50, height: 50 });
+      }
+      if (fs.existsSync(logoPathRight)) {
+        const logo = await pdfDoc.embedJpg(fs.readFileSync(logoPathRight));
+        p.drawImage(logo, { x: width - margin - 50, y: curY - 50, width: 50, height: 50 });
+      }
+    } catch(e) {}
+
+    const titleStack = ['GENIUS MULTIDISCIPLINARY', 'INTERNATIONAL JOURNAL'];
+    p.drawText(titleStack[0], { x: margin + 60, y: curY - 15, size: 10, font: fontBold, color: maroon });
+    p.drawText(titleStack[1], { x: margin + 60, y: curY - 30, size: 12, font: fontBold, color: black });
+
+    const meta = `ISSN: ${branding.issn} | Vol ${branding.volume}, No ${branding.issue} | ${branding.date}`;
+    p.drawText(meta, { x: width / 2 - font.widthOfTextAtSize(meta, 8) / 2, y: curY - 45, size: 8, font, color: gray });
+    
+    curY -= 65;
+    p.drawLine({ start: { x: margin, y: curY }, end: { x: width - margin, y: curY }, thickness: 1.5, color: maroon });
+    
+    // Page Number
+    const pageNum = `Page ${pageIndex + 1}`;
+    p.drawText(pageNum, { x: width / 2 - font.widthOfTextAtSize(pageNum, 8) / 2, y: 30, size: 8, font, color: gray });
+    
+    return curY - 30;
+  };
+
+  y = await drawHeader(page, true);
+
+  const $ = cheerio.load(formattedHtml);
+  
+  // Custom text wrapper
+  const wrapText = (text: string, size: number, f: any, maxW: number) => {
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = words[0];
+
+    for (let i = 1; i < words.length; i++) {
+      const word = words[i];
+      const width = f.widthOfTextAtSize(currentLine + ' ' + word, size);
+      if (width < maxW) {
+        currentLine += ' ' + word;
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    lines.push(currentLine);
+    return lines;
+  };
+
+  // Process HTML elements
+  const elements = $('h1, h2, h3, p, li, b, strong, em, i, table');
+  
+  for (let i = 0; i < elements.length; i++) {
+    const el = $(elements[i]);
+    const tagName = el.prop('tagName').toLowerCase();
+    const text = el.text().trim().replace(/&nbsp;/g, ' ');
+    if (!text && tagName !== 'table') continue;
+
+    let fontSize = 11;
+    let currentFont = font;
+    let color = black;
+
+    if (tagName === 'h1') { fontSize = 16; currentFont = fontBold; y -= 10; }
+    else if (tagName === 'h2') { fontSize = 14; currentFont = fontBold; y -= 8; }
+    else if (tagName === 'h3') { fontSize = 12; currentFont = fontBold; y -= 6; }
+    else if (['b', 'strong'].includes(tagName)) { currentFont = fontBold; }
+    else if (['em', 'i'].includes(tagName)) { currentFont = fontItalic; }
+
+    if (tagName === 'table') {
+      // Very basic table support: Just list rows as text for now to avoid crash
+      y -= 10;
+      el.find('tr').each((_, tr) => {
+        const rowText = $(tr).text().trim().replace(/\s+/g, ' | ');
+        const lines = wrapText(rowText, 9, font, maxWidth);
+        for (const line of lines) {
+          if (y < 80) {
+            pageIndex++;
+            page = pdfDoc.addPage([width, height]);
+            y = height - 50;
+            drawHeader(page, false).then(newY => y = newY);
+          }
+          page.drawText(line, { x: margin, y, size: 9, font, color: gray });
+          y -= 12;
+        }
+      });
+      y -= 10;
+      continue;
+    }
+
+    const lines = wrapText(text, fontSize, currentFont, maxWidth);
+    
+    for (const line of lines) {
+      if (y < 80) {
+        pageIndex++;
+        page = pdfDoc.addPage([width, height]);
+        y = height - 50;
+        y = await drawHeader(page, false);
+      }
+      
+      const xPos = tagName === 'h1' ? width / 2 - currentFont.widthOfTextAtSize(line, fontSize) / 2 : margin;
+      page.drawText(line, { x: xPos, y, size: fontSize, font: currentFont, color });
+      y -= (fontSize + 6);
+    }
+    y -= 4; // Paragraph spacing
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
+
+// API: Download Formatted Manuscript PDF
+app.get('/api/papers/:id/formatted-download', async (req, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    
+    // Fetch paper content
+    const result = await pool.query('SELECT * FROM papers WHERE id = $1', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
+    const paper = result.rows[0];
+
+    // Fetch journal branding settings
+    const vol = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
+    const issue = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
+    const issn = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+    
+    const branding = {
+      volume: vol.rows[0]?.value || '1',
+      issue: issue.rows[0]?.value || '1',
+      issn: issn.rows[0]?.value || '2971-7760',
+      date: new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+      doi: paper.doi
+    };
+
+    const content = paper.formatted_content || paper.content;
+    const pdfBuffer = await generateFormattedManuscriptPDF(content, branding);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Genius_Manuscript_${id}.pdf`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Manuscript PDF Error:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+});
+
 // ===== Resend Email: Acceptance Letter =====
 async function sendAcceptanceEmail(to: string, researcherName: string, manuscriptTitle: string, manuscriptId: number) {
   const RESEND_API_KEY = process.env.RESEND_API_KEY;

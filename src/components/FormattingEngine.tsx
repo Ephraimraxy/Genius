@@ -15,100 +15,25 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownloadPdf = async () => {
-    const element = document.getElementById('formatted-manuscript-content');
-    if (!element) return;
-    
+    if (!activePaperId) return;
     setIsDownloading(true);
     try {
-      // 1. "CLEAN ROOM" ISOLATION: Create a hidden iframe to render ONLY the manuscript
-      // This completely bypasses Tailwind 4's oklch errors in the main document.
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.left = '-10000px';
-      iframe.style.top = '-10000px';
-      iframe.style.width = '850px'; // Match paper-sheet width
-      document.body.appendChild(iframe);
+      // 1. DIRECT SERVER-SIDE DOWNLOAD
+      // This completely bypasses all client-side rendering/parsing issues (like oklch)
+      // by using the same robust logic as the acceptance letters.
+      const url = `${(import.meta as any).env.VITE_API_URL || ''}/api/papers/${activePaperId}/formatted-download`;
       
-      const doc = iframe.contentWindow?.document;
-      if (!doc) throw new Error('Could not create clean room');
-
-      // 2. Inject ONLY Safe, Hex-based styles (Strictly NO Tailwind 4)
-      doc.open();
-      doc.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <style>
-              @page { size: A4; margin: 0; }
-              body { 
-                margin: 0; 
-                padding: 0; 
-                background: white; 
-                font-family: "Times New Roman", serif;
-              }
-              .paper-sheet {
-                width: 210mm;
-                min-height: 297mm;
-                padding: 25mm 20mm;
-                margin: 0 auto;
-                background: white;
-                position: relative;
-                box-sizing: border-box;
-                page-break-after: always;
-                color: #000;
-              }
-              .sheet-header-full { border-bottom: 2px solid #800000; margin-bottom: 5mm; padding-bottom: 2mm; display: flex; flex-direction: column; }
-              .header-top-row { display: flex; justify-content: space-between; align-items: center; }
-              .header-logo-left, .header-logo-right { display: flex; align-items: center; gap: 3mm; }
-              .header-logo-left img, .header-logo-right img { height: 15mm; }
-              .journal-red-med { color: #800000; font-weight: bold; font-size: 10pt; }
-              .journal-black-large { color: #000; font-weight: 900; font-size: 14pt; }
-              .header-meta-center { text-align: center; flex: 1; }
-              .meta-row { font-size: 8pt; color: #444; }
-              
-              .academic-content { font-size: 11pt; line-height: 1.5; text-align: justify; }
-              .academic-content h1 { font-size: 16pt; font-weight: bold; margin-top: 10mm; }
-              .academic-content h2 { font-size: 13pt; font-weight: bold; margin-top: 8mm; }
-              .academic-content p { margin-bottom: 4mm; }
-              
-              .page-number { position: absolute; font-size: 10pt; font-weight: bold; color: #666; }
-              .page-number.bottom-center { bottom: 10mm; left: 50%; transform: translateX(-50%); }
-              .page-number.top-right { top: 10mm; right: 20mm; }
-              .page-number.bottom-right { bottom: 10mm; right: 20mm; }
-              
-              table { width: 100%; border-collapse: collapse; margin: 5mm 0; font-size: 9pt; }
-              th, td { border: 1px solid #ccc; padding: 2mm; }
-              th { background: #f5f5f5; }
-              
-              .academic-figure { margin: 10mm 0; text-align: center; border: 1px solid #eee; padding: 5mm; }
-            </style>
-          </head>
-          <body>
-            <div id="render-target">${element.innerHTML}</div>
-          </body>
-        </html>
-      `);
-      doc.close();
-
-      // Wait for images to load in the iframe
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const opt = {
-        margin: 0,
-        filename: `Genius_Manuscript_${activePaperId}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
-
-      // @ts-ignore
-      await html2pdf().set(opt).from(doc.getElementById('render-target')).save();
-
-      // 4. Cleanup
-      document.body.removeChild(iframe);
-
+      // We use a hidden anchor to trigger-download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Genius_Manuscript_${activePaperId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      addToast('Drafting High-Fidelity PDF from server...', 'success');
     } catch (err) {
-      console.error('PDF Generation Error:', err);
+      console.error('PDF Download Error:', err);
       alert('Neural export failed. Attempting direct print fallback...');
       window.print();
     } finally {
