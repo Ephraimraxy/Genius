@@ -291,6 +291,12 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
               {/* Next Step Button Relocated Here */}
               {formattedHtml && (
                 <div className="mt-6 pt-6 border-t border-slate-100">
+                  <button 
+                    onClick={handleSendToNext}
+                    disabled={isSending}
+                    className="group w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl shadow-2xl shadow-emerald-900/20 font-black tracking-widest uppercase text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Move to Reference Intel'}
                     {!isSending && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
                   </button>
                 </div>
@@ -342,9 +348,9 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
 
               {formattedHtml ? (
                 <div className="flex flex-col">
-                  {/* Production Branding Header */}
+                  {/* Production Branding Header - Now Styled as the top of the first page */}
                   {branding && (
-                    <div className="mb-10 pb-8 border-b-2 border-[#800000] flex flex-col gap-6 select-none export-only">
+                    <div className="header-sheet flex flex-col gap-6 select-none export-only">
                       <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
                           <img src="/journal-logo.png" alt="Genius" className="h-10 md:h-14 w-auto object-contain" />
