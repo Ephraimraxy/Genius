@@ -20,32 +20,32 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
     
     setIsDownloading(true);
     try {
-      // 1. Create a deep clone for sanitization
-      const clone = element.cloneNode(true) as HTMLElement;
-      
-      // 2. Sanitize modern CSS (oklch) and shadows that crash html2canvas
-      const walker = document.createTreeWalker(clone, NodeFilter.SHOW_ELEMENT);
-      let node: Node | null = walker.currentNode;
-      while (node) {
-        const el = node as HTMLElement;
-        const style = window.getComputedStyle(el);
-        
-        // Force standard colors for common Tailwind classes to bypass oklch
-        if (el.classList.contains('text-slate-900')) el.style.color = '#0f172a';
-        if (el.classList.contains('text-slate-700')) el.style.color = '#334155';
-        if (el.classList.contains('text-slate-500')) el.style.color = '#64748b';
-        if (el.classList.contains('text-slate-400')) el.style.color = '#94a3b8';
-        if (el.classList.contains('text-indigo-600')) el.style.color = '#4f46e5';
-        if (el.classList.contains('text-emerald-600')) el.style.color = '#16a34a';
-        
-        // Kill shadows and filters which often contain oklch in Tailwind 4
-        el.style.boxShadow = 'none';
-        el.style.textShadow = 'none';
-        el.style.filter = 'none';
-        el.style.backdropFilter = 'none';
-        
-        node = walker.nextNode();
-      }
+      // 1. ATOMIC CSS FIX: Temporarily disable ALL stylesheets that might contain oklch (Tailwind 4)
+      // html2canvas scans all styleSheets, so we must neutralize them at the source
+      const disabledSheets: HTMLStyleElement[] = [];
+      document.querySelectorAll('style, link[rel="stylesheet"]').forEach((s: any) => {
+        try {
+          // If it contains oklch or is from Tailwind, disable it
+          if (s.textContent?.includes('oklch') || s.href?.includes('tailwind') || s.id === 'tailwind-v4') {
+            s.disabled = true;
+            disabledSheets.push(s);
+          }
+        } catch (e) {}
+      });
+
+      // 2. Add a safe, Hex-only temporary style for the capture
+      const safeStyle = document.createElement('style');
+      safeStyle.textContent = `
+        #formatted-manuscript-content { color: #0f172a !important; background: white !important; }
+        .paper-sheet { margin: 0 auto !important; padding: 4rem !important; background: white !important; page-break-after: always !important; }
+        .text-slate-900 { color: #0f172a !important; }
+        .text-slate-500 { color: #64748b !important; }
+        .text-indigo-600 { color: #4f46e5 !important; }
+        .page-number { position: absolute; font-size: 10px; font-weight: bold; color: #94a3b8; }
+        /* Style specific positions */
+        .academic-content .page-number { top: 2rem; right: 5rem; } /* Default APA fallback */
+      `;
+      document.head.appendChild(safeStyle);
 
       const opt = {
         margin: 0,
@@ -54,17 +54,21 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
         html2canvas: { 
           scale: 2, 
           useCORS: true,
-          letterRendering: true,
-          allowTaint: true
+          letterRendering: true
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
       // @ts-ignore
-      await html2pdf().set(opt).from(clone).save();
+      await html2pdf().set(opt).from(element).save();
+
+      // 3. CLEANUP: Restore everything
+      document.head.removeChild(safeStyle);
+      disabledSheets.forEach(s => s.disabled = false);
+
     } catch (err) {
       console.error('PDF Generation Error:', err);
-      alert('PDF generation failed. Using print fallback...');
+      alert('PDF generation failed due to browser color parsing. Using high-fidelity print fallback...');
       window.print();
     } finally {
       setIsDownloading(false);
@@ -338,6 +342,26 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
           font-weight: bold;
           text-transform: uppercase;
           letter-spacing: 0.1em;
+        }
+        /* Atomic stylesheet-disabling fix for oklch errors in html2canvas */
+        /* This ensures all custom properties are explicitly set to avoid parsing issues */
+        * {
+          --tw-bg-opacity: 1 !important;
+          --tw-text-opacity: 1 !important;
+          --tw-border-opacity: 1 !important;
+          --tw-shadow: 0 0 #0000 !important;
+          --tw-ring-offset-shadow: 0 0 #0000 !important;
+          --tw-ring-shadow: 0 0 #0000 !important;
+          --tw-gradient-stops: var(--tw-gradient-from, #0000), var(--tw-gradient-to, #0000) !important;
+          --tw-backdrop-blur: blur(0) !important;
+          --tw-backdrop-brightness: brightness(1) !important;
+          --tw-backdrop-contrast: contrast(1) !important;
+          --tw-backdrop-grayscale: grayscale(0) !important;
+          --tw-backdrop-hue-rotate: hue-rotate(0deg) !important;
+          --tw-backdrop-invert: invert(0) !important;
+          --tw-backdrop-opacity: opacity(1) !important;
+          --tw-backdrop-saturate: saturate(1) !important;
+          --tw-backdrop-sepia: sepia(0) !important;
         }
         @media (max-width: 640px) {
           .paper-sheet {
