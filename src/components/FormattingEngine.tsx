@@ -37,6 +37,24 @@ export default function FormattingEngine({
 
       addToast('Generating high-fidelity PDF from preview...', 'info');
 
+      // PRE-FETCH External Stylesheets to sanitize them (Fix for html2canvas oklch crash + layout loss)
+      const safeStyles: string[] = [];
+      const links = document.querySelectorAll('link[rel="stylesheet"]');
+      for (let i = 0; i < links.length; i++) {
+        try {
+           const href = (links[i] as HTMLLinkElement).href;
+           if (href.startsWith(window.location.origin) || href.startsWith('/')) {
+             const res = await fetch(href);
+             const cssText = await res.text();
+             // Replace oklch/oklab to prevent html2canvas parsing crash, use transparent to avoid dark blocks
+             const sanitized = cssText.replace(/(oklch|oklab)\([^)]+\)/g, 'transparent');
+             safeStyles.push(sanitized);
+           }
+        } catch(e) {
+           console.warn('Could not fetch stylesheet for PDF generation', e);
+        }
+      }
+
       await html2pdf().set({
         margin: [10, 10, 15, 10],
         filename: `Genius_Manuscript_${activePaperId}.pdf`,
@@ -49,42 +67,36 @@ export default function FormattingEngine({
           scrollX: 0,
           scrollY: 0,
           windowWidth: 850,
-          // Critical: sanitize oklch colors in the cloned DOM before html2canvas renders it
           onclone: (clonedDoc: Document) => {
-            // Tailwind v4 uses oklch extensively in CSS variables. 
-            // html2canvas outright crashes if it parses *any* CSS containing oklch.
-            // 1. Completely remove all stylesheets in the clone.
-            // Since we are baking computed styles inline, we don't need them.
-            const sheets = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+            // 1. Remove raw external links that contain oklch
+            const sheets = clonedDoc.querySelectorAll('link[rel="stylesheet"]');
             sheets.forEach(sheet => sheet.remove());
 
-            // 2. Walk every element, bake computed colors, and strip oklch inline styles.
+            // 2. Sanitize any inline style tags
+            const inlineStyles = clonedDoc.querySelectorAll('style');
+            inlineStyles.forEach(sheet => {
+              if (sheet.innerHTML) {
+                sheet.innerHTML = sheet.innerHTML.replace(/(oklch|oklab)\([^)]+\)/g, 'transparent');
+              }
+            });
+
+            // 3. Inject our sanitized external stylesheets back! This preserves layout (flex, grid, prose...)
+            safeStyles.forEach(cssText => {
+               const styleEl = clonedDoc.createElement('style');
+               styleEl.innerHTML = cssText;
+               clonedDoc.head.appendChild(styleEl);
+            });
+
+            // 4. Clean up any inline style attribute containing oklch just in case
             const allElements = clonedDoc.querySelectorAll('*');
             allElements.forEach((el) => {
               try {
                 const htmlEl = el as HTMLElement;
-                
-                // If the element has an inline style with oklch, wipe it.
                 const styleAttr = htmlEl.getAttribute('style');
-                if (styleAttr && styleAttr.includes('oklch')) {
-                   // Instead of parsing, just wipe the style attribute completely 
-                   // before we apply the computed RGB styles.
+                if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('oklab'))) {
                    htmlEl.removeAttribute('style');
                 }
-
-                // Bake safe computed colors
-                const computed = clonedDoc.defaultView?.getComputedStyle(el);
-                if (!computed) return;
-                
-                const color = computed.color;
-                const bg = computed.backgroundColor;
-                const border = computed.borderColor;
-                
-                // Only apply if they don't contain oklch (browsers usually resolve to rgb anyway)
-                if (color && !color.includes('oklch')) htmlEl.style.color = color;
-                if (bg && !bg.includes('oklch')) htmlEl.style.backgroundColor = bg;
-                if (border && !border.includes('oklch')) htmlEl.style.borderColor = border;
-              } catch (e) { /* skip problematic elements */ }
+              } catch (e) { /* skip */ }
             });
           },
         },
