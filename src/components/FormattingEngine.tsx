@@ -30,7 +30,6 @@ export default function FormattingEngine({
     if (!activePaperId || !formattedHtml) return;
     setIsDownloading(true);
     try {
-      // Capture EXACTLY what is shown in the preview — pixel-for-pixel fidelity
       const element = document.getElementById('formatted-manuscript-content');
       if (!element) {
         throw new Error('Preview content not found');
@@ -50,6 +49,39 @@ export default function FormattingEngine({
           scrollX: 0,
           scrollY: 0,
           windowWidth: 850,
+          // Critical: sanitize oklch colors in the cloned DOM before html2canvas renders it
+          onclone: (clonedDoc: Document) => {
+            // 1. Disable any stylesheets that contain oklch (Tailwind v4 base)
+            const sheets = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+            sheets.forEach((sheet) => {
+              try {
+                const styleEl = sheet as HTMLStyleElement;
+                if (styleEl.textContent && styleEl.textContent.includes('oklch')) {
+                  styleEl.textContent = styleEl.textContent.replace(
+                    /oklch\([^)]*\)/g,
+                    'rgb(0, 0, 0)'
+                  );
+                }
+              } catch (e) { /* cross-origin sheets — ignore */ }
+            });
+
+            // 2. Walk every element and bake computed colors as inline rgb styles
+            const allElements = clonedDoc.querySelectorAll('*');
+            allElements.forEach((el) => {
+              try {
+                const computed = clonedDoc.defaultView?.getComputedStyle(el);
+                if (!computed) return;
+                const htmlEl = el as HTMLElement;
+                // Browser always resolves computed colors to rgb/rgba — safe for html2canvas
+                const color = computed.color;
+                const bg = computed.backgroundColor;
+                const border = computed.borderColor;
+                if (color) htmlEl.style.color = color;
+                if (bg) htmlEl.style.backgroundColor = bg;
+                if (border) htmlEl.style.borderColor = border;
+              } catch (e) { /* skip problematic elements */ }
+            });
+          },
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'], before: '.paper-sheet' },
