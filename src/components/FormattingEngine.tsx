@@ -149,6 +149,27 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
           border-radius: 0.5rem;
           border: 1px dashed #cbd5e1;
         }
+        .academic-content section {
+          position: relative;
+          margin-bottom: 4rem;
+          padding-bottom: 2rem;
+          border-bottom: 1px dashed #e2e8f0;
+        }
+        .academic-content section::after {
+          content: "Page Break";
+          position: absolute;
+          bottom: -1rem;
+          left: 50%;
+          transform: translateX(-50%);
+          background: #f1f5f9;
+          padding: 2px 10px;
+          border-radius: 10px;
+          font-size: 8px;
+          color: #94a3b8;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          font-weight: 800;
+        }
       `}</style>
 
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -303,14 +324,16 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
                           </div>
                         </div>
 
-                        <div className="flex flex-col items-center text-center px-2">
-                           <div className="flex flex-wrap items-center justify-center gap-2 text-[9px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                             <span>ISSN: {branding.issn}</span>
-                             <span className="opacity-20">|</span>
-                             <span>Volume {branding.volume}, issue {branding.issue}</span>
-                           </div>
-                           <p className="text-indigo-600 font-mono text-[8px] md:text-[9px] mt-1 font-bold">{branding.doi}</p>
-                        </div>
+                         <div className="flex flex-col items-center text-center px-2">
+                            <div className="flex flex-wrap items-center justify-center gap-2 text-[9px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                              <span>ISSN: {branding.issn}</span>
+                              <span className="opacity-20">|</span>
+                              <span>Vol {branding.volume}, Iss {branding.issue}</span>
+                              <span className="opacity-20">|</span>
+                              <span className="text-indigo-600">Published: {branding.date}</span>
+                            </div>
+                            <p className="text-indigo-600 font-mono text-[8px] md:text-[9px] mt-1 font-bold">{branding.doi}</p>
+                         </div>
 
                         <div className="flex items-center gap-3">
                            <div className="hidden sm:block text-right">

@@ -1958,9 +1958,10 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           CRITICAL RULES:
           1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the output in triple backticks (\`\`\`html).
           2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>.
-          3. FIDELITY: You MUST preserve 100% of the manuscript text. Do NOT truncate, summarize, or omit a single sentence.
-          4. STRUCTURE: Use semantic <section>, <h1>, <h2>, and <p> tags.
-          5. FONTS: Use standard serif fonts for the main body (the CSS handles this, just use semantic HTML).`
+          3. ZERO SUMMARIZATION: You MUST preserve 100% of the manuscript text. Do NOT truncate, summarize, simplify, or omit a single sentence. If the input is long (e.g., 15+ pages), you MUST output the equivalent volume of text.
+          4. FIDELITY: Every single paragraph, reference, and acknowledgment from the source must be present in the output.
+          5. STRUCTURE: Use semantic <section> tags for major sections (Introduction, Methods, etc.) to allow for page-break styling. Use <h1>, <h2>, and <p> tags.
+          6. FONTS: Use standard serif fonts for the main body.`
         },
         { role: 'user', content: `Manuscript Title (TOPIC): ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
       ]
