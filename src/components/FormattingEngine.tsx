@@ -5,7 +5,19 @@ import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, L
 import html2pdf from 'html2pdf.js';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
-export default function FormattingEngine({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
+import { ToastType } from './ToastSystem';
+
+export default function FormattingEngine({ 
+  activePaperId, 
+  setActivePaperId, 
+  onNavigate,
+  addToast
+}: { 
+  activePaperId: number | null, 
+  setActivePaperId: (id: number | null) => void, 
+  onNavigate?: (tab: string) => void,
+  addToast: (message: string, type?: ToastType) => void
+}) {
   const [selectedStyle, setSelectedStyle] = useState('ieee');
   const [isFormatting, setIsFormatting] = useState(false);
   const [formattedHtml, setFormattedHtml] = useState<string | null>(null);
