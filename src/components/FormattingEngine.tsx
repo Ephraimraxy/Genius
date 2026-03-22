@@ -20,6 +20,33 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
     
     setIsDownloading(true);
     try {
+      // 1. Create a deep clone for sanitization
+      const clone = element.cloneNode(true) as HTMLElement;
+      
+      // 2. Sanitize modern CSS (oklch) and shadows that crash html2canvas
+      const walker = document.createTreeWalker(clone, NodeFilter.SHOW_ELEMENT);
+      let node: Node | null = walker.currentNode;
+      while (node) {
+        const el = node as HTMLElement;
+        const style = window.getComputedStyle(el);
+        
+        // Force standard colors for common Tailwind classes to bypass oklch
+        if (el.classList.contains('text-slate-900')) el.style.color = '#0f172a';
+        if (el.classList.contains('text-slate-700')) el.style.color = '#334155';
+        if (el.classList.contains('text-slate-500')) el.style.color = '#64748b';
+        if (el.classList.contains('text-slate-400')) el.style.color = '#94a3b8';
+        if (el.classList.contains('text-indigo-600')) el.style.color = '#4f46e5';
+        if (el.classList.contains('text-emerald-600')) el.style.color = '#16a34a';
+        
+        // Kill shadows and filters which often contain oklch in Tailwind 4
+        el.style.boxShadow = 'none';
+        el.style.textShadow = 'none';
+        el.style.filter = 'none';
+        el.style.backdropFilter = 'none';
+        
+        node = walker.nextNode();
+      }
+
       const opt = {
         margin: 0,
         filename: `Genius_Manuscript_${activePaperId}.pdf`,
@@ -27,16 +54,18 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
         html2canvas: { 
           scale: 2, 
           useCORS: true,
-          logging: false,
-          letterRendering: true
+          letterRendering: true,
+          allowTaint: true
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
       // @ts-ignore
-      await html2pdf().set(opt).from(element).save();
+      await html2pdf().set(opt).from(clone).save();
     } catch (err) {
       console.error('PDF Generation Error:', err);
+      alert('PDF generation failed. Using print fallback...');
+      window.print();
     } finally {
       setIsDownloading(false);
     }
