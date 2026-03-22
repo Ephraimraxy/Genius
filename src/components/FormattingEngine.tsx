@@ -162,12 +162,31 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
           background: white;
           width: 100%;
           max-width: 850px;
-          margin: 2rem auto;
+          margin: 0 auto 2rem;
           padding: 3rem 4rem;
           box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
           border: 1px solid #e2e8f0;
           position: relative;
           min-height: 1100px;
+        }
+        .header-sheet {
+          background: white;
+          width: 100%;
+          max-width: 850px;
+          margin: 2rem auto 0;
+          padding: 2rem 4rem 1rem;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+          border: 1px solid #e2e8f0;
+          border-bottom: none;
+          border-radius: 4px 4px 0 0;
+          position: relative;
+          z-index: 10;
+        }
+        /* Glue the first paper sheet to the header */
+        .paper-sheet:first-of-type {
+          margin-top: 0;
+          border-radius: 0 0 4px 4px;
+          border-top: 1px dashed #f1f5f9;
         }
         .page-footer {
           position: absolute;
@@ -272,12 +291,6 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
               {/* Next Step Button Relocated Here */}
               {formattedHtml && (
                 <div className="mt-6 pt-6 border-t border-slate-100">
-                  <button 
-                    onClick={handleSendToNext}
-                    disabled={isSending}
-                    className="group w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl shadow-2xl shadow-emerald-900/20 font-black tracking-widest uppercase text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-                  >
-                    {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Move to Reference Intel'}
                     {!isSending && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
                   </button>
                 </div>
