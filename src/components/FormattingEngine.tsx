@@ -331,6 +331,10 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
         #formatted-manuscript-content .border-slate-100 { border-color: #f1f5f9 !important; }
         #formatted-manuscript-content .border-slate-200 { border-color: #e2e8f0 !important; }
 
+        .page-number { position: absolute; font-size: 10px; font-weight: bold; color: #94a3b8; z-index: 100; user-select: none; }
+        .page-number.top-right { top: 3rem; right: 5rem; }
+        .page-number.bottom-center { bottom: 1.5rem; left: 50%; transform: translateX(-50%); }
+        .page-number.bottom-right { bottom: 1.5rem; right: 5rem; }
         .page-footer {
           position: absolute;
           bottom: 1.5rem;

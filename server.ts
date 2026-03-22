@@ -1907,24 +1907,26 @@ function getStyleGuidelines(style: string, branding: any) {
     case 'ieee':
       return `IEEE STYLE RULES:
         ${common}
+        - PAGINATION: Place a <div class="page-number bottom-center">X</div> (where X is the number) at the bottom center of every sheet.
         - Use numbered citations in square brackets (e.g., [1]).
-        - References must be numbered and correspond to the citations.
         - Use a technical, structured layout with clearly numbered sections (e.g., 1. Introduction).`;
     case 'apa':
       return `APA STYLE (7th Ed.) RULES:
         ${common}
-        - Use Author-Date citations (e.g., Smith, 2023 or Smith et al., 2023).
+        - PAGINATION: Place a <div class="page-number top-right">X</div> (where X is the number) at the top right of every sheet.
+        - Use Author-Date citations (e.g., Smith, 2023).
         - Use specific heading levels (H1 for major sections, H2 for subsections).
         - References must be in alphabetical order with hanging indents.`;
     case 'nature':
       return `NATURE STYLE RULES:
         ${common}
+        - PAGINATION: Place a <div class="page-number bottom-right">X</div> at the bottom right.
         - Use superscript numbers for citations (e.g. <sup>1</sup>).
-        - Keep the summary/abstract professional and concise.
-        - References formatted according to Nature Portfolio standards.`;
+        - Keep the summary/abstract professional and concise.`;
     case 'elsevier':
       return `ELSEVIER STYLE RULES:
         ${common}
+        - PAGINATION: Place a <div class="page-number bottom-right">X</div> at the bottom right.
         - Use structured headings with clear hierarchy.
         - Standard Elsevier reference format.`;
     default:
