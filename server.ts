@@ -1867,7 +1867,18 @@ app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, 
 });
 
 function getStyleGuidelines(style: string, branding: any) {
-  const metaHeader = `<div class="sheet-header"><span>GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL</span><span>ISSN: ${branding.issn}</span><span>Vol ${branding.volume}, Iss ${branding.issue}</span><span>Published: ${branding.date}</span><span class="doi-text">${branding.doi}</span></div>`;
+  const metaHeader = `
+    <div class="sheet-header">
+      <div class="header-left">
+        <img src="/journal-logo.png" alt="Genius" />
+        <span>GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL</span>
+      </div>
+      <div class="header-right">
+        <span>ISSN: ${branding.issn}</span>
+        <span>Vol ${branding.volume}, Iss ${branding.issue}</span>
+        <img src="/Nasarawa-State-University.jpg" alt="NSUK" />
+      </div>
+    </div>`;
   const common = `
     - TITLE: The manuscript topic/title must be BOLD (<strong>) and at the very top.
     - ABSTRACT: The Abstract content must be entirely ITALICIZED (<em> or <i>).

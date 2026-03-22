@@ -193,16 +193,28 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
           flex-wrap: wrap;
           justify-content: space-between;
           align-items: center;
-          gap: 1rem;
+          gap: 1.5rem;
           padding-bottom: 0.75rem;
           margin-bottom: 2rem;
           border-bottom: 1px solid #f1f5f9;
-          font-size: 9px;
+          font-size: 8px;
           color: #94a3b8;
           font-weight: bold;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          select-none;
+          user-select: none;
+        }
+        .sheet-header .header-left, .sheet-header .header-right {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+        }
+        .sheet-header img {
+          height: 14px;
+          width: auto;
+          object-fit: contain;
+          filter: grayscale(1);
+          opacity: 0.7;
         }
         .sheet-header .doi-text {
           color: #6366f1;
