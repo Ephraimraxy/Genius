@@ -20,55 +20,96 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
     
     setIsDownloading(true);
     try {
-      // 1. ATOMIC CSS FIX: Temporarily disable ALL stylesheets that might contain oklch (Tailwind 4)
-      // html2canvas scans all styleSheets, so we must neutralize them at the source
-      const disabledSheets: HTMLStyleElement[] = [];
-      document.querySelectorAll('style, link[rel="stylesheet"]').forEach((s: any) => {
-        try {
-          // If it contains oklch or is from Tailwind, disable it
-          if (s.textContent?.includes('oklch') || s.href?.includes('tailwind') || s.id === 'tailwind-v4') {
-            s.disabled = true;
-            disabledSheets.push(s);
-          }
-        } catch (e) {}
-      });
+      // 1. "CLEAN ROOM" ISOLATION: Create a hidden iframe to render ONLY the manuscript
+      // This completely bypasses Tailwind 4's oklch errors in the main document.
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.left = '-10000px';
+      iframe.style.top = '-10000px';
+      iframe.style.width = '850px'; // Match paper-sheet width
+      document.body.appendChild(iframe);
+      
+      const doc = iframe.contentWindow?.document;
+      if (!doc) throw new Error('Could not create clean room');
 
-      // 2. Add a safe, Hex-only temporary style for the capture
-      const safeStyle = document.createElement('style');
-      safeStyle.textContent = `
-        #formatted-manuscript-content { color: #0f172a !important; background: white !important; }
-        .paper-sheet { margin: 0 auto !important; padding: 4rem !important; background: white !important; page-break-after: always !important; }
-        .text-slate-900 { color: #0f172a !important; }
-        .text-slate-500 { color: #64748b !important; }
-        .text-indigo-600 { color: #4f46e5 !important; }
-        .page-number { position: absolute; font-size: 10px; font-weight: bold; color: #94a3b8; }
-        /* Style specific positions */
-        .academic-content .page-number { top: 2rem; right: 5rem; } /* Default APA fallback */
-      `;
-      document.head.appendChild(safeStyle);
+      // 2. Inject ONLY Safe, Hex-based styles (Strictly NO Tailwind 4)
+      doc.open();
+      doc.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              @page { size: A4; margin: 0; }
+              body { 
+                margin: 0; 
+                padding: 0; 
+                background: white; 
+                font-family: "Times New Roman", serif;
+              }
+              .paper-sheet {
+                width: 210mm;
+                min-height: 297mm;
+                padding: 25mm 20mm;
+                margin: 0 auto;
+                background: white;
+                position: relative;
+                box-sizing: border-box;
+                page-break-after: always;
+                color: #000;
+              }
+              .sheet-header-full { border-bottom: 2px solid #800000; margin-bottom: 5mm; padding-bottom: 2mm; display: flex; flex-direction: column; }
+              .header-top-row { display: flex; justify-content: space-between; align-items: center; }
+              .header-logo-left, .header-logo-right { display: flex; align-items: center; gap: 3mm; }
+              .header-logo-left img, .header-logo-right img { height: 15mm; }
+              .journal-red-med { color: #800000; font-weight: bold; font-size: 10pt; }
+              .journal-black-large { color: #000; font-weight: 900; font-size: 14pt; }
+              .header-meta-center { text-align: center; flex: 1; }
+              .meta-row { font-size: 8pt; color: #444; }
+              
+              .academic-content { font-size: 11pt; line-height: 1.5; text-align: justify; }
+              .academic-content h1 { font-size: 16pt; font-weight: bold; margin-top: 10mm; }
+              .academic-content h2 { font-size: 13pt; font-weight: bold; margin-top: 8mm; }
+              .academic-content p { margin-bottom: 4mm; }
+              
+              .page-number { position: absolute; font-size: 10pt; font-weight: bold; color: #666; }
+              .page-number.bottom-center { bottom: 10mm; left: 50%; transform: translateX(-50%); }
+              .page-number.top-right { top: 10mm; right: 20mm; }
+              .page-number.bottom-right { bottom: 10mm; right: 20mm; }
+              
+              table { width: 100%; border-collapse: collapse; margin: 5mm 0; font-size: 9pt; }
+              th, td { border: 1px solid #ccc; padding: 2mm; }
+              th { background: #f5f5f5; }
+              
+              .academic-figure { margin: 10mm 0; text-align: center; border: 1px solid #eee; padding: 5mm; }
+            </style>
+          </head>
+          <body>
+            <div id="render-target">${element.innerHTML}</div>
+          </body>
+        </html>
+      `);
+      doc.close();
+
+      // Wait for images to load in the iframe
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       const opt = {
         margin: 0,
         filename: `Genius_Manuscript_${activePaperId}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true,
-          letterRendering: true
-        },
+        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
       // @ts-ignore
-      await html2pdf().set(opt).from(element).save();
+      await html2pdf().set(opt).from(doc.getElementById('render-target')).save();
 
-      // 3. CLEANUP: Restore everything
-      document.head.removeChild(safeStyle);
-      disabledSheets.forEach(s => s.disabled = false);
+      // 4. Cleanup
+      document.body.removeChild(iframe);
 
     } catch (err) {
       console.error('PDF Generation Error:', err);
-      alert('PDF generation failed due to browser color parsing. Using high-fidelity print fallback...');
+      alert('Neural export failed. Attempting direct print fallback...');
       window.print();
     } finally {
       setIsDownloading(false);
