@@ -2332,22 +2332,105 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
     else if (['em', 'i'].includes(tagName)) { currentFont = fontItalic; }
 
     if (tagName === 'table') {
-      // Very basic table support: Just list rows as text for now to avoid crash
       y -= 10;
+      const rows: string[][] = [];
       el.find('tr').each((_, tr) => {
-        const rowText = $(tr).text().trim().replace(/\s+/g, ' | ');
-        const lines = wrapText(rowText, 9, font, maxWidth);
-        for (const line of lines) {
-          if (y < 80) {
+        const row: string[] = [];
+        $(tr).find('td, th').each((_, td) => {
+          row.push($(td).text().trim().replace(/&nbsp;/g, ' '));
+        });
+        if (row.length > 0) rows.push(row);
+      });
+
+      if (rows.length > 0) {
+        const colCount = rows[0].length;
+        const cellPadding = 5;
+        const tableFontSize = 8;
+        
+        // 1. Calculate natural column widths
+        const naturalWidths = new Array(colCount).fill(0);
+        rows.forEach(row => {
+          row.forEach((cell, colIdx) => {
+            if (colIdx < colCount) {
+              const textWidth = font.widthOfTextAtSize(cell, tableFontSize);
+              naturalWidths[colIdx] = Math.max(naturalWidths[colIdx], textWidth + (cellPadding * 2));
+            }
+          });
+        });
+
+        // 2. Scale widths to fit maxWidth
+        const totalNaturalWidth = naturalWidths.reduce((a, b) => a + b, 0);
+        let colWidths = naturalWidths;
+        if (totalNaturalWidth > maxWidth) {
+          const scale = maxWidth / totalNaturalWidth;
+          colWidths = naturalWidths.map(w => w * scale);
+        }
+
+        // 3. Draw rows
+        for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+          const row = rows[rIdx];
+          const isHeader = rIdx === 0;
+          const currentFont = isHeader ? fontBold : font;
+          
+          // Calculate row height based on wrapped text in all cells
+          let maxLines = 1;
+          const cellLines = row.map((cell, cIdx) => {
+            const lines = wrapText(cell, tableFontSize, currentFont, colWidths[cIdx] - (cellPadding * 2));
+            maxLines = Math.max(maxLines, lines.length);
+            return lines;
+          });
+          
+          const rowHeight = (maxLines * (tableFontSize + 2)) + (cellPadding * 2);
+
+          // Check Page Overflow
+          if (y - rowHeight < 80) {
             pageIndex++;
             page = pdfDoc.addPage([width, height]);
-            y = height - 50;
-            drawHeader(page, false).then(newY => y = newY);
+            y = await drawHeader(page, false);
           }
-          page.drawText(line, { x: margin, y, size: 9, font, color: gray });
-          y -= 12;
+
+          let curX = margin;
+          cellLines.forEach((lines, cIdx) => {
+            const cellWidth = colWidths[cIdx];
+            
+            // Draw Cell Background (Optional for Header)
+            if (isHeader) {
+              page.drawRectangle({
+                x: curX,
+                y: y - rowHeight,
+                width: cellWidth,
+                height: rowHeight,
+                color: rgb(0.95, 0.95, 0.95),
+              });
+            }
+
+            // Draw Cell Border
+            page.drawRectangle({
+              x: curX,
+              y: y - rowHeight,
+              width: cellWidth,
+              height: rowHeight,
+              borderColor: gray,
+              borderWidth: 0.5,
+            });
+
+            // Draw Cell Text
+            lines.forEach((line, lIdx) => {
+              page.drawText(line, {
+                x: curX + cellPadding,
+                y: y - cellPadding - tableFontSize - (lIdx * (tableFontSize + 2)),
+                size: tableFontSize,
+                font: currentFont,
+                color: black,
+              });
+            });
+
+            curX += cellWidth;
+          });
+          
+          y -= rowHeight;
         }
-      });
+      }
       y -= 10;
       continue;
     }
