@@ -27,26 +27,38 @@ export default function FormattingEngine({
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownloadPdf = async () => {
-    if (!activePaperId) return;
+    if (!activePaperId || !formattedHtml) return;
     setIsDownloading(true);
     try {
-      // 1. DIRECT SERVER-SIDE DOWNLOAD
-      // This completely bypasses all client-side rendering/parsing issues (like oklch)
-      // by using the same robust logic as the acceptance letters.
-      const url = `${(import.meta as any).env.VITE_API_URL || ''}/api/papers/${activePaperId}/formatted-download`;
+      // Capture EXACTLY what is shown in the preview — pixel-for-pixel fidelity
+      const element = document.getElementById('formatted-manuscript-content');
+      if (!element) {
+        throw new Error('Preview content not found');
+      }
+
+      addToast('Generating high-fidelity PDF from preview...', 'info');
+
+      await html2pdf().set({
+        margin: [10, 10, 15, 10],
+        filename: `Genius_Manuscript_${activePaperId}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          letterRendering: true,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: 850,
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'], before: '.paper-sheet' },
+      } as any).from(element).save();
       
-      // We use a hidden anchor to trigger-download
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Genius_Manuscript_${activePaperId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      addToast('Drafting High-Fidelity PDF from server...', 'success');
+      addToast('PDF downloaded successfully!', 'success');
     } catch (err) {
       console.error('PDF Download Error:', err);
-      alert('Neural export failed. Attempting direct print fallback...');
+      addToast('PDF export failed. Trying print fallback...', 'error');
       window.print();
     } finally {
       setIsDownloading(false);
