@@ -149,26 +149,34 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
           border-radius: 0.5rem;
           border: 1px dashed #cbd5e1;
         }
-        .academic-content section {
+        .paper-sheet {
+          background: white;
+          width: 100%;
+          max-width: 850px;
+          margin: 2rem auto;
+          padding: 3rem 4rem;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+          border: 1px solid #e2e8f0;
           position: relative;
-          margin-bottom: 4rem;
-          padding-bottom: 2rem;
-          border-bottom: 1px dashed #e2e8f0;
+          min-height: 1100px;
         }
-        .academic-content section::after {
-          content: "Page Break";
+        .page-footer {
           position: absolute;
-          bottom: -1rem;
-          left: 50%;
-          transform: translateX(-50%);
-          background: #f1f5f9;
-          padding: 2px 10px;
-          border-radius: 10px;
-          font-size: 8px;
+          bottom: 1.5rem;
+          left: 0;
+          right: 0;
+          text-align: center;
+          font-size: 10px;
           color: #94a3b8;
+          font-weight: bold;
           text-transform: uppercase;
           letter-spacing: 0.1em;
-          font-weight: 800;
+        }
+        @media (max-width: 640px) {
+          .paper-sheet {
+            padding: 1.5rem;
+            margin: 1rem 0;
+          }
         }
       `}</style>
 
@@ -289,7 +297,7 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
             <motion.div
               layout
               id="production-paper-preview"
-              className="bg-white w-full shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] rounded-sm p-8 lg:p-16 relative print:shadow-none print:p-0 overflow-y-auto preview-scrollbar flex-1"
+              className="bg-slate-50/50 w-full rounded-sm p-4 relative print:bg-white print:p-0 overflow-y-auto preview-scrollbar flex-1"
               animate={isFormatting ? { scale: 0.98, opacity: 0.7 } : { scale: 1, opacity: 1 }}
               transition={{ duration: 0.5, ease: "circOut" }}
             >

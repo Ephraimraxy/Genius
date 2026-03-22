@@ -1870,6 +1870,8 @@ function getStyleGuidelines(style: string) {
   const common = `
     - TITLE: The manuscript topic/title must be BOLD (<strong>) and at the very top.
     - ABSTRACT: The Abstract content must be entirely ITALICIZED (<em> or <i>).
+    - PAGINATION: You MUST wrap every ~500-800 words (or logical page) in a <div class="paper-sheet">.
+    - PAGE NUMBERS: If the source text contains page numbers (e.g. "Page 1", "1", etc.), preserve them at the bottom of each <div class="paper-sheet"> inside a <div class="page-footer">.
     - FIGURES: Wrap illustrations in <div class="academic-figure"> with a centered caption below.
     - TABLES: Use <table>, <thead>, and <tbody> for all data tables.
   `;
@@ -1958,9 +1960,9 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           CRITICAL RULES:
           1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the output in triple backticks (\`\`\`html).
           2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>.
-          3. ZERO SUMMARIZATION: You MUST preserve 100% of the manuscript text. Do NOT truncate, summarize, simplify, or omit a single sentence. If the input is long (e.g., 15+ pages), you MUST output the equivalent volume of text.
-          4. FIDELITY: Every single paragraph, reference, and acknowledgment from the source must be present in the output.
-          5. STRUCTURE: Use semantic <section> tags for major sections (Introduction, Methods, etc.) to allow for page-break styling. Use <h1>, <h2>, and <p> tags.
+          3. ZERO OMISSION: You MUST preserve 100% of the manuscript text. Do NOT truncate, summarize, or omit a single sentence. If the input is 15 pages, the output MUST be 15 pages (approx. 15 <div class="paper-sheet"> elements).
+          4. FIDELITY: Every single paragraph, reference, and acknowledgment from the source must be present.
+          5. STRUCTURE: Use <div class="paper-sheet"> to simulate real pages. Within each sheet, use <h1>, <h2>, and <p> tags.
           6. FONTS: Use standard serif fonts for the main body.`
         },
         { role: 'user', content: `Manuscript Title (TOPIC): ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
