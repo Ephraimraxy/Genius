@@ -1866,6 +1866,43 @@ app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, 
   }
 });
 
+function getStyleGuidelines(style: string) {
+  const common = `
+    - TITLE: The manuscript topic/title must be BOLD (<strong>) and at the very top.
+    - ABSTRACT: The Abstract content must be entirely ITALICIZED (<em> or <i>).
+    - FIGURES: Wrap illustrations in <div class="academic-figure"> with a centered caption below.
+    - TABLES: Use <table>, <thead>, and <tbody> for all data tables.
+  `;
+
+  switch (style.toLowerCase()) {
+    case 'ieee':
+      return `IEEE STYLE RULES:
+        ${common}
+        - Use numbered citations in square brackets (e.g., [1]).
+        - References must be numbered and correspond to the citations.
+        - Use a technical, structured layout with clearly numbered sections (e.g., 1. Introduction).`;
+    case 'apa':
+      return `APA STYLE (7th Ed.) RULES:
+        ${common}
+        - Use Author-Date citations (e.g., Smith, 2023 or Smith et al., 2023).
+        - Use specific heading levels (H1 for major sections, H2 for subsections).
+        - References must be in alphabetical order with hanging indents.`;
+    case 'nature':
+      return `NATURE STYLE RULES:
+        ${common}
+        - Use superscript numbers for citations (e.g. <sup>1</sup>).
+        - Keep the summary/abstract professional and concise.
+        - References formatted according to Nature Portfolio standards.`;
+    case 'elsevier':
+      return `ELSEVIER STYLE RULES:
+        ${common}
+        - Use structured headings with clear hierarchy.
+        - Standard Elsevier reference format.`;
+    default:
+      return common;
+  }
+}
+
 app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -1905,6 +1942,8 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
       }
     }
 
+    const styleGuidelines = getStyleGuidelines(style);
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       max_tokens: 16384,
@@ -1913,14 +1952,17 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           role: 'system', 
           content: `You are an expert academic paper formatter. Format the given paper content into professional, production-ready HTML according to the ${style.toUpperCase()} style.
           
+          STYLE GUIDELINES TO FOLLOW:
+          ${styleGuidelines}
+
           CRITICAL RULES:
-          1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the JSON or HTML in triple backticks (\`\`\`html).
-          2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead>.
-          3. FIDELITY: You MUST preserve 100% of the manuscript text. Do NOT truncate or summarize a single sentence.
+          1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the output in triple backticks (\`\`\`html).
+          2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>.
+          3. FIDELITY: You MUST preserve 100% of the manuscript text. Do NOT truncate, summarize, or omit a single sentence.
           4. STRUCTURE: Use semantic <section>, <h1>, <h2>, and <p> tags.
-          5. FIGURES: Wrap illustrations in <div class="academic-figure">.`
+          5. FONTS: Use standard serif fonts for the main body (the CSS handles this, just use semantic HTML).`
         },
-        { role: 'user', content: `Manuscript Title: ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
+        { role: 'user', content: `Manuscript Title (TOPIC): ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
       ]
     });
 
