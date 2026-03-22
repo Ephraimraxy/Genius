@@ -1912,7 +1912,7 @@ function getStyleGuidelines(style: string, branding: any) {
     case 'apa':
       return `APA STYLE (7th Ed.) RULES:
         ${common}
-        - PAGINATION: Place a <div class="page-number top-right">X</div> (where X is the number) at the top right of every sheet.
+        - PAGINATION: Place a <div class="page-number bottom-center">X</div> (where X is the number) at the bottom center of every sheet.
         - Use Author-Date citations (e.g., Smith, 2023).
         - Use specific heading levels (H1 for major sections, H2 for subsections).
         - References must be in alphabetical order with hanging indents.`;
