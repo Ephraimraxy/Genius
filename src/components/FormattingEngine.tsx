@@ -51,34 +51,39 @@ export default function FormattingEngine({
           windowWidth: 850,
           // Critical: sanitize oklch colors in the cloned DOM before html2canvas renders it
           onclone: (clonedDoc: Document) => {
-            // 1. Disable any stylesheets that contain oklch (Tailwind v4 base)
+            // Tailwind v4 uses oklch extensively in CSS variables. 
+            // html2canvas outright crashes if it parses *any* CSS containing oklch.
+            // 1. Completely remove all stylesheets in the clone.
+            // Since we are baking computed styles inline, we don't need them.
             const sheets = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
-            sheets.forEach((sheet) => {
-              try {
-                const styleEl = sheet as HTMLStyleElement;
-                if (styleEl.textContent && styleEl.textContent.includes('oklch')) {
-                  styleEl.textContent = styleEl.textContent.replace(
-                    /oklch\([^)]*\)/g,
-                    'rgb(0, 0, 0)'
-                  );
-                }
-              } catch (e) { /* cross-origin sheets — ignore */ }
-            });
+            sheets.forEach(sheet => sheet.remove());
 
-            // 2. Walk every element and bake computed colors as inline rgb styles
+            // 2. Walk every element, bake computed colors, and strip oklch inline styles.
             const allElements = clonedDoc.querySelectorAll('*');
             allElements.forEach((el) => {
               try {
+                const htmlEl = el as HTMLElement;
+                
+                // If the element has an inline style with oklch, wipe it.
+                const styleAttr = htmlEl.getAttribute('style');
+                if (styleAttr && styleAttr.includes('oklch')) {
+                   // Instead of parsing, just wipe the style attribute completely 
+                   // before we apply the computed RGB styles.
+                   htmlEl.removeAttribute('style');
+                }
+
+                // Bake safe computed colors
                 const computed = clonedDoc.defaultView?.getComputedStyle(el);
                 if (!computed) return;
-                const htmlEl = el as HTMLElement;
-                // Browser always resolves computed colors to rgb/rgba — safe for html2canvas
+                
                 const color = computed.color;
                 const bg = computed.backgroundColor;
                 const border = computed.borderColor;
-                if (color) htmlEl.style.color = color;
-                if (bg) htmlEl.style.backgroundColor = bg;
-                if (border) htmlEl.style.borderColor = border;
+                
+                // Only apply if they don't contain oklch (browsers usually resolve to rgb anyway)
+                if (color && !color.includes('oklch')) htmlEl.style.color = color;
+                if (bg && !bg.includes('oklch')) htmlEl.style.backgroundColor = bg;
+                if (border && !border.includes('oklch')) htmlEl.style.borderColor = border;
               } catch (e) { /* skip problematic elements */ }
             });
           },
