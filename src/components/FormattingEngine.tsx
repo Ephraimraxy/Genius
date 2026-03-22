@@ -281,6 +281,23 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
         
         .partner-name { color: #0f172a; font-weight: 900; font-size: 8px; text-transform: uppercase; text-align: right; }
         .partner-status { color: #94a3b8; font-weight: 700; font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
+
+        /* PDF Export Color Sanitization (Fixes oklch error in html2canvas) */
+        #formatted-manuscript-content, 
+        #formatted-manuscript-content * {
+          --tw-text-opacity: 1 !important;
+          --tw-bg-opacity: 1 !important;
+          --tw-border-opacity: 1 !important;
+        }
+        #formatted-manuscript-content .text-slate-900 { color: #0f172a !important; }
+        #formatted-manuscript-content .text-slate-700 { color: #334155 !important; }
+        #formatted-manuscript-content .text-slate-500 { color: #64748b !important; }
+        #formatted-manuscript-content .text-slate-400 { color: #94a3b8 !important; }
+        #formatted-manuscript-content .text-indigo-600 { color: #4f46e5 !important; }
+        #formatted-manuscript-content .bg-slate-50\/50 { background-color: #f8fafc !important; }
+        #formatted-manuscript-content .border-slate-100 { border-color: #f1f5f9 !important; }
+        #formatted-manuscript-content .border-slate-200 { border-color: #e2e8f0 !important; }
+
         .page-footer {
           position: absolute;
           bottom: 1.5rem;
