@@ -1868,22 +1868,36 @@ app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, 
 
 function getStyleGuidelines(style: string, branding: any) {
   const metaHeader = `
-    <div class="sheet-header">
-      <div class="header-left">
-        <img src="/journal-logo.png" alt="Genius" />
-        <span>GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL</span>
+    <div class="sheet-header-full">
+      <div class="header-top-row">
+        <div class="header-logo-left">
+          <img src="/journal-logo.png" alt="Genius" />
+          <div class="header-title-stack">
+            <span class="journal-red-small">Genius</span>
+            <span class="journal-red-med">Multidisciplinary</span>
+            <span class="journal-black-large">International</span>
+            <span class="journal-gray-type">Journal</span>
+          </div>
+        </div>
+        <div class="header-meta-center">
+          <div class="meta-row">ISSN: ${branding.issn} | Vol ${branding.volume}, Iss ${branding.issue} | Published: ${branding.date}</div>
+          <div class="meta-doi">${branding.doi}</div>
+        </div>
+        <div class="header-logo-right">
+          <div class="partner-stack">
+            <span class="partner-name">Nasarawa State University Keffi</span>
+            <span class="partner-status">Global Partner</span>
+          </div>
+          <img src="/Nasarawa-State-University.jpg" alt="NSUK" />
+        </div>
       </div>
-      <div class="header-right">
-        <span>ISSN: ${branding.issn}</span>
-        <span>Vol ${branding.volume}, Iss ${branding.issue}</span>
-        <img src="/Nasarawa-State-University.jpg" alt="NSUK" />
-      </div>
+      <div class="header-accent-bar"></div>
     </div>`;
   const common = `
     - TITLE: The manuscript topic/title must be BOLD (<strong>) and at the very top.
     - ABSTRACT: The Abstract content must be entirely ITALICIZED (<em> or <i>).
     - PAGINATION: You MUST wrap the content in <div class="paper-sheet"> blocks (~500-800 words per block).
-    - RECURSIVE HEADER: EVERY <div class="paper-sheet"> block EXCEPT THE FIRST ONE (i.e. starting from Page 2 onwards) MUST start with this EXACT HTML: ${metaHeader}
+    - RECURSIVE HEADER: EVERY <div class="paper-sheet"> block EXCEPT THE FIRST ONE (i.e. starting from Page 2 onwards) MUST start with this EXACT HTML block: ${metaHeader}
     - PAGE NUMBERS: Preserve original page numbers at the bottom of each sheet in a <div class="page-footer">.
     - FIGURES: Wrap illustrations in <div class="academic-figure"> with a centered caption below.
     - TABLES: Wrap every <table> element in a <div class="table-wrapper"> tag.

@@ -188,38 +188,54 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
           border-radius: 0 0 4px 4px;
           border-top: 1px dashed #f1f5f9;
         }
-        .sheet-header {
+        .sheet-header-full {
           display: flex;
-          flex-wrap: wrap;
+          flex-direction: column;
+          gap: 0.75rem;
+          margin-bottom: 2.5rem;
+          padding-bottom: 1rem;
+          user-select: none;
+          border-bottom: 2px solid #800000;
+        }
+        .header-top-row {
+          display: flex;
           justify-content: space-between;
           align-items: center;
-          gap: 1.5rem;
-          padding-bottom: 0.75rem;
-          margin-bottom: 2rem;
-          border-bottom: 1px solid #f1f5f9;
-          font-size: 8px;
-          color: #94a3b8;
-          font-weight: bold;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
-          user-select: none;
+          gap: 1rem;
         }
-        .sheet-header .header-left, .sheet-header .header-right {
+        .header-logo-left, .header-logo-right {
           display: flex;
           align-items: center;
           gap: 0.75rem;
         }
-        .sheet-header img {
-          height: 14px;
+        .header-logo-left img, .header-logo-right img {
+          height: 32px;
+          min-width: 32px;
           width: auto;
           object-fit: contain;
-          filter: grayscale(1);
-          opacity: 0.7;
         }
-        .sheet-header .doi-text {
-          color: #6366f1;
-          font-family: monospace;
+        .header-title-stack, .partner-stack {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.1;
         }
+        .journal-red-small { color: #800000; font-weight: 900; font-size: 6px; text-transform: uppercase; }
+        .journal-red-med { color: #800000; font-weight: 900; font-size: 8px; text-transform: uppercase; }
+        .journal-black-large { color: #0f172a; font-weight: 900; font-size: 10px; text-transform: uppercase; }
+        .journal-gray-type { color: #64748b; font-weight: 700; font-size: 8px; text-transform: uppercase; letter-spacing: 0.15em; }
+        
+        .header-meta-center {
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          flex: 1;
+        }
+        .meta-row { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .meta-doi { font-size: 7px; font-weight: 700; color: #4f46e5; font-family: monospace; }
+        
+        .partner-name { color: #0f172a; font-weight: 900; font-size: 8px; text-transform: uppercase; text-align: right; }
+        .partner-status { color: #94a3b8; font-weight: 700; font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
         .page-footer {
           position: absolute;
           bottom: 1.5rem;
