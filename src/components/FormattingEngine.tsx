@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight } from 'lucide-react'; // UI Icons
+import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight, Download } from 'lucide-react'; // UI Icons
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
 export default function FormattingEngine({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
@@ -10,6 +10,10 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
   const [branding, setBranding] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+
+  const handleDownloadPdf = () => {
+    window.print();
+  };
 
   const handleSendToNext = async () => {
     setIsSending(true);
@@ -336,17 +340,27 @@ export default function FormattingEngine({ activePaperId, setActivePaperId, onNa
                 </div>
               )}
 
-              {/* Next Step Button Relocated Here */}
+              {/* PDF & Navigation Controls */}
               {formattedHtml && (
-                <div className="mt-6 pt-6 border-t border-slate-100">
+                <div className="mt-8 flex flex-col gap-3">
                   <button 
-                    onClick={handleSendToNext}
-                    disabled={isSending}
-                    className="group w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl shadow-2xl shadow-emerald-900/20 font-black tracking-widest uppercase text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                    onClick={handleDownloadPdf}
+                    className="group w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 border border-slate-200"
                   >
-                    {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Move to Reference Intel'}
-                    {!isSending && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
+                    <Download size={18} className="group-hover:-translate-y-1 transition-transform" />
+                    Download Formatted PDF
                   </button>
+
+                  <div className="pt-6 border-t border-slate-100">
+                    <button 
+                      onClick={handleSendToNext}
+                      disabled={isSending}
+                      className="group w-full bg-emerald-600 hover:bg-emerald-500 text-white py-5 rounded-2xl shadow-2xl shadow-emerald-900/20 font-black tracking-widest uppercase text-xs flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                    >
+                      {isSending ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Move to Reference Intel'}
+                      {!isSending && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
