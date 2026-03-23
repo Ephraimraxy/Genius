@@ -2136,26 +2136,30 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
       </html>
     `;
 
-    // Launch Puppeteer (Try common Windows and Linux paths for chrome/chromium)
+    // Launch Puppeteer (Try common paths)
     const executablePaths = [
-      // Windows
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-      // Linux (Cloud/CI)
       '/usr/bin/chromium-browser',
       '/usr/bin/chromium',
       '/usr/bin/google-chrome-stable',
       '/usr/bin/google-chrome',
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      process.env.PUPPETEER_EXECUTABLE_PATH,
       process.env.CHROME_PATH
-    ].filter(Boolean);
+    ].filter(Boolean) as string[];
 
     let activePath = executablePaths.find(p => fs.existsSync(p));
 
-    browser = await puppeteer.launch({
+    console.log(`[PDF] Attempting Puppeteer launch. Found path: ${activePath || 'NONE'}`);
+    if (!activePath) {
+      console.warn(`[PDF] EXECUTABLE NOT FOUND. Tried: ${executablePaths.join(', ')}`);
+    }
+
+    const browser = await puppeteer.launch({
       executablePath: activePath,
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none']
     });
 
     const page = await browser.newPage();
