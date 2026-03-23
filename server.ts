@@ -29,6 +29,7 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import nodemailer from 'nodemailer';
+import puppeteer from 'puppeteer-core';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -402,7 +403,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-scholar-sync-key';
 // Middleware: Authenticate JWT
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = (authHeader && authHeader.split(' ')[1]) || req.query.token;
 
   if (!token) return res.status(401).json({ error: 'Authentication required' });
 
@@ -2025,6 +2026,150 @@ app.post('/api/format/:id/save', authenticateToken, async (req: any, res) => {
   } catch (error) {
     console.error('Format Save endpoint error:', error);
     res.status(500).json({ error: 'Failed to save formatted manuscript' });
+  }
+});
+
+// HIGH-FIDELITY PDF GENERATION VIA PUPPETEER
+app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
+  let browser;
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const paperResult = await pool.query(
+      'SELECT title, formatted_content, volume, issue, issn, doi, metadata FROM papers WHERE id = $1', 
+      [id]
+    );
+    const paper = paperResult.rows[0];
+    if (!paper || !paper.formatted_content) {
+      return res.status(404).json({ error: 'Paper or formatted content not found' });
+    }
+
+    // Fetch journal configs
+    const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
+    const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
+    const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+
+    const branding = {
+      volume: paper.volume || volResult.rows[0]?.value || '1',
+      issue: paper.issue || issueResult.rows[0]?.value || '1',
+      issn: paper.issn || issnResult.rows[0]?.value || '2971-7760',
+      doi: paper.doi || `10.5555/genius.${id}`,
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    };
+
+    // Embed logos as Base64 for Puppeteer fidelity
+    const getBase64Image = (fileName: string) => {
+      try {
+        const filePath = path.join(process.cwd(), 'public', fileName);
+        if (fs.existsSync(filePath)) {
+          const bitmap = fs.readFileSync(filePath);
+          const extension = path.extname(fileName).slice(1);
+          return `data:image/${extension};base64,${bitmap.toString('base64')}`;
+        }
+      } catch (e) { console.error(`Failed to load logo ${fileName}:`, e); }
+      return '';
+    };
+
+    const journalLogoBase64 = getBase64Image('journal-logo.png');
+    const nsukLogoBase64 = getBase64Image('Nasarawa-State-University.jpg');
+
+    // Construct full HTML for Puppeteer
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          @page { margin: 20mm 15mm; }
+          body { font-family: serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; }
+          .academic-content { font-family: serif; line-height: 1.6; text-align: justify; }
+          .academic-content p { text-align: justify; margin-bottom: 1em; }
+          .academic-content h1, .academic-content h2, .academic-content h3 { color: #0f172a; margin-top: 1.5em; margin-bottom: 0.5em; }
+          .academic-content table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-family: sans-serif; font-size: 0.85rem; }
+          .academic-content th, .academic-content td { border: 1px solid #cbd5e1; padding: 0.75rem; text-align: left; word-break: break-word; }
+          .academic-content th { background-color: #f8fafc; font-weight: bold; }
+          .paper-sheet { background: white; width: 100%; padding: 0; position: relative; }
+          .header-sheet { border-bottom: 2px solid #800000; padding-bottom: 1rem; margin-bottom: 2rem; }
+          .header-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+          .header-text-center { text-align: center; flex: 1; }
+          .meta-info { font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; }
+          .doi-text { font-size: 9px; color: #4f46e5; font-family: monospace; }
+          .logo-img { height: 50px; width: auto; object-fit: contain; }
+          .institution-text { font-weight: 900; font-size: 10px; text-transform: uppercase; line-height: 1; }
+          .journal-name { color: #800000; font-weight: 900; font-size: 10px; text-transform: uppercase; }
+          .page-break { page-break-after: always; }
+          /* Ensure OKLCH doesn't crash Puppeteer (though it should support it) */
+          * { box-sizing: border-box; }
+        </style>
+      </head>
+      <body>
+        <div class="header-sheet">
+          <div class="header-row">
+            <div style="display: flex; align-items: center; gap: 10px;">
+               ${journalLogoBase64 ? `<img src="${journalLogoBase64}" class="logo-img" />` : ''}
+               <div>
+                 <p class="journal-name">Genius Multidisciplinary</p>
+                 <p class="institution-text">INTERNATIONAL JOURNAL</p>
+               </div>
+            </div>
+            
+            <div class="header-text-center">
+              <div class="meta-info">
+                ISSN: ${branding.issn} | VOL ${branding.volume}, ISS ${branding.issue} | ${branding.date}
+              </div>
+              <div class="doi-text">${branding.doi}</div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 10px; text-align: right;">
+               <div>
+                  <p class="institution-text">Nasarawa State University Keffi</p>
+                  <p style="color: #94alpha3b8; font-size: 8px; text-transform: uppercase;">Global Partner</p>
+               </div>
+               ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" class="logo-img" />` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="academic-content">
+          ${paper.formatted_content.replace(/class="paper-sheet"/g, 'class="paper-sheet page-break"')}
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Launch Puppeteer (Try common Windows paths for chrome/edge)
+    const executablePaths = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      process.env.CHROME_PATH
+    ].filter(Boolean);
+
+    let activePath = executablePaths.find(p => fs.existsSync(p));
+
+    browser = await puppeteer.launch({
+      executablePath: activePath,
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    const page = await browser.newPage();
+    await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+    
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' }
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}_Final.pdf"`);
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error('Puppeteer PDF error:', error);
+    res.status(500).json({ error: 'High-fidelity PDF generation failed on server.' });
+  } finally {
+    if (browser) await browser.close();
   }
 });
 

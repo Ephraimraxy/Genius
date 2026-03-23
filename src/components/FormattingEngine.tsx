@@ -28,129 +28,31 @@ export default function FormattingEngine({
 
   const handleDownloadPdf = async () => {
     if (!activePaperId || !formattedHtml) return;
+    
     setIsDownloading(true);
     try {
-      const element = document.getElementById('formatted-manuscript-content');
-      if (!element) {
-        throw new Error('Preview content not found');
-      }
-
-      addToast('Generating high-fidelity PDF from preview...', 'info');
-
-      // PRE-FETCH External Stylesheets to sanitize them (Fix for html2canvas oklch crash + layout loss)
-      const safeStyles: string[] = [];
-      const links = document.querySelectorAll('link[rel="stylesheet"]');
-      for (let i = 0; i < links.length; i++) {
-        try {
-           const href = (links[i] as HTMLLinkElement).href;
-           if (href.startsWith(window.location.origin) || href.startsWith('/')) {
-             const res = await fetch(href);
-             const cssText = await res.text();
-             // STRIP oklch declarations instead of transparentizing them (prevents blank text)
-             const sanitized = cssText.replace(/[^;]*:(oklch|oklab)\([^)]+\)[^;]*/g, '/* stripped oklch */');
-             safeStyles.push(sanitized);
-           }
-        } catch(e) {
-           console.warn('Could not fetch stylesheet for PDF generation', e);
-        }
-      }
-
-      await html2pdf().set({
-        margin: [10, 10, 15, 10],
-        filename: `Genius_Manuscript_${activePaperId}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          letterRendering: true,
-          scrollX: 0,
-          scrollY: 0,
-          windowWidth: 850,
-          width: 850, // Force strict width matching
-          onclone: (clonedDoc: Document) => {
-            // 1. Element Cleanup: Remove hidden/zero-height elements that cause phantom pagination
-            const allClonedElements = clonedDoc.querySelectorAll('*');
-            allClonedElements.forEach(el => {
-              try {
-                const style = window.getComputedStyle(el);
-                if (
-                  style.display === 'none' || 
-                  style.visibility === 'hidden' || 
-                  (el instanceof HTMLElement && el.offsetHeight === 0 && el.childNodes.length === 0)
-                ) {
-                  el.remove();
-                }
-              } catch (e) { /* skip */ }
-            });
-
-            // 2. Map original computed styles to clones (safely resolving oklch -> rgb)
-            const originalRoot = document.getElementById('formatted-manuscript-content');
-            const clonedRoot = clonedDoc.getElementById('formatted-manuscript-content');
-
-            if (originalRoot && clonedRoot) {
-              const originals = originalRoot.querySelectorAll('*');
-              const clones = clonedRoot.querySelectorAll('*');
-              const count = Math.min(originals.length, clones.length);
-              
-              for (let i = 0; i < count; i++) {
-                try {
-                  const s = window.getComputedStyle(originals[i]);
-                  const c = clones[i] as HTMLElement;
-                  if (!c || !s) continue;
-                  
-                  // Bake safe computed colors into the clone
-                  if (s.color && !s.color.includes('oklch')) c.style.color = s.color;
-                  if (s.backgroundColor && !s.backgroundColor.includes('oklch')) c.style.backgroundColor = s.backgroundColor;
-                  if (s.borderColor && !s.borderColor.includes('oklch')) c.style.borderColor = s.borderColor;
-                  if (s.fill && !s.fill.includes('oklch')) c.style.fill = s.fill;
-                } catch(e) { /* skip */ }
-              }
-            }
-
-            // 3. Remove raw external links that contain oklch
-            const sheets = clonedDoc.querySelectorAll('link[rel="stylesheet"]');
-            sheets.forEach(sheet => sheet.remove());
-
-            // 4. Sanitize any inline style tags and add strict overflow/pagebreak controls
-            const inlineStyles = clonedDoc.querySelectorAll('style');
-            inlineStyles.forEach(sheet => {
-              if (sheet.innerHTML) {
-                sheet.innerHTML = sheet.innerHTML.replace(/[^;]*:(oklch|oklab)\([^)]+\)[^;]*/g, '/* stripped oklch */');
-              }
-            });
-
-            // 5. Inject Sanitized Layout CSS + Strict Overflows + Pagination
-            const styleEl = clonedDoc.createElement('style');
-            styleEl.innerHTML = `
-              * { max-width: 100% !important; overflow: hidden !important; box-sizing: border-box !important; }
-              .paper-sheet { break-after: page !important; page-break-after: always !important; width: 850px !important; margin: 0 auto !important; }
-              ${safeStyles.join('\n')}
-            `;
-            clonedDoc.head.appendChild(styleEl);
-
-            // 6. Final pass on property-level oklch stripping in inline styles
-            allClonedElements.forEach((el) => {
-              try {
-                if (el instanceof HTMLElement) {
-                  const styleAttr = el.getAttribute('style');
-                  if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('oklab'))) {
-                    el.style.cssText = el.style.cssText.replace(/[^;]*:(oklch|oklab)\([^)]+\)[^;]*/g, '');
-                  }
-                }
-              } catch (e) { /* skip */ }
-            });
-          },
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], before: '.paper-sheet' },
-      } as any).from(element).save();
+      const token = localStorage.getItem('token');
       
-      addToast('PDF downloaded successfully!', 'success');
-    } catch (err) {
-      console.error('PDF Download Error:', err);
-      addToast('PDF export failed. Trying print fallback...', 'error');
-      window.print();
+      // 1. Sync the latest formatted content to the server to ensure high-fidelity export
+      const saveRes = await fetch(`/api/format/${activePaperId}/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ formattedHtml })
+      });
+
+      if (!saveRes.ok) throw new Error('Failed to synchronize content for export');
+
+      // 2. Trigger the High-Fidelity Server-Side PDF Export
+      window.open(`/api/format/${activePaperId}/pdf?token=${token}`, '_blank');
+      
+      addToast('High-fidelity PDF generation started on server...', 'info');
+
+    } catch (err: any) {
+      console.error('PDF Export Error:', err);
+      setError('Server-side PDF generation failed. Please ensure your browser setup is correct.');
     } finally {
       setIsDownloading(false);
     }
@@ -189,7 +91,6 @@ export default function FormattingEngine({
       setIsSending(false);
     }
   };
-
 
   const styles = [
     { id: 'ieee', name: 'IEEE Standards', desc: 'Double-column, strictly numbered citations for engineering and tech.', icon: Layout },
