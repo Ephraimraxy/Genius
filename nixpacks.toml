@@ -1,4 +1,4 @@
-nixPkgs = ["...", "chromium"]
+nixPkgs = ["nodejs_22", "chromium"]
 
 [phases.install]
 cmds = ["npm install"]
