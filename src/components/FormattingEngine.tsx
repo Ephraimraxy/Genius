@@ -67,9 +67,24 @@ export default function FormattingEngine({
           scrollX: 0,
           scrollY: 0,
           windowWidth: 850,
+          width: 850, // Force strict width matching
           onclone: (clonedDoc: Document) => {
-            // 1. Map original computed styles to clones (browsers resolve oklch -> rgb automatically)
-            // This ensures colors are rendered correctly even if we strip the CSS version.
+            // 1. Element Cleanup: Remove hidden/zero-height elements that cause phantom pagination
+            const allClonedElements = clonedDoc.querySelectorAll('*');
+            allClonedElements.forEach(el => {
+              try {
+                const style = window.getComputedStyle(el);
+                if (
+                  style.display === 'none' || 
+                  style.visibility === 'hidden' || 
+                  (el instanceof HTMLElement && el.offsetHeight === 0 && el.childNodes.length === 0)
+                ) {
+                  el.remove();
+                }
+              } catch (e) { /* skip */ }
+            });
+
+            // 2. Map original computed styles to clones (safely resolving oklch -> rgb)
             const originalRoot = document.getElementById('formatted-manuscript-content');
             const clonedRoot = clonedDoc.getElementById('formatted-manuscript-content');
 
@@ -93,35 +108,35 @@ export default function FormattingEngine({
               }
             }
 
-            // 2. Remove raw external links that contain oklch
+            // 3. Remove raw external links that contain oklch
             const sheets = clonedDoc.querySelectorAll('link[rel="stylesheet"]');
             sheets.forEach(sheet => sheet.remove());
 
-            // 3. Sanitize any inline style tags
+            // 4. Sanitize any inline style tags and add strict overflow/pagebreak controls
             const inlineStyles = clonedDoc.querySelectorAll('style');
             inlineStyles.forEach(sheet => {
               if (sheet.innerHTML) {
-                // Strip oklch declarations
                 sheet.innerHTML = sheet.innerHTML.replace(/[^;]*:(oklch|oklab)\([^)]+\)[^;]*/g, '/* stripped oklch */');
               }
             });
 
-            // 4. Inject our sanitized external stylesheets back! This preserves layout (flex, grid, prose...)
-            safeStyles.forEach(cssText => {
-               const styleEl = clonedDoc.createElement('style');
-               styleEl.innerHTML = cssText;
-               clonedDoc.head.appendChild(styleEl);
-            });
+            // 5. Inject Sanitized Layout CSS + Strict Overflows + Pagination
+            const styleEl = clonedDoc.createElement('style');
+            styleEl.innerHTML = `
+              * { max-width: 100% !important; overflow: hidden !important; box-sizing: border-box !important; }
+              .paper-sheet { break-after: page !important; page-break-after: always !important; width: 850px !important; margin: 0 auto !important; }
+              ${safeStyles.join('\n')}
+            `;
+            clonedDoc.head.appendChild(styleEl);
 
-            // 5. Final pass on inline style attributes
-            const allElements = clonedDoc.querySelectorAll('*');
-            allElements.forEach((el) => {
+            // 6. Final pass on property-level oklch stripping in inline styles
+            allClonedElements.forEach((el) => {
               try {
-                const htmlEl = el as HTMLElement;
-                const styleAttr = htmlEl.getAttribute('style');
-                if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('oklab'))) {
-                   // Strip the property parts that are problematic
-                   htmlEl.style.cssText = htmlEl.style.cssText.replace(/[^;]*:(oklch|oklab)\([^)]+\)[^;]*/g, '');
+                if (el instanceof HTMLElement) {
+                  const styleAttr = el.getAttribute('style');
+                  if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('oklab'))) {
+                    el.style.cssText = el.style.cssText.replace(/[^;]*:(oklch|oklab)\([^)]+\)[^;]*/g, '');
+                  }
                 }
               } catch (e) { /* skip */ }
             });
