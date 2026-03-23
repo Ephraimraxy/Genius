@@ -1,3 +1,4 @@
+[phases.setup]
 nixPkgs = ["nodejs_22", "chromium"]
 
 [phases.install]
