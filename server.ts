@@ -2084,9 +2084,10 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
           .academic-content { font-family: serif; line-height: 1.6; text-align: justify; }
           .academic-content p { text-align: justify; margin-bottom: 1em; }
           .academic-content h1, .academic-content h2, .academic-content h3 { color: #0f172a; margin-top: 1.5em; margin-bottom: 0.5em; }
-          .academic-content table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-family: sans-serif; font-size: 0.85rem; }
-          .academic-content th, .academic-content td { border: 1px solid #cbd5e1; padding: 0.75rem; text-align: left; word-break: break-word; }
+          .academic-content table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-family: sans-serif; font-size: 0.75rem; table-layout: fixed; overflow: hidden; }
+          .academic-content th, .academic-content td { border: 1px solid #cbd5e1; padding: 0.5rem; text-align: left; word-break: break-word; word-wrap: break-word; overflow-wrap: break-word; }
           .academic-content th { background-color: #f8fafc; font-weight: bold; }
+          .table-wrapper { width: 100%; overflow: hidden; }
           .paper-sheet { background: white; width: 100%; padding: 0; position: relative; }
           .header-sheet { border-bottom: 2px solid #800000; padding-bottom: 1rem; margin-bottom: 2rem; }
           .header-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
