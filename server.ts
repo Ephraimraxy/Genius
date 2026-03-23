@@ -2073,6 +2073,7 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
     const nsukLogoBase64 = getBase64Image('Nasarawa-State-University.jpg');
 
     // Construct full HTML for Puppeteer
+    // Build a self-contained HTML document that mirrors the frontend preview EXACTLY
     const fullHtml = `
       <!DOCTYPE html>
       <html>
@@ -2080,29 +2081,177 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
         <meta charset="UTF-8">
         <style>
           @page { margin: 20mm 15mm; }
-          body { font-family: serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; }
-          .academic-content { font-family: serif; line-height: 1.6; text-align: justify; }
-          .academic-content p { text-align: justify; margin-bottom: 1em; }
-          .academic-content h1, .academic-content h2, .academic-content h3 { color: #0f172a; margin-top: 1.5em; margin-bottom: 0.5em; }
-          .academic-content table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-family: sans-serif; font-size: 0.75rem; table-layout: fixed; overflow: hidden; }
-          .academic-content th, .academic-content td { border: 1px solid #cbd5e1; padding: 0.5rem; text-align: left; word-break: break-word; word-wrap: break-word; overflow-wrap: break-word; }
-          .academic-content th { background-color: #f8fafc; font-weight: bold; }
-          .table-wrapper { width: 100%; overflow: hidden; }
-          .paper-sheet { background: white; width: 100%; padding: 0; position: relative; }
-          .header-sheet { border-bottom: 2px solid #800000; padding-bottom: 1rem; margin-bottom: 2rem; }
-          .header-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+          body { font-family: serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          * { box-sizing: border-box; }
+
+          /* === Academic Content (matches FormattingEngine.tsx exactly) === */
+          .academic-content {
+            font-family: serif;
+            line-height: 1.6;
+            text-align: justify;
+          }
+          .academic-content p {
+            text-align: justify;
+            margin-bottom: 1em;
+          }
+          .academic-content h1, .academic-content h2, .academic-content h3 {
+            color: #0f172a;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+          }
+
+          /* === Tables (fixed layout for PDF, no scroll) === */
+          .academic-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-family: sans-serif;
+            font-size: 0.75rem;
+            table-layout: fixed;
+            overflow: hidden;
+          }
+          .table-wrapper {
+            width: 100%;
+            overflow: hidden;
+            margin: 2rem 0;
+            background: #fcfcfc;
+            border: 1px solid #f1f5f9;
+            border-radius: 4px;
+          }
+          .academic-content th, .academic-content td {
+            border: 1px solid #cbd5e1;
+            padding: 0.5rem;
+            text-align: left;
+            word-break: break-word;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+          }
+          .academic-content th {
+            background-color: #f8fafc;
+            font-weight: bold;
+          }
+
+          /* === Figures === */
+          .academic-content .academic-figure {
+            margin: 2.5rem 0;
+            text-align: center;
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 0.5rem;
+            border: 1px dashed #cbd5e1;
+          }
+          .academic-content .academic-figure img {
+            max-width: 100%;
+            height: auto;
+          }
+
+          /* === Paper Sheet (page simulation) === */
+          .paper-sheet {
+            background: white;
+            width: 100%;
+            max-width: 850px;
+            margin: 0 auto;
+            padding: 3rem 4rem;
+            position: relative;
+            min-height: 1100px;
+            page-break-after: always;
+          }
+          .paper-sheet:last-child {
+            page-break-after: auto;
+          }
+
+          /* === First-page header (standalone, outside paper-sheet) === */
+          .header-sheet {
+            background: white;
+            width: 100%;
+            max-width: 850px;
+            margin: 0 auto;
+            padding: 2rem 4rem 1rem;
+            border-bottom: 2px solid #800000;
+            position: relative;
+          }
+          .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+          }
           .header-text-center { text-align: center; flex: 1; }
           .meta-info { font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; }
-          .doi-text { font-size: 9px; color: #4f46e5; font-family: monospace; }
+          .doi-text { font-size: 9px; color: #4f46e5; font-family: monospace; font-weight: bold; }
           .logo-img { height: 50px; width: auto; object-fit: contain; }
           .institution-text { font-weight: 900; font-size: 10px; text-transform: uppercase; line-height: 1; }
           .journal-name { color: #800000; font-weight: 900; font-size: 10px; text-transform: uppercase; }
-          .page-break { page-break-after: always; }
-          /* Ensure OKLCH doesn't crash Puppeteer (though it should support it) */
-          * { box-sizing: border-box; }
+
+          /* === Recurring header on page 2+ (inside paper-sheet, generated by AI) === */
+          .sheet-header-full {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #800000;
+          }
+          .header-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+          }
+          .header-logo-left, .header-logo-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+          }
+          .header-logo-left img, .header-logo-right img {
+            height: 32px;
+            min-width: 32px;
+            width: auto;
+            object-fit: contain;
+          }
+          .header-title-stack, .partner-stack {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.1;
+          }
+          .journal-red-small { color: #800000; font-weight: 900; font-size: 6px; text-transform: uppercase; }
+          .journal-red-med { color: #800000; font-weight: 900; font-size: 8px; text-transform: uppercase; }
+          .journal-black-large { color: #0f172a; font-weight: 900; font-size: 10px; text-transform: uppercase; }
+          .journal-gray-type { color: #64748b; font-weight: 700; font-size: 8px; text-transform: uppercase; letter-spacing: 0.15em; }
+          .header-meta-center {
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+          }
+          .meta-row { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+          .meta-doi { font-size: 7px; font-weight: 700; color: #4f46e5; font-family: monospace; }
+          .partner-name { color: #0f172a; font-weight: 900; font-size: 8px; text-transform: uppercase; text-align: right; }
+          .partner-status { color: #94a3b8; font-weight: 700; font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
+          .header-accent-bar { height: 0; }
+
+          /* === Page Numbers === */
+          .page-number { position: absolute; font-size: 10px; font-weight: bold; color: #94a3b8; z-index: 100; }
+          .page-number.top-right { top: 3rem; right: 5rem; }
+          .page-number.bottom-center { bottom: 1.5rem; left: 50%; transform: translateX(-50%); }
+          .page-number.bottom-right { bottom: 1.5rem; right: 5rem; }
+          .page-footer {
+            position: absolute;
+            bottom: 1.5rem;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 10px;
+            color: #94a3b8;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+          }
         </style>
       </head>
       <body>
+        <!-- First page header with branding -->
         <div class="header-sheet">
           <div class="header-row">
             <div style="display: flex; align-items: center; gap: 10px;">
@@ -2123,15 +2272,16 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
             <div style="display: flex; align-items: center; gap: 10px; text-align: right;">
                <div>
                   <p class="institution-text">Nasarawa State University Keffi</p>
-                  <p style="color: #94alpha3b8; font-size: 8px; text-transform: uppercase;">Global Partner</p>
+                  <p style="color: #94a3b8; font-size: 8px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.1em;">Global Partner</p>
                </div>
                ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" class="logo-img" />` : ''}
             </div>
           </div>
         </div>
 
+        <!-- Formatted manuscript content (contains paper-sheet divs with embedded headers) -->
         <div class="academic-content">
-          ${paper.formatted_content.replace(/class="paper-sheet"/g, 'class="paper-sheet page-break"')}
+          ${paper.formatted_content}
         </div>
       </body>
       </html>
