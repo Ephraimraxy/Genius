@@ -2136,20 +2136,28 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
       </html>
     `;
 
-    // Launch Puppeteer (Try common paths)
+    // Launch Puppeteer — prioritize env vars (set by Nixpacks) over hardcoded paths
     const executablePaths = [
-      '/usr/bin/chromium-browser',
+      process.env.PUPPETEER_EXECUTABLE_PATH,
+      process.env.CHROME_PATH,
       '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
       '/usr/bin/google-chrome-stable',
       '/usr/bin/google-chrome',
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-      process.env.PUPPETEER_EXECUTABLE_PATH,
-      process.env.CHROME_PATH
     ].filter(Boolean) as string[];
 
     let activePath = executablePaths.find(p => fs.existsSync(p));
+
+    // Fallback: resolve via `which` if none of the hardcoded paths work
+    if (!activePath) {
+      try {
+        const { execSync } = require('child_process');
+        activePath = execSync('which chromium || which chromium-browser || which google-chrome', { encoding: 'utf-8' }).trim();
+      } catch (e) { /* ignore */ }
+    }
 
     console.log(`[PDF] Attempting Puppeteer launch. Found path: ${activePath || 'NONE'}`);
     if (!activePath) {
