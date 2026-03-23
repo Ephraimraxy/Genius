@@ -2173,15 +2173,21 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
     const page = await browser.newPage();
     await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
     
-    const pdfBuffer = await page.pdf({
+    const pdfUint8 = await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' }
     });
 
+    // Convert Uint8Array to Node Buffer (Puppeteer v24+ returns Uint8Array, Express needs Buffer)
+    const pdfBuffer = Buffer.from(pdfUint8);
+
+    await browser.close();
+    browser = undefined;
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}_Final.pdf"`);
-    res.send(pdfBuffer);
+    res.end(pdfBuffer);
 
   } catch (error) {
     console.error('Puppeteer PDF error:', error);
