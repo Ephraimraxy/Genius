@@ -46,8 +46,8 @@ export default function FormattingEngine({
            if (href.startsWith(window.location.origin) || href.startsWith('/')) {
              const res = await fetch(href);
              const cssText = await res.text();
-             // Replace oklch/oklab to prevent html2canvas parsing crash, use transparent to avoid dark blocks
-             const sanitized = cssText.replace(/(oklch|oklab)\([^)]+\)/g, 'transparent');
+             // STRIP oklch declarations instead of transparentizing them (prevents blank text)
+             const sanitized = cssText.replace(/[^;]*:(oklch|oklab)\([^)]+\)[^;]*/g, '/* stripped oklch */');
              safeStyles.push(sanitized);
            }
         } catch(e) {
@@ -68,33 +68,60 @@ export default function FormattingEngine({
           scrollY: 0,
           windowWidth: 850,
           onclone: (clonedDoc: Document) => {
-            // 1. Remove raw external links that contain oklch
+            // 1. Map original computed styles to clones (browsers resolve oklch -> rgb automatically)
+            // This ensures colors are rendered correctly even if we strip the CSS version.
+            const originalRoot = document.getElementById('formatted-manuscript-content');
+            const clonedRoot = clonedDoc.getElementById('formatted-manuscript-content');
+
+            if (originalRoot && clonedRoot) {
+              const originals = originalRoot.querySelectorAll('*');
+              const clones = clonedRoot.querySelectorAll('*');
+              const count = Math.min(originals.length, clones.length);
+              
+              for (let i = 0; i < count; i++) {
+                try {
+                  const s = window.getComputedStyle(originals[i]);
+                  const c = clones[i] as HTMLElement;
+                  if (!c || !s) continue;
+                  
+                  // Bake safe computed colors into the clone
+                  if (s.color && !s.color.includes('oklch')) c.style.color = s.color;
+                  if (s.backgroundColor && !s.backgroundColor.includes('oklch')) c.style.backgroundColor = s.backgroundColor;
+                  if (s.borderColor && !s.borderColor.includes('oklch')) c.style.borderColor = s.borderColor;
+                  if (s.fill && !s.fill.includes('oklch')) c.style.fill = s.fill;
+                } catch(e) { /* skip */ }
+              }
+            }
+
+            // 2. Remove raw external links that contain oklch
             const sheets = clonedDoc.querySelectorAll('link[rel="stylesheet"]');
             sheets.forEach(sheet => sheet.remove());
 
-            // 2. Sanitize any inline style tags
+            // 3. Sanitize any inline style tags
             const inlineStyles = clonedDoc.querySelectorAll('style');
             inlineStyles.forEach(sheet => {
               if (sheet.innerHTML) {
-                sheet.innerHTML = sheet.innerHTML.replace(/(oklch|oklab)\([^)]+\)/g, 'transparent');
+                // Strip oklch declarations
+                sheet.innerHTML = sheet.innerHTML.replace(/[^;]*:(oklch|oklab)\([^)]+\)[^;]*/g, '/* stripped oklch */');
               }
             });
 
-            // 3. Inject our sanitized external stylesheets back! This preserves layout (flex, grid, prose...)
+            // 4. Inject our sanitized external stylesheets back! This preserves layout (flex, grid, prose...)
             safeStyles.forEach(cssText => {
                const styleEl = clonedDoc.createElement('style');
                styleEl.innerHTML = cssText;
                clonedDoc.head.appendChild(styleEl);
             });
 
-            // 4. Clean up any inline style attribute containing oklch just in case
+            // 5. Final pass on inline style attributes
             const allElements = clonedDoc.querySelectorAll('*');
             allElements.forEach((el) => {
               try {
                 const htmlEl = el as HTMLElement;
                 const styleAttr = htmlEl.getAttribute('style');
                 if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('oklab'))) {
-                   htmlEl.removeAttribute('style');
+                   // Strip the property parts that are problematic
+                   htmlEl.style.cssText = htmlEl.style.cssText.replace(/[^;]*:(oklch|oklab)\([^)]+\)[^;]*/g, '');
                 }
               } catch (e) { /* skip */ }
             });
