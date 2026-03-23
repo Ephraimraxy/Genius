@@ -81,6 +81,15 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
 
         await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['success', tx.id]);
         
+        // 2️⃣ Pre-upload Email Trigger: Send Payment Confirmation & Acceptance in Principle
+        if (tx.type === 'publication') {
+           const userRes = await pool.query('SELECT name FROM users WHERE email = $1', [customerEmail]);
+           const userName = userRes.rows[0]?.name || 'Researcher';
+           
+           // Using a dedicated function for Pre-Upload Payment Email
+           await sendPaymentSuccessEmail(customerEmail, userName, tx.reference);
+        }
+
         if (tx.type === 'subscription') {
           const expiry = new Date();
           expiry.setFullYear(expiry.getFullYear() + 1);
@@ -132,6 +141,30 @@ const pool = new Pool({
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = process.env.RESEND_FROM || 'onboarding@resend.dev';
 const APP_URL = process.env.APP_URL || 'https://geniusapp.com';
+
+async function sendPaymentSuccessEmail(to: string, name: string, ref: string) {
+  const htmlBody = `
+    <div style="font-family: serif; padding: 20px; color: #1a202c;">
+      <h2 style="color: #800000;">Payment Successful</h2>
+      <p>Dear ${name},</p>
+      <p>Your payment (Ref: ${ref}) has been received successfully. Your publication credit is now active.</p>
+      <p>Please find the <strong>Journal Preliminary Pages</strong> attached below for your review.</p>
+      <p>You may now proceed to upload your manuscript via the dashboard.</p>
+    </div>
+  `;
+  try {
+    const attachments = [];
+    const preliminaryPath = path.join(process.cwd(), 'tools', 'Journal Preliminary.pdf');
+    if (fs.existsSync(preliminaryPath)) {
+      attachments.push({ filename: 'Journal_Preliminary.pdf', content: fs.readFileSync(preliminaryPath).toString('base64') });
+    }
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: `GMIJP <${RESEND_FROM}>`, to: [to], subject: `Payment Received — Ref: ${ref}`, html: htmlBody, attachments })
+    });
+  } catch (err) { console.error('Payment success email error:', err); }
+}
 
 async function initDB() {
   await pool.query(`
@@ -1232,6 +1265,16 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    // 1️⃣ & 4️⃣ Payment Enforcement: Check for existing unused publication credit
+    const creditCheck = await pool.query(
+      "SELECT id FROM transactions WHERE user_id = $1 AND type = 'publication' AND status = 'success' AND (metadata->>'consumed')::boolean IS NOT TRUE LIMIT 1",
+      [userId]
+    );
+    
+    if (creditCheck.rows.length === 0) {
+      return res.status(402).json({ error: 'No publication credit found. Please complete payment first.' });
+    }
+
     let textContent = '';
     let metadata: any = null;
 
@@ -1296,19 +1339,16 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
 
     const newPaperId = result.rows[0].id;
 
-    // Link the oldest unused publication credit to this paper
+    // Link the transaction and mark it as consumed
+    const txId = creditCheck.rows[0].id;
     await pool.query(
-      `UPDATE transactions SET paper_id = $1 
-       WHERE id = (
-         SELECT id FROM transactions 
-         WHERE user_id = $2 AND type = 'publication' AND status = 'success' AND paper_id IS NULL 
-         ORDER BY created_at ASC LIMIT 1
-       )`,
-      [newPaperId, userId]
+      "UPDATE transactions SET metadata = metadata || $1, status = 'consumed' WHERE id = $2",
+      [JSON.stringify({ consumed: true, paper_id: newPaperId, consumed_at: new Date().toISOString() }), txId]
     );
 
-    // Send Acceptance Letter
-    sendAcceptanceEmail(req.user.email, req.body.researcherName || 'Researcher', metadata.title || 'Untitled', newPaperId);
+    // 2️⃣ Acceptance Letter is now handled by Payment Webhook or this route 
+    // Moving to follow-up: sendAcceptanceEmail is now triggered here for the specific paper
+    await sendAcceptanceEmail(req.user.email, req.body.researcherName || 'Researcher', metadata.title || 'Untitled', newPaperId);
 
 
     res.json({ 
@@ -1760,32 +1800,15 @@ async function sendPublicationEmail(to: string, researcherName: string, manuscri
             <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">Scientific Breakthrough</h1>
             <p style="color: #e0e7ff; margin-top: 10px; font-size: 14px; opacity: 0.8;">Genius Global Research Registry</p>
           </div>
-          <div style="background: white; padding: 40px; border-radius: 0 0 24px 24px; border: 1px solid #e2e8f0; border-top: none;">
+          <div style="background: white; padding: 30px; border-radius: 0 0 24px 24px; border: 1px solid #e2e8f0; border-top: none;">
             <h2 style="color: #0f172a; margin-top: 0;">Congratulations, ${researcherName}!</h2>
-            <p>We are thrilled to inform you that your manuscript has been successfully broadcast to the <strong>Genius Global Network</strong> and is now officially published.</p>
-            
-            <div style="background: #f8fafc; padding: 25px; border-radius: 16px; margin: 30px 0; border: 1px solid #f1f5f9;">
-              <p style="margin: 0; font-size: 13px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Manuscript Title</p>
-              <p style="margin: 8px 0 20px 0; font-weight: 700; color: #0f172a; font-size: 16px;">${manuscriptTitle}</p>
-              
-              <p style="margin: 0; font-size: 13px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Digital Object Identifier (DOI)</p>
-              <p style="margin: 8px 0 0 0; font-family: monospace; font-weight: 700; color: #4338ca;">${doi}</p>
+            <p>Your manuscript has been successfully published to the <strong>Genius Global Network</strong>.</p>
+            <p><strong>DOI:</strong> ${doi}</p>
+            <p>Please find your official published manuscript attached to this email.</p>
+            <div style="text-align: center; margin: 20px 0;">
+              <a href="${url}" style="background: #4338ca; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">View Registry Page</a>
             </div>
-
-            <p>Your research is now part of the global scientific record, digitally fingerprinted, and accessible via the registry link below.</p>
-            
-            <div style="text-align: center; margin: 40px 0;">
-              <a href="${url}" style="background: #4338ca; color: white; padding: 16px 32px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 14px; display: inline-block; box-shadow: 0 10px 15px -3px rgba(67, 56, 202, 0.25);">View Live Publication</a>
-            </div>
-
-            <p style="font-size: 14px; color: #64748b;">A copy of your official published manuscript is attached to this email for your records.</p>
-            
-            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 40px 0;" />
-            
-            <p style="font-size: 12px; color: #94a3b8; text-align: center;">
-              This is an automated delivery from the Genius Publication System.<br/>
-              © ${new Date().getFullYear()} Genius Mindspark Global Hub
-            </p>
+            <p style="font-size: 11px; color: #94a3b8; text-align: center;">Genius Publishing Engine Automated Delivery</p>
           </div>
         </div>
       `,
@@ -3398,53 +3421,14 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
   const nsukLogo = `${appUrl}/university-logo.jpg`;
 
   const htmlBody = `
-  <div style="font-family: Georgia, 'Times New Roman', serif; max-width: 700px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
-    <!-- Header -->
-    <div style="background: linear-gradient(135deg, #800000 0%, #4a0000 100%); padding: 28px 32px; display: flex; align-items: center; justify-content: space-between;">
-      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td width="80"><img src="${gmijpLogo}" alt="GMIJP" width="64" height="64" style="display:block;border-radius:8px;" /></td>
-        <td style="text-align: center; color: #fff;">
-          <h1 style="margin:0; font-size:16px; font-weight:900; text-transform:uppercase; letter-spacing:1px;">Genius Multidisciplinary International Journal Publication</h1>
-          <p style="margin:4px 0 0; font-size:13px; opacity:0.85;">Nasarawa State University, Keffi</p>
-        </td>
-        <td width="80" style="text-align:right;"><img src="${nsukLogo}" alt="NSUK" width="64" height="64" style="display:block;border-radius:8px;" /></td>
-      </tr></table>
+    <div style="font-family: serif; padding: 20px; color: #1a202c;">
+      <h2 style="color: #800000;">Manuscript Accepted in Principle</h2>
+      <p>Dear ${researcherName},</p>
+      <p>Your manuscript "<strong>${manuscriptTitle}</strong>" has been accepted in principle for publication.</p>
+      <p><strong>Please see the attached PDF documents</strong> for your official Acceptance Letter and Preliminary Pages which contain full details.</p>
+      <p>Next Steps: Final formatting and DOI minting.</p>
     </div>
-    <!-- Body -->
-    <div style="padding: 36px 32px; color: #1e293b; font-size: 14px; line-height: 1.7;">
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
-        <tr>
-          <td style="background:#f8fafc; padding:10px 16px; border-radius:8px; border:1px solid #e2e8f0;">
-            <span style="font-size:9px; font-weight:900; color:#94a3b8; text-transform:uppercase; letter-spacing:2px;">Status</span><br/>
-            <span style="font-size:12px; font-weight:700; color:#059669;">OFFICIAL ACCEPTANCE</span>
-          </td>
-          <td style="text-align:right;">
-            <span style="font-size:13px; font-weight:700; color:#475569;">${currentDate}</span><br/>
-            <span style="font-size:9px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:2px;">Ref: ${refNumber}</span>
-          </td>
-        </tr>
-      </table>
-      <p style="font-size:15px; font-weight:700;">Dear ${researcherName},</p>
-      <h3 style="font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:1px; color:#1e293b; border-bottom:1px solid #e2e8f0; padding-bottom:8px; margin-top:24px;">Subject: Acceptance of Publication in Genius Multidisciplinary International Journal Publication</h3>
-      <p>I hope this letter finds you well. On behalf of the editorial board of the <strong>Genius Multidisciplinary International Journal Publication</strong>, I am pleased to inform you that your research paper titled:</p>
-      <div style="background:#f8fafc; border-left:4px solid #800000; padding:16px 20px; margin:16px 0; border-radius:0 8px 8px 0;">
-        <p style="font-weight:900; font-size:14px; color:#1e293b; margin:0; font-style:italic;">&ldquo;${manuscriptTitle}&rdquo;</p>
-      </div>
-      <p>has been <strong>accepted for publication</strong> in our journal.</p>
-      <p>We would like to extend our congratulations on the quality of your work. Your research makes a significant contribution to the field, and we believe it will be of great interest to our readership.</p>
-      <p><strong>The final version of your manuscript:</strong> Please make any required revisions as per the feedback provided by the peer reviewers and ensure that your paper adheres to the formatting guidelines specified in our author instructions.</p>
-      <p>We hope to continue collaborating with you in the future. Should you have any questions or require further assistance, please do not hesitate to contact us.</p>
-      <p>Thank you once again for choosing the <strong>Genius Multidisciplinary International Journal</strong> as the platform to share your research.</p>
-      <div style="margin-top:32px; padding-top:20px; border-top:1px solid #e2e8f0;">
-        <p style="margin:0; font-weight:700;">Best regards,</p>
-        <p style="margin:16px 0 4px; font-weight:900; color:#1e293b;">Dr. Danjuma Namo</p>
-        <p style="margin:0; font-size:12px; font-weight:700; color:#800000;">Secretary (GMIJP)</p>
-      </div>
-    </div>
-    <div style="background:#f8fafc; padding:16px 32px; text-align:center; border-top:1px solid #e2e8f0;">
-      <p style="font-size:8px; font-weight:900; color:#94a3b8; text-transform:uppercase; letter-spacing:3px; margin:0;">Genius Multidisciplinary International Journal Publication &bull; Research Excellence</p>
-    </div>
-  </div>`;
+  `;
 
   try {
     // Generate PDF attachment
@@ -3502,20 +3486,12 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
 
 async function sendDoiFailureEmail(to: string, name: string, title: string, reason: string) {
   const htmlBody = `
-    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #fee2e2; border-radius: 12px; overflow: hidden;">
-      <div style="background: #ef4444; padding: 20px; color: white; text-align: center;">
-        <h2 style="margin: 0;">DOI Validation Failed</h2>
-      </div>
-      <div style="padding: 24px; color: #1f2937; line-height: 1.5;">
-        <p>Dear ${name},</p>
-        <p>We encountered a critical issue while finalizing the publication of your manuscript:</p>
-        <div style="background: #fdf2f2; border-left: 4px solid #ef4444; padding: 12px; margin: 16px 0; font-style: italic;">
-          "${title}"
-        </div>
-        <p><strong>Reason:</strong> ${reason}</p>
-        <p>Your manuscript has been paused at the <strong>DOI Validation</strong> stage. This usually happens if the Zenodo DOI does not resolve within the required timeframe.</p>
-        <p><strong>Action Required:</strong> Log in to your dashboard to retry the broadcast once the services are restored.</p>
-      </div>
+    <div style="font-family: serif; padding: 20px; color: #1a202c;">
+      <h2 style="color: #ef4444;">DOI Validation Failed</h2>
+      <p>Dear ${name},</p>
+      <p>We encountered an issue finalizing the DOI for "<strong>${title}</strong>".</p>
+      <p><strong>Reason:</strong> ${reason}</p>
+      <p>Publication is paused safely. Please log in to your dashboard to retry the broadcast.</p>
     </div>
   `;
   try {
