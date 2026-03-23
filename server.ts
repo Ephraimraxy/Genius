@@ -129,6 +129,10 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const RESEND_FROM = process.env.RESEND_FROM || 'onboarding@resend.dev';
+const APP_URL = process.env.APP_URL || 'https://geniusapp.com';
+
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -1140,6 +1144,17 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
   return await pdfDoc.save();
 }
 
+async function validateDOI(doi: string) {
+  try {
+    // Quick head check to verify DOI resolve
+    const res = await fetch(`https://doi.org/${doi}`, { method: "HEAD" });
+    return res.status === 200 || res.status === 302; // OK or Redirect
+  } catch (err) {
+    console.warn(`DOI Validation Failed for ${doi}:`, err);
+    return false;
+  }
+}
+
 async function publishToZenodo(paper: any, zenodoToken: string, pdfBuffer: Buffer) {
   const isProduction = process.env.NODE_ENV === 'production' && process.env.ZENODO_USE_PRODUCTION === 'true';
   const ZENODO_URL = isProduction 
@@ -1177,7 +1192,7 @@ async function publishToZenodo(paper: any, zenodoToken: string, pdfBuffer: Buffe
         title: ast.title || paper.title || 'Genius Publication',
         upload_type: "publication",
         publication_type: "article",
-        description: ast.abstract?.background || paper.content?.substring(0, 500) || "Academic research publication.",
+        description: ast.abstract?.background || (typeof paper.content === 'string' ? paper.content.substring(0, 500) : "Academic research publication."),
         publication_date: new Date().toISOString().split('T')[0],
         access_right: "open",
         creators: (ast.authors || []).map((a: any) => {
@@ -1902,6 +1917,38 @@ ${manuscriptText}
     if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid ID' });
     console.error('Validate APA Error:', error);
     res.status(500).json({ error: 'Failed to validate manuscript rules' });
+  }
+});
+
+app.post('/api/manuscript/check-similarity/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query('SELECT content FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    const prompt = `Analyze this manuscript for academic plagiarism and similarity. 
+    Estimate a similarity percentage based on potential reused content or common academic phrasing.
+    
+    CONTENT: "${(paper.content || '').substring(0, 10000)}"
+    
+    Return JSON only: { "similarityScore": number (0-100), "explanation": "string" }`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "system", content: "You are a professional plagiarism auditor for a high-impact journal." }, { role: "user", content: prompt }],
+      response_format: { type: "json_object" }
+    });
+
+    const aiData = JSON.parse(completion.choices[0].message.content || '{}');
+    const score = aiData.similarityScore || 0;
+
+    await pool.query('UPDATE papers SET metadata = metadata || $1 WHERE id = $2', [JSON.stringify({ similarityScore: score }), id]);
+
+    res.json({ success: true, similarityScore: score, explanation: aiData.explanation });
+  } catch (error) {
+    console.error('Similarity check error:', error);
+    res.status(500).json({ error: 'Failed to perform similarity audit' });
   }
 });
 
@@ -3453,6 +3500,40 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
   }
 }
 
+async function sendDoiFailureEmail(to: string, name: string, title: string, reason: string) {
+  const htmlBody = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #fee2e2; border-radius: 12px; overflow: hidden;">
+      <div style="background: #ef4444; padding: 20px; color: white; text-align: center;">
+        <h2 style="margin: 0;">DOI Validation Failed</h2>
+      </div>
+      <div style="padding: 24px; color: #1f2937; line-height: 1.5;">
+        <p>Dear ${name},</p>
+        <p>We encountered a critical issue while finalizing the publication of your manuscript:</p>
+        <div style="background: #fdf2f2; border-left: 4px solid #ef4444; padding: 12px; margin: 16px 0; font-style: italic;">
+          "${title}"
+        </div>
+        <p><strong>Reason:</strong> ${reason}</p>
+        <p>Your manuscript has been paused at the <strong>DOI Validation</strong> stage. This usually happens if the Zenodo DOI does not resolve within the required timeframe.</p>
+        <p><strong>Action Required:</strong> Log in to your dashboard to retry the broadcast once the services are restored.</p>
+      </div>
+    </div>
+  `;
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: `GMIJP <${RESEND_FROM}>`,
+        to: [to],
+        subject: `ACTION REQUIRED: DOI Validation Failed — ${title.substring(0, 50)}`,
+        html: htmlBody
+      })
+    });
+  } catch (err) {
+    console.error('Failure email error:', err);
+  }
+}
+
 app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id: paperId } = idParamSchema.parse(req.params);
@@ -3483,19 +3564,61 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     const pdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn });
     const pdfBuffer = Buffer.from(pdfBytes);
 
-    // 3. Publish to Zenodo
+    // 3. Publish to Zenodo & Strict DOI Validation
     let doi = '';
     try {
       doi = await publishToZenodo(paper, zenodoToken, pdfBuffer);
-    } catch (e) {
-      console.warn('Zenodo failed, using fallback DOI');
-      doi = `10.GMIJ/${Date.now()}.${Math.floor(Math.random() * 1000)}`;
+      
+      // MANDATORY: Wait and Validate DOI
+      const isValid = await validateDOI(doi);
+      if (!isValid) {
+        throw new Error("DOI validation failed (resolved check). Broadcast paused.");
+      }
+    } catch (e: any) {
+      console.error('Zenodo/DOI Critical Failure:', e.message);
+      
+      // Update status to failure for audit
+      await pool.query("UPDATE papers SET status = 'doi_validation_failed' WHERE id = $1", [paperId]);
+      
+      const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [userId]);
+      if (userRes.rows[0]) {
+        await sendDoiFailureEmail(userRes.rows[0].email, userRes.rows[0].name, ast.title || paper.title, e.message);
+      }
+      
+      return res.status(400).json({ 
+        error: `DOI Validation Failed: ${e.message}`, 
+        status: 'doi_validation_failed' 
+      });
     }
     
-    const url = doi.startsWith('10.GMIJ') ? `https://geniusapp.com/article/${doi}` : `https://doi.org/${doi}`;
+    // 3.5 MANDATORY: Plagiarism Gatekeeper
+    if (metadata.similarityScore && metadata.similarityScore > 25) {
+       return res.status(400).json({ error: `Publication REJECTED: Similarity score of ${metadata.similarityScore}% exceeds the 25% journal limit.` });
+    }
 
-    // 4. Update Database
-    const updatedMetadata = { ...metadata, doi, url, volume: vol, issue: iss, publishedAt: new Date().toISOString() };
+    const url = `https://doi.org/${doi}`;
+
+    // 4. Update Database with Version History
+    const history = metadata.history || [];
+    history.push({
+      action: 'published',
+      version: (metadata.version || 1) + 1,
+      doi,
+      url,
+      timestamp: new Date().toISOString()
+    });
+
+    const updatedMetadata = { 
+        ...metadata, 
+        doi, 
+        url, 
+        volume: vol, 
+        issue: iss, 
+        publishedAt: new Date().toISOString(),
+        version: (metadata.version || 1) + 1,
+        history
+    };
+
     await pool.query(
       "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4 WHERE id = $5",
       [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), paperId]
@@ -5304,7 +5427,83 @@ app.post('/api/admin/config/journal', authenticateToken, async (req: any, res: a
   }
 });
 
-// (CheckSubscription is now defined at the top of the file)
+// SEO: Public Article Page with JSON-LD
+app.get('/article/:prefix/:suffix', async (req, res) => {
+  const doi = `${req.params.prefix}/${req.params.suffix}`;
+  try {
+    const result = await pool.query("SELECT * FROM papers WHERE doi = $1 AND status = 'published'", [doi]);
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).send("Article not found or not yet indexed.");
+
+    const meta = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+    const ast = meta.ast || {};
+    const authors = ast.authors || meta.authors || [];
+    const authorNames = authors.map((a: any) => typeof a === 'string' ? a : a.name).join(", ");
+
+    const jsonLd = {
+      "@context": "https://schema.org",
+      "@type": "ScholarlyArticle",
+      "headline": ast.title || paper.title,
+      "author": authors.map((a: any) => ({ "@type": "Person", "name": typeof a === 'string' ? a : a.name })),
+      "datePublished": paper.published_at,
+      "doi": doi,
+      "publisher": { "@type": "Organization", "name": "Genius Multidisciplinary International Journal" },
+      "description": ast.abstract?.background || paper.abstract || "Academic research publication."
+    };
+
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${ast.title || paper.title} | Genius Journal</title>
+        <meta name="description" content="${jsonLd.description.substring(0, 160)}">
+        <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
+        <style>
+          body { font-family: 'Times New Roman', Times, serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 20px; color: #1a202c; }
+          h1 { color: #800000; border-bottom: 2px solid #800000; padding-bottom: 10px; font-weight: bold; }
+          .meta { color: #4a5568; font-size: 0.95em; margin: 20px 0; border-left: 4px solid #800000; padding-left: 15px; }
+          .abstract { background: #fdf2f2; padding: 25px; border-radius: 4px; margin: 20px 0; border: 1px solid #fee2e2; }
+          .doi-link { color: #800000; text-decoration: none; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h3 style="color: #4a5568; margin-bottom: 5px;">GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL</h3>
+          <p style="color: #718096; font-size: 0.8em; margin: 0;">OFFICIAL RESEARCH ARCHIVE | ISSN: 2971-7760</p>
+        </div>
+        <h1>${ast.title || paper.title}</h1>
+        <div class="meta">
+          <strong>Authors:</strong> ${authorNames}<br>
+          <strong>DOI:</strong> <a class="doi-link" href="https://doi.org/${doi}">${doi}</a><br>
+          <strong>Published:</strong> ${new Date(paper.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+        </div>
+        <div class="abstract">
+          <h2 style="margin-top: 0; font-size: 1.2em; color: #800000;">Abstract</h2>
+          <p>${jsonLd.description}</p>
+        </div>
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #edf2f7; font-size: 0.85em; color: #a0aec0;">
+          <p>This scholarly article is part of the Genius Multidisciplinary Journal collection. All research published is peer-reviewed and open-access.</p>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    res.status(500).send("Node error: Failed to retrieve indexed article.");
+  }
+});
+
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT doi FROM papers WHERE status = 'published' AND doi IS NOT NULL");
+    const urls = result.rows.map(r => `<url><loc>${APP_URL}/article/${r.doi}</loc></url>`).join("");
+    res.set('Content-Type', 'text/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
+  } catch (e) {
+    res.status(500).send("Sitemap node failure.");
+  }
+});
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
