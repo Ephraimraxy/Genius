@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Library, CheckCircle, XCircle, AlertTriangle, Loader2, ExternalLink, AlertCircle, Search, Microscope, Database, FileSearch, Sparkles, ArrowRight } from 'lucide-react';
+import { Library, CheckCircle, XCircle, AlertTriangle, Loader2, Search, Microscope, Database, FileSearch, Sparkles, ArrowRight, Activity, Zap } from 'lucide-react';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
 export default function ReferenceIntelligence({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
   const [references, setReferences] = useState<any[]>([]);
+  const [summary, setSummary] = useState({ averageScore: 0, weakReferences: 0, strongReferences: 0 });
   const [inTextCitations, setInTextCitations] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [fixingRefId, setFixingRefId] = useState<number | null>(null);
 
   const handleSendToNext = async () => {
     setIsSending(true);
@@ -33,24 +35,72 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
     }
   };
 
+  const fetchReferences = () => {
+    setIsLoading(true);
+    fetch(`/api/references/${activePaperId}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setReferences(data.references || []);
+        if (data.summary) setSummary(data.summary);
+        setInTextCitations(data.inTextCitations || []);
+      })
+      .catch(err => setError('Bibliographic validation failed. AI Engine connectivity issue.'))
+      .finally(() => setIsLoading(false));
+  };
+
   useEffect(() => {
     if (activePaperId) {
-      setIsLoading(true);
-      fetch(`/api/references/${activePaperId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-        .then(res => res.json())
-        .then(data => {
-          setReferences(data.references || []);
-          setInTextCitations(data.inTextCitations || []);
-        })
-        .catch(err => setError('Bibliographic validation failed. External API connectivity issue.'))
-        .finally(() => setIsLoading(false));
+      fetchReferences();
     }
   }, [activePaperId]);
+
+  const handleFixReference = async (ref: any) => {
+    setFixingRefId(ref.id);
+    try {
+      const res = await fetch(`/api/references/fix/${ref.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ aiRewrite: ref.aiRewrite })
+      });
+
+      if (res.ok) {
+        // Update local state to reflect perfect rewrite
+        setReferences(prev => prev.map(r => {
+          if (r.id === ref.id) {
+            return {
+              ...r,
+              reference: ref.aiRewrite,
+              status: 'strong',
+              score: 100,
+              issues: [],
+              suggestion: 'Corrected by AI directly to APA 7th format.',
+              aiRewrite: ''
+            };
+          }
+          return r;
+        }));
+        
+        // Update summary scores locally 
+        setSummary(prev => ({
+          ...prev,
+          weakReferences: ref.status === 'weak' ? Math.max(0, prev.weakReferences - 1) : prev.weakReferences,
+          strongReferences: ref.status !== 'strong' ? prev.strongReferences + 1 : prev.strongReferences
+        }));
+      }
+    } catch(err) {
+      console.error('Failed to fix reference', err);
+    } finally {
+      setFixingRefId(null);
+    }
+  };
 
   if (!activePaperId) {
     return (
@@ -64,9 +114,6 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
     );
   }
 
-  const verifiedCount = references.filter(r => r.status === 'verified').length;
-  const issueCount = references.length - verifiedCount;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -79,9 +126,9 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
             <div className="p-2 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/20">
               <Microscope size={28} />
             </div>
-            Bibliographic Intelligence
+            Reference Intelligence 2.0
           </h2>
-          <p className="text-lg text-slate-500 mt-2 font-medium">Global citation auditing via Crossref with real-time DOI resolution.</p>
+          <p className="text-lg text-slate-500 mt-2 font-medium">AI-powered citation auditing, APA 7th scoring, and intelligent auto-correction.</p>
         </div>
       </div>
 
@@ -91,19 +138,19 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
             <div className="w-20 h-20 border-4 border-slate-100 border-t-indigo-600 rounded-full animate-spin"></div>
             <Search className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={32} />
           </div>
-          <p className="font-bold text-slate-900 mt-8 tracking-widest uppercase text-xs">Crossref Sync in Progress</p>
+          <p className="font-bold text-slate-900 mt-8 tracking-widest uppercase text-xs">AI Auditing in Progress</p>
         </div>
       ) : error ? (
         <div className="bg-rose-50 text-rose-600 p-6 rounded-[2rem] border border-rose-100 flex items-center gap-4">
-          <AlertCircle size={24} />
+          <AlertTriangle size={24} />
           <span className="font-bold">{error}</span>
         </div>
       ) : (
         <div className="flex-1 space-y-10">
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 flex items-center gap-6 group hover:border-indigo-200 transition-all">
-              <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 flex items-center gap-6">
+              <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center">
                 <Database size={32} />
               </div>
               <div>
@@ -111,22 +158,22 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
                 <p className="text-3xl font-bold text-slate-900">{references.length}</p>
               </div>
             </div>
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 flex items-center gap-6 group hover:border-emerald-200 transition-all">
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 flex items-center gap-6">
               <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center">
                 <CheckCircle size={32} />
               </div>
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Verified (DOI)</p>
-                <p className="text-3xl font-bold text-slate-900">{verifiedCount}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Strong References</p>
+                <p className="text-3xl font-bold text-slate-900">{summary.strongReferences}</p>
               </div>
             </div>
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 flex items-center gap-6 group hover:border-amber-200 transition-all">
-              <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-2xl flex items-center justify-center">
-                <AlertTriangle size={32} />
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100 flex items-center gap-6">
+              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-2xl flex items-center justify-center">
+                <Activity size={32} />
               </div>
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Resolution Issues</p>
-                <p className="text-3xl font-bold text-slate-900">{issueCount}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Avg APA Score</p>
+                <p className="text-3xl font-bold text-slate-900">{summary.averageScore}%</p>
               </div>
             </div>
           </div>
@@ -138,18 +185,13 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
                 <FileSearch size={22} className="text-indigo-600" />
                 Validation Ledger
               </h3>
-              <div className="flex gap-2">
-                <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                  Sort: Status
-                </span>
-              </div>
             </div>
             <div className="divide-y divide-slate-100">
               {references.length === 0 ? (
                 <div className="p-20 text-center text-slate-400 font-medium">No citations detected in document architecture.</div>
               ) : references.map((ref, idx) => (
                 <motion.div
-                  key={idx}
+                  key={ref.id || idx}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: idx * 0.02 }}
@@ -157,116 +199,91 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
                 >
                   <div className="flex items-start gap-8">
                     <div className="shrink-0 mt-1">
-                      {ref.status === 'verified' ? (
-                        <div className="w-10 h-10 bg-emerald-50 text-emerald-500 rounded-xl flex items-center justify-center">
-                          <CheckCircle size={24} />
+                      {ref.status === 'strong' ? (
+                        <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center font-bold shadow-inner border border-emerald-100/50">
+                          {ref.score}%
                         </div>
-                      ) : ref.status === 'not_found' ? (
-                        <div className="w-10 h-10 bg-amber-50 text-amber-500 rounded-xl flex items-center justify-center">
-                          <AlertTriangle size={24} />
+                      ) : ref.status === 'moderate' ? (
+                        <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center font-bold shadow-inner border border-amber-100/50">
+                          {ref.score}%
                         </div>
                       ) : (
-                        <div className="w-10 h-10 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center">
-                          <XCircle size={24} />
+                        <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center font-bold shadow-inner border border-rose-100/50">
+                          {ref.score}%
                         </div>
                       )}
                     </div>
+                    
                     <div className="flex-1 min-w-0">
-                      <p className="text-slate-700 text-lg leading-relaxed font-medium group-hover:text-slate-900 transition-colors">{ref.original}</p>
+                      <div className="flex items-center justify-between mb-2">
+                         <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full ${ref.status === 'strong' ? 'bg-emerald-100 text-emerald-800' : ref.status === 'moderate' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'}`}>
+                           {ref.status === 'strong' ? 'Compliant' : ref.status === 'moderate' ? 'Minor Issues' : 'Weak Reference'}
+                         </span>
+                      </div>
+                      <p className="text-slate-700 text-lg leading-relaxed font-serif group-hover:text-slate-900 transition-colors">
+                        {ref.reference}
+                      </p>
 
                       <AnimatePresence>
-                        {ref.status === 'verified' && (
+                        {ref.issues && ref.issues.length > 0 && (
                           <motion.div
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: 'auto' }}
-                            className="mt-6 bg-slate-900 rounded-2xl p-6 text-slate-300 relative overflow-hidden"
+                            className="mt-6 bg-rose-50 rounded-2xl p-6 text-rose-900 border border-rose-100/50"
                           >
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl -mr-16 -mt-16"></div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-2 block">System Resolution</span>
-                                <p className="text-white font-bold leading-tight">{ref.title}</p>
+                            <span className="text-xs font-bold uppercase tracking-wider block mb-3 text-rose-500">Missing Elements Detected</span>
+                            <ul className="space-y-2">
+                              {ref.issues.map((issue: string, i: number) => (
+                                <li key={i} className="flex items-center gap-2 text-sm">
+                                  <XCircle size={14} className="text-rose-400" />
+                                  {issue}
+                                </li>
+                              ))}
+                            </ul>
+                            
+                            {ref.suggestion && (
+                               <div className="mt-4 pt-4 border-t border-rose-100">
+                                 <span className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1 block">AI Editor Suggestion</span>
+                                 <p className="text-sm italic">{ref.suggestion}</p>
+                               </div>
+                            )}
+
+                            {ref.aiRewrite && (
+                              <div className="mt-6 p-5 bg-white rounded-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-indigo-100 relative overflow-hidden group/rewrite">
+                                <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+                                  <Sparkles size={120} />
+                                </div>
+                                <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                  <Zap size={12} /> Auto-Formatted APA 7th Fix
+                                </span>
+                                <p className="text-slate-800 font-serif leading-relaxed mb-4">{ref.aiRewrite}</p>
+                                <button
+                                  onClick={() => handleFixReference(ref)}
+                                  disabled={fixingRefId === ref.id}
+                                  className="py-2.5 px-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 flex items-center gap-2"
+                                >
+                                  {fixingRefId === ref.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                                  {fixingRefId === ref.id ? 'Applying...' : 'Apply AI Rewrite'}
+                                </button>
                               </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-2 block">DOI Identifier</span>
-                                <a href={`https://doi.org/${ref.doi}`} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-2 font-mono font-bold">
-                                  {ref.doi} <ExternalLink size={14} />
-                                </a>
-                              </div>
-                            </div>
+                            )}
                           </motion.div>
+                        )}
+                        
+                        {ref.status === 'strong' && ref.suggestion && (
+                           <div className="mt-4 flex items-center gap-3 text-emerald-600 bg-emerald-50/50 px-5 py-3 rounded-2xl border border-emerald-100 w-fit">
+                             <CheckCircle size={18} />
+                             <span className="text-xs font-bold uppercase tracking-wider">{ref.suggestion}</span>
+                           </div>
                         )}
                       </AnimatePresence>
 
-                      {ref.status === 'not_found' && (
-                        <div className="mt-4 flex items-center gap-3 text-amber-600 bg-amber-50/50 px-4 py-2 rounded-xl border border-amber-100 w-fit">
-                          <AlertTriangle size={16} />
-                          <span className="text-xs font-bold uppercase tracking-wider">Reference not found in global registries</span>
-                        </div>
-                      )}
-
-                      {ref.status === 'error' && (
-                        <div className="mt-4 flex items-center gap-3 text-rose-600 bg-rose-50/50 px-4 py-2 rounded-xl border border-rose-100 w-fit">
-                          <AlertCircle size={16} />
-                          <span className="text-xs font-bold uppercase tracking-wider">Bibliographic service timeout</span>
-                        </div>
-                      )}
-
-                      {ref.isCited === false && (
-                        <motion.div
-                          initial={{ scale: 0.9, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          className="mt-4 flex items-center gap-3 text-amber-700 bg-amber-100/50 px-5 py-3 rounded-2xl border border-amber-200/50 w-fit shadow-lg shadow-amber-900/5"
-                        >
-                          <Database size={18} />
-                          <span className="text-xs font-bold uppercase tracking-widest">Unreferenced Entry: No in-text citation detected</span>
-                        </motion.div>
-                      )}
                     </div>
                   </div>
                 </motion.div>
               ))}
             </div>
           </div>
-
-          {/* In-Text Citations Cluster */}
-          {inTextCitations.length > 0 && (
-            <div className="bg-[#0f172a] rounded-[3rem] shadow-2xl p-12 text-white relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
-
-              <div className="flex items-center justify-between mb-10 border-b border-slate-800 pb-8">
-                <div>
-                  <h3 className="text-2xl font-bold flex items-center gap-3">
-                    <Sparkles size={24} className="text-indigo-400" />
-                    Semantic Citation Map
-                  </h3>
-                  <p className="text-slate-400 text-sm mt-2 font-medium">Neural extraction of in-text cross-references within the document body.</p>
-                </div>
-                <div className="bg-slate-800 px-6 py-3 rounded-2xl border border-slate-700 font-bold text-indigo-400 shadow-xl">
-                  {inTextCitations.length} Nodes Found
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                {inTextCitations.slice(0, 30).map((cit, idx) => (
-                  <motion.span
-                    key={idx}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: idx * 0.01 }}
-                    className="bg-slate-800/50 text-slate-300 px-4 py-2 rounded-xl text-xs font-mono font-bold border border-slate-700 hover:border-indigo-500 hover:text-white transition-all cursor-default"
-                  >
-                    {cit.text}
-                  </motion.span>
-                ))}
-                {inTextCitations.length > 30 && (
-                  <span className="bg-slate-900 text-slate-500 px-4 py-2 rounded-xl text-xs font-bold border border-slate-800 border-dashed">
-                    +{inTextCitations.length - 30} Neural Nodes
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
 
           <div className="mt-8 pt-6">
             <button

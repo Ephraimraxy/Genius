@@ -90,6 +90,7 @@ export default function Sidebar({
   const researcherNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard, section: 'Research Hub' },
     { id: 'upload', label: 'Smart Upload', icon: FileUp, section: 'Manuscript Pipeline' },
+    { id: 'apa_validation', label: 'APA Gatekeeper', icon: ShieldCheck },
     { id: 'writing', label: 'Writing Assistant', icon: PenTool },
     { id: 'formatting', label: 'Formatting', icon: FileText },
     { id: 'references', label: 'Reference Intel', icon: Library },
@@ -309,21 +310,23 @@ export default function Sidebar({
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Pipeline Status</h4>
               <div className="flex gap-1">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <div key={s} className={`w-1.5 h-1.5 rounded-full ${s <= (['upload', 'writing', 'formatting', 'references', 'integrity'].indexOf(activeTab) + 1) ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]' : 'bg-slate-700'}`} />
+                {[1, 2, 3, 4, 5, 6].map((s) => (
+                  <div key={s} className={`w-1.5 h-1.5 rounded-full ${s <= (['upload', 'apa_validation', 'writing', 'formatting', 'references', 'integrity'].indexOf(activeTab as string) + 1) ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]' : 'bg-slate-700'}`} />
                 ))}
               </div>
             </div>
             <div className="space-y-3">
                {[
                  { id: 'upload', label: 'Smart Upload' },
+                 { id: 'apa_validation', label: 'APA Gatekeeper' },
                  { id: 'writing', label: 'AI Writing Hub' },
                  { id: 'formatting', label: 'Format Architect' },
                  { id: 'references', label: 'Reference Intel' },
                  { id: 'integrity', label: 'Integrity Check' }
                ].map((step, idx) => {
-                 const stepIdx = ['upload', 'writing', 'formatting', 'references', 'integrity'].indexOf(step.id);
-                 const currentIdx = ['upload', 'writing', 'formatting', 'references', 'integrity'].indexOf(activeTab);
+                 const stepQueue = ['upload', 'apa_validation', 'writing', 'formatting', 'references', 'integrity'];
+                 const stepIdx = stepQueue.indexOf(step.id);
+                 const currentIdx = stepQueue.indexOf(activeTab as string);
                  const isCompleted = stepIdx < currentIdx;
                  const isActiveStep = step.id === activeTab;
                  

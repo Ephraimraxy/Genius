@@ -5,6 +5,7 @@ import DashboardOverview from './components/DashboardOverview';
 import SmartUpload from './components/SmartUpload';
 import FormattingEngine from './components/FormattingEngine';
 import WritingAssistant from './components/WritingAssistant';
+import APAValidator from './components/APAValidator';
 import JournalRecommendations from './components/JournalRecommendations';
 import ProfileView from './components/ProfileView';
 import ReferenceIntelligence from './components/ReferenceIntelligence';
@@ -36,7 +37,7 @@ import VideoLectures from './components/VideoLectures';
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures';
+export type Tab = 'dashboard' | 'upload' | 'apa_validation' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -66,7 +67,8 @@ const TAB_LABELS: Record<Tab, string> = {
   storage: 'Resource Hub',
   materials: 'Lecture Materials',
   lectureRecords: 'Manage Records',
-  videoLectures: 'Video Lectures'
+  videoLectures: 'Video Lectures',
+  apa_validation: 'APA Rule Engine'
 };
 
 const SplashScreen = ({ onComplete, themeColor = '#800000', accentColor = '#ff4d4d' }: { onComplete: () => void, themeColor?: string, accentColor?: string }) => {
@@ -515,6 +517,7 @@ export default function App() {
       case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
       case 'courseManagement': return <CourseManagement addToast={addToast} token={token} />;
       case 'upload': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} profile={profile?.user} onNavigate={setActiveTab} />;
+      case 'apa_validation': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <APAValidator activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
       case 'formatting': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <FormattingEngine activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} addToast={addToast} />;
       case 'writing': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <WritingAssistant activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
       case 'references': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <ReferenceIntelligence activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;

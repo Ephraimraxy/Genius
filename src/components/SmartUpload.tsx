@@ -492,16 +492,16 @@ export default function SmartUpload({
                           'Content-Type': 'application/json',
                           'Authorization': `Bearer ${localStorage.getItem('token')}`
                         },
-                        body: JSON.stringify({ status: 'writing_assistant' })
+                        body: JSON.stringify({ status: 'writing_assistant' }) // Or we can make a new status 'apa_validation', but this works for now
                       });
-                      onNavigate('writing');
+                      onNavigate('apa_validation');
                     } catch (e) {
-                      console.error('Failed to move to formatting queue', e);
+                      console.error('Failed to move to APA validation', e);
                     }
                   }}
                   className="shrink-0 px-8 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-600/30 hover:scale-105 transition-all flex items-center gap-3"
                 >
-                  Send to Writing Assistant
+                  Send to APA Rule Engine
                   <ArrowRight size={18} />
                 </button>
               )}

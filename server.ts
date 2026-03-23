@@ -948,101 +948,260 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
   }
 }
 
-// Zenodo DOI Registration & Archiving Function
-async function publishToZenodo(paper: any, zenodoToken: string) {
-  // Use sandbox API in development unless a production token is explicitly provided
+async function generateFinalManuscriptPDF(ast: any, branding: any) {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+  
+  let page = pdfDoc.addPage([595.27, 841.89]); // A4
+  const { width, height } = page.getSize();
+  const margin = 72; // 1 inch
+  let y = height - margin;
+  const black = rgb(0, 0, 0);
+  const maroon = rgb(0.5, 0, 0);
+  const gray = rgb(0.4, 0.4, 0.4);
+
+  // Load and embed branding images
+  let logoGenius: any = null;
+  let logoNsuk: any = null;
+  try {
+    const pathGenius = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
+    const pathNsuk = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
+    if (fs.existsSync(pathGenius)) logoGenius = await pdfDoc.embedJpg(fs.readFileSync(pathGenius));
+    if (fs.existsSync(pathNsuk)) logoNsuk = await pdfDoc.embedJpg(fs.readFileSync(pathNsuk));
+  } catch (err) {
+    console.error('PDF Logo Embed Error:', err);
+  }
+
+  const drawHeader = (p: any, firstPage = false) => {
+    let curY = height - 20;
+    const headerFont = font;
+    const headerSize = 8;
+    
+    // 1. Draw Logos if available
+    if (logoGenius) {
+      p.drawImage(logoGenius, { x: 40, y: curY - 35, width: 35, height: 35 });
+    }
+    if (logoNsuk) {
+      p.drawImage(logoNsuk, { x: width - 40 - 35, y: curY - 35, width: 35, height: 35 });
+    }
+
+    // 2. Center Text (Journal Name + Metadata)
+    const journalTitle = "GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL PUBLICATION";
+    p.drawText(journalTitle, { 
+      x: width / 2 - fontBold.widthOfTextAtSize(journalTitle, 9) / 2, 
+      y: curY - 10, 
+      size: 9, 
+      font: fontBold, 
+      color: maroon 
+    });
+
+    const metaLine = `ISSN: ${branding.issn || '2971-7760'} | Volume ${branding.vol}, Issue ${branding.issue} | Official Research Node`;
+    p.drawText(metaLine, { 
+      x: width / 2 - font.widthOfTextAtSize(metaLine, 7) / 2, 
+      y: curY - 22, 
+      size: 7, 
+      font: fontItalic, 
+      color: gray 
+    });
+
+    // 3. Page Number & Separator Line
+    const pageNumStr = `Page ${pdfDoc.getPageCount()}`;
+    p.drawText(pageNumStr, { x: width / 2 - font.widthOfTextAtSize(pageNumStr, 7) / 2, y: curY - 32, size: 7, font: font, color: gray });
+
+    curY -= 45;
+    p.drawLine({ 
+      start: { x: 40, y: curY }, 
+      end: { x: width - 40, y: curY }, 
+      thickness: 1, 
+      color: rgb(0.9, 0.9, 0.9) 
+    });
+    
+    return height - 100; // Reset Y for body content
+  };
+
+  const wrapText = (text: string, size: number, f: any, maxW: number) => {
+    if (!text) return [];
+    const words = text.split(/\s+/);
+    const lines = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      if (f.widthOfTextAtSize(testLine, size) < maxW) {
+        currentLine = testLine;
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    lines.push(currentLine);
+    return lines;
+  };
+
+  const checkNewPage = (needed: number) => {
+    if (y - needed < margin) {
+      page = pdfDoc.addPage([595.27, 841.89]);
+      y = drawHeader(page);
+    }
+  };
+
+  y = drawHeader(page, true);
+
+  // Title
+  y -= 40;
+  const titleLines = wrapText(ast.title || 'Untitled Manuscript', 14, fontBold, width - 2 * margin);
+  for (const line of titleLines) {
+    page.drawText(line, { x: width / 2 - fontBold.widthOfTextAtSize(line, 14) / 2, y, size: 14, font: fontBold });
+    y -= 18;
+  }
+
+  // Authors
+  y -= 10;
+  const authorNames = (ast.authors || []).map((a: any) => typeof a === 'string' ? a : a.name).join(', ');
+  const authLines = wrapText(authorNames, 11, font, width - 2 * margin);
+  for (const line of authLines) {
+    page.drawText(line, { x: width / 2 - font.widthOfTextAtSize(line, 11) / 2, y, size: 11, font });
+    y -= 14;
+  }
+
+  // Abstract Header
+  y -= 30;
+  checkNewPage(100);
+  page.drawText('Abstract', { x: width / 2 - fontBold.widthOfTextAtSize('Abstract', 11) / 2, y, size: 11, font: fontBold });
+  y -= 16;
+  
+  // Abstract Body (Combined from AST parts)
+  const absText = ast.abstract ? [
+    ast.abstract.background, 
+    ast.abstract.method, 
+    ast.abstract.results, 
+    ast.abstract.conclusion, 
+    ast.abstract.recommendation
+  ].filter(Boolean).join(' ') : 'No abstract provided.';
+  
+  const absLines = wrapText(absText, 10, font, width - 2 * margin);
+  for (const line of absLines) {
+    checkNewPage(12);
+    page.drawText(line, { x: margin, y, size: 10, font });
+    y -= 12;
+  }
+
+  // Keywords
+  y -= 10;
+  const kwText = `Keywords: ${(ast.keywords || []).join(', ')}`;
+  const kwLines = wrapText(kwText, 10, fontItalic, width - 2 * margin);
+  for (const line of kwLines) {
+    checkNewPage(12);
+    page.drawText(line, { x: margin, y, size: 10, font: fontItalic });
+    y -= 12;
+  }
+
+  // Sections (Introduction, Methods, etc)
+  if (ast.sections) {
+    for (const key of Object.keys(ast.sections)) {
+      const content = ast.sections[key];
+      if (!content) continue;
+      
+      y -= 25;
+      checkNewPage(40);
+      const sectionTitle = key.charAt(0).toUpperCase() + key.slice(1);
+      page.drawText(sectionTitle, { x: width / 2 - fontBold.widthOfTextAtSize(sectionTitle, 11) / 2, y, size: 11, font: fontBold });
+      y -= 18;
+
+      const lines = wrapText(content, 11, font, width - 2 * margin);
+      for (const line of lines) {
+        checkNewPage(14);
+        page.drawText(line, { x: margin, y, size: 11, font });
+        y -= 14;
+      }
+    }
+  }
+
+  // References
+  y -= 30;
+  checkNewPage(40);
+  page.drawText('References', { x: width / 2 - fontBold.widthOfTextAtSize('References', 11) / 2, y, size: 11, font: fontBold });
+  y -= 20;
+
+  const refs = ast.references || [];
+  for (const ref of refs) {
+    const rText = typeof ref === 'string' ? ref : (ref.raw || ref.text || JSON.stringify(ref));
+    const lines = wrapText(rText, 10, font, width - 2 * margin - 20); // Hanging indent simulation
+    for (let i = 0; i < lines.length; i++) {
+        checkNewPage(12);
+        page.drawText(lines[i], { x: margin + (i > 0 ? 20 : 0), y, size: 9, font });
+        y -= 12;
+    }
+    y -= 4;
+  }
+
+  return await pdfDoc.save();
+}
+
+async function publishToZenodo(paper: any, zenodoToken: string, pdfBuffer: Buffer) {
   const isProduction = process.env.NODE_ENV === 'production' && process.env.ZENODO_USE_PRODUCTION === 'true';
   const ZENODO_URL = isProduction 
     ? 'https://zenodo.org/api/deposit/depositions'
     : 'https://sandbox.zenodo.org/api/deposit/depositions';
 
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${zenodoToken}`
-  };
+  const headers = { 'Authorization': `Bearer ${zenodoToken}` };
+  const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+  const ast = metadata.ast || {};
 
   try {
-    // 1. Create the empty deposition draft
+    // 1. Create draft
     const draftRes = await fetch(ZENODO_URL, {
       method: 'POST',
-      headers,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({}) 
     });
-    
     if (!draftRes.ok) throw new Error(`Zenodo Draft Creation Failed: ${draftRes.statusText}`);
     const draft = await draftRes.json();
     const depositionId = draft.id;
     const bucketUrl = draft.links.bucket;
 
-    // 2. Upload the manuscript content to Zenodo
-    // We create a text file representation of the manuscript content stored in the DB
-    const manuscriptBuffer = Buffer.from(paper.content || 'Manuscript content generation error.', 'utf-8');
-    
-    const uploadRes = await fetch(`${bucketUrl}/manuscript_draft.txt`, {
+    // 2. Upload real PDF
+    const filename = `${(ast.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+    const uploadRes = await fetch(`${bucketUrl}/${filename}`, {
       method: 'PUT',
-      headers: { 
-        'Authorization': `Bearer ${zenodoToken}`,
-        'Content-Type': 'application/octet-stream'
-      },
-      body: manuscriptBuffer
+      headers: { ...headers, 'Content-Type': 'application/pdf' },
+      body: new Uint8Array(pdfBuffer)
     });
+    if (!uploadRes.ok) throw new Error(`Zenodo Upload Failed: ${uploadRes.statusText}`);
 
-    if (!uploadRes.ok) throw new Error(`Zenodo File Upload Failed: ${uploadRes.statusText}`);
-
-    // 3. Attach Genius Metadata (DataCite JSON schema)
-    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+    // 3. Metadata
     const zenodoMetadata = {
       metadata: {
-        title: metadata.title || 'Untitled Genius Publication',
+        title: ast.title || paper.title || 'Genius Publication',
         upload_type: "publication",
         publication_type: "article",
-        description: metadata.abstract || "Published via Genius App Research Pipeline.",
+        description: ast.abstract?.background || paper.content?.substring(0, 500) || "Academic research publication.",
         publication_date: new Date().toISOString().split('T')[0],
         access_right: "open",
-        creators: (metadata.authors || []).map((a: any) => {
-          // Zenodo prefers "Family, Given". Handle string or object.
-          const authName = typeof a === 'string' ? a : (a.name || 'Unknown Author');
-          const trimmed = authName.trim();
-          if (trimmed.includes(',')) return { name: trimmed }; // Already formatted
-          const parts = trimmed.split(/\s+/);
-          if (parts.length > 1) {
-            const family = parts.pop();
-            const given = parts.join(' ');
-            return { name: `${family}, ${given}` };
-          }
-          return { name: trimmed };
+        creators: (ast.authors || []).map((a: any) => {
+          const name = typeof a === 'string' ? a : (a.name || 'Author');
+          return { name: name.includes(',') ? name : name.split(' ').reverse().join(', ') };
         })
       }
     };
 
-    const metaRes = await fetch(`${ZENODO_URL}/${depositionId}`, {
+    await fetch(`${ZENODO_URL}/${depositionId}`, {
       method: 'PUT',
-      headers,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(zenodoMetadata)
     });
 
-    if (!metaRes.ok) throw new Error(`Zenodo Metadata Attachment Failed: ${metaRes.statusText}`);
-
-    // 4. Publish to lock the record and mint the final DOI
-    const publishRes = await fetch(`${ZENODO_URL}/${depositionId}/actions/publish`, {
-      method: 'POST',
-      headers
-    });
+    // 4. Publish
+    const publishRes = await fetch(`${ZENODO_URL}/${depositionId}/actions/publish`, { method: 'POST', headers });
+    if (!publishRes.ok) return draft.metadata.prereserve_doi.doi;
     
-    if (!publishRes.ok) {
-       console.warn(`Zenodo Publish Failed (often happens in sandbox without specific flags). Falling back to reserved DOI. ${publishRes.statusText}`);
-       // If publish fails (common in sandbox), return the reserved DOI from the draft
-       return draft.metadata.prereserve_doi.doi;
-    }
-    
-    const finalRecord = await publishRes.json();
-    
-    // Return the newly minted Zenodo DOI
-    return finalRecord.doi;
-
-  } catch (error) {
-    console.error('Zenodo Publishing Error:', error);
-    throw error;
+    const final = await publishRes.json();
+    return final.doi;
+  } catch (err) {
+    console.error('Zenodo Error:', err);
+    throw err;
   }
 }
 
@@ -1236,6 +1395,18 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
   if (!paper) throw new Error('Paper not found');
 
   const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+  
+  // UNBEATABLE UPGRADE: Use the Semantic AST for the final PDF if available
+  if (metadata.ast) {
+    const branding = {
+      issn: paper.issn || '2971-7760',
+      vol: paper.volume || '1',
+      issue: paper.issue || '1'
+    };
+    const buffer = await generateFinalManuscriptPDF(metadata.ast, branding);
+    return { buffer: Buffer.from(buffer), filename: `${(paper.title || 'article').replace(/[^a-z0-9]/gi, '_')}.pdf` };
+  }
+
   const issn = paper.issn || '2971-7760';
   const volume = paper.volume || '1';
   const issue = paper.issue || '1';
@@ -1630,30 +1801,230 @@ app.get('/api/papers/:id/published-pdf', authenticateToken, async (req: any, res
   }
 });
 
-app.post('/api/validate/:id', authenticateToken, async (req: any, res) => {
+app.post('/api/manuscript/validate-apa/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found or unauthorized' });
 
-    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+    let keywords = '';
+    try {
+      if (typeof paper.metadata === 'string') {
+        const meta = JSON.parse(paper.metadata);
+        keywords = meta.keywords?.join(', ') || '';
+      } else if (paper.metadata) {
+        keywords = paper.metadata.keywords?.join(', ') || '';
+      }
+    } catch(e) {}
+
+    const manuscriptText = `
+Title: ${paper.title || ''}
+Authors: ${paper.authors || ''}
+Abstract: ${paper.abstract || ''}
+Keywords: ${keywords}
+Content:
+${(paper.content || '').substring(0, 40000)}
+    `.trim();
+
+    const prompt = `
+You are a strict academic journal validator and Intelligent Editor acting as a gatekeeper.
+
+Analyze the manuscript below according to APA 7th rules and return ONLY JSON. Do not output markdown code blocks.
+
+Rules:
+- Abstract must not exceed 200 words
+- Abstract must sequentially include these core components: Background, Method, Results, Conclusion, Recommendation
+- Maximum of 5 keywords
+- Total word count must not exceed 4500
+- Must include sections: Introduction, Methods, Results, Discussion, Conclusion
+- Title must be in Title Case
+
+Return JSON precisely in this format:
+{
+  "title": { "isTitleCase": true/false },
+  "abstract": {
+    "wordCount": number,
+    "isValid": true/false,
+    "issues": [
+      {
+        "type": "missing_section",
+        "section": "Name of section (e.g. Method, Recommendation)",
+        "message": "Clear explanation of what is missing.",
+        "suggestion": "Actionable instruction on how to fix it.",
+        "aiRewrite": "An AI-generated draft sentence/paragraph to insert as a replacement.",
+        "whereToFind": "Contextual advice telling the user where in the main body (e.g. Chapter 3, Methodology, Discussion) they can find the missing info."
+      }
+    ]
+  },
+  "keywords": { "count": number, "isValid": true/false },
+  "wordCount": { "total": number, "isValid": true/false },
+  "sections": { "found": ["..."], "missing": ["..."] },
+  "score": number (0-100, where 90-100 is Pass, 70-89 is Minor Fix, < 70 is Reject),
+  "finalDecision": "PASS" | "FAIL"
+}
+
+Manuscript:
+${manuscriptText}
+`;
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       response_format: { type: 'json_object' },
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
+    let aiResult = parsed;
+
+    // STEP 3: DOUBLE VALIDATION (NODE.JS HARD ENFORCEMENT)
+    let backendPass = true;
+    if (aiResult.abstract?.wordCount > 200) backendPass = false;
+    if (aiResult.keywords?.count > 5) backendPass = false;
+    if (aiResult.wordCount?.total > 4500) backendPass = false;
+    if (aiResult.sections?.missing?.length > 0) backendPass = false;
+
+    if (!backendPass) {
+       aiResult.finalDecision = "FAIL";
+    }
+
+    // Adjust score safely if constraints violated but AI gave high score.
+    if (aiResult.finalDecision === "FAIL" && aiResult.score >= 90) {
+      aiResult.score = 85; 
+    }
+
+    res.json({ 
+      status: aiResult.finalDecision === "PASS" ? "accepted" : "rejected", 
+      validation: aiResult 
+    });
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid ID' });
+    console.error('Validate APA Error:', error);
+    res.status(500).json({ error: 'Failed to validate manuscript rules' });
+  }
+});
+
+app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const { fixes } = req.body; 
+    
+    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    let currentMetadata = typeof paper.metadata === 'string' ? JSON.parse(paper.metadata || '{}') : (paper.metadata || {});
+    if (!currentMetadata.history) currentMetadata.history = [];
+
+    // Save previous version
+    currentMetadata.history.push({
+      version: currentMetadata.history.length + 1,
+      timestamp: new Date().toISOString(),
+      abstract: paper.abstract,
+      content: paper.content,
+      title: paper.title
+    });
+
+    for (const fix of fixes) {
+       if (fix.target === 'abstract') {
+         await pool.query('UPDATE papers SET abstract = $1 WHERE id = $2 AND user_id = $3', [fix.content, id, req.user.id]);
+       }
+       if (fix.target === 'content' || fix.target === 'sections') {
+         // Replace only the specific section or just update content entirely
+         // For now, if AI rewrite applies to entire text block:
+         await pool.query('UPDATE papers SET content = $1 WHERE id = $2 AND user_id = $3', [fix.content, id, req.user.id]);
+       }
+    }
+
+    await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [currentMetadata, id]);
+
+    res.json({ success: true, message: 'Manuscript rebuilt and saved. Version backed up.' });
+  } catch (error) {
+    console.error('Auto fix error:', error);
+    res.status(500).json({ error: 'Failed to apply automatic structural fixes' });
+  }
+});
+
+app.post('/api/manuscript/structural-rewrite/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    const prompt = `
+You are a master academic formatter and parser.
+Parse the following manuscript into a strict JSON Abstract Syntax Tree (AST).
+Extract all metadata, the abstract, and break the body into sections and blocks (paragraphs, citations).
+If a mandatory section is missing (e.g. Methods), do NOT invent it, just leave it out of the sections array.
+
+Ensure the output adheres exactly to the JSON schema provided.
+    `.trim();
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'AcademicAST',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              authors: { type: 'array', items: { type: 'string' } },
+              abstract: {
+                type: 'object',
+                properties: {
+                  background: { type: 'string' },
+                  method: { type: 'string' },
+                  results: { type: 'string' },
+                  conclusion: { type: 'string' },
+                  recommendation: { type: 'string' }
+                },
+                required: ['background', 'method', 'results', 'conclusion', 'recommendation'],
+                additionalProperties: false
+              },
+              keywords: { type: 'array', items: { type: 'string' } },
+              sections: {
+                type: 'object',
+                properties: {
+                  introduction: { type: 'array', items: { type: 'string' } },
+                  methods: { type: 'array', items: { type: 'string' } },
+                  results: { type: 'array', items: { type: 'string' } },
+                  discussion: { type: 'array', items: { type: 'string' } },
+                  conclusion: { type: 'array', items: { type: 'string' } }
+                },
+                required: ['introduction', 'methods', 'results', 'discussion', 'conclusion'],
+                additionalProperties: false
+              },
+              references: { type: 'array', items: { type: 'string' } }
+            },
+            required: ['title', 'authors', 'abstract', 'keywords', 'sections', 'references'],
+            additionalProperties: false
+          }
+        }
+      },
       messages: [
-        { role: 'system', content: 'You are an academic paper structure validator. Return JSON with key "items" containing an array of objects with: name (string), status (string: "pass" or "fail" or "warning"), msg (string, optional feedback).' },
-        { role: 'user', content: `Analyze this academic paper structure. Sections: ${JSON.stringify(metadata.sections)}` }
+        { role: 'system', content: prompt },
+        { role: 'user', content: `Title: ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nContent:\n${(paper.content||'').substring(0, 50000)}` }
       ]
     });
 
-    const parsed = JSON.parse(response.choices[0]?.message?.content || '{"items":[]}');
-    const validation = parsed.items || parsed;
-    res.json({ validation });
-  } catch (error: any) {
-    if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid ID' });
-    res.status(500).json({ error: 'Failed to validate' });
+    const astJson = response.choices[0]?.message?.content;
+    if (!astJson) throw new Error("Failed to parse AST");
+
+    // Save AST to db in metadata
+    let currentMetadata = typeof paper.metadata === 'string' ? JSON.parse(paper.metadata || '{}') : (paper.metadata || {});
+    currentMetadata.ast = JSON.parse(astJson);
+    
+    await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [currentMetadata, id]);
+
+    res.json({ success: true, ast: currentMetadata.ast });
+  } catch (error) {
+    console.error('AST Parser Error:', error);
+    res.status(500).json({ error: 'Failed to rewrite manuscript into semantic AST' });
   }
 });
 
@@ -1719,74 +2090,225 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
     const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    // Check if we already have validated references in the DB
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+    
+    // Check if we already have validated references in the DB to avoid re-running expensive AI
     const refsResult = await pool.query('SELECT * FROM paper_references WHERE paper_id = $1', [paperId]);
     const existingRefs = refsResult.rows;
 
-    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
-    const inTextCitations = metadata.inTextCitations || [];
-
-    if (existingRefs.length > 0) {
-      // Return cached canonical references
-      const formattedRefs = existingRefs.map(r => ({
-        original: r.original_text,
-        title: r.title,
-        doi: r.doi,
-        authors: r.authors,
-        status: r.status,
-        isCited: Boolean(r.is_cited)
-      }));
-      return res.json({ references: formattedRefs, inTextCitations });
+    if (existingRefs.length > 0 && !req.query.forceRefresh) {
+      // Reconstruct the response from DB
+      let totalScore = 0;
+      let weak = 0;
+      let strong = 0;
+      const formattedRefs = existingRefs.map(r => {
+        let aiData: any = {};
+        try { aiData = JSON.parse(r.ai_analysis || '{}'); } catch(e){}
+        const score = aiData.score || 0;
+        totalScore += score;
+        if (score >= 80) strong++;
+        else if (score < 60) weak++;
+        
+        return {
+          id: r.id,
+          reference: r.original_text,
+          parsed: {
+            authors: r.authors ? r.authors.split(', ') : [],
+            year: r.year || '',
+            title: r.title || '',
+            journal: r.journal || '',
+            doi: r.doi || ''
+          },
+          issues: aiData.issues || [],
+          score: score,
+          status: score >= 80 ? 'strong' : (score >= 60 ? 'moderate' : 'weak'),
+          suggestion: aiData.suggestion || '',
+          aiRewrite: aiData.aiRewrite || ''
+        };
+      });
+      
+      return res.json({ 
+        references: formattedRefs,
+        summary: {
+           averageScore: existingRefs.length > 0 ? Math.round(totalScore / existingRefs.length) : 0,
+           weakReferences: weak,
+           strongReferences: strong
+        }
+      });
     }
 
-    // Otherwise, validate via Crossref and store
-    const references = metadata.references || [];
-    const refsToProcess = references.slice(0, 10); // Process up to 10 for demo
-    const validatedRefs = [];
+    // Otherwise, validate via AI Reference Intelligence 2.0
+    // Support either the new AST references or the old metadata.references
+    let rawReferences = metadata.ast?.references || metadata.references || [];
+    if (!Array.isArray(rawReferences)) rawReferences = [];
+    
+    // Process up to 20 for AI batching to avoid massive prompt sizes
+    const refsToProcess = rawReferences.slice(0, 20).map(r => typeof r === 'string' ? r : r.raw || r.text || JSON.stringify(r));
+    
+    if (refsToProcess.length === 0) {
+      return res.json({ references: [], summary: { averageScore: 0, weakReferences: 0, strongReferences: 0 } });
+    }
 
-    const citedTargets = new Set(inTextCitations.map((c: any) => c.target?.replace('#', '')));
+    const prompt = `
+You are an expert Reference Intelligence Engine for APA 7th Edition.
+Analyze the following list of bibliography references.
+For each reference, extract its fields and score it based on completeness:
+- Has author (+20)
+- Has year (+20)
+- Has article/book title (+20)
+- Has journal/publisher (+20)
+- Has DOI (+20)
+If fields are missing, note them in 'issues'. 
+Provide an 'aiRewrite' that perfectly formats the reference in APA 7th Edition (even if you have to guess minor formatting, but don't invent facts).
+
+Respond with a strict JSON array where each element matches the schema provided.
+    `.trim();
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'ReferenceAnalysis',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              results: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    reference: { type: 'string' },
+                    parsed: {
+                      type: 'object',
+                      properties: {
+                        authors: { type: 'array', items: { type: 'string' } },
+                        year: { type: 'string' },
+                        title: { type: 'string' },
+                        journal: { type: 'string' },
+                        doi: { type: 'string' }
+                      },
+                      required: ['authors', 'year', 'title', 'journal', 'doi'],
+                      additionalProperties: false
+                    },
+                    issues: { type: 'array', items: { type: 'string' } },
+                    score: { type: 'number' },
+                    suggestion: { type: 'string' },
+                    aiRewrite: { type: 'string' }
+                  },
+                  required: ['reference', 'parsed', 'issues', 'score', 'suggestion', 'aiRewrite'],
+                  additionalProperties: false
+                }
+              }
+            },
+            required: ['results'],
+            additionalProperties: false
+          }
+        }
+      },
+      messages: [
+        { role: 'system', content: prompt },
+        { role: 'user', content: JSON.stringify(refsToProcess) }
+      ]
+    });
+
+    const parsedContent = JSON.parse(response.choices[0]?.message?.content || '{"results":[]}');
+    const aiResults = parsedContent.results || [];
+
+    // Clear old references to replace them
+    await pool.query('DELETE FROM paper_references WHERE paper_id = $1', [paperId]);
 
     const insertRefQuery = `
-      INSERT INTO paper_references (paper_id, original_text, title, authors, doi, year, journal, status, is_cited)
+      INSERT INTO paper_references (paper_id, original_text, title, authors, doi, year, journal, status, ai_analysis)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id
     `;
 
-    for (const refObj of refsToProcess) {
-      const refText = typeof refObj === 'string' ? refObj : refObj.text;
-      const refId = typeof refObj === 'object' ? refObj.id : null;
-      const isCited = refId ? citedTargets.has(refId) : true;
+    const validatedRefs = [];
+    let totalScore = 0;
+    let weak = 0;
+    let strong = 0;
 
-      try {
-        const crossrefRes = await fetch(`https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(refText)}&rows=1`);
-        const crossrefData = await crossrefRes.json();
+    for (const resItem of aiResults) {
+      const p = resItem.parsed;
+      const score = resItem.score || 0;
+      totalScore += score;
+      const status = score >= 80 ? 'strong' : (score >= 60 ? 'moderate' : 'weak');
+      if (status === 'strong') strong++;
+      if (status === 'weak') weak++;
 
-        if (crossrefData.message.items.length > 0) {
-          const item = crossrefData.message.items[0];
-          const title = item.title?.[0] || '';
-          const doi = item.DOI || '';
-          const authors = item.author?.map((a: any) => `${a.given} ${a.family}`).join(', ') || '';
-          const year = item.issued?.['date-parts']?.[0]?.[0]?.toString() || '';
-          const journal = item['container-title']?.[0] || '';
+      const aiData = {
+        issues: resItem.issues,
+        score: score,
+        suggestion: resItem.suggestion,
+        aiRewrite: resItem.aiRewrite
+      };
 
-          await pool.query(insertRefQuery, [paperId, refText, title, authors, doi, year, journal, 'verified', isCited]);
+      const dbRes = await pool.query(insertRefQuery, [
+        paperId, 
+        resItem.reference, 
+        p.title, 
+        p.authors.join(', '), 
+        p.doi, 
+        p.year, 
+        p.journal, 
+        status, 
+        JSON.stringify(aiData)
+      ]);
 
-          validatedRefs.push({
-            original: refText, title, doi, authors, status: 'verified', isCited
-          });
-        } else {
-          await pool.query(insertRefQuery, [paperId, refText, '', '', '', '', '', 'not_found', isCited]);
-          validatedRefs.push({ original: refText, status: 'not_found', isCited });
-        }
-      } catch (e) {
-        await pool.query(insertRefQuery, [paperId, refText, '', '', '', '', '', 'error', isCited]);
-        validatedRefs.push({ original: refText, status: 'error', isCited });
-      }
+      validatedRefs.push({
+        id: dbRes.rows[0].id,
+        reference: resItem.reference,
+        parsed: p,
+        issues: resItem.issues,
+        score: score,
+        status: status,
+        suggestion: resItem.suggestion,
+        aiRewrite: resItem.aiRewrite
+      });
     }
 
-    res.json({ references: validatedRefs, inTextCitations });
+    res.json({ 
+      references: validatedRefs, 
+      summary: {
+        averageScore: aiResults.length > 0 ? Math.round(totalScore / aiResults.length) : 0,
+        weakReferences: weak,
+        strongReferences: strong
+      }
+    });
+
   } catch (error) {
-    console.error('Reference error:', error);
-    res.status(500).json({ error: 'Failed to validate references' });
+    console.error('Reference Intelligence Error:', error);
+    res.status(500).json({ error: 'Failed to analyze references using AI' });
+  }
+});
+
+// Endpoint to automatically apply an AI rewrite to a reference
+app.post('/api/references/fix/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const { id: refId } = idParamSchema.parse(req.params); // This is the paper_references ID
+    const { aiRewrite } = req.body;
+    
+    if (!aiRewrite) return res.status(400).json({ error: 'Missing aiRewrite content' });
+
+    // Update the original_text and reset its score/status to perfect since it's now AI-corrected
+    const perfectAnalysis = JSON.stringify({
+      issues: [],
+      score: 100,
+      suggestion: 'Corrected by AI directly to APA 7th format.',
+      aiRewrite: aiRewrite
+    });
+
+    await pool.query(
+      "UPDATE paper_references SET original_text = $1, status = 'strong', ai_analysis = $2 WHERE id = $3", 
+      [aiRewrite, perfectAnalysis, refId]
+    );
+
+    res.json({ success: true, message: 'Reference corrected successfully.' });
+  } catch (err) {
+    console.error('Reference Fix Error:', err);
+    res.status(500).json({ error: 'Failed to apply reference fix' });
   }
 });
 
@@ -2933,114 +3455,78 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
 
 app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
   try {
-    const { id } = idParamSchema.parse(req.params);
+    const { id: paperId } = idParamSchema.parse(req.params);
     const userId = req.user.id;
-    const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, userId]);
+    const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [paperId, userId]);
     const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
-
-    // Dynamic Rule: Manuscript page limit
-    const maxPageResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_pages_per_manuscript']);
-    const maxPagesAllowed = parseInt(maxPageResult.rows[0]?.value || '20');
-
-    if (metadata.pageCount && metadata.pageCount > maxPagesAllowed) {
-      return res.status(400).json({ error: `Manuscript exceeds the current ${maxPagesAllowed}-page limit for publication. Please upload a shorter version.` });
+    const ast = metadata.ast;
+    
+    if (!ast) {
+        return res.status(400).json({ error: 'Manuscript structure is not finalized. Please run the Structural Rewriter first.' });
     }
 
-    // Zenodo Integration
     const zenodoToken = process.env.ZENODO_ACCESS_TOKEN;
-    if (!zenodoToken) {
-      throw new Error("Zenodo Access Token is not configured on the server.");
-    }
+    if (!zenodoToken) throw new Error("Zenodo Access Token missing.");
 
+    // 1. Resolve Journal Branding
+    const settingsRes = await pool.query("SELECT key, value FROM settings WHERE key IN ('current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue')");
+    const settings = Object.fromEntries(settingsRes.rows.map(r => [r.key, r.value]));
+    
+    const vol = parseInt(settings.current_volume || '1');
+    const iss = parseInt(settings.current_issue || '1');
+    const issn = settings.journal_issn || '2971-7760';
+
+    // 2. Generate Final Professional PDF
+    const pdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn });
+    const pdfBuffer = Buffer.from(pdfBytes);
+
+    // 3. Publish to Zenodo
     let doi = '';
     try {
-      doi = await publishToZenodo(paper, zenodoToken);
+      doi = await publishToZenodo(paper, zenodoToken, pdfBuffer);
     } catch (e) {
-      console.warn('Zenodo publishing failed, generating local GMIJ DOI');
+      console.warn('Zenodo failed, using fallback DOI');
       doi = `10.GMIJ/${Date.now()}.${Math.floor(Math.random() * 1000)}`;
     }
     
-    const url = doi.startsWith('10.GMIJ') ? `${process.env.APP_URL || ''}/article/${doi}` : `https://doi.org/${doi}`;
+    const url = doi.startsWith('10.GMIJ') ? `https://geniusapp.com/article/${doi}` : `https://doi.org/${doi}`;
 
-    // Automatic Volume/Issue Management Logic
-    const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
-    const issn = issnResult.rows[0]?.value || '2971-7760';
-
-    // 1. Fetch current global settings and rules
-    const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
-    const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
-    const maxManuRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_manuscripts_per_issue']);
-    const maxIssRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_issues_per_volume']);
-
-    let currentVolume = parseInt(volResult.rows[0]?.value || '1');
-    let currentIssue = parseInt(issueResult.rows[0]?.value || '1');
-    const maxManuscriptsPerIssue = parseInt(maxManuRes.rows[0]?.value || '10');
-    const maxIssuesPerVolume = parseInt(maxIssRes.rows[0]?.value || '3');
-
-    // 2. Check the count of published manuscripts in the current Issue
-    const countResult = await pool.query(
-      "SELECT COUNT(*) FROM papers WHERE volume = $1 AND issue = $2 AND status = 'published'",
-      [currentVolume.toString(), currentIssue.toString()]
+    // 4. Update Database
+    const updatedMetadata = { ...metadata, doi, url, volume: vol, issue: iss, publishedAt: new Date().toISOString() };
+    await pool.query(
+      "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4 WHERE id = $5",
+      [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), paperId]
     );
-    const publishedInIssue = parseInt(countResult.rows[0].count);
 
-    let finalVolume = currentVolume;
-    let finalIssue = currentIssue;
+    // 5. Volume/Issue Increment Logic
+    const countRes = await pool.query("SELECT COUNT(*) FROM papers WHERE status = 'published' AND volume = $1 AND issue = $2", [vol.toString(), iss.toString()]);
+    const count = parseInt(countRes.rows[0].count);
+    const max = parseInt(settings.max_manuscripts_per_issue || '10');
 
-    // 3. Shift logic based on dynamic rules
-    if (publishedInIssue >= maxManuscriptsPerIssue) {
-      if (currentIssue >= maxIssuesPerVolume) {
-        // "Chapter closes" - Move to next Volume and reset Issue
-        finalVolume = currentVolume + 1;
-        finalIssue = 1;
+    if (count >= max) {
+      if (iss >= 12) {
+        await pool.query("UPDATE settings SET value = $1 WHERE key = 'current_volume'", [(vol + 1).toString()]);
+        await pool.query("UPDATE settings SET value = '1' WHERE key = 'current_issue'");
       } else {
-        // Just move to the next Issue
-        finalIssue = currentIssue + 1;
+        await pool.query("UPDATE settings SET value = $1 WHERE key = 'current_issue'", [(iss + 1).toString()]);
       }
-
-      // Update global journal settings for future publications
-      await pool.query('UPDATE settings SET value = $1 WHERE key = $2', [finalVolume.toString(), 'current_volume']);
-      await pool.query('UPDATE settings SET value = $1 WHERE key = $2', [finalIssue.toString(), 'current_issue']);
-      console.log(`Journal: Auto-shifted to Volume ${finalVolume}, Issue ${finalIssue} (Reached ${maxManuscriptsPerIssue}-manuscript limit)`);
     }
 
-    await pool.query('UPDATE papers SET status = $1, doi = $2, issn = $3, volume = $4, issue = $5, published_at = CURRENT_TIMESTAMP WHERE id = $6', 
-      ['published', doi, issn, finalVolume.toString(), finalIssue.toString(), id]
-    );
-
-    const profileResult = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
-    const profile = profileResult.rows[0];
-    if (profile) {
-      const pubs = (typeof profile.publications === 'string' ? JSON.parse(profile.publications || '[]') : (profile.publications || []));
-      pubs.push({ title: metadata.title, doi, date: new Date().toISOString() });
-      await pool.query('UPDATE profiles SET publications = $1 WHERE id = $2', [JSON.stringify(pubs), profile.id]);
+    // 6. Final Email Notification with the PDF
+    const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [userId]);
+    const user = userRes.rows[0];
+    if (user) {
+      await sendPublicationEmail(user.email, user.name, ast.title || paper.title, doi, url, pdfBuffer);
     }
 
-    // Dispatch automated publication email (fire and forget after response)
-    const paperUserResult = await pool.query('SELECT u.email, u.name FROM papers p JOIN users u ON p.user_id = u.id WHERE p.id = $1', [id]);
-    const paperUser = paperUserResult.rows[0];
-    if (paperUser) {
-      generatePublishedArticlePDF(id).then(({ buffer }) => {
-        sendPublicationEmail(
-          paperUser.email, 
-          paperUser.name, 
-          metadata.title || paper.title, 
-          doi, 
-          url, 
-          buffer
-        );
-      }).catch(e => console.error('Emailed publication PDF generation failed:', e));
-    }
+    res.json({ success: true, doi, url, title: ast.title || paper.title });
 
-    res.json({ success: true, doi, url });
-
-    // Note: Acceptance email is now sent at the /api/upload step
   } catch (error: any) {
-    console.error('Publishing error:', error);
-    res.status(500).json({ error: error.message || 'Failed to publish paper via Zenodo' });
+    console.error('Final Publishing Error:', error);
+    res.status(500).json({ error: error.message || 'Publication pipeline failed.' });
   }
 });
 
