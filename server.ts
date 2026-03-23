@@ -2164,7 +2164,7 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
       console.warn(`[PDF] EXECUTABLE NOT FOUND. Tried: ${executablePaths.join(', ')}`);
     }
 
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       executablePath: activePath,
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none']
