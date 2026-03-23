@@ -2136,11 +2136,17 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
       </html>
     `;
 
-    // Launch Puppeteer (Try common Windows paths for chrome/edge)
+    // Launch Puppeteer (Try common Windows and Linux paths for chrome/chromium)
     const executablePaths = [
+      // Windows
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      // Linux (Cloud/CI)
+      '/usr/bin/chromium-browser',
+      '/usr/bin/chromium',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/google-chrome',
       process.env.CHROME_PATH
     ].filter(Boolean);
 
