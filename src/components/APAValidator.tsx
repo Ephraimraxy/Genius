@@ -56,6 +56,15 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
     setIsValidating(true);
     setError(null);
     try {
+      // SPECIAL CASE: Phase 0 (Structure) should trigger the Deep Semantic AST Rewrite
+      if (phaseIdx === 0) {
+        const rewriteRes = await fetch(`/api/manuscript/structural-rewrite/${activePaperId}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (!rewriteRes.ok) console.warn('Structural rewrite fallback triggered.');
+      }
+
       const res = await fetch(`/api/manuscript/validate-apa/${activePaperId}`, {
         method: 'POST',
         headers: { 
@@ -258,7 +267,11 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
                                 </div>
                                 <p className="text-indigo-900 font-medium italic leading-relaxed text-sm">"{issue.aiRewrite}"</p>
                                 <button
-                                  onClick={() => applyFix(issue, idx, PHASES[currentPhase].name.toLowerCase())}
+                                  onClick={() => {
+                                    const phaseName = PHASES[currentPhase].name.toLowerCase();
+                                    const target = (phaseName === 'title' || phaseName === 'abstract') ? phaseName : 'content';
+                                    applyFix(issue, idx, target);
+                                  }}
                                   disabled={isFixing !== null}
                                   className="mt-6 flex items-center gap-2 text-indigo-600 font-black uppercase tracking-widest text-xs hover:text-indigo-700 transition-colors"
                                 >

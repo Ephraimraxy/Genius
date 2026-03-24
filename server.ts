@@ -1009,6 +1009,141 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
     return null;
   }
 }
+/**
+ * SHARED HELPER: Generates a high-fidelity PDF using Puppeteer
+ * MIRRORS the FormattingEngine.tsx preview EXACTLY.
+ */
+async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer> {
+  const paperResult = await pool.query(
+    'SELECT title, formatted_content, volume, issue, issn, doi FROM papers WHERE id = $1', 
+    [id]
+  );
+  const paper = paperResult.rows[0];
+  if (!paper || !paper.formatted_content) {
+    throw new Error('Paper or formatted content not found for high-fidelity generation');
+  }
+
+  // Fetch journal configs for branding
+  const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
+  const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
+  const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
+
+  const branding = {
+    volume: paper.volume || volResult.rows[0]?.value || '1',
+    issue: paper.issue || issueResult.rows[0]?.value || '1',
+    issn: paper.issn || issnResult.rows[0]?.value || '2971-7760',
+    doi: paper.doi || `10.5555/genius.${id}`,
+    date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  };
+
+  const getBase64Image = (fileName: string) => {
+    try {
+      const filePath = path.join(process.cwd(), 'public', fileName);
+      if (fs.existsSync(filePath)) {
+        const bitmap = fs.readFileSync(filePath);
+        const extension = path.extname(fileName).slice(1);
+        return `data:image/${extension};base64,${bitmap.toString('base64')}`;
+      }
+    } catch (e) { console.error(`Failed to load logo ${fileName}:`, e); }
+    return '';
+  };
+
+  const journalLogoBase64 = getBase64Image('journal-logo.png');
+  const nsukLogoBase64 = getBase64Image('Nasarawa-State-University.jpg');
+
+  const fullHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        @page { margin: 20mm 15mm; }
+        body { font-family: serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        * { box-sizing: border-box; }
+        .academic-content { font-family: serif; line-height: 1.6; text-align: justify; }
+        .academic-content p { text-align: justify; margin-bottom: 1em; }
+        .academic-content h1, .academic-content h2, .academic-content h3 { color: #0f172a; margin-top: 1.5em; margin-bottom: 0.5em; }
+        .academic-content table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-family: sans-serif; font-size: 0.75rem; table-layout: fixed; }
+        .academic-content th, .academic-content td { border: 1px solid #cbd5e1; padding: 0.5rem; text-align: left; word-break: break-word; }
+        .academic-content th { background-color: #f8fafc; font-weight: bold; }
+        .academic-figure { margin: 2.5rem 0; text-align: center; padding: 1rem; background: #f8fafc; border: 1px dashed #cbd5e1; }
+        .paper-sheet { background: white; width: 100%; padding: 3rem 4rem; position: relative; min-height: 1100px; page-break-after: always; }
+        .header-sheet { width: 100%; margin: 0 auto; padding: 2rem 4rem 1rem; border-bottom: 2px solid #800000; position: relative; }
+        .header-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+        .meta-info { font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase; }
+        .doi-text { font-size: 9px; color: #4f46e5; font-family: monospace; }
+        .logo-img { height: 50px; width: auto; }
+        .institution-text { font-weight: 900; font-size: 10px; text-transform: uppercase; }
+        .journal-name { color: #800000; font-weight: 900; font-size: 10px; text-transform: uppercase; }
+        .page-footer { position: absolute; bottom: 1.5rem; left: 0; right: 0; text-align: center; font-size: 10px; color: #94a3b8; font-weight: bold; text-transform: uppercase; }
+      </style>
+    </head>
+    <body>
+      <div class="header-sheet">
+        <div class="header-row">
+          <div style="display: flex; align-items: center; gap: 10px;">
+             ${journalLogoBase64 ? `<img src="${journalLogoBase64}" class="logo-img" />` : ''}
+             <div>
+               <p class="journal-name">Genius Multidisciplinary</p>
+               <p class="institution-text">INTERNATIONAL JOURNAL</p>
+             </div>
+          </div>
+          <div style="text-align: center; flex: 1;">
+            <div class="meta-info">ISSN: ${branding.issn} | VOL ${branding.volume}, ISS ${branding.issue} | ${branding.date}</div>
+            <div class="doi-text">${branding.doi}</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; text-align: right;">
+             <div>
+                <p class="institution-text">Nasarawa State University Keffi</p>
+                <p style="color: #94a3b8; font-size: 8px; text-transform: uppercase; font-weight: 700;">Global Partner</p>
+             </div>
+             ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" class="logo-img" />` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="academic-content">
+        ${paper.formatted_content}
+      </div>
+    </body>
+    </html>
+  `;
+
+  const executablePaths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_PATH,
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome-stable',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  ].filter(Boolean) as string[];
+
+  let activePath = executablePaths.find(p => fs.existsSync(p));
+  if (!activePath) {
+    try {
+      const { execSync } = require('child_process');
+      activePath = execSync('which chromium || which google-chrome', { encoding: 'utf-8' }).trim();
+    } catch (e) {}
+  }
+
+  const browser = await puppeteer.launch({
+    executablePath: activePath,
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+    const pdfUint8 = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' }
+    });
+    return Buffer.from(pdfUint8);
+  } finally {
+    await browser.close();
+  }
+}
 
 async function generateFinalManuscriptPDF(ast: any, branding: any) {
   const pdfDoc = await PDFDocument.create();
@@ -1510,7 +1645,18 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
 
   const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
   
-  // UNBEATABLE UPGRADE: Use the Semantic AST for the final PDF if available
+  // HIGHEST PRIORITY: Use High-Fidelity Formatted HTML (Matches Formatting Preview 1:1)
+  if (paper.formatted_content) {
+    try {
+      console.log(`[PUBLISH] Generating High-Fidelity PDF for Paper ${paperId}...`);
+      const buffer = await generateHighFidelityPaperPDF(paperId);
+      return { buffer, filename: `${(paper.title || 'article').replace(/[^a-z0-9]/gi, '_')}_Final.pdf` };
+    } catch (e) {
+      console.warn(`[PUBLISH] High-Fidelity pass failed for ${paperId}, falling back to AST/Standard.`, e);
+    }
+  }
+
+  // SECOND PRIORITY: Use Semantic AST for structural PDF if available
   if (metadata.ast) {
     const branding = {
       issn: paper.issn || '2971-7760',
@@ -2103,13 +2249,18 @@ app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res
     let updatedAbstract = paper.abstract;
     let updatedTitle = paper.title;
 
+    // Robust target matching for AI fixes
     for (const fix of fixes) {
-       if (fix.target === 'title') updatedTitle = fix.content;
-       else if (fix.target === 'abstract') updatedAbstract = fix.content;
-       else if (fix.target === 'content' || fix.target === 'sections') updatedContent = fix.content;
+       const target = fix.target?.toLowerCase();
+       if (target === 'title') updatedTitle = fix.content;
+       else if (target === 'abstract') updatedAbstract = fix.content;
+       else {
+         // Default for phase-based fixes (Introduction, Methods, etc.) or 'content'/'sections'
+         updatedContent = fix.content;
+       }
     }
 
-    // Invalidate stale AST and formatted_content to force re-sync in downstream steps
+    // Invalidate stale AST and formatted_content to force re-sync
     delete currentMetadata.ast;
 
     await pool.query(
@@ -2626,6 +2777,44 @@ app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, 
   }
 });
 
+app.post('/api/format/:id/save', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const { formattedHtml } = z.object({ formattedHtml: z.string() }).parse(req.body);
+    
+    // Update the database with the finalized HTML structure from Format Architect
+    // IMPORTANT: Clear the AST to ensure the final publication engine uses this formatted HTML
+    await pool.query(
+      "UPDATE papers SET formatted_content = $1, metadata = (metadata::jsonb - 'ast')::text WHERE id = $2 AND user_id = $3",
+      [formattedHtml, id, req.user.id]
+    );
+
+    res.json({ success: true, message: 'Formatted content securely saved.' });
+  } catch (error) {
+    console.error('Format Save endpoint error:', error);
+    res.status(500).json({ error: 'Failed to save formatted manuscript' });
+  }
+});
+
+// HIGH-FIDELITY PDF GENERATION VIA PUPPETEER (Shared Helper)
+app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const paperResult = await pool.query('SELECT title FROM papers WHERE id = $1', [id]);
+    const paper = paperResult.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    const pdfBuffer = await generateHighFidelityPaperPDF(id);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}_Final.pdf"`);
+    res.end(pdfBuffer);
+  } catch (error: any) {
+    console.error('High-fidelity PDF error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate high-fidelity PDF' });
+  }
+});
+
 function getStyleGuidelines(style: string, branding: any) {
   const metaHeader = `
     <div class="sheet-header-full">
@@ -2761,358 +2950,6 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to format' });
-  }
-});
-
-app.post('/api/format/:id/save', authenticateToken, async (req: any, res) => {
-  try {
-    const { id } = idParamSchema.parse(req.params);
-    const { formattedHtml } = z.object({ formattedHtml: z.string() }).parse(req.body);
-    
-    // Update the database with the finalized HTML structure from Format Architect
-    await pool.query(
-      'UPDATE papers SET formatted_content = $1 WHERE id = $2 AND user_id = $3',
-      [formattedHtml, id, req.user.id]
-    );
-
-    res.json({ success: true, message: 'Formatted content securely saved.' });
-  } catch (error) {
-    console.error('Format Save endpoint error:', error);
-    res.status(500).json({ error: 'Failed to save formatted manuscript' });
-  }
-});
-
-// HIGH-FIDELITY PDF GENERATION VIA PUPPETEER
-app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
-  let browser;
-  try {
-    const { id } = idParamSchema.parse(req.params);
-    const paperResult = await pool.query(
-      'SELECT title, formatted_content, volume, issue, issn, doi, metadata FROM papers WHERE id = $1', 
-      [id]
-    );
-    const paper = paperResult.rows[0];
-    if (!paper || !paper.formatted_content) {
-      return res.status(404).json({ error: 'Paper or formatted content not found' });
-    }
-
-    // Fetch journal configs
-    const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
-    const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
-    const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
-
-    const branding = {
-      volume: paper.volume || volResult.rows[0]?.value || '1',
-      issue: paper.issue || issueResult.rows[0]?.value || '1',
-      issn: paper.issn || issnResult.rows[0]?.value || '2971-7760',
-      doi: paper.doi || `10.5555/genius.${id}`,
-      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    };
-
-    // Embed logos as Base64 for Puppeteer fidelity
-    const getBase64Image = (fileName: string) => {
-      try {
-        const filePath = path.join(process.cwd(), 'public', fileName);
-        if (fs.existsSync(filePath)) {
-          const bitmap = fs.readFileSync(filePath);
-          const extension = path.extname(fileName).slice(1);
-          return `data:image/${extension};base64,${bitmap.toString('base64')}`;
-        }
-      } catch (e) { console.error(`Failed to load logo ${fileName}:`, e); }
-      return '';
-    };
-
-    const journalLogoBase64 = getBase64Image('journal-logo.png');
-    const nsukLogoBase64 = getBase64Image('Nasarawa-State-University.jpg');
-
-    // Construct full HTML for Puppeteer
-    // Build a self-contained HTML document that mirrors the frontend preview EXACTLY
-    const fullHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          @page { margin: 20mm 15mm; }
-          body { font-family: serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          * { box-sizing: border-box; }
-
-          /* === Academic Content (matches FormattingEngine.tsx exactly) === */
-          .academic-content {
-            font-family: serif;
-            line-height: 1.6;
-            text-align: justify;
-          }
-          .academic-content p {
-            text-align: justify;
-            margin-bottom: 1em;
-          }
-          .academic-content h1, .academic-content h2, .academic-content h3 {
-            color: #0f172a;
-            margin-top: 1.5em;
-            margin-bottom: 0.5em;
-          }
-
-          /* === Tables (fixed layout for PDF, no scroll) === */
-          .academic-content table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 1rem 0;
-            font-family: sans-serif;
-            font-size: 0.75rem;
-            table-layout: fixed;
-            overflow: hidden;
-          }
-          .table-wrapper {
-            width: 100%;
-            overflow: hidden;
-            margin: 2rem 0;
-            background: #fcfcfc;
-            border: 1px solid #f1f5f9;
-            border-radius: 4px;
-          }
-          .academic-content th, .academic-content td {
-            border: 1px solid #cbd5e1;
-            padding: 0.5rem;
-            text-align: left;
-            word-break: break-word;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-          }
-          .academic-content th {
-            background-color: #f8fafc;
-            font-weight: bold;
-          }
-
-          /* === Figures === */
-          .academic-content .academic-figure {
-            margin: 2.5rem 0;
-            text-align: center;
-            padding: 1rem;
-            background: #f8fafc;
-            border-radius: 0.5rem;
-            border: 1px dashed #cbd5e1;
-          }
-          .academic-content .academic-figure img {
-            max-width: 100%;
-            height: auto;
-          }
-
-          /* === Paper Sheet (page simulation) === */
-          .paper-sheet {
-            background: white;
-            width: 100%;
-            max-width: 850px;
-            margin: 0 auto;
-            padding: 3rem 4rem;
-            position: relative;
-            min-height: 1100px;
-            page-break-after: always;
-          }
-          .paper-sheet:last-child {
-            page-break-after: auto;
-          }
-
-          /* === First-page header (standalone, outside paper-sheet) === */
-          .header-sheet {
-            background: white;
-            width: 100%;
-            max-width: 850px;
-            margin: 0 auto;
-            padding: 2rem 4rem 1rem;
-            border-bottom: 2px solid #800000;
-            position: relative;
-          }
-          .header-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 1rem;
-          }
-          .header-text-center { text-align: center; flex: 1; }
-          .meta-info { font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; }
-          .doi-text { font-size: 9px; color: #4f46e5; font-family: monospace; font-weight: bold; }
-          .logo-img { height: 50px; width: auto; object-fit: contain; }
-          .institution-text { font-weight: 900; font-size: 10px; text-transform: uppercase; line-height: 1; }
-          .journal-name { color: #800000; font-weight: 900; font-size: 10px; text-transform: uppercase; }
-
-          /* === Recurring header on page 2+ (inside paper-sheet, generated by AI) === */
-          .sheet-header-full {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-            margin-bottom: 2.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid #800000;
-          }
-          .header-top-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 1rem;
-          }
-          .header-logo-left, .header-logo-right {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-          }
-          .header-logo-left img, .header-logo-right img {
-            height: 32px;
-            min-width: 32px;
-            width: auto;
-            object-fit: contain;
-          }
-          .header-title-stack, .partner-stack {
-            display: flex;
-            flex-direction: column;
-            line-height: 1.1;
-          }
-          .journal-red-small { color: #800000; font-weight: 900; font-size: 6px; text-transform: uppercase; }
-          .journal-red-med { color: #800000; font-weight: 900; font-size: 8px; text-transform: uppercase; }
-          .journal-black-large { color: #0f172a; font-weight: 900; font-size: 10px; text-transform: uppercase; }
-          .journal-gray-type { color: #64748b; font-weight: 700; font-size: 8px; text-transform: uppercase; letter-spacing: 0.15em; }
-          .header-meta-center {
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            flex: 1;
-          }
-          .meta-row { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-          .meta-doi { font-size: 7px; font-weight: 700; color: #4f46e5; font-family: monospace; }
-          .partner-name { color: #0f172a; font-weight: 900; font-size: 8px; text-transform: uppercase; text-align: right; }
-          .partner-status { color: #94a3b8; font-weight: 700; font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
-          .header-accent-bar { height: 0; }
-
-          /* === Page Numbers === */
-          .page-number { position: absolute; font-size: 10px; font-weight: bold; color: #94a3b8; z-index: 100; }
-          .page-number.top-right { top: 3rem; right: 5rem; }
-          .page-number.bottom-center { bottom: 1.5rem; left: 50%; transform: translateX(-50%); }
-          .page-number.bottom-right { bottom: 1.5rem; right: 5rem; }
-          
-          /* === APA Specific Overrides === */
-          .apa-header { 
-            position: absolute; 
-            top: 1.5rem; 
-            left: 4rem; 
-            right: 4rem; 
-            display: flex; 
-            justify-content: space-between; 
-            font-family: sans-serif; 
-            font-size: 10px; 
-            text-transform: uppercase; 
-            color: #334155; 
-          }
-          
-          .page-footer {
-            position: absolute;
-            bottom: 1.5rem;
-            left: 0;
-            right: 0;
-            text-align: center;
-            font-size: 10px;
-            color: #94a3b8;
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-          }
-        </style>
-      </head>
-      <body>
-        <!-- First page header with branding -->
-        <div class="header-sheet">
-          <div class="header-row">
-            <div style="display: flex; align-items: center; gap: 10px;">
-               ${journalLogoBase64 ? `<img src="${journalLogoBase64}" class="logo-img" />` : ''}
-               <div>
-                 <p class="journal-name">Genius Multidisciplinary</p>
-                 <p class="institution-text">INTERNATIONAL JOURNAL</p>
-               </div>
-            </div>
-            
-            <div class="header-text-center">
-              <div class="meta-info">
-                ISSN: ${branding.issn} | VOL ${branding.volume}, ISS ${branding.issue} | ${branding.date}
-              </div>
-              <div class="doi-text">${branding.doi}</div>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 10px; text-align: right;">
-               <div>
-                  <p class="institution-text">Nasarawa State University Keffi</p>
-                  <p style="color: #94a3b8; font-size: 8px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.1em;">Global Partner</p>
-               </div>
-               ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" class="logo-img" />` : ''}
-            </div>
-          </div>
-        </div>
-
-        <!-- Formatted manuscript content (contains paper-sheet divs with embedded headers) -->
-        <div class="academic-content">
-          ${paper.formatted_content}
-        </div>
-      </body>
-      </html>
-    `;
-
-    // Launch Puppeteer — prioritize env vars (set by Nixpacks) over hardcoded paths
-    const executablePaths = [
-      process.env.PUPPETEER_EXECUTABLE_PATH,
-      process.env.CHROME_PATH,
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser',
-      '/usr/bin/google-chrome-stable',
-      '/usr/bin/google-chrome',
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    ].filter(Boolean) as string[];
-
-    let activePath = executablePaths.find(p => fs.existsSync(p));
-
-    // Fallback: resolve via `which` if none of the hardcoded paths work
-    if (!activePath) {
-      try {
-        const { execSync } = require('child_process');
-        activePath = execSync('which chromium || which chromium-browser || which google-chrome', { encoding: 'utf-8' }).trim();
-      } catch (e) { /* ignore */ }
-    }
-
-    console.log(`[PDF] Attempting Puppeteer launch. Found path: ${activePath || 'NONE'}`);
-    if (!activePath) {
-      console.warn(`[PDF] EXECUTABLE NOT FOUND. Tried: ${executablePaths.join(', ')}`);
-    }
-
-    browser = await puppeteer.launch({
-      executablePath: activePath,
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none']
-    });
-
-    const page = await browser.newPage();
-    await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
-    
-    const pdfUint8 = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' }
-    });
-
-    // Convert Uint8Array to Node Buffer (Puppeteer v24+ returns Uint8Array, Express needs Buffer)
-    const pdfBuffer = Buffer.from(pdfUint8);
-
-    await browser.close();
-    browser = undefined;
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}_Final.pdf"`);
-    res.end(pdfBuffer);
-
-  } catch (error) {
-    console.error('Puppeteer PDF error:', error);
-    res.status(500).json({ error: 'High-fidelity PDF generation failed on server.' });
-  } finally {
-    if (browser) await browser.close();
   }
 });
 
