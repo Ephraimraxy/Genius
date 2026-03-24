@@ -164,8 +164,8 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-7xl mx-auto space-y-8 pb-10 px-4 md:px-6">
-      <div className="grid lg:grid-cols-2 gap-8 items-start">
-        {/* Left Column: Validation Info */}
+      <div className="max-w-4xl mx-auto items-start">
+        {/* Main Column: Validation Info */}
         <div className="space-y-8">
           <div className="text-center md:text-left space-y-4">
             <div className="w-16 h-16 bg-indigo-600/10 rounded-2xl flex items-center justify-center text-indigo-600 border border-indigo-100 mb-4">
@@ -333,76 +333,6 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
               )}
             </div>
           )}
-        </div>
-
-        {/* Right Column: Preview Pane */}
-        <div className="lg:sticky lg:top-8 space-y-6">
-          <div className="bg-[#0f172a] rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-800 flex flex-col h-[calc(100vh-8rem)]">
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-indigo-500/20 text-indigo-400 rounded-lg flex items-center justify-center">
-                  <BookOpen size={18} />
-                </div>
-                <h4 className="text-sm font-black text-white uppercase tracking-widest">Manuscript Preview</h4>
-              </div>
-              {paper?.status && (
-                <span className="px-3 py-1 bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-full">
-                  {paper.status.replace(/_/g, ' ')}
-                </span>
-              )}
-            </div>
-            
-            <div className="flex-1 overflow-auto p-8 md:p-12 space-y-8 bg-[#0f172a] text-slate-300 font-serif leading-relaxed selection:bg-indigo-500/30">
-              {paper ? (
-                <div className="max-w-prose mx-auto">
-                  {/* Neural Journal Overlay Indicator */}
-                  <div className="mb-12 pb-6 border-b border-slate-800 text-center">
-                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-2">Neural verified structure</p>
-                    <h1 className="text-2xl font-bold text-white leading-tight">
-                      {paper.metadata?.ast?.title || paper.title}
-                    </h1>
-                  </div>
-
-                  {/* Abstract Section */}
-                  <section className="space-y-4">
-                    <h5 className="text-white font-bold uppercase tracking-widest text-xs border-l-2 border-indigo-500 pl-3">Abstract</h5>
-                    <div className={result?.abstract?.issues?.length ? 'p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl' : ''}>
-                      <p className="text-[15px]">
-                        {paper.metadata?.ast?.abstract ? (
-                          Object.values(paper.metadata.ast.abstract).filter(Boolean).join(' ')
-                        ) : 'No abstract parsed.'}
-                      </p>
-                    </div>
-                  </section>
-
-                  {/* Body Preview */}
-                  {paper.metadata?.ast?.sections && (
-                    <div className="mt-12 space-y-10">
-                      {Object.entries(paper.metadata.ast.sections).map(([title, content]: [string, any]) => (
-                        <section key={title} className="space-y-4">
-                          <h5 className="text-white font-bold uppercase tracking-widest text-xs border-l-2 border-slate-700 pl-3">
-                            {title.charAt(0).toUpperCase() + title.slice(1)}
-                          </h5>
-                          <p className="text-[15px] opacity-80">{String(content).substring(0, 500)}...</p>
-                        </section>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="mt-16 pt-8 border-t border-slate-800 text-center">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest italic">
-                      End of Dynamic Preview • Verification ID: {activePaperId}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-4">
-                  <Loader2 size={32} className="animate-spin opacity-20" />
-                  <p className="text-xs font-bold uppercase tracking-widest">Loading Neural Buffer...</p>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     </motion.div>
