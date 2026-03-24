@@ -142,6 +142,31 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = process.env.RESEND_FROM || 'onboarding@resend.dev';
 const APP_URL = process.env.APP_URL || 'https://geniusapp.com';
 
+async function bootstrapDB() {
+  try {
+    console.log('--- STARTING DATABASE BOOTSTRAP ---');
+    await pool.query(`
+      ALTER TABLE paper_references 
+      ADD COLUMN IF NOT EXISTS ai_analysis TEXT,
+      ADD COLUMN IF NOT EXISTS status TEXT,
+      ADD COLUMN IF NOT EXISTS journal TEXT,
+      ADD COLUMN IF NOT EXISTS year TEXT,
+      ADD COLUMN IF NOT EXISTS authors TEXT,
+      ADD COLUMN IF NOT EXISTS title TEXT,
+      ADD COLUMN IF NOT EXISTS doi TEXT;
+      
+      ALTER TABLE papers
+      ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE;
+    `);
+    console.log('--- DATABASE BOOTSTRAP SUCCESSFUL ---');
+  } catch (err) {
+    console.error('--- DATABASE BOOTSTRAP FAILED ---', err);
+  }
+}
+
+// Global invocation
+bootstrapDB();
+
 async function sendPaymentSuccessEmail(to: string, name: string, ref: string) {
   const htmlBody = `
     <div style="font-family: serif; padding: 20px; color: #1a202c;">
