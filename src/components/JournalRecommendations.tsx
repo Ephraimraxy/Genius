@@ -64,6 +64,8 @@ on the Genius Global Network.`;
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Submission protocol failed.');
       setPublishedInfo(data);
+      const e = new CustomEvent('toast', { detail: { message: 'Manuscript successfully broadcast to Global Genius Network!', type: 'success' } });
+      window.dispatchEvent(e);
     } catch (err: any) {
       const e = new CustomEvent('toast', { detail: { message: err.message, type: 'error' } });
       window.dispatchEvent(e);

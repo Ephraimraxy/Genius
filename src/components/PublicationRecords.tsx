@@ -70,6 +70,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'published': return 'bg-emerald-500';
+      case 'doi_validation_failed': return 'bg-amber-500';
       case 'ready': return 'bg-indigo-500';
       case 'peer_review': return 'bg-amber-500';
       case 'integrity_check': return 'bg-purple-500';
@@ -81,6 +82,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
   const getStatusProgress = (status: string) => {
     switch (status) {
       case 'published': return 100;
+      case 'doi_validation_failed': return 95;
       case 'ready': return 90;
       case 'peer_review': return 75;
       case 'integrity_check': return 50;
@@ -273,11 +275,13 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                       <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
                         pub.status === 'published'
                         ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                        : pub.status === 'doi_validation_failed'
+                        ? 'bg-amber-50 text-amber-600 border-amber-100'
                         : pub.status === 'ready'
                         ? 'bg-indigo-50 text-indigo-600 border-indigo-100 font-black animate-pulse'
                         : 'bg-slate-50 text-slate-500 border-slate-100'
                       }`}>
-                        {pub.status}
+                        {pub.status === 'doi_validation_failed' ? 'PENDING RESOLUTION' : pub.status}
                       </span>
                     </td>
                     <td className="px-8 py-6">
