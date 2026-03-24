@@ -1083,9 +1083,10 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     return height - 100; // Reset Y for body content
   };
 
-  const wrapText = (text: string, size: number, f: any, maxW: number) => {
-    if (!text) return [];
-    const words = text.split(/\s+/);
+  const wrapText = (text: any, size: number, f: any, maxW: number) => {
+    const str = String(text || '');
+    if (!str) return [];
+    const words = str.split(/\s+/);
     const lines = [];
     let currentLine = '';
 
@@ -2042,8 +2043,11 @@ app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res
        else if (fix.target === 'content' || fix.target === 'sections') updatedContent = fix.content;
     }
 
+    // Invalidate stale AST and formatted_content to force re-sync in downstream steps
+    delete currentMetadata.ast;
+
     await pool.query(
-      'UPDATE papers SET content = $1, abstract = $2, title = $3, metadata = $4 WHERE id = $5 AND user_id = $6',
+      'UPDATE papers SET content = $1, abstract = $2, title = $3, metadata = $4, formatted_content = NULL WHERE id = $5 AND user_id = $6',
       [updatedContent, updatedAbstract, updatedTitle, JSON.stringify(currentMetadata), id, req.user.id]
     );
 
@@ -2447,7 +2451,28 @@ app.post('/api/references/fix/:id', authenticateToken, async (req: any, res) => 
       [aiRewrite, perfectAnalysis, refId]
     );
 
-    res.json({ success: true, message: 'Reference corrected successfully.' });
+    // Sync the fix back to the papers table's AST to ensure it flows to the final PDF
+    const refData = await pool.query('SELECT paper_id, original_text FROM paper_references WHERE id = $1', [refId]);
+    if (refData.rows[0]) {
+      const { paper_id, original_text: currentText } = refData.rows[0];
+      const paperResult = await pool.query('SELECT metadata FROM papers WHERE id = $1', [paper_id]);
+      if (paperResult.rows[0]) {
+        let metadata = typeof paperResult.rows[0].metadata === 'string' ? JSON.parse(paperResult.rows[0].metadata || '{}') : (paperResult.rows[0].metadata || {});
+        if (metadata.ast && metadata.ast.references) {
+          // Replace exactly the corrected reference in the AST array
+          metadata.ast.references = metadata.ast.references.map((r: string) => r === currentText ? aiRewrite : r);
+          // Also handle cases where r might be an object
+          metadata.ast.references = metadata.ast.references.map((r: any) => {
+             const rStr = typeof r === 'string' ? r : (r.raw || r.text || JSON.stringify(r));
+             return rStr === currentText ? aiRewrite : r;
+          });
+          
+          await pool.query('UPDATE papers SET metadata = $1, formatted_content = NULL WHERE id = $2', [JSON.stringify(metadata), paper_id]);
+        }
+      }
+    }
+
+    res.json({ success: true, message: 'Reference corrected and synced successfully.' });
   } catch (err) {
     console.error('Reference Fix Error:', err);
     res.status(500).json({ error: 'Failed to apply reference fix' });
@@ -2577,7 +2602,7 @@ function getStyleGuidelines(style: string, branding: any) {
     case 'apa':
       return `APA STYLE (7th Ed.) RULES:
         ${common}
-        - PAGINATION: Place a <div class="page-number bottom-center">X</div> (where X is the number) at the bottom center of every sheet.
+        - PAGINATION: Place a <div class="page-number bottom-center">X</div> (where X is the page number) at the bottom center of every sheet.
         - Use Author-Date citations (e.g., Smith, 2023).
         - Use specific heading levels (H1 for major sections, H2 for subsections).
         - References must be in alphabetical order with hanging indents.`;
@@ -2653,10 +2678,12 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           CRITICAL RULES:
           1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the output in triple backticks (\`\`\`html).
           2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>.
-          3. ZERO OMISSION: You MUST preserve 100% of the manuscript text. Do NOT truncate, summarize, or omit a single sentence. If the input is 15 pages, the output MUST be 15 pages (approx. 15 <div class="paper-sheet"> elements).
-          4. FIDELITY: Every single paragraph, reference, and acknowledgment from the source must be present.
-          5. STRUCTURE: Use <div class="paper-sheet"> to simulate real pages. Within each sheet, use <h1>, <h2>, and <p> tags.
-          6. FONTS: Use standard serif fonts for the main body.`
+          3. DEDUPLICATION: The Title, Authors, and Abstract provided above might ALSO exist inside the Source Content. You MUST merge them so they only appear ONCE at the very beginning of the document. Do not duplicate the title, authors, or abstract. If there is a short and long abstract, use the detailed one.
+          4. ZERO OMISSION OF MAIN TEXT: You MUST preserve 100% of the actual manuscript body text, references, and acknowledgements. Do NOT truncate or summarize the core content.
+          5. NO PLACEHOLDERS: Do NOT generate "[Figure]", "[Image]", or any missing media placeholders. If an image is missing, simply omit the placeholder entirely.
+          6. NO RECURRING METADATA: Do NOT inject journal metadata, ISSNs, or branding blocks into the pages. Only format the raw academic content. 
+          7. STRUCTURE: Use <div class="paper-sheet"> to simulate real pages. Within each sheet, use standard HTML tags (<h1>, <h2>, <p>).
+          8. FONTS: Use standard serif fonts for the main body.`
         },
         { role: 'user', content: `Manuscript Title (TOPIC): ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
       ]
@@ -2900,6 +2927,21 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
           .page-number.top-right { top: 3rem; right: 5rem; }
           .page-number.bottom-center { bottom: 1.5rem; left: 50%; transform: translateX(-50%); }
           .page-number.bottom-right { bottom: 1.5rem; right: 5rem; }
+          
+          /* === APA Specific Overrides === */
+          .apa-header { 
+            position: absolute; 
+            top: 1.5rem; 
+            left: 4rem; 
+            right: 4rem; 
+            display: flex; 
+            justify-content: space-between; 
+            font-family: sans-serif; 
+            font-size: 10px; 
+            text-transform: uppercase; 
+            color: #334155; 
+          }
+          
           .page-footer {
             position: absolute;
             bottom: 1.5rem;
