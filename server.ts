@@ -1922,43 +1922,87 @@ Content:
 ${(paper.content || '').substring(0, 40000)}
     `.trim();
 
+    const { phase = 0 } = req.body || {};
+    
+    // Phase-specific rules and prompts
+    const phaseRules: Record<number, { name: string, prompt: string }> = {
+      0: { 
+        name: "Structure Check", 
+        prompt: "Verify the presence of mandatory sections: Introduction, Methods, Results, Discussion, and Conclusion. List any missing sections." 
+      },
+      1: { 
+        name: "Abstract Validation", 
+        prompt: "Check the Abstract. It must not exceed 250 words and must cover: Background, Method, Results, Conclusion, and Recommendation." 
+      },
+      2: { 
+        name: "Keywords Policy", 
+        prompt: "Check the Keywords. They must be preceded by the label 'Keywords:' (italicized usually, but check text here) and contain 3-5 comma-separated terms." 
+      },
+      3: { 
+        name: "Introduction & Gap", 
+        prompt: "Analyze the Introduction. Ensure it clearly states the research problem, the gap in existing literature, and the specific objective of this study." 
+      },
+      4: { 
+        name: "Methods (Recipe)", 
+        prompt: "Analyze the Methods section. It must provide enough detail for replication (design, participants, instruments, and procedure)." 
+      },
+      5: { 
+        name: "Results (Data)", 
+        prompt: "Analyze the Results section. Check for pure data reporting and adherence to APA statistical formatting (e.g., M and SD in italics)." 
+      },
+      6: { 
+        name: "Discussion", 
+        prompt: "Analyze the Discussion. It must interpret the results, compare them with previous studies, and mention study limitations." 
+      },
+      7: { 
+        name: "Conclusion", 
+        prompt: "Analyze the Conclusion. It should be a final wrap-up of main findings and practical implications or recommendations." 
+      },
+      8: { 
+        name: "Citations Consistency", 
+        prompt: "Analyze in-text citations throughout the manuscript. Ensure they follow (Author, Year) format and are consistent with the text (e.g., et al. for 3+ authors)." 
+      },
+      9: { 
+        name: "References (APA 7th)", 
+        prompt: "Analyze the References list. Verify strict adherence to APA 7th Edition formatting for every entry." 
+      },
+      10: { 
+        name: "Final Meta-Review", 
+        prompt: "Perform a final comprehensive check of the whole manuscript for overall APA 7th Edition compliance." 
+      }
+    };
+
+    const currentPhase = phaseRules[phase] || phaseRules[0];
+
     const prompt = `
 You are a strict academic journal validator and Intelligent Editor acting as a gatekeeper.
+We are in PHASE ${phase}: ${currentPhase.name}.
+
+TASK: ${currentPhase.prompt}
 
 Analyze the manuscript below according to APA 7th rules and return ONLY JSON. Do not output markdown code blocks.
 
-Rules:
-- Abstract must not exceed 200 words
-- Abstract must sequentially include these core components: Background, Method, Results, Conclusion, Recommendation
-- Maximum of 5 keywords
-- Total word count must not exceed 4500
-- Must include sections: Introduction, Methods, Results, Discussion, Conclusion
-- Title must be in Title Case
-
 Return JSON precisely in this format:
 {
-  "title": { "isTitleCase": true/false },
-  "abstract": {
-    "wordCount": number,
-    "isValid": true/false,
-    "issues": [
-      {
-        "type": "missing_section",
-        "section": "Name of section (e.g. Method, Recommendation)",
-        "message": "Clear explanation of what is missing.",
-        "suggestion": "Actionable instruction on how to fix it.",
-        "aiRewrite": "An AI-generated draft sentence/paragraph to insert as a replacement.",
-        "whereToFind": "Contextual advice telling the user where in the main body (e.g. Chapter 3, Methodology, Discussion) they can find the missing info."
-      }
-    ]
-  },
-  "keywords": { "count": number, "isValid": true/false },
-  "wordCount": { "total": number, "isValid": true/false },
-  "sections": { "found": ["..."], "missing": ["..."] },
+  "phase": ${phase},
+  "phaseName": "${currentPhase.name}",
+  "isValid": true/false,
+  "issues": [
+    {
+      "type": "compliance_issue",
+      "section": "Name of section",
+      "message": "Clear explanation of the APA violation.",
+      "suggestion": "Actionable instruction on how to fix it.",
+      "aiRewrite": "An AI-generated draft to fix the specific issue.",
+      "whereToFind": "Contextual advice telling the user where in the manuscript to look."
+    }
+  ],
   "score": number (0-100),
-  "rejectionReason": "Specific explanation of why it failed (if score < 70)",
-  "recoveryFix": "Actionable step for the author to pass",
-  "finalDecision": "PASS" | "FAIL" | "NEEDS_REVIEW"
+  "finalDecision": "PASS" | "FAIL" | "NEEDS_REVIEW",
+  "abstract": { "wordCount": number }, // Only if applicable
+  "keywords": { "count": number }, // Only if applicable
+  "wordCount": { "total": number }, // Only if applicable
+  "sections": { "found": ["..."], "missing": ["..."] } // Only if applicable
 }
 
 Manuscript:
@@ -1974,31 +2018,21 @@ ${manuscriptText}
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
     let aiResult = parsed;
 
-    // STEP 3: DETERMINISTIC SCORING & HARD ENFORCEMENT
-    const issueCount = (aiResult.abstract?.issues?.length || 0) + (aiResult.sections?.missing?.length || 0);
-    aiResult.score = Math.max(0, 100 - (issueCount * 10));
+    // Phase-aware scoring
+    const baseScore = aiResult.isValid ? 100 : 70;
+    const penalty = (aiResult.issues?.length || 0) * 10;
+    aiResult.score = Math.max(0, baseScore - penalty);
 
-    let backendPass = true;
-    if (aiResult.abstract?.wordCount > 200) backendPass = false;
-    if (aiResult.keywords?.count > 5) backendPass = false;
-    if (aiResult.wordCount?.total > 4500) backendPass = false;
-    if (aiResult.sections?.missing?.length > 0) backendPass = false;
-
-    let status: 'accepted' | 'rejected' | 'needs_review' = 'accepted';
-    
-    if (aiResult.score >= 70 && backendPass) {
-      status = 'accepted';
+    if (aiResult.score >= 90) {
       aiResult.finalDecision = 'PASS';
     } else if (aiResult.score >= 60) {
-      status = 'needs_review';
       aiResult.finalDecision = 'NEEDS_REVIEW';
     } else {
-      status = 'rejected';
       aiResult.finalDecision = 'FAIL';
     }
 
     res.json({ 
-      status, 
+      success: true, 
       validation: aiResult 
     });
 
