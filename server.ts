@@ -1059,7 +1059,7 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
       color: maroon 
     });
 
-    const metaLine = `ISSN: ${branding.issn || '2971-7760'} | Volume ${branding.vol}, Issue ${branding.issue} | Official Research Node`;
+    const metaLine = `ISSN: ${branding.issn || '2971-7760'} | Volume ${branding.vol}, Issue ${branding.issue}`;
     p.drawText(metaLine, { 
       x: width / 2 - font.widthOfTextAtSize(metaLine, 7) / 2, 
       y: curY - 22, 
@@ -1068,11 +1068,7 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
       color: gray 
     });
 
-    // 3. Page Number & Separator Line
-    const pageNumStr = `Page ${(branding.startPageNumber || 1) + pdfDoc.getPageCount() - 1}`;
-    p.drawText(pageNumStr, { x: width / 2 - font.widthOfTextAtSize(pageNumStr, 7) / 2, y: curY - 32, size: 7, font: font, color: gray });
-
-    curY -= 45;
+    curY -= 35;
     p.drawLine({ 
       start: { x: 40, y: curY }, 
       end: { x: width - 40, y: curY }, 
@@ -1080,7 +1076,7 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
       color: rgb(0.9, 0.9, 0.9) 
     });
     
-    return height - 100; // Reset Y for body content
+    return height - 90; // Reset Y for body content
   };
 
   const wrapText = (text: any, size: number, f: any, maxW: number) => {
@@ -1101,6 +1097,31 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     }
     lines.push(currentLine);
     return lines;
+  };
+
+  const drawJustifiedText = (targetPage: any, line: string, textFont: any, fontSize: number, xPos: number, yPos: number, maxW: number, isLastLine: boolean) => {
+    if (isLastLine || !line.trim().includes(' ')) {
+      targetPage.drawText(line, { x: xPos, y: yPos, size: fontSize, font: textFont });
+      return;
+    }
+    const words = line.split(' ');
+    let textWidth = 0;
+    words.forEach(w => textWidth += textFont.widthOfTextAtSize(w, fontSize));
+    
+    // Safety check just in case all words are exactly the max width
+    if (textWidth >= maxW) {
+       targetPage.drawText(line, { x: xPos, y: yPos, size: fontSize, font: textFont });
+       return;
+    }
+    
+    const spaceToFill = maxW - textWidth;
+    const spaceWidth = spaceToFill / (words.length - 1);
+    
+    let currentX = xPos;
+    for (let i = 0; i < words.length; i++) {
+        targetPage.drawText(words[i], { x: currentX, y: yPos, size: fontSize, font: textFont });
+        currentX += textFont.widthOfTextAtSize(words[i], fontSize) + spaceWidth;
+    }
   };
 
   const checkNewPage = (needed: number) => {
@@ -1144,10 +1165,11 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     ast.abstract.recommendation
   ].filter(Boolean).join(' ') : 'No abstract provided.';
   
-  const absLines = wrapText(absText, 10, font, width - 2 * margin);
-  for (const line of absLines) {
+  const absLines = wrapText(absText, 10, fontItalic, width - 2 * margin);
+  for (let i = 0; i < absLines.length; i++) {
     checkNewPage(12);
-    page.drawText(line, { x: margin, y, size: 10, font });
+    const line = absLines[i];
+    drawJustifiedText(page, line, fontItalic, 10, margin, y, width - 2 * margin, i === absLines.length - 1);
     y -= 12;
   }
 
@@ -1174,9 +1196,9 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
       y -= 18;
 
       const lines = wrapText(content, 11, font, width - 2 * margin);
-      for (const line of lines) {
+      for (let i = 0; i < lines.length; i++) {
         checkNewPage(14);
-        page.drawText(line, { x: margin, y, size: 11, font });
+        drawJustifiedText(page, lines[i], font, 11, margin, y, width - 2 * margin, i === lines.length - 1);
         y -= 14;
       }
     }
@@ -1194,11 +1216,19 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     const lines = wrapText(rText, 10, font, width - 2 * margin - 20); // Hanging indent simulation
     for (let i = 0; i < lines.length; i++) {
         checkNewPage(12);
-        page.drawText(lines[i], { x: margin + (i > 0 ? 20 : 0), y, size: 9, font });
+        const indentX = margin + (i > 0 ? 20 : 0);
+        drawJustifiedText(page, lines[i], font, 9, indentX, y, width - margin - indentX, i === lines.length - 1);
         y -= 12;
     }
     y -= 4;
   }
+
+  // Draw Page Numbers at the bottom center of all pages
+  const pages = pdfDoc.getPages();
+  pages.forEach((p, idx) => {
+    const pageNumStr = String((branding.startPageNumber || 1) + idx);
+    p.drawText(pageNumStr, { x: width / 2 - font.widthOfTextAtSize(pageNumStr, 10) / 2, y: 30, size: 10, font: font, color: black });
+  });
 
   return await pdfDoc.save();
 }
@@ -2678,7 +2708,8 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           5. NO PLACEHOLDERS: Do NOT generate "[Figure]", "[Image]", or any missing media placeholders. If an image is missing, simply omit the placeholder entirely.
           6. NO RECURRING METADATA: Do NOT inject journal metadata, ISSNs, or branding blocks into the pages. Only format the raw academic content. 
           7. STRUCTURE: Use <div class="paper-sheet"> to simulate real pages. Within each sheet, use standard HTML tags (<h1>, <h2>, <p>).
-          8. FONTS: Use standard serif fonts for the main body.`
+          8. COPYEDITING & CLEANUP: You MUST rigorously fix all spelling and grammatical errors, remove completely all unwanted symbols/characters, eliminate weird text indentations, and strip out unnecessary extra spaces. The text must read flawlessly as a professionally copyedited scientific manuscript.
+          9. FONTS: Use standard serif fonts for the main body.`
         },
         { role: 'user', content: `Manuscript Title (TOPIC): ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
       ]

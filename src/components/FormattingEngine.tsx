@@ -440,19 +440,6 @@ export default function FormattingEngine({
               {/* PDF & Navigation Controls */}
               {formattedHtml && (
                 <div className="mt-8 flex flex-col gap-3">
-                  <button 
-                    onClick={handleDownloadPdf}
-                    disabled={isDownloading}
-                    className="group w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl shadow-slate-900/10 disabled:opacity-50"
-                  >
-                    {isDownloading ? (
-                      <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                      <Download size={18} className="group-hover:-translate-y-1 transition-transform" />
-                    )}
-                    {isDownloading ? 'Generating PDF...' : 'Download Formatted PDF'}
-                  </button>
-
                   <div className="pt-6 border-t border-slate-100">
                     <button 
                       onClick={handleSendToNext}

@@ -65,7 +65,8 @@ on the Genius Global Network.`;
       if (!res.ok) throw new Error(data.error || 'Submission protocol failed.');
       setPublishedInfo(data);
     } catch (err: any) {
-      alert(err.message);
+      const e = new CustomEvent('toast', { detail: { message: err.message, type: 'error' } });
+      window.dispatchEvent(e);
     } finally {
       setIsPublishing(false);
     }
@@ -98,7 +99,8 @@ on the Genius Global Network.`;
       const e = new CustomEvent('toast', { detail: { message: 'Keywords optimized! Matching engine refreshed.', type: 'success' } });
       window.dispatchEvent(e);
     } catch (err: any) {
-      alert(err.message);
+      const e = new CustomEvent('toast', { detail: { message: err.message, type: 'error' } });
+      window.dispatchEvent(e);
     } finally {
       setIsRefiningKeywords(false);
       setIsLoading(false);
