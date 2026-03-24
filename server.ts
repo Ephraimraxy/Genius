@@ -1361,8 +1361,9 @@ app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
     const { id } = idParamSchema.parse(req.params);
     const { title, authors, abstract } = req.body;
     
-    const currentPaper = await pool.query('SELECT metadata FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const currentPaper = await pool.query('SELECT metadata, is_locked FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     if (currentPaper.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
+    if (currentPaper.rows[0].is_locked) return res.status(403).json({ error: 'Manuscript is locked for final archival and cannot be modified.' });
     
     let metadata = JSON.parse(currentPaper.rows[0].metadata || '{}');
     if (title !== undefined) metadata.title = title;
@@ -1400,7 +1401,14 @@ app.put('/api/papers/:id/status', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const { status } = req.body;
-    await pool.query('UPDATE papers SET status = $1 WHERE id = $2 AND user_id = $3', [status, id, req.user.id]);
+    
+    // Automatically lock paper if it moves to final stages
+    const isLocked = (status === 'integrity_check' || status === 'published');
+
+    await pool.query(
+      'UPDATE papers SET status = $1, is_locked = CASE WHEN $2 = true THEN true ELSE is_locked END WHERE id = $3 AND user_id = $4',
+      [status, isLocked, id, req.user.id]
+    );
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1891,8 +1899,10 @@ Return JSON precisely in this format:
   "keywords": { "count": number, "isValid": true/false },
   "wordCount": { "total": number, "isValid": true/false },
   "sections": { "found": ["..."], "missing": ["..."] },
-  "score": number (0-100, where 90-100 is Pass, 70-89 is Minor Fix, < 70 is Reject),
-  "finalDecision": "PASS" | "FAIL"
+  "score": number (0-100),
+  "rejectionReason": "Specific explanation of why it failed (if score < 70)",
+  "recoveryFix": "Actionable step for the author to pass",
+  "finalDecision": "PASS" | "FAIL" | "NEEDS_REVIEW"
 }
 
 Manuscript:
@@ -1909,8 +1919,6 @@ ${manuscriptText}
     let aiResult = parsed;
 
     // STEP 3: DETERMINISTIC SCORING & HARD ENFORCEMENT
-    // Use a fixed formula: 100 - (number of issues * 10)
-    // This prevents the AI "yo-yo" effect.
     const issueCount = (aiResult.abstract?.issues?.length || 0) + (aiResult.sections?.missing?.length || 0);
     aiResult.score = Math.max(0, 100 - (issueCount * 10));
 
@@ -1919,12 +1927,22 @@ ${manuscriptText}
     if (aiResult.keywords?.count > 5) backendPass = false;
     if (aiResult.wordCount?.total > 4500) backendPass = false;
     if (aiResult.sections?.missing?.length > 0) backendPass = false;
-    if (aiResult.score < 70) backendPass = false;
 
-    aiResult.finalDecision = backendPass ? "PASS" : "FAIL";
+    let status: 'accepted' | 'rejected' | 'needs_review' = 'accepted';
+    
+    if (aiResult.score >= 70 && backendPass) {
+      status = 'accepted';
+      aiResult.finalDecision = 'PASS';
+    } else if (aiResult.score >= 60) {
+      status = 'needs_review';
+      aiResult.finalDecision = 'NEEDS_REVIEW';
+    } else {
+      status = 'rejected';
+      aiResult.finalDecision = 'FAIL';
+    }
 
     res.json({ 
-      status: aiResult.finalDecision === "PASS" ? "accepted" : "rejected", 
+      status, 
       validation: aiResult 
     });
 
@@ -1975,6 +1993,7 @@ app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res
     const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    if (paper.is_locked) return res.status(403).json({ error: 'Manuscript is locked for final archival' });
 
     let currentMetadata = typeof paper.metadata === 'string' ? JSON.parse(paper.metadata || '{}') : (paper.metadata || {});
     if (!currentMetadata.history) currentMetadata.history = [];
@@ -2099,6 +2118,7 @@ app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
     const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    if (paper.is_locked) return res.status(403).json({ error: 'Manuscript is locked for final archival' });
 
     const fullText = paper.content;
     const aiChunk = fullText.substring(offset, offset + 4000);
@@ -2248,9 +2268,11 @@ For each reference, extract its fields and score it based on completeness:
 - Has journal/publisher (+20)
 - Has DOI (+20)
 If fields are missing, note them in 'issues'. 
-Provide an 'aiRewrite' that perfectly formats the reference in APA 7th Edition (even if you have to guess minor formatting, but don't invent facts).
 
-Respond with a strict JSON array where each element matches the schema provided.
+**TRUTH VALIDATION**: If a DOI is provided, use your internal knowledge to verify if the title and authors match that DOI. If there is a mismatch (e.g., DOI belongs to a different paper, or authors are clearly wrong for that DOI), flag it in 'issues' as 'DOI_METADATA_MISMATCH' and set the score for that entry to 0.
+
+Provide an 'aiRewrite' that perfectly formats the reference in APA 7th Edition.
+Respond with a strict JSON array.
     `.trim();
 
     const response = await openai.chat.completions.create({
@@ -3566,22 +3588,42 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       startPageNumber += (m.pageCount || 0);
     });
 
-    // 2. PRERESERVE DOI and Generate Final Branded PDF
+    // 2. PRERESERVE DOI (Mandatory Verification)
     const { depositionId, doi: prereservedDoi, bucketUrl } = await prereserveDOI(zenodoToken);
     
-    // Inject DOI into Branding
-    const branding = { vol, issue: iss, issn, startPageNumber, doi: prereservedDoi };
-    const pdfBytes = await generateFinalManuscriptPDF(ast, branding);
-    const pdfBuffer = Buffer.from(pdfBytes);
+    // 3. SECURE PUBLISHING FLOW:
+    // First, verify the DOI string integrity (prefix and format)
+    if (!prereservedDoi || !prereservedDoi.startsWith('10.')) {
+        throw new Error("Invalid DOI prereserved from registry.");
+    }
 
-    // 3. Finalize Publish & Strict DOI Validation
+    // Prepare Branding (Verified but not yet burned into the FINAL binary)
+    const branding = { vol, issue: iss, issn, startPageNumber, doi: prereservedDoi };
+
     let finalDoi = '';
+    let pdfBuffer: Buffer;
+    
     try {
-      finalDoi = await finalizeZenodoPublish(depositionId, zenodoToken, paper, pdfBuffer, bucketUrl);
+      // Step A: Generate "Draft" binary for initial Zenodo upload
+      const initialPdfBytes = await generateFinalManuscriptPDF(ast, branding);
       
-      // MANDATORY: Wait and Validate DOI Actually Works
+      // Step B: Finalize Zenodo Publish (Upload & Trigger Registrar)
+      finalDoi = await finalizeZenodoPublish(depositionId, zenodoToken, paper, Buffer.from(initialPdfBytes), bucketUrl);
+      
+      // Step C: MANDATORY TRUTH WAIT
+      // We must wait for the DOI to be resolvable before "Burning" it into the final archival copy
+      console.log(`Verifying DOI resolver for ${finalDoi}...`);
       const isValid = await validateDOI(finalDoi);
-      if (!isValid) throw new Error("DOI validation failed (resolved check). Audit required.");
+      if (!isValid) throw new Error("Registry timeout. DOI is not yet live on global resolution servers.");
+
+      // Step D: POST-VALIDATION BRANDING
+      // Now that the DOI is LIVE and VERIFIED, we generate the actual Final Branded PDF
+      console.log(`DOI Verified. Generating Final Branded Artifact for ${finalDoi}...`);
+      const pdfBytes = await generateFinalManuscriptPDF(ast, branding);
+      pdfBuffer = Buffer.from(pdfBytes);
+      
+      // Store pdfBytes in function scope for later use in pageCount extraction
+      (global as any).lastPdfBytes = pdfBytes; 
     } catch (e: any) {
       console.error('Zenodo/DOI Critical Failure:', e.message);
       
@@ -3619,6 +3661,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       timestamp: new Date().toISOString()
     });
 
+    const pdfBytes = (global as any).lastPdfBytes;
     const currentPdf = await PDFDocument.load(pdfBytes);
     const currentPageCount = currentPdf.getPageCount();
 

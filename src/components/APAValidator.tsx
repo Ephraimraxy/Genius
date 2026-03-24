@@ -19,7 +19,9 @@ interface ValidationResult {
   wordCount: { total: number; isValid: boolean };
   sections: { found: string[]; missing: string[] };
   score: number;
-  finalDecision: 'PASS' | 'FAIL';
+  rejectionReason?: string;
+  recoveryFix?: string;
+  finalDecision: 'PASS' | 'FAIL' | 'NEEDS_REVIEW';
 }
 
 export default function APAValidator({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
@@ -197,20 +199,36 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
                   {result.score}<span className="text-2xl text-slate-600">%</span>
                 </div>
              </div>
-             
-             <div className={`col-span-1 md:col-span-2 p-8 rounded-[2rem] border-2 flex flex-col justify-center ${result.finalDecision === 'PASS' ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+                          <div className={`col-span-1 md:col-span-2 p-8 rounded-[2rem] border-2 flex flex-col justify-center ${
+                result.finalDecision === 'PASS' ? 'bg-emerald-50 border-emerald-200' : 
+                result.finalDecision === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-200'
+              }`}>
                 <div className="flex items-center gap-4">
-                  {result.finalDecision === 'PASS' ? <CheckCircle2 size={40} className="text-emerald-600" /> : <XCircle size={40} className="text-rose-600" />}
+                  {result.finalDecision === 'PASS' ? <CheckCircle2 size={40} className="text-emerald-600" /> : 
+                   result.finalDecision === 'NEEDS_REVIEW' ? <AlertTriangle size={40} className="text-amber-600" /> : 
+                   <XCircle size={40} className="text-rose-600" />}
                   <div>
-                    <h3 className={`text-2xl font-black ${result.finalDecision === 'PASS' ? 'text-emerald-900' : 'text-rose-900'}`}>
-                      {result.finalDecision === 'PASS' ? 'Approved for Formatting' : 'Compliance Failure Detected'}
+                    <h3 className={`text-2xl font-black ${
+                      result.finalDecision === 'PASS' ? 'text-emerald-900' : 
+                      result.finalDecision === 'NEEDS_REVIEW' ? 'text-amber-900' : 'text-rose-900'
+                    }`}>
+                      {result.finalDecision === 'PASS' ? 'Approved for Formatting' : 
+                       result.finalDecision === 'NEEDS_REVIEW' ? 'Editorial Review Required' : 'Compliance Failure Detected'}
                     </h3>
-                    <p className={`font-medium mt-1 ${result.finalDecision === 'PASS' ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {result.finalDecision === 'PASS' ? 'The manuscript meets all structural rules.' : 'The manuscript must be corrected before proceeding.'}
+                    <p className={`font-medium mt-1 ${
+                      result.finalDecision === 'PASS' ? 'text-emerald-700' : 
+                      result.finalDecision === 'NEEDS_REVIEW' ? 'text-amber-700' : 'text-rose-700'
+                    }`}>
+                      {result.rejectionReason || (result.finalDecision === 'PASS' ? 'The manuscript meets all structural rules.' : 'The manuscript must be corrected before proceeding.')}
                     </p>
+                    {result.recoveryFix && (
+                      <div className="mt-3 text-xs font-bold uppercase tracking-wider px-3 py-1 bg-white/50 rounded-lg w-fit">
+                        💡 Fix: {result.recoveryFix}
+                      </div>
+                    )}
                   </div>
                 </div>
-             </div>
+              </div>
           </div>
 
           <AnimatePresence>
