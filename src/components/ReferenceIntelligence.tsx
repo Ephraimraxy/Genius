@@ -188,8 +188,25 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
             </div>
             <div className="divide-y divide-slate-100">
               {references.length === 0 ? (
-                <div className="p-20 text-center text-slate-400 font-medium">No citations detected in document architecture.</div>
-              ) : references.map((ref, idx) => (
+                <div className="p-20 text-center flex flex-col items-center gap-6">
+                  <div className="p-4 bg-slate-50 rounded-full text-slate-300">
+                    <Database size={48} />
+                  </div>
+                  <div>
+                    <p className="text-slate-500 font-bold text-lg">No citations detected in document architecture.</p>
+                    <p className="text-slate-400 text-sm mt-1 max-w-sm mx-auto">If your manuscript contains a bibliography that was missed, trigger a Neural Deep Harvest.</p>
+                  </div>
+                  <button
+                    onClick={() => fetchReferences()}
+                    disabled={isLoading}
+                    className="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-indigo-600/30 flex items-center gap-3 transition-all active:scale-95"
+                  >
+                    {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+                    Trigger Neural Deep Harvest
+                  </button>
+                </div>
+              ) : (
+                references.map((ref, idx) => (
                 <motion.div
                   key={ref.id || idx}
                   initial={{ opacity: 0 }}

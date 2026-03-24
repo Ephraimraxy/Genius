@@ -2206,6 +2206,31 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
     let rawReferences = metadata.ast?.references || metadata.references || [];
     if (!Array.isArray(rawReferences)) rawReferences = [];
     
+    // NEW: Deep Harvest Fallback if no references detected initially
+    if (rawReferences.length === 0 && paper.content) {
+      const harvestPrompt = `
+        You are a high-speed citation extractor. 
+        Extract every bibliographic reference entry from the manuscript below into a JSON array of strings.
+        Return ONLY the JSON array.
+        MANUSCRIPT CONTENT:
+        ${paper.content.substring(paper.content.length - 15000)}
+      `.trim();
+
+      try {
+        const harvestResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: harvestPrompt }]
+        });
+        const harvestData = JSON.parse(harvestResponse.choices[0]?.message?.content || '{}');
+        // Extract array from common fields like 'references', 'citations', or just the root array
+        rawReferences = harvestData.references || harvestData.citations || harvestData.results || Object.values(harvestData)[0] || [];
+        if (!Array.isArray(rawReferences)) rawReferences = [];
+      } catch (e) {
+        console.error('Deep Harvest Failed:', e);
+      }
+    }
+
     // Process up to 20 for AI batching to avoid massive prompt sizes
     const refsToProcess = rawReferences.slice(0, 20).map(r => typeof r === 'string' ? r : r.raw || r.text || JSON.stringify(r));
     
