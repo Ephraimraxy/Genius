@@ -180,6 +180,15 @@ export default function SmartUpload({
       setPaperId(data.id);
       onUploadComplete(data.id);
 
+      // Inform user and auto-navigate after a brief delay
+      addToast('Neural Ingestion Successful. Acceptance letter dispatched.', 'success');
+      
+      if (onNavigate) {
+        setTimeout(() => {
+          onNavigate('apa_validation');
+        }, 4000);
+      }
+
       // Now validate structure
       setIsUploading(false);
       setIsValidating(true);

@@ -25,6 +25,7 @@ interface ValidationResult {
 export default function APAValidator({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
   const [isValidating, setIsValidating] = useState(false);
   const [isFixing, setIsFixing] = useState<number | null>(null);
+  const [isBatchFixing, setIsBatchFixing] = useState(false);
   const [result, setResult] = useState<ValidationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +74,32 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
       console.error(err);
     } finally {
       setIsFixing(null);
+    }
+  };
+
+  const applyBatchFix = async () => {
+    if (!activePaperId) return;
+    const itemsToFix = allIssues.filter(item => item.issue.aiRewrite);
+    if (itemsToFix.length === 0) return;
+
+    setIsBatchFixing(true);
+    try {
+      const res = await fetch(`/api/manuscript/auto-fix/${activePaperId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ 
+          fixes: itemsToFix.map(item => ({ target: item.target, content: item.issue.aiRewrite })) 
+        })
+      });
+      if (!res.ok) throw new Error('Failed to apply batch fixes');
+      await runValidation();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsBatchFixing(false);
     }
   };
 
@@ -189,9 +216,21 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
           <AnimatePresence>
             {allIssues.length > 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-3">
-                  <AlertTriangle className="text-amber-500" /> Required Corrections
-                </h3>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-black text-slate-900 flex items-center gap-3">
+                    <AlertTriangle className="text-amber-500" /> Required Corrections
+                  </h3>
+                  {allIssues.some(i => i.issue.aiRewrite) && (
+                    <button
+                      onClick={applyBatchFix}
+                      disabled={isBatchFixing || isFixing !== null}
+                      className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center gap-2 hover:bg-indigo-600 transition-all shadow-xl shadow-slate-900/20"
+                    >
+                      {isBatchFixing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      Bulk Inject All Fixes
+                    </button>
+                  )}
+                </div>
                 
                 {allIssues.map((item, idx) => (
                   <div key={idx} className="bg-white border-2 border-slate-200 rounded-[2rem] overflow-hidden shadow-sm hover:border-indigo-300 transition-colors">

@@ -1908,21 +1908,20 @@ ${manuscriptText}
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
     let aiResult = parsed;
 
-    // STEP 3: DOUBLE VALIDATION (NODE.JS HARD ENFORCEMENT)
+    // STEP 3: DETERMINISTIC SCORING & HARD ENFORCEMENT
+    // Use a fixed formula: 100 - (number of issues * 10)
+    // This prevents the AI "yo-yo" effect.
+    const issueCount = (aiResult.abstract?.issues?.length || 0) + (aiResult.sections?.missing?.length || 0);
+    aiResult.score = Math.max(0, 100 - (issueCount * 10));
+
     let backendPass = true;
     if (aiResult.abstract?.wordCount > 200) backendPass = false;
     if (aiResult.keywords?.count > 5) backendPass = false;
     if (aiResult.wordCount?.total > 4500) backendPass = false;
     if (aiResult.sections?.missing?.length > 0) backendPass = false;
+    if (aiResult.score < 70) backendPass = false;
 
-    if (!backendPass) {
-       aiResult.finalDecision = "FAIL";
-    }
-
-    // Adjust score safely if constraints violated but AI gave high score.
-    if (aiResult.finalDecision === "FAIL" && aiResult.score >= 90) {
-      aiResult.score = 85; 
-    }
+    aiResult.finalDecision = backendPass ? "PASS" : "FAIL";
 
     res.json({ 
       status: aiResult.finalDecision === "PASS" ? "accepted" : "rejected", 
@@ -1989,18 +1988,20 @@ app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res
       title: paper.title
     });
 
+    let updatedContent = paper.content;
+    let updatedAbstract = paper.abstract;
+    let updatedTitle = paper.title;
+
     for (const fix of fixes) {
-       if (fix.target === 'abstract') {
-         await pool.query('UPDATE papers SET abstract = $1 WHERE id = $2 AND user_id = $3', [fix.content, id, req.user.id]);
-       }
-       if (fix.target === 'content' || fix.target === 'sections') {
-         // Replace only the specific section or just update content entirely
-         // For now, if AI rewrite applies to entire text block:
-         await pool.query('UPDATE papers SET content = $1 WHERE id = $2 AND user_id = $3', [fix.content, id, req.user.id]);
-       }
+       if (fix.target === 'title') updatedTitle = fix.content;
+       else if (fix.target === 'abstract') updatedAbstract = fix.content;
+       else if (fix.target === 'content' || fix.target === 'sections') updatedContent = fix.content;
     }
 
-    await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [currentMetadata, id]);
+    await pool.query(
+      'UPDATE papers SET content = $1, abstract = $2, title = $3, metadata = $4 WHERE id = $5 AND user_id = $6',
+      [updatedContent, updatedAbstract, updatedTitle, JSON.stringify(currentMetadata), id, req.user.id]
+    );
 
     res.json({ success: true, message: 'Manuscript rebuilt and saved. Version backed up.' });
   } catch (error) {
