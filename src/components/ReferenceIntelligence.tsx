@@ -298,7 +298,7 @@ export default function ReferenceIntelligence({ activePaperId, setActivePaperId,
                     </div>
                   </div>
                 </motion.div>
-              ))}
+              )))}
             </div>
           </div>
 
