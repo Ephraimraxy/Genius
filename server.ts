@@ -1239,7 +1239,7 @@ async function finalizeZenodoPublish(depositionId: number, zenodoToken: string, 
   const filename = `${(ast.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
   const uploadRes = await fetch(`${bucketUrl}/${filename}`, {
     method: 'PUT',
-    headers: { ...headers, 'Content-Type': 'application/pdf' },
+    headers: { ...headers, 'Content-Type': 'application/octet-stream' },
     body: new Uint8Array(pdfBuffer)
   });
   if (!uploadRes.ok) throw new Error(`Zenodo Final Upload Failed: ${uploadRes.statusText}`);
@@ -2487,7 +2487,11 @@ app.post('/api/recommend-journals/:id', authenticateToken, async (req: any, res)
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
-    const keywords = metadata.keywords?.join('+') || metadata.title?.replace(/\s+/g, '+') || 'science';
+    const ast = metadata.ast || {};
+    const extractedKeywords = metadata.keywords || ast.keywords;
+    const keywords = (Array.isArray(extractedKeywords) && extractedKeywords.length > 0 ? extractedKeywords.join('+') : null) 
+      || paper.title?.replace(/\s+/g, '+') 
+      || 'science';
 
     // Query Crossref real journal API
     const crossrefRes = await fetch(`https://api.crossref.org/journals?query=${encodeURIComponent(keywords)}&rows=10`);
@@ -2648,19 +2652,10 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
 
     // High-fidelity structural extraction for the AI
     let sourceContent = paper.content;
-    if (paper.file_blob) {
-      try {
-        // Only attempt mammoth if it looks like a DOCX (buffer starts with PK)
-        if (paper.file_blob.slice(0, 2).toString() === 'PK') {
-          const { value } = await mammoth.convertToHtml({ buffer: paper.file_blob });
-          if (value && value.trim().length > 100) {
-            sourceContent = value;
-          }
-        }
-      } catch (err) {
-        console.warn('Structural HTML extraction failed, falling back to raw text');
-      }
-    }
+    
+    // DELIBERATE OMISSION: We no longer try to extract the original file_blob here.
+    // The pipeline must respect the intermediate corrections (e.g. from APA Gatekeeper)
+    // which are saved securely to paper.content. Re-extracting file_blob overrides them.
 
     const styleGuidelines = getStyleGuidelines(style, branding);
 
