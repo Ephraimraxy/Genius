@@ -1188,69 +1188,62 @@ async function validateDOI(doi: string) {
   }
 }
 
-async function publishToZenodo(paper: any, zenodoToken: string, pdfBuffer: Buffer) {
+async function prereserveDOI(zenodoToken: string) {
   const isProduction = process.env.NODE_ENV === 'production' && process.env.ZENODO_USE_PRODUCTION === 'true';
   const ZENODO_URL = isProduction 
     ? 'https://zenodo.org/api/deposit/depositions'
     : 'https://sandbox.zenodo.org/api/deposit/depositions';
+  const headers = { 'Authorization': `Bearer ${zenodoToken}`, 'Content-Type': 'application/json' };
+  const res = await fetch(ZENODO_URL, { method: 'POST', headers, body: JSON.stringify({}) });
+  if (!res.ok) throw new Error(`Zenodo DOI Prereserve Failed: ${res.statusText}`);
+  const draft = await res.json();
+  return { depositionId: draft.id, doi: draft.metadata.prereserve_doi.doi, bucketUrl: draft.links.bucket };
+}
 
+async function finalizeZenodoPublish(depositionId: number, zenodoToken: string, paper: any, pdfBuffer: Buffer, bucketUrl: string) {
+  const isProduction = process.env.NODE_ENV === 'production' && process.env.ZENODO_USE_PRODUCTION === 'true';
+  const ZENODO_URL = isProduction 
+    ? 'https://zenodo.org/api/deposit/depositions'
+    : 'https://sandbox.zenodo.org/api/deposit/depositions';
   const headers = { 'Authorization': `Bearer ${zenodoToken}` };
   const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
   const ast = metadata.ast || {};
 
-  try {
-    // 1. Create draft
-    const draftRes = await fetch(ZENODO_URL, {
-      method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({}) 
-    });
-    if (!draftRes.ok) throw new Error(`Zenodo Draft Creation Failed: ${draftRes.statusText}`);
-    const draft = await draftRes.json();
-    const depositionId = draft.id;
-    const bucketUrl = draft.links.bucket;
+  // 1. Upload
+  const filename = `${(ast.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+  const uploadRes = await fetch(`${bucketUrl}/${filename}`, {
+    method: 'PUT',
+    headers: { ...headers, 'Content-Type': 'application/pdf' },
+    body: new Uint8Array(pdfBuffer)
+  });
+  if (!uploadRes.ok) throw new Error(`Zenodo Final Upload Failed: ${uploadRes.statusText}`);
 
-    // 2. Upload real PDF
-    const filename = `${(ast.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
-    const uploadRes = await fetch(`${bucketUrl}/${filename}`, {
-      method: 'PUT',
-      headers: { ...headers, 'Content-Type': 'application/pdf' },
-      body: new Uint8Array(pdfBuffer)
-    });
-    if (!uploadRes.ok) throw new Error(`Zenodo Upload Failed: ${uploadRes.statusText}`);
+  // 2. Update Metadata
+  const zenodoMetadata = {
+    metadata: {
+      title: ast.title || paper.title || 'Genius Publication',
+      upload_type: "publication",
+      publication_type: "article",
+      description: ast.abstract?.background || (typeof paper.content === 'string' ? paper.content.substring(0, 500) : "Academic research publication."),
+      publication_date: new Date().toISOString().split('T')[0],
+      access_right: "open",
+      creators: (ast.authors || []).map((a: any) => {
+        const name = typeof a === 'string' ? a : (a.name || 'Author');
+        return { name: name.includes(',') ? name : name.split(' ').reverse().join(', ') };
+      })
+    }
+  };
+  await fetch(`${ZENODO_URL}/${depositionId}`, {
+    method: 'PUT',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(zenodoMetadata)
+  });
 
-    // 3. Metadata
-    const zenodoMetadata = {
-      metadata: {
-        title: ast.title || paper.title || 'Genius Publication',
-        upload_type: "publication",
-        publication_type: "article",
-        description: ast.abstract?.background || (typeof paper.content === 'string' ? paper.content.substring(0, 500) : "Academic research publication."),
-        publication_date: new Date().toISOString().split('T')[0],
-        access_right: "open",
-        creators: (ast.authors || []).map((a: any) => {
-          const name = typeof a === 'string' ? a : (a.name || 'Author');
-          return { name: name.includes(',') ? name : name.split(' ').reverse().join(', ') };
-        })
-      }
-    };
-
-    await fetch(`${ZENODO_URL}/${depositionId}`, {
-      method: 'PUT',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(zenodoMetadata)
-    });
-
-    // 4. Publish
-    const publishRes = await fetch(`${ZENODO_URL}/${depositionId}/actions/publish`, { method: 'POST', headers });
-    if (!publishRes.ok) return draft.metadata.prereserve_doi.doi;
-    
-    const final = await publishRes.json();
-    return final.doi;
-  } catch (err) {
-    console.error('Zenodo Error:', err);
-    throw err;
-  }
+  // 3. Publish
+  const publishRes = await fetch(`${ZENODO_URL}/${depositionId}/actions/publish`, { method: 'POST', headers });
+  if (!publishRes.ok) throw new Error(`Zenodo Final Publish Failed: ${publishRes.statusText}`);
+  const final = await publishRes.json();
+  return final.doi;
 }
 
 const idParamSchema = z.object({
@@ -3547,20 +3540,22 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       startPageNumber += (m.pageCount || 0);
     });
 
-    // 2. Generate Final Professional PDF
-    const pdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber });
+    // 2. PRERESERVE DOI and Generate Final Branded PDF
+    const { depositionId, doi: prereservedDoi, bucketUrl } = await prereserveDOI(zenodoToken);
+    
+    // Inject DOI into Branding
+    const branding = { vol, issue: iss, issn, startPageNumber, doi: prereservedDoi };
+    const pdfBytes = await generateFinalManuscriptPDF(ast, branding);
     const pdfBuffer = Buffer.from(pdfBytes);
 
-    // 3. Publish to Zenodo & Strict DOI Validation
-    let doi = '';
+    // 3. Finalize Publish & Strict DOI Validation
+    let finalDoi = '';
     try {
-      doi = await publishToZenodo(paper, zenodoToken, pdfBuffer);
+      finalDoi = await finalizeZenodoPublish(depositionId, zenodoToken, paper, pdfBuffer, bucketUrl);
       
-      // MANDATORY: Wait and Validate DOI
-      const isValid = await validateDOI(doi);
-      if (!isValid) {
-        throw new Error("DOI validation failed (resolved check). Broadcast paused.");
-      }
+      // MANDATORY: Wait and Validate DOI Actually Works
+      const isValid = await validateDOI(finalDoi);
+      if (!isValid) throw new Error("DOI validation failed (resolved check). Audit required.");
     } catch (e: any) {
       console.error('Zenodo/DOI Critical Failure:', e.message);
       
@@ -3577,6 +3572,9 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
         status: 'doi_validation_failed' 
       });
     }
+    
+    // Use the final confirmed DOI
+    const doi = finalDoi;
     
     // 3.5 MANDATORY: Plagiarism Gatekeeper
     if (metadata.similarityScore && metadata.similarityScore > 25) {
