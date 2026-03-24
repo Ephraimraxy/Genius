@@ -2029,13 +2029,7 @@ app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res
   }
 });
 
-app.post('/api/manuscript/structural-rewrite/:id', authenticateToken, async (req: any, res) => {
-  try {
-    const { id } = idParamSchema.parse(req.params);
-    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
-    const paper = result.rows[0];
-    if (!paper) return res.status(404).json({ error: 'Paper not found' });
-
+async function performStructuralRewrite(paper: any) {
     const prompt = `
 You are a master academic formatter and parser.
 Parse the following manuscript into a strict JSON Abstract Syntax Tree (AST).
@@ -2098,13 +2092,25 @@ Ensure the output adheres exactly to the JSON schema provided.
     const astJson = response.choices[0]?.message?.content;
     if (!astJson) throw new Error("Failed to parse AST");
 
+    const ast = JSON.parse(astJson);
+    
     // Save AST to db in metadata
     let currentMetadata = typeof paper.metadata === 'string' ? JSON.parse(paper.metadata || '{}') : (paper.metadata || {});
-    currentMetadata.ast = JSON.parse(astJson);
+    currentMetadata.ast = ast;
     
-    await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [currentMetadata, id]);
+    await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [currentMetadata, paper.id]);
+    return ast;
+}
 
-    res.json({ success: true, ast: currentMetadata.ast });
+app.post('/api/manuscript/structural-rewrite/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    const ast = await performStructuralRewrite(paper);
+    res.json({ success: true, ast });
   } catch (error) {
     console.error('AST Parser Error:', error);
     res.status(500).json({ error: 'Failed to rewrite manuscript into semantic AST' });
@@ -3560,10 +3566,16 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
-    const ast = metadata.ast;
+    let ast = metadata.ast;
     
+    // AUTONOMOUS FALLBACK: If AST is missing, generate it on-the-fly
     if (!ast) {
-        return res.status(400).json({ error: 'Manuscript structure is not finalized. Please run the Structural Rewriter first.' });
+        console.log(`Autonomous Fix: Generating missing AST for paper ${paperId}...`);
+        try {
+          ast = await performStructuralRewrite(paper);
+        } catch (e: any) {
+          return res.status(400).json({ error: `Structural Rewrite failed: ${e.message}. Please fix the manuscript manually.` });
+        }
     }
 
     const zenodoToken = process.env.ZENODO_ACCESS_TOKEN;
