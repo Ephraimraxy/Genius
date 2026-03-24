@@ -1044,7 +1044,7 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     });
 
     // 3. Page Number & Separator Line
-    const pageNumStr = `Page ${pdfDoc.getPageCount()}`;
+    const pageNumStr = `Page ${(branding.startPageNumber || 1) + pdfDoc.getPageCount() - 1}`;
     p.drawText(pageNumStr, { x: width / 2 - font.widthOfTextAtSize(pageNumStr, 7) / 2, y: curY - 32, size: 7, font: font, color: gray });
 
     curY -= 45;
@@ -3536,8 +3536,19 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     const iss = parseInt(settings.current_issue || '1');
     const issn = settings.journal_issn || '2971-7760';
 
+    // 1.5 Calculate Sequential Page Offset
+    const previousPapers = await pool.query(
+      "SELECT metadata FROM papers WHERE status = 'published' AND volume = $1 AND issue = $2",
+      [vol.toString(), iss.toString()]
+    );
+    let startPageNumber = 1;
+    previousPapers.rows.forEach(r => {
+      const m = typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata;
+      startPageNumber += (m.pageCount || 0);
+    });
+
     // 2. Generate Final Professional PDF
-    const pdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn });
+    const pdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber });
     const pdfBuffer = Buffer.from(pdfBytes);
 
     // 3. Publish to Zenodo & Strict DOI Validation
@@ -3584,6 +3595,9 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       timestamp: new Date().toISOString()
     });
 
+    const currentPdf = await PDFDocument.load(pdfBytes);
+    const currentPageCount = currentPdf.getPageCount();
+
     const updatedMetadata = { 
         ...metadata, 
         doi, 
@@ -3592,7 +3606,9 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
         issue: iss, 
         publishedAt: new Date().toISOString(),
         version: (metadata.version || 1) + 1,
-        history
+        history,
+        startPageNumber,
+        pageCount: currentPageCount
     };
 
     await pool.query(
