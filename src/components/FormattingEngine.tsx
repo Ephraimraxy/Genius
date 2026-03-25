@@ -284,50 +284,67 @@ export default function FormattingEngine({
           display: flex;
           flex-direction: column;
           gap: 0.75rem;
-          margin-bottom: 2.5rem;
+          margin-bottom: 2rem;
           padding-bottom: 1rem;
           user-select: none;
           border-bottom: 2px solid #800000;
+          width: 100%;
         }
         .header-top-row {
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
           align-items: center;
           gap: 1rem;
+          width: 100%;
         }
-        .header-logo-left, .header-logo-right {
+        .header-logo-left {
           display: flex;
           align-items: center;
           gap: 0.75rem;
+          justify-content: flex-start;
+          min-width: 0;
+        }
+        .header-logo-right {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          justify-content: flex-end;
+          min-width: 0;
         }
         .header-logo-left img, .header-logo-right img {
-          height: 32px;
-          min-width: 32px;
+          height: 38px;
           width: auto;
           object-fit: contain;
+          flex-shrink: 0;
         }
-        .header-title-stack, .partner-stack {
+        .header-title-stack {
           display: flex;
           flex-direction: column;
-          line-height: 1.1;
+          line-height: 1.2;
+          min-width: 0;
         }
-        .journal-red-small { color: #800000; font-weight: 900; font-size: 6px; text-transform: uppercase; }
-        .journal-red-med { color: #800000; font-weight: 900; font-size: 8px; text-transform: uppercase; }
-        .journal-black-large { color: #0f172a; font-weight: 900; font-size: 10px; text-transform: uppercase; }
-        .journal-gray-type { color: #64748b; font-weight: 700; font-size: 8px; text-transform: uppercase; letter-spacing: 0.15em; }
+        .partner-stack {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.2;
+          text-align: right;
+          min-width: 0;
+        }
+        .journal-red-small { color: #800000; font-weight: 900; font-size: 7px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .journal-black-large { color: #0f172a; font-weight: 900; font-size: 10px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px;}
         
         .header-meta-center {
           text-align: center;
           display: flex;
           flex-direction: column;
-          gap: 2px;
-          flex: 1;
+          gap: 3px;
+          min-width: 160px;
         }
-        .meta-row { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-        .meta-doi { font-size: 7px; font-weight: 700; color: #4f46e5; font-family: monospace; }
+        .meta-row { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+        .meta-doi { font-size: 8px; font-weight: 700; color: #4f46e5; font-family: monospace; white-space: nowrap; }
         
-        .partner-name { color: #0f172a; font-weight: 900; font-size: 8px; text-transform: uppercase; text-align: right; }
-        .partner-status { color: #94a3b8; font-weight: 700; font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
+        .partner-name { color: #0f172a; font-weight: 900; font-size: 9px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+        .partner-status { color: #94a3b8; font-weight: 700; font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap;}
 
         /* PDF Export Color Sanitization (Fixes oklch error in html2canvas) */
         #formatted-manuscript-content, 
