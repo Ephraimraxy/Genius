@@ -1057,28 +1057,33 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
     <head>
       <meta charset="UTF-8">
       <style>
-        @page { margin: 20mm 15mm; }
-        body { font-family: serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @page { margin: 15mm 12mm; }
+        body { font-family: serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 10.5pt; color: #1e293b; }
         * { box-sizing: border-box; }
         
         .academic-content {
           font-family: serif;
-          font-size: 11pt;
-          line-height: 1.5;
+          font-size: 10.5pt;
+          line-height: 1.3;
           text-align: justify;
-          color: #0f172a;
+          color: #1e293b;
         }
         .academic-content p {
           text-align: justify;
-          margin-bottom: 0.8em;
+          margin-bottom: 0.5em;
            orphans: 3;
            widows: 3;
         }
         .academic-content h1, .academic-content h2, .academic-content h3 {
           color: #0f172a;
-          margin-top: 1.5em;
-          margin-bottom: 0.5em;
+          margin-top: 1.2em;
+          margin-bottom: 0.4em;
+          font-weight: 700;
+          line-height: 1.2;
         }
+        .academic-content h1 { font-size: 1.4em; }
+        .academic-content h2 { font-size: 1.2em; }
+        .academic-content h3 { font-size: 1.1em; }
         .academic-content table {
           width: 100%;
           border-collapse: collapse;
@@ -1108,7 +1113,7 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
         .paper-sheet {
           background: white;
           width: 100%;
-          padding: 2rem 3rem;
+          padding: 1.5rem 2.5rem;
           position: relative;
           page-break-after: always;
         }
@@ -1118,7 +1123,7 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
         .header-sheet {
           background: white;
           width: 100%;
-          padding: 1.5rem 3rem 0.5rem;
+          padding: 1rem 2.5rem 0.5rem;
           border-bottom: 2px solid #800000;
           position: relative;
         }
@@ -1180,27 +1185,30 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
     </head>
     <body>
       <!-- FIRST PAGE BRANDING HEADER (Matches FormattingEngine.tsx exactly) -->
+      <!-- FIRST PAGE BRANDING HEADER -->
       <div class="header-sheet">
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
-          <div style="display: flex; align-items: center; gap: 0.75rem;">
-             ${journalLogoBase64 ? `<img src="${journalLogoBase64}" style="height: 50px; width: auto;" />` : ''}
-             <div>
-               <p style="color: #800000; font-weight: 900; font-size: 9px; uppercase; margin: 0;">Genius Multidisciplinary</p>
-               <p style="color: #0f172a; font-weight: 900; font-size: 12px; uppercase; margin: 0;">INTERNATIONAL JOURNAL</p>
+        <div class="header-top-row">
+          <div class="header-logo-left">
+             ${journalLogoBase64 ? `<img src="${journalLogoBase64}" style="height: 42px; width: auto;" />` : ''}
+             <div class="header-title-stack">
+               <p class="journal-red-small">Genius Multidisciplinary</p>
+               <p class="journal-black-large">INTERNATIONAL JOURNAL</p>
              </div>
           </div>
-          <div style="text-align: center; flex: 1;">
-            <div style="font-size: 10px; font-weight: 700; color: #64748b; uppercase; letter-spacing: 0.05em;">
+          
+          <div class="header-meta-center">
+            <div class="meta-row">
               ISSN: ${branding.issn} | VOL ${branding.volume}, ISS ${branding.issue} | ${branding.date}
             </div>
-            <div style="font-size: 9px; color: #4f46e5; font-family: monospace; font-weight: 700; margin-top: 4px;">${branding.doi}</div>
+            <div class="meta-doi">${branding.doi}</div>
           </div>
-          <div style="display: flex; align-items: center; gap: 0.75rem; text-align: right;">
-             <div>
-                <p style="color: #0f172a; font-weight: 900; font-size: 9px; uppercase; margin: 0;">Nasarawa State University Keffi</p>
-                <p style="color: #94a3b8; font-weight: 700; font-size: 8px; uppercase; margin: 0;">Global Partner</p>
+          
+          <div class="header-logo-right">
+             <div class="partner-stack">
+                <p class="partner-name">Nasarawa State University Keffi</p>
+                <p class="partner-status">Global Partner</p>
              </div>
-             ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" style="height: 50px; width: auto;" />` : ''}
+             ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" style="height: 42px; width: auto;" />` : ''}
           </div>
         </div>
       </div>

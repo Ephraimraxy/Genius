@@ -199,17 +199,25 @@ export default function FormattingEngine({
         
         .academic-content {
           font-family: serif;
-          line-height: 1.6;
+          font-size: 10.5pt;
+          line-height: 1.3;
           text-align: justify;
+          color: #1e293b;
         }
         .academic-content p {
           text-align: justify;
+          margin-bottom: 0.5rem;
         }
         .academic-content h1, .academic-content h2, .academic-content h3 {
           color: #0f172a;
-          margin-top: 1.5em;
-          margin-bottom: 0.5em;
+          margin-top: 1.2em;
+          margin-bottom: 0.4em;
+          font-weight: 700;
+          line-height: 1.2;
         }
+        .academic-content h1 { font-size: 1.4em; }
+        .academic-content h2 { font-size: 1.2em; }
+        .academic-content h3 { font-size: 1.1em; }
         .academic-content table {
           width: 100%;
           border-collapse: collapse;
@@ -247,23 +255,23 @@ export default function FormattingEngine({
           background: white;
           width: 100%;
           max-width: 850px;
-          margin: 0 auto 2rem;
-          padding: 3rem 4rem;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+          margin: 0 auto;
+          padding: 1.5rem 2.5rem;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
           border: 1px solid #e2e8f0;
           position: relative;
-          min-height: 1100px;
+          min-height: auto;
         }
         .header-sheet {
           background: white;
           width: 100%;
           max-width: 850px;
-          margin: 2rem auto 0;
-          padding: 2rem 4rem 1rem;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+          margin: 1.5rem auto 0;
+          padding: 1rem 2.5rem 0.5rem;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
           border: 1px solid #e2e8f0;
           border-bottom: none;
-          border-radius: 4px 4px 0 0;
+          border-radius: 8px 8px 0 0;
           position: relative;
           z-index: 10;
         }
@@ -548,45 +556,41 @@ export default function FormattingEngine({
 
               {formattedHtml ? (
                 <div id="formatted-manuscript-content" className="flex flex-col">
-                  {/* Production Branding Header - Now Styled as the top of the first page */}
+                  {/* Production Branding Header */}
                   {branding && (
-                    <div className="header-sheet flex flex-col gap-6 select-none export-only">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <img src="/journal-logo.png" alt="Genius" className="h-10 md:h-14 w-auto object-contain" />
-                          <div className="hidden sm:block">
-                            <p className="text-[#800000] font-black text-[9px] uppercase tracking-wider leading-none">Genius Multidisciplinary</p>
-                            <p className="text-slate-900 font-black text-xs md:text-sm tracking-tighter">INTERNATIONAL JOURNAL</p>
+                    <div className="header-sheet select-none export-only">
+                      <div className="header-top-row">
+                        <div className="header-logo-left">
+                          <img src="/journal-logo.png" alt="Genius" />
+                          <div className="header-title-stack">
+                            <p className="journal-red-small">Genius Multidisciplinary</p>
+                            <p className="journal-black-large">INTERNATIONAL JOURNAL</p>
                           </div>
                         </div>
 
-                         <div className="flex flex-col items-center text-center px-2">
-                            <div className="flex flex-wrap items-center justify-center gap-2 text-[9px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                              <span>ISSN: {branding.issn}</span>
-                              <span className="opacity-20">|</span>
-                              <span>Vol {branding.volume}, Iss {branding.issue}</span>
-                              <span className="opacity-20">|</span>
-                              <span className="text-indigo-600">Published: {branding.date}</span>
-                            </div>
-                            <p className="text-indigo-600 font-mono text-[8px] md:text-[9px] mt-1 font-bold">{branding.doi}</p>
-                         </div>
+                        <div className="header-meta-center">
+                          <div className="meta-row">
+                            ISSN: {branding.issn} | VOL {branding.volume}, ISS {branding.issue} | {branding.date}
+                          </div>
+                          <div className="meta-doi">{branding.doi}</div>
+                        </div>
 
-                        <div className="flex items-center gap-3">
-                           <div className="hidden sm:block text-right">
-                              <p className="text-slate-900 font-black text-[9px] uppercase tracking-tight">Nasarawa State University Keffi</p>
-                              <p className="text-slate-400 font-bold text-[8px] uppercase tracking-widest">Global Partner</p>
-                           </div>
-                           <img src="/Nasarawa-State-University.jpg" alt="NSUK" className="h-10 md:h-14 w-auto object-contain" />
+                        <div className="header-logo-right">
+                          <div className="partner-stack">
+                            <p className="partner-name">Nasarawa State University Keffi</p>
+                            <p className="partner-status">Global Partner</p>
+                          </div>
+                          <img src="/Nasarawa-State-University.jpg" alt="NSUK" />
                         </div>
                       </div>
-                      <div className="h-px bg-slate-100 w-full" />
                     </div>
                   )}
 
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="prose prose-slate prose-lg max-w-none font-serif academic-content"
+                    className="prose prose-slate prose-sm max-w-none font-serif academic-content leading-snug"
+                    style={{ fontSize: '10.5pt', lineHeight: '1.3' }}
                     dangerouslySetInnerHTML={{ __html: formattedHtml.replace(/```html|```/g, '') }}
                   />
                 </div>
