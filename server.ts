@@ -1059,7 +1059,16 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
     .replace(/<div class="paper-sheet"[^>]*>/g, '')           // Strip sheet wrappers
     .replace(/<\/div>\s*<div class="paper-sheet"[^>]*>/g, '') // Clean transitions
     .replace(/page-break-after:\s*always/gi, 'page-break-after: auto') // Disable rigid breaks
-    .replace(/```html|```/g, '');                            // Strip code block wrappers
+    .replace(/```html|```/g, '')                            // Strip code block wrappers
+    // GHOST REMOVAL: Stripping redundant journal metadata and broken AI-injected logos
+    .replace(/<p[^>]*>Genius Multidisciplinary[\s\S]*?<\/p>/gi, '')
+    .replace(/<div[^>]*>ISSN:[\s\S]*?<\/div>/gi, '')
+    .replace(/ISSN: \d{4}-\d{4}/gi, '')
+    .replace(/10\.GMIJ\/PENDING/gi, '')
+    .replace(/Global Partner/gi, '')
+    .replace(/<img[^>]*alt="(Genius|NSUK)"[^>]*>/gi, '')
+    .replace(/<img[^>]*src="[^"]*journal-logo.png"[^>]*>/gi, '')
+    .replace(/<img[^>]*src="[^"]*Nasarawa-State-University.jpg"[^>]*>/gi, '');
 
   const fullHtml = `
     <!DOCTYPE html>
