@@ -2978,6 +2978,40 @@ function getStyleGuidelines(style: string, branding: any) {
         - PAGINATION: Place a <div class="page-number bottom-right">X</div> at the bottom right.
         - Use structured headings with clear hierarchy.
         - Standard Elsevier reference format.`;
+    case 'mla':
+      return `MLA (9th Ed.) STYLE RULES:
+        ${common}
+        - PAGINATION: Place a <div class="page-number top-right">X</div> at the top right.
+        - Use Author-Page citations (e.g., Smith 42).
+        - Double-spaced text, 12pt Times New Roman equivalent.
+        - Works Cited page in alphabetical order.`;
+    case 'chicago':
+      return `CHICAGO/TURABIAN STYLE RULES:
+        ${common}
+        - PAGINATION: Place a <div class="page-number bottom-center">X</div> at the bottom center.
+        - Use Notes-Bibliography system (footnotes) or Author-Date.
+        - Clear section separators.
+        - Specific title page and bibliography formatting.`;
+    case 'ama':
+      return `AMA STYLE RULES:
+        ${common}
+        - PAGINATION: Place a <div class="page-number bottom-right">X</div> at the bottom right.
+        - Use numerical superscript citations (e.g., <sup>1,2</sup>).
+        - List references in order of appearance.
+        - Medical terminology focus.`;
+    case 'harvard':
+      return `HARVARD STYLE RULES:
+        ${common}
+        - PAGINATION: Place a <div class="page-number bottom-center">X</div> at the bottom center.
+        - Use Author-Date parenthetical citations (e.g., Smith, 2023).
+        - Comprehensive reference list with full publication details.`;
+    case 'vancouver':
+      return `VANCOUVER STYLE RULES:
+        ${common}
+        - PAGINATION: Place a <div class="page-number bottom-right">X</div> at the bottom right.
+        - Use a numbered citation system [1].
+        - Reference list ordered numerically.
+        - Standard biomedical phrasing.`;
     default:
       return common;
   }

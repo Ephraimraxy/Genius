@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight, Download } from 'lucide-react'; // UI Icons
+import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight, Download, BookOpen, ShieldCheck, List, Hash } from 'lucide-react'; // UI Icons
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
@@ -93,10 +93,15 @@ export default function FormattingEngine({
   };
 
   const styles = [
-    { id: 'ieee', name: 'IEEE Standards', desc: 'Double-column, strictly numbered citations for engineering and tech.', icon: Layout },
-    { id: 'apa', name: 'APA (7th Ed.)', desc: 'Author-date system optimized for social and behavioral sciences.', icon: FileText },
-    { id: 'nature', name: 'Nature Portfolio', desc: 'Prestige format with specific figure legends and compact citations.', icon: FileCheck },
-    { id: 'elsevier', name: 'Elsevier Standard', desc: 'Versatile structured format supporting deep section hierarchies.', icon: Settings },
+    { id: 'ieee', name: 'IEEE Standards', desc: 'Double-column, strictly numbered citations.', icon: Layout },
+    { id: 'apa', name: 'APA (7th Ed.)', desc: 'Author-date system for social sciences.', icon: FileText },
+    { id: 'mla', name: 'MLA (9th Ed.)', desc: 'Author-page system for humanities.', icon: BookOpen },
+    { id: 'chicago', name: 'Chicago/Turabian', desc: 'Note-bibliography style for history.', icon: Settings },
+    { id: 'nature', name: 'Nature Portfolio', desc: 'Compact citations and specific figure legends.', icon: FileCheck },
+    { id: 'elsevier', name: 'Elsevier Standard', desc: 'Versatile structured format for deep hierarchies.', icon: Settings },
+    { id: 'ama', name: 'AMA Standard', desc: 'Numerical superscript system for medicine.', icon: ShieldCheck },
+    { id: 'harvard', name: 'Harvard Style', desc: 'Author-date system common globally.', icon: FileText },
+    { id: 'vancouver', name: 'Vancouver Style', desc: 'Numbered system for biomedical research.', icon: List },
   ];
 
   const handleFormat = async () => {
@@ -375,7 +380,7 @@ export default function FormattingEngine({
               Schema Selection
             </h3>
 
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2 preview-scrollbar">
               {styles.map((style) => (
                 <motion.div
                   key={style.id}
