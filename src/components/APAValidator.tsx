@@ -55,6 +55,7 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
     if (!activePaperId) return;
     setIsValidating(true);
     setError(null);
+    setResult(null); // Clear previous results to reflect active work
     try {
       // SPECIAL CASE: Phase 0 (Structure) should trigger the Deep Semantic AST Rewrite
       if (phaseIdx === 0) {
@@ -62,7 +63,11 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
           method: 'POST',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
-        if (!rewriteRes.ok) console.warn('Structural rewrite fallback triggered.');
+        if (!rewriteRes.ok) {
+           const errData = await rewriteRes.json().catch(() => ({}));
+           console.error('Structural rewrite failed:', errData);
+           // We continue to validation so it can report what's missing even if rewrite failed
+        }
       }
 
       const res = await fetch(`/api/manuscript/validate-apa/${activePaperId}`, {
@@ -74,10 +79,11 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
         body: JSON.stringify({ phase: phaseIdx })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Validation failed');
+      if (!res.ok) throw new Error(data.error || 'Validation protocol failure');
       setResult(data.validation);
     } catch (err: any) {
-      setError(err.message);
+      console.error('Validation Error:', err);
+      setError(err.message || 'An unexpected error occurred during analysis');
     } finally {
       setIsValidating(false);
     }
@@ -169,7 +175,23 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
           </div>
         </div>
 
-        {!result && !isValidating && (
+        {error && (
+          <div className="bg-rose-50 border-2 border-rose-200 p-8 rounded-[2rem] text-center space-y-4">
+            <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
+              <AlertTriangle size={32} />
+            </div>
+            <h3 className="text-xl font-black text-rose-900 uppercase tracking-tight">Validation Protocol Interrupted</h3>
+            <p className="text-rose-700 font-medium max-w-md mx-auto">{error}</p>
+            <button 
+              onClick={() => runValidation(currentPhase)}
+              className="px-8 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-all"
+            >
+              Retry Protocol Analysis
+            </button>
+          </div>
+        )}
+
+        {!result && !isValidating && !error && (
           <div className="bg-white p-16 rounded-[2.5rem] shadow-2xl border border-slate-100 text-center relative overflow-hidden group">
             <div className="absolute inset-0 premium-gradient opacity-0 group-hover:opacity-[0.02] transition-opacity"></div>
             <button 
