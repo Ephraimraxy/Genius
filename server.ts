@@ -1060,15 +1060,9 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
     .replace(/<\/div>\s*<div class="paper-sheet"[^>]*>/g, '') // Clean transitions
     .replace(/page-break-after:\s*always/gi, 'page-break-after: auto') // Disable rigid breaks
     .replace(/```html|```/g, '')                            // Strip code block wrappers
-    // GHOST REMOVAL: Stripping redundant journal metadata and broken AI-injected logos
-    .replace(/<p[^>]*>Genius Multidisciplinary[\s\S]*?<\/p>/gi, '')
-    .replace(/<div[^>]*>ISSN:[\s\S]*?<\/div>/gi, '')
-    .replace(/ISSN: \d{4}-\d{4}/gi, '')
-    .replace(/10\.GMIJ\/PENDING/gi, '')
-    .replace(/Global Partner/gi, '')
-    .replace(/<img[^>]*alt="(Genius|NSUK)"[^>]*>/gi, '')
-    .replace(/<img[^>]*src="[^"]*journal-logo.png"[^>]*>/gi, '')
-    .replace(/<img[^>]*src="[^"]*Nasarawa-State-University.jpg"[^>]*>/gi, '');
+    // ASSET INJECTION: Swap relative paths for high-fidelity Base64 for the PDF engine
+    .replace(/src="\/journal-logo\.png"/g, `src="${journalLogoBase64}"`)
+    .replace(/src="\/Nasarawa-State-University\.jpg"/g, `src="${nsukLogoBase64}"`);
 
   const fullHtml = `
     <!DOCTYPE html>
@@ -2953,11 +2947,11 @@ function getStyleGuidelines(style: string, branding: any) {
     - TITLE: The manuscript topic/title must be BOLD (<strong>) and at the very top.
     - ABSTRACT: The Abstract content must be entirely ITALICIZED (<em> or <i>).
     - PAGINATION: You MUST wrap the content in <div class="paper-sheet"> blocks. Ensure that 100% of the text is distributed across these sheets. Do NOT omit or summarize any content to fit a page.
-    - RECURSIVE HEADER: EVERY <div class="paper-sheet"> block EXCEPT THE FIRST ONE (i.e. starting from Page 2 onwards) MUST start with this EXACT HTML block (using high-res logos):
+    - RECURSIVE HEADER: EVERY <div class="paper-sheet"> block EXCEPT THE FIRST ONE (i.e. starting from Page 2 onwards) MUST start with this EXACT HTML block:
       <div class="sheet-header-full">
         <div class="header-top-row">
           <div class="header-logo-left">
-            <img src="${journalLogoBase64}" alt="Genius" />
+            <img src="/journal-logo.png" alt="Genius" />
             <div class="header-title-stack">
               <span class="journal-red-small">Genius</span>
               <span class="journal-red-med">Multidisciplinary</span>
@@ -2974,7 +2968,7 @@ function getStyleGuidelines(style: string, branding: any) {
               <span class="partner-name">Nasarawa State University Keffi</span>
               <span class="partner-status">Global Partner</span>
             </div>
-            <img src="${nsukLogoBase64}" alt="NSUK" />
+            <img src="/Nasarawa-State-University.jpg" alt="NSUK" />
           </div>
         </div>
         <div class="header-accent-bar"></div>
