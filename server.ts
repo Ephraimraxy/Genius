@@ -3108,6 +3108,12 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     let formattedHtml = response.choices[0]?.message?.content || '';
     formattedHtml = formattedHtml.replace(/^```html\n?/, '').replace(/\n?```$/, '');
 
+    // PERSISTENCE: Save the formatted content to the database so it can be used for PDF/Email generation
+    await pool.query(
+      'UPDATE papers SET formatted_content = $1, status = $2 WHERE id = $3 AND user_id = $4',
+      [formattedHtml, 'published', id, req.user.id]
+    );
+
     res.json({ 
       formattedHtml,
       branding 
