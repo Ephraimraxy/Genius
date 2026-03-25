@@ -23,6 +23,19 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
     const [assessmentsSet, setAssessmentsSet] = useState(0);
     const [materialsUploaded, setMaterialsUploaded] = useState(0);
 
+    const [categoryName, setCategoryName] = useState('');
+    const [categories, setCategories] = useState<{id: number, name: string}[]>([]);
+    const [selectedCategoryId, setSelectedCategoryId] = useState<number | ''>('');
+
+    React.useEffect(() => {
+        if (token) {
+            fetch('/api/courses/categories', { headers: { 'Authorization': `Bearer ${token}` } })
+                .then(res => res.json())
+                .then(data => { if(Array.isArray(data)) setCategories(data); })
+                .catch(console.error);
+        }
+    }, [token]);
+
     const handleRosterUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             setRosterFile(e.target.files[0]);
@@ -46,20 +59,28 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
             const matricNumbers = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             
             try {
-                const res = await fetch('/api/courses/roster', {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ courseId: 'default', students: matricNumbers.map(m => ({ matricNumber: m, name: `Student ${m}`, email: `${m}@student.edu`, password: 'password123' })) })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    setActiveStudents(prev => prev + matricNumbers.length);
-                    addToast(`Successfully registered ${matricNumbers.length} students to the whitelist.`, 'success');
+                let successCount = 0;
+                for (const m of matricNumbers) {
+                    const res = await fetch('/api/courses/roster', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ matricNumber: m, name: `Student ${m}`, email: `${m}@student.edu`, course: 'default', categoryName })
+                    });
+                    if (res.ok) successCount++;
+                }
+                if (successCount > 0) {
+                    setActiveStudents(prev => prev + successCount);
+                    addToast(`Successfully registered ${successCount} students to the whitelist.`, 'success');
+                    setCategoryName('');
+                    // Refresh categories
+                    fetch('/api/courses/categories', { headers: { 'Authorization': `Bearer ${token}` } })
+                        .then(res => res.json())
+                        .then(data => { if(Array.isArray(data)) setCategories(data); });
                 } else {
-                    addToast(data.error || 'Failed to update roster', 'error');
+                    addToast('Failed to update roster', 'error');
                 }
             } catch (err) {
                 addToast('Network error updating roster', 'error');
@@ -87,7 +108,8 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                 body: JSON.stringify({ 
                     title: examTitle, 
                     type: assessmentType,
-                    duration: 60
+                    duration: 60,
+                    category_id: selectedCategoryId || null
                 })
             });
             const examData = await examRes.json();
@@ -170,9 +192,20 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                         <p className="text-xs text-slate-400 mt-1">.csv or .xlsx (Max 5MB)</p>
                     </div>
 
+                    <div className="mt-4">
+                        <label className="text-xs font-bold text-slate-500 uppercase">Target Category / Batch</label>
+                        <input 
+                            type="text" 
+                            placeholder="e.g. 100 Level Full-Time"
+                            value={categoryName}
+                            onChange={(e) => setCategoryName(e.target.value)}
+                            className="w-full mt-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 font-bold"
+                        />
+                    </div>
+
                     <button 
                         onClick={handleSaveRoster}
-                        disabled={!rosterFile || isProcessing}
+                        disabled={!rosterFile || !categoryName || isProcessing}
                         className="w-full mt-4 bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-colors flex justify-center items-center gap-2"
                     >
                         <CheckCircle size={18} /> Register Students
@@ -193,7 +226,7 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                     <h3 className="text-xl font-black text-slate-900 mb-2 relative z-10">AI Assessment Builder</h3>
                     <p className="text-sm text-slate-500 mb-4 relative z-10">Upload PDF lecture notes. Neural AI will automatically extract context and set MCQs or Tasks.</p>
 
-                    <div className="relative mb-4 z-10">
+                    <div className="relative mb-4 z-10 space-y-3">
                         <input
                             type="text"
                             placeholder="Exam/Test Title"
@@ -201,6 +234,16 @@ export default function AdminCourseManagement({ addToast, token }: AdminCourseMa
                             onChange={(e) => setExamTitle(e.target.value)}
                             className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500/20 font-bold"
                         />
+                        <select
+                            value={selectedCategoryId}
+                            onChange={(e) => setSelectedCategoryId(Number(e.target.value) || '')}
+                            className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500/20 font-bold text-slate-600 cursor-pointer"
+                        >
+                            <option value="">Assigned To (All Categories)</option>
+                            {categories.map(cat => (
+                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                            ))}
+                        </select>
                     </div>
 
                     {/* Type Selector */}

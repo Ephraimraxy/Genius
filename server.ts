@@ -164,6 +164,18 @@ async function bootstrapDB() {
   try {
     console.log('--- STARTING DATABASE BOOTSTRAP ---');
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS student_categories (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id),
+        name TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
+      ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
+      ALTER TABLE resources ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
+
       ALTER TABLE paper_references 
       ADD COLUMN IF NOT EXISTS ai_analysis TEXT,
       ADD COLUMN IF NOT EXISTS status TEXT,
@@ -5292,11 +5304,22 @@ app.get('/api/courses/roster', authenticateToken, checkSubscription, async (req:
   }
 });
 
+// Lecturer: Get student categories
+app.get('/api/courses/categories', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query('SELECT * FROM student_categories WHERE tenant_id = $1 ORDER BY name ASC', [req.tenant_id]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+});
+
 // Lecturer: Add student to roster with PIN setup invitation
 app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const { matricNumber, name, email, course } = req.body;
+    const { matricNumber, name, email, course, categoryName } = req.body;
     if (!matricNumber || !email || !name) return res.status(400).json({ error: 'Matric Number, Name, and Email are required.' });
 
     // 1. Check if student already in roster for this tenant
@@ -5307,10 +5330,22 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     const setupToken = require('crypto').randomBytes(32).toString('hex');
     const tokenExpires = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
 
-    // 3. Add to roster
+    // 3. Handle Category Logic
+    let category_id = null;
+    if (categoryName) {
+      const catCheck = await pool.query('SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
+      if (catCheck.rows.length > 0) {
+        category_id = catCheck.rows[0].id;
+      } else {
+        const catInsert = await pool.query('INSERT INTO student_categories (tenant_id, name) VALUES ($1, $2) RETURNING id', [req.tenant_id, categoryName.trim()]);
+        category_id = catInsert.rows[0].id;
+      }
+    }
+
+    // 4. Add to roster
     await pool.query(
-      'INSERT INTO students_roster (tenant_id, matric_number, name, email, course, setup_token, token_expires) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [req.tenant_id, matricNumber, name, email, course || '', setupToken, tokenExpires]
+      'INSERT INTO students_roster (tenant_id, matric_number, name, email, course, setup_token, token_expires, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [req.tenant_id, matricNumber, name, email, course || '', setupToken, tokenExpires, category_id]
     );
 
     try {
@@ -5379,11 +5414,11 @@ app.post('/api/student/setup-pin', async (req, res) => {
     const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matric, student.tenant_id]);
     if (userCheck.rows.length === 0) {
       await pool.query(
-        'INSERT INTO users (email, name, password, role, tenant_id, matric_number) VALUES ($1, $2, $3, $4, $5, $6)',
-        [student.email, student.name, hashedPin, 'student', student.tenant_id, matric]
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [student.email, student.name, hashedPin, 'student', student.tenant_id, matric, student.category_id]
       );
     } else {
-      await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPin, userCheck.rows[0].id]);
+      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, student.category_id]);
     }
 
     res.json({ success: true, message: 'PIN set successfully. You can now log in.' });
@@ -5396,10 +5431,10 @@ app.post('/api/student/setup-pin', async (req, res) => {
 app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const { title, description, duration, type } = req.body;
+    const { title, description, duration, type, category_id } = req.body;
     const result = await pool.query(
-      'INSERT INTO exams (tenant_id, title, description, duration, type) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [req.tenant_id, title, description, duration, type]
+      'INSERT INTO exams (tenant_id, title, description, duration, type, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [req.tenant_id, title, description, duration, type, category_id || null]
     );
     res.json({ id: result.rows[0].id });
   } catch (error) {
@@ -5520,7 +5555,9 @@ app.get('/api/student/assessments', authenticateToken, async (req: any, res) => 
        EXISTS(SELECT 1 FROM exam_results WHERE exam_id = e.id AND user_id = $1) as completed,
        EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'assessment_access' AND (metadata->>'exam_id')::int = e.id AND status = 'success') as "hasPaid"
        FROM exams e 
-       WHERE e.tenant_id = $2 AND e.is_available = true
+       JOIN users u ON u.id = $1
+       WHERE e.tenant_id = $2 AND e.is_available = true 
+       AND (e.category_id IS NULL OR e.category_id = u.category_id)
        ORDER BY e.created_at DESC`,
       [req.user.id, req.tenant_id]
     );
@@ -5552,7 +5589,9 @@ app.get('/api/student/materials', authenticateToken, async (req: any, res) => {
       `SELECT r.*,
        EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'material_access' AND (metadata->>'resource_id')::int = r.id AND status = 'success') as "hasPaid"
        FROM resources r
+       JOIN users u ON u.id = $1
        WHERE r.tenant_id = $2 AND r.type = 'material' AND r.is_available = true
+       AND (r.category_id IS NULL OR r.category_id = u.category_id)
        ORDER BY r.created_at DESC`,
       [req.user.id, req.tenant_id]
     );

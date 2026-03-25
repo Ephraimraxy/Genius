@@ -59,6 +59,17 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [previewFile, setPreviewFile] = useState<File | string | null>(null);
     const [previewName, setPreviewName] = useState<string>('');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    
+    const [categories, setCategories] = useState<{id: number, name: string}[]>([]);
+
+    useEffect(() => {
+        if (token) {
+            fetch('/api/courses/categories', { headers: { 'Authorization': `Bearer ${token}` } })
+                .then(res => res.json())
+                .then(data => { if(Array.isArray(data)) setCategories(data); })
+                .catch(console.error);
+        }
+    }, [token]);
 
     const fetchRecords = async () => {
         setIsLoadingRecords(true);
@@ -146,7 +157,8 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 title: formData.get('title'),
                 description: formData.get('description') || '',
                 duration: parseInt(formData.get('duration') as string) || 60,
-                type: mode === 'exams' ? 'exam' : mode === 'assignments' ? 'assignment' : 'test'
+                type: mode === 'exams' ? 'exam' : mode === 'assignments' ? 'assignment' : 'test',
+                category_id: formData.get('category_id') ? parseInt(formData.get('category_id') as string) : null
             };
 
             const res = await fetch('/api/exams', {
@@ -297,6 +309,12 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                                 <option value="60">60 Mins</option>
                                 <option value="120">120 Mins</option>
                             </select>
+                            <select name="category_id" className="flex-1 px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-600">
+                                <option value="">Target Category (All)</option>
+                                {categories.map(cat => (
+                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                ))}
+                            </select>
                         </div>
                         <div className="border-2 border-dashed border-slate-200 rounded-3xl p-6 text-center cursor-pointer" onClick={handleOpenSelector}>
                             <p className="font-bold text-slate-500 text-sm">{selectedHubResource ? selectedHubResource.name : 'Link Material'}</p>
@@ -369,6 +387,12 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 <form onSubmit={handleCreateAssessment} className="space-y-4">
                     <input name="title" required placeholder="Assignment Title" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold" />
                     <textarea name="description" placeholder="Instructions" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold min-h-[100px]" />
+                    <select name="category_id" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-600 mb-4 cursor-pointer">
+                        <option value="">Target Category (All)</option>
+                        {categories.map(cat => (
+                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                        ))}
+                    </select>
                     <div className="flex gap-4">
                          <button type="submit" disabled={isProcessing} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl disabled:opacity-50">Dispatch</button>
                          <button type="button" onClick={handleOpenSelector} className="px-6 bg-slate-900 text-white rounded-2xl"><Database size={20} /></button>
