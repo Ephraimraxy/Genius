@@ -5,6 +5,9 @@ if (typeof global.DOMMatrix === 'undefined') {
   };
 }
 
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import express from 'express';
 
 import { createServer as createViteServer } from 'vite';
@@ -13,8 +16,6 @@ import multer from 'multer';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
-const fs = require('fs');
-const path = require('path');
 import mammoth from 'mammoth';
 import cors from 'cors';
 import OpenAI from 'openai';
@@ -63,7 +64,6 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
   if (!signature || !secretKey) return res.status(400).send('Missing signature or configuration');
 
   try {
-    const crypto = require('crypto');
     const hmac = crypto.createHmac('sha256', secretKey);
     const calculatedSignature = hmac.update(req.body).digest('hex');
 
