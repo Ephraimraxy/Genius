@@ -1031,9 +1031,9 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
   const branding = {
     volume: paper.volume || volResult.rows[0]?.value || '1',
     issue: paper.issue || issueResult.rows[0]?.value || '1',
-    issn: paper.issn || issnResult.rows[0]?.value || '2971-7760',
-    doi: paper.doi || `10.5555/genius.${id}`,
-    date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    issn: (paper.issn && paper.issn !== 'Pending') ? paper.issn : (issnResult.rows[0]?.value || '2971-7760'),
+    doi: (paper.doi && paper.doi !== 'Pending') ? paper.doi : (paper.status === 'published' ? `10.5555/genius.${id}` : 'Verification Pending'),
+    date: paper.published_at ? new Date(paper.published_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')
   };
 
   const getBase64Image = (fileName: string) => {
@@ -1063,12 +1063,16 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
         
         .academic-content {
           font-family: serif;
-          line-height: 1.6;
+          font-size: 11pt;
+          line-height: 1.5;
           text-align: justify;
+          color: #0f172a;
         }
         .academic-content p {
           text-align: justify;
-          margin-bottom: 1em;
+          margin-bottom: 0.8em;
+           orphans: 3;
+           widows: 3;
         }
         .academic-content h1, .academic-content h2, .academic-content h3 {
           color: #0f172a;
@@ -1104,11 +1108,9 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
         .paper-sheet {
           background: white;
           width: 100%;
-          padding: 3rem 4rem;
+          padding: 2rem 3rem;
           position: relative;
-          min-height: 1100px;
           page-break-after: always;
-          border: 1px solid #e2e8f0;
         }
         .paper-sheet:last-child {
           page-break-after: auto;
@@ -1116,7 +1118,7 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
         .header-sheet {
           background: white;
           width: 100%;
-          padding: 2rem 4rem 1rem;
+          padding: 1.5rem 3rem 0.5rem;
           border-bottom: 2px solid #800000;
           position: relative;
         }
@@ -3800,8 +3802,8 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     };
 
     await pool.query(
-      "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4 WHERE id = $5",
-      [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), paperId]
+      "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4, issn = $5 WHERE id = $6",
+      [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), issn, paperId]
     );
 
     // 5. Volume/Issue Increment Logic
