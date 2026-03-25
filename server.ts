@@ -1056,6 +1056,7 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
 
   const scrubbedContent = paper.formatted_content
     .replace(/<div class="header-sheet"[\s\S]*?<\/div>/g, '') // Strip legacy headers if they use the old class
+    .replace(/<div class="sheet-header-full"[\s\S]*?<div class="header-accent-bar"><\/div>\s*<\/div>/g, '') // Strip AI-injected recurring branding (Puppeteer native header handles this)
     .replace(/<div class="paper-sheet"[^>]*>/g, '')           // Strip sheet wrappers
     .replace(/<\/div>\s*<div class="paper-sheet"[^>]*>/g, '') // Clean transitions
     .replace(/page-break-after:\s*always/gi, 'page-break-after: auto') // Disable rigid breaks
