@@ -1076,14 +1076,21 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
         }
         .academic-content h1, .academic-content h2, .academic-content h3 {
           color: #0f172a;
-          margin-top: 1.2em;
-          margin-bottom: 0.4em;
-          font-weight: 700;
+          margin-top: 1.1em;
+          margin-bottom: 0.3em;
+          font-weight: 600 !important;
           line-height: 1.2;
+          text-align: left !important;
         }
-        .academic-content h1 { font-size: 1.4em; }
-        .academic-content h2 { font-size: 1.2em; }
+        .academic-content h1 { font-size: 1.5em; margin-bottom: 0.8em; }
+        .academic-content h2 { font-size: 1.25em; }
         .academic-content h3 { font-size: 1.1em; }
+        .academic-content p {
+          text-align: justify;
+          margin-bottom: 0.4em;
+           orphans: 3;
+           widows: 3;
+        }
         .academic-content table {
           width: 100%;
           border-collapse: collapse;
@@ -1184,34 +1191,6 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
       </style>
     </head>
     <body>
-      <!-- FIRST PAGE BRANDING HEADER (Matches FormattingEngine.tsx exactly) -->
-      <!-- FIRST PAGE BRANDING HEADER -->
-      <div class="header-sheet">
-        <div class="header-top-row">
-          <div class="header-logo-left">
-             ${journalLogoBase64 ? `<img src="${journalLogoBase64}" style="height: 42px; width: auto;" />` : ''}
-             <div class="header-title-stack">
-               <p class="journal-red-small">Genius Multidisciplinary</p>
-               <p class="journal-black-large">INTERNATIONAL JOURNAL</p>
-             </div>
-          </div>
-          
-          <div class="header-meta-center">
-            <div class="meta-row">
-              ISSN: ${branding.issn} | VOL ${branding.volume}, ISS ${branding.issue} | ${branding.date}
-            </div>
-            <div class="meta-doi">${branding.doi}</div>
-          </div>
-          
-          <div class="header-logo-right">
-             <div class="partner-stack">
-                <p class="partner-name">Nasarawa State University Keffi</p>
-                <p class="partner-status">Global Partner</p>
-             </div>
-             ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" style="height: 42px; width: auto;" />` : ''}
-          </div>
-        </div>
-      </div>
       <div class="academic-content">
         ${paper.formatted_content}
       </div>
@@ -1245,10 +1224,44 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
   try {
     const page = await browser.newPage();
     await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+
+    const headerTemplate = `
+      <div style="width: 100%; font-family: serif; font-size: 8px; border-bottom: 1.5px solid #800000; padding-bottom: 5px; margin: 0 45px; display: flex; align-items: center; justify-content: space-between; -webkit-print-color-adjust: exact;">
+        <div style="display: flex; align-items: center; gap: 5px;">
+           ${journalLogoBase64 ? `<img src="${journalLogoBase64}" style="height: 25px; width: auto;" />` : ''}
+           <div>
+             <p style="color: #800000; font-weight: 900; font-size: 5px; margin: 0; text-transform: uppercase;">Genius Multidisciplinary</p>
+             <p style="color: #0f172a; font-weight: 900; font-size: 7px; margin: 0; text-transform: uppercase;">INTERNATIONAL JOURNAL</p>
+           </div>
+        </div>
+        <div style="text-align: center; flex: 1;">
+           <div style="color: #64748b; font-weight: 700; font-size: 7px; text-transform: uppercase;">ISSN: ${branding.issn} | VOL ${branding.volume}, ISS ${branding.issue} | ${branding.date}</div>
+           <div style="color: #4f46e5; font-size: 6px; font-family: monospace; font-weight: 700;">${branding.doi}</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 5px; text-align: right;">
+           <div style="line-height: 1;">
+              <p style="color: #0f172a; font-weight: 900; font-size: 5px; margin: 0; text-transform: uppercase;">Nasarawa State University Keffi</p>
+              <p style="color: #94a3b8; font-weight: 700; font-size: 5px; margin: 0; text-transform: uppercase;">Global Partner</p>
+           </div>
+           ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" style="height: 25px; width: auto;" />` : ''}
+        </div>
+      </div>
+    `;
+
+    const footerTemplate = `
+      <div style="width: 100%; font-family: sans-serif; font-size: 9px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 5px; margin: 0 45px; display: flex; justify-content: space-between;">
+        <div style="text-transform: uppercase; font-weight: bold; letter-spacing: 0.1em;">Genius Multidisciplinary International Journal</div>
+        <div>Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>
+      </div>
+    `;
+
     const pdfUint8 = await page.pdf({
       format: 'A4',
       printBackground: true,
-      margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' }
+      displayHeaderFooter: true,
+      headerTemplate,
+      footerTemplate,
+      margin: { top: '35mm', bottom: '25mm', left: '15mm', right: '15mm' }
     });
     return Buffer.from(pdfUint8);
   } finally {

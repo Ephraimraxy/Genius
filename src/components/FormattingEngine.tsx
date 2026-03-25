@@ -195,8 +195,6 @@ export default function FormattingEngine({
             max-width: 850px !important;
           }
           .no-print, button, header, nav, footer { display: none !important; }
-        }
-        
         .academic-content {
           font-family: serif;
           font-size: 10.5pt;
@@ -204,20 +202,21 @@ export default function FormattingEngine({
           text-align: justify;
           color: #1e293b;
         }
-        .academic-content p {
-          text-align: justify;
-          margin-bottom: 0.5rem;
-        }
         .academic-content h1, .academic-content h2, .academic-content h3 {
           color: #0f172a;
-          margin-top: 1.2em;
-          margin-bottom: 0.4em;
-          font-weight: 700;
+          margin-top: 1.1em;
+          margin-bottom: 0.3em;
+          font-weight: 600 !important;
           line-height: 1.2;
+          text-align: left !important;
         }
-        .academic-content h1 { font-size: 1.4em; }
-        .academic-content h2 { font-size: 1.2em; }
+        .academic-content h1 { font-size: 1.5em; margin-bottom: 0.8em; }
+        .academic-content h2 { font-size: 1.25em; }
         .academic-content h3 { font-size: 1.1em; }
+        .academic-content p {
+          text-align: justify;
+          margin-bottom: 0.4rem;
+        }
         .academic-content table {
           width: 100%;
           border-collapse: collapse;
@@ -558,10 +557,10 @@ export default function FormattingEngine({
                 <div id="formatted-manuscript-content" className="flex flex-col">
                   {/* Production Branding Header */}
                   {branding && (
-                    <div className="header-sheet select-none export-only">
+                    <div className="header-sheet sticky top-0 z-50 select-none export-only shadow-sm border-b-2 border-slate-100 mb-6 !max-w-none !w-full !rounded-none !margin-0">
                       <div className="header-top-row">
                         <div className="header-logo-left">
-                          <img src="/journal-logo.png" alt="Genius" />
+                          <img src="/journal-logo.png" alt="Genius" className="h-8 w-auto" />
                           <div className="header-title-stack">
                             <p className="journal-red-small">Genius Multidisciplinary</p>
                             <p className="journal-black-large">INTERNATIONAL JOURNAL</p>
@@ -580,7 +579,7 @@ export default function FormattingEngine({
                             <p className="partner-name">Nasarawa State University Keffi</p>
                             <p className="partner-status">Global Partner</p>
                           </div>
-                          <img src="/Nasarawa-State-University.jpg" alt="NSUK" />
+                          <img src="/Nasarawa-State-University.jpg" alt="NSUK" className="h-8 w-auto" />
                         </div>
                       </div>
                     </div>
