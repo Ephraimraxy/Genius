@@ -31,6 +31,24 @@ import { z } from 'zod';
 import nodemailer from 'nodemailer';
 import puppeteer from 'puppeteer-core';
 
+// Global Journal Branding Assets: Pre-loaded as Base64 to ensure 1:1 PDF fidelity across all pages.
+const getBase64Image = (fileName: string) => {
+  try {
+    const filePath = path.join(process.cwd(), 'public', fileName);
+    if (fs.existsSync(filePath)) {
+      const bitmap = fs.readFileSync(filePath);
+      const extension = path.extname(fileName).slice(1);
+      return `data:image/${extension};base64,${bitmap.toString('base64')}`;
+    }
+  } catch (e) {
+    console.error(`[GLOBAL] Failed to load logo ${fileName}:`, e);
+  }
+  return '';
+};
+
+const journalLogoBase64 = getBase64Image('journal-logo.png');
+const nsukLogoBase64 = getBase64Image('Nasarawa-State-University.jpg');
+
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
@@ -1036,37 +1054,12 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
     date: paper.published_at ? new Date(paper.published_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')
   };
 
-  const getBase64Image = (fileName: string) => {
-    try {
-      const filePath = path.join(process.cwd(), 'public', fileName);
-      if (fs.existsSync(filePath)) {
-        const bitmap = fs.readFileSync(filePath);
-        const extension = path.extname(fileName).slice(1);
-        return `data:image/${extension};base64,${bitmap.toString('base64')}`;
-      }
-    } catch (e) { console.error(`Failed to load logo ${fileName}:`, e); }
-    return '';
-  };
-
-  const journalLogoBase64 = getBase64Image('journal-logo.png');
-  const nsukLogoBase64 = getBase64Image('Nasarawa-State-University.jpg');
-
-  // Content Scrubbing Layer: Eliminates Ghost Headers & Layout Bloat
   const scrubbedContent = paper.formatted_content
-    .replace(/<div class="header-sheet"[\s\S]*?<\/div>/g, '') // Strip legacy headers entirely
+    .replace(/<div class="header-sheet"[\s\S]*?<\/div>/g, '') // Strip legacy headers if they use the old class
     .replace(/<div class="paper-sheet"[^>]*>/g, '')           // Strip sheet wrappers
     .replace(/<\/div>\s*<div class="paper-sheet"[^>]*>/g, '') // Clean transitions
     .replace(/page-break-after:\s*always/gi, 'page-break-after: auto') // Disable rigid breaks
-    .replace(/```html|```/g, '')                            // Strip code block wrappers
-    // GHOST REMOVAL: Stripping redundant journal metadata and broken AI-injected logos
-    .replace(/<p[^>]*>Genius Multidisciplinary[\s\S]*?<\/p>/gi, '')
-    .replace(/<div[^>]*>ISSN:[\s\S]*?<\/div>/gi, '')
-    .replace(/ISSN: \d{4}-\d{4}/gi, '')
-    .replace(/10\.GMIJ\/PENDING/gi, '')
-    .replace(/Global Partner/gi, '')
-    .replace(/<img[^>]*alt="(Genius|NSUK)"[^>]*>/gi, '')
-    .replace(/<img[^>]*src="[^"]*journal-logo.png"[^>]*>/gi, '')
-    .replace(/<img[^>]*src="[^"]*Nasarawa-State-University.jpg"[^>]*>/gi, '');
+    .replace(/```html|```/g, '');                            // Strip code block wrappers
 
   const fullHtml = `
     <!DOCTYPE html>
@@ -2950,8 +2943,33 @@ function getStyleGuidelines(style: string, branding: any) {
   const common = `
     - TITLE: The manuscript topic/title must be BOLD (<strong>) and at the very top.
     - ABSTRACT: The Abstract content must be entirely ITALICIZED (<em> or <i>).
-    - PAGINATION: You MUST wrap the content in <div class="paper-sheet"> blocks (~500-800 words per block).
-    - RECURSIVE HEADER: EVERY <div class="paper-sheet"> block EXCEPT THE FIRST ONE (i.e. starting from Page 2 onwards) MUST start with this EXACT HTML block: ${metaHeader}
+    - PAGINATION: You MUST wrap the content in <div class="paper-sheet"> blocks. Ensure that 100% of the text is distributed across these sheets. Do NOT omit or summarize any content to fit a page.
+    - RECURSIVE HEADER: EVERY <div class="paper-sheet"> block EXCEPT THE FIRST ONE (i.e. starting from Page 2 onwards) MUST start with this EXACT HTML block (using high-res logos):
+      <div class="sheet-header-full">
+        <div class="header-top-row">
+          <div class="header-logo-left">
+            <img src="${journalLogoBase64}" alt="Genius" />
+            <div class="header-title-stack">
+              <span class="journal-red-small">Genius</span>
+              <span class="journal-red-med">Multidisciplinary</span>
+              <span class="journal-black-large">International</span>
+              <span class="journal-gray-type">Journal</span>
+            </div>
+          </div>
+          <div class="header-meta-center">
+            <div class="meta-row">ISSN: ${branding.issn} | Vol ${branding.volume}, Iss ${branding.issue} | Published: ${branding.date}</div>
+            <div class="meta-doi">${branding.doi}</div>
+          </div>
+          <div class="header-logo-right">
+            <div class="partner-stack">
+              <span class="partner-name">Nasarawa State University Keffi</span>
+              <span class="partner-status">Global Partner</span>
+            </div>
+            <img src="${nsukLogoBase64}" alt="NSUK" />
+          </div>
+        </div>
+        <div class="header-accent-bar"></div>
+      </div>
     - FIGURES: Wrap illustrations in <div class="academic-figure"> with a centered caption below.
     - TABLES: Wrap every <table> element in a <div class="table-wrapper"> tag.
   `;
