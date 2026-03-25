@@ -1060,44 +1060,145 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
         @page { margin: 20mm 15mm; }
         body { font-family: serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         * { box-sizing: border-box; }
-        .academic-content { font-family: serif; line-height: 1.6; text-align: justify; }
-        .academic-content p { text-align: justify; margin-bottom: 1em; }
-        .academic-content h1, .academic-content h2, .academic-content h3 { color: #0f172a; margin-top: 1.5em; margin-bottom: 0.5em; }
-        .academic-content table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-family: sans-serif; font-size: 0.75rem; table-layout: fixed; }
-        .academic-content th, .academic-content td { border: 1px solid #cbd5e1; padding: 0.5rem; text-align: left; word-break: break-word; }
-        .academic-content th { background-color: #f8fafc; font-weight: bold; }
-        .academic-figure { margin: 2.5rem 0; text-align: center; padding: 1rem; background: #f8fafc; border: 1px dashed #cbd5e1; }
-        .paper-sheet { background: white; width: 100%; padding: 3rem 4rem; position: relative; min-height: 1100px; page-break-after: always; }
-        .header-sheet { width: 100%; margin: 0 auto; padding: 2rem 4rem 1rem; border-bottom: 2px solid #800000; position: relative; }
-        .header-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-        .meta-info { font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase; }
-        .doi-text { font-size: 9px; color: #4f46e5; font-family: monospace; }
-        .logo-img { height: 50px; width: auto; }
-        .institution-text { font-weight: 900; font-size: 10px; text-transform: uppercase; }
-        .journal-name { color: #800000; font-weight: 900; font-size: 10px; text-transform: uppercase; }
+        
+        .academic-content {
+          font-family: serif;
+          line-height: 1.6;
+          text-align: justify;
+        }
+        .academic-content p {
+          text-align: justify;
+          margin-bottom: 1em;
+        }
+        .academic-content h1, .academic-content h2, .academic-content h3 {
+          color: #0f172a;
+          margin-top: 1.5em;
+          margin-bottom: 0.5em;
+        }
+        .academic-content table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 1rem 0;
+          font-family: sans-serif;
+          font-size: 0.75rem;
+          table-layout: fixed;
+        }
+        .academic-content th, .academic-content td {
+          border: 1px solid #cbd5e1;
+          padding: 0.5rem;
+          text-align: left;
+          word-break: break-word;
+        }
+        .academic-content th {
+          background-color: #f8fafc;
+          font-weight: bold;
+        }
+        .academic-content .academic-figure {
+          margin: 2.5rem 0;
+          text-align: center;
+          padding: 1rem;
+          background: #f8fafc;
+          border-radius: 0.5rem;
+          border: 1px dashed #cbd5e1;
+        }
+        .paper-sheet {
+          background: white;
+          width: 100%;
+          padding: 3rem 4rem;
+          position: relative;
+          min-height: 1100px;
+          page-break-after: always;
+          border: 1px solid #e2e8f0;
+        }
+        .paper-sheet:last-child {
+          page-break-after: auto;
+        }
+        .header-sheet {
+          background: white;
+          width: 100%;
+          padding: 2rem 4rem 1rem;
+          border-bottom: 2px solid #800000;
+          position: relative;
+        }
+        .paper-sheet:first-of-type {
+          margin-top: 0;
+          border-top: 1px dashed #f1f5f9;
+        }
+        .sheet-header-full {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          margin-bottom: 2.5rem;
+          padding-bottom: 1rem;
+          border-bottom: 2px solid #800000;
+        }
+        .header-top-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 1rem;
+        }
+        .header-logo-left, .header-logo-right {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+        }
+        .header-logo-left img, .header-logo-right img {
+          height: 32px;
+          min-width: 32px;
+          width: auto;
+          object-fit: contain;
+        }
+        .header-title-stack, .partner-stack {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.1;
+        }
+        .journal-red-small { color: #800000; font-weight: 900; font-size: 6px; text-transform: uppercase; }
+        .journal-red-med { color: #800000; font-weight: 900; font-size: 8px; text-transform: uppercase; }
+        .journal-black-large { color: #0f172a; font-weight: 900; font-size: 10px; text-transform: uppercase; }
+        .journal-gray-type { color: #64748b; font-weight: 700; font-size: 8px; text-transform: uppercase; letter-spacing: 0.15em; }
+        .header-meta-center {
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          flex: 1;
+        }
+        .meta-row { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .meta-doi { font-size: 7px; font-weight: 700; color: #4f46e5; font-family: monospace; }
+        .partner-name { color: #0f172a; font-weight: 900; font-size: 8px; text-transform: uppercase; text-align: right; }
+        .partner-status { color: #94a3b8; font-weight: 700; font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
+        .page-number { position: absolute; font-size: 10px; font-weight: bold; color: #94a3b8; z-index: 100; }
+        .page-number.top-right { top: 3rem; right: 5rem; }
+        .page-number.bottom-center { bottom: 1.5rem; left: 50%; transform: translateX(-50%); }
+        .page-number.bottom-right { bottom: 1.5rem; right: 5rem; }
         .page-footer { position: absolute; bottom: 1.5rem; left: 0; right: 0; text-align: center; font-size: 10px; color: #94a3b8; font-weight: bold; text-transform: uppercase; }
       </style>
     </head>
     <body>
+      <!-- FIRST PAGE BRANDING HEADER (Matches FormattingEngine.tsx exactly) -->
       <div class="header-sheet">
-        <div class="header-row">
-          <div style="display: flex; align-items: center; gap: 10px;">
-             ${journalLogoBase64 ? `<img src="${journalLogoBase64}" class="logo-img" />` : ''}
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+             ${journalLogoBase64 ? `<img src="${journalLogoBase64}" style="height: 50px; width: auto;" />` : ''}
              <div>
-               <p class="journal-name">Genius Multidisciplinary</p>
-               <p class="institution-text">INTERNATIONAL JOURNAL</p>
+               <p style="color: #800000; font-weight: 900; font-size: 9px; uppercase; margin: 0;">Genius Multidisciplinary</p>
+               <p style="color: #0f172a; font-weight: 900; font-size: 12px; uppercase; margin: 0;">INTERNATIONAL JOURNAL</p>
              </div>
           </div>
           <div style="text-align: center; flex: 1;">
-            <div class="meta-info">ISSN: ${branding.issn} | VOL ${branding.volume}, ISS ${branding.issue} | ${branding.date}</div>
-            <div class="doi-text">${branding.doi}</div>
+            <div style="font-size: 10px; font-weight: 700; color: #64748b; uppercase; letter-spacing: 0.05em;">
+              ISSN: ${branding.issn} | VOL ${branding.volume}, ISS ${branding.issue} | ${branding.date}
+            </div>
+            <div style="font-size: 9px; color: #4f46e5; font-family: monospace; font-weight: 700; margin-top: 4px;">${branding.doi}</div>
           </div>
-          <div style="display: flex; align-items: center; gap: 10px; text-align: right;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; text-align: right;">
              <div>
-                <p class="institution-text">Nasarawa State University Keffi</p>
-                <p style="color: #94a3b8; font-size: 8px; text-transform: uppercase; font-weight: 700;">Global Partner</p>
+                <p style="color: #0f172a; font-weight: 900; font-size: 9px; uppercase; margin: 0;">Nasarawa State University Keffi</p>
+                <p style="color: #94a3b8; font-weight: 700; font-size: 8px; uppercase; margin: 0;">Global Partner</p>
              </div>
-             ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" class="logo-img" />` : ''}
+             ${nsukLogoBase64 ? `<img src="${nsukLogoBase64}" style="height: 50px; width: auto;" />` : ''}
           </div>
         </div>
       </div>
