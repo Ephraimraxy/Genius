@@ -1051,148 +1051,73 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
   const journalLogoBase64 = getBase64Image('journal-logo.png');
   const nsukLogoBase64 = getBase64Image('Nasarawa-State-University.jpg');
 
+  // Content Scrubbing Layer: Eliminates Ghost Headers & Layout Bloat
+  const scrubbedContent = paper.formatted_content
+    .replace(/<div class="header-sheet"[\s\S]*?<\/div>/g, '') // Strip legacy headers entirely
+    .replace(/<div class="paper-sheet"[^>]*>/g, '')           // Strip sheet wrappers
+    .replace(/<\/div>\s*<div class="paper-sheet"[^>]*>/g, '') // Clean transitions
+    .replace(/page-break-after:\s*always/gi, 'page-break-after: auto') // Disable rigid breaks
+    .replace(/```html|```/g, '');                            // Strip code block wrappers
+
   const fullHtml = `
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="UTF-8">
       <style>
-        @page { margin: 15mm 12mm; }
-        body { font-family: serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 10.5pt; color: #1e293b; }
+        @page { 
+          margin: 35mm 15mm 25mm 15mm; 
+          size: A4;
+        }
+        body { 
+          font-family: serif; 
+          background: white; 
+          margin: 0; 
+          padding: 0; 
+          -webkit-print-color-adjust: exact; 
+          print-color-adjust: exact; 
+          font-size: 10.5pt; 
+          color: #1e293b; 
+        }
         * { box-sizing: border-box; }
         
         .academic-content {
           font-family: serif;
           font-size: 10.5pt;
-          line-height: 1.3;
+          line-height: 1.4;
           text-align: justify;
           color: #1e293b;
+          padding: 0 5mm;
         }
         .academic-content p {
           text-align: justify;
-          margin-bottom: 0.5em;
-           orphans: 3;
-           widows: 3;
+          margin-bottom: 0.8em;
+          orphans: 3;
+          widows: 3;
         }
         .academic-content h1, .academic-content h2, .academic-content h3 {
           color: #0f172a;
-          margin-top: 1.1em;
-          margin-bottom: 0.3em;
+          margin-top: 1.2em;
+          margin-bottom: 0.4em;
           font-weight: 600 !important;
           line-height: 1.2;
           text-align: left !important;
+          page-break-after: avoid;
         }
-        .academic-content h1 { font-size: 1.5em; margin-bottom: 0.8em; }
-        .academic-content h2 { font-size: 1.25em; }
-        .academic-content h3 { font-size: 1.1em; }
-        .academic-content p {
-          text-align: justify;
-          margin-bottom: 0.4em;
-           orphans: 3;
-           widows: 3;
-        }
-        .academic-content table {
-          width: 100%;
-          border-collapse: collapse;
-          margin: 1rem 0;
-          font-family: sans-serif;
-          font-size: 0.75rem;
-          table-layout: fixed;
-        }
-        .academic-content th, .academic-content td {
-          border: 1px solid #cbd5e1;
-          padding: 0.5rem;
-          text-align: left;
-          word-break: break-word;
-        }
-        .academic-content th {
-          background-color: #f8fafc;
-          font-weight: bold;
-        }
-        .academic-content .academic-figure {
-          margin: 2.5rem 0;
-          text-align: center;
-          padding: 1rem;
-          background: #f8fafc;
-          border-radius: 0.5rem;
-          border: 1px dashed #cbd5e1;
-        }
-        .paper-sheet {
-          background: white;
-          width: 100%;
-          padding: 1.5rem 2.5rem;
-          position: relative;
-          page-break-after: always;
-        }
-        .paper-sheet:last-child {
-          page-break-after: auto;
-        }
-        .header-sheet {
-          background: white;
-          width: 100%;
-          padding: 1rem 2.5rem 0.5rem;
-          border-bottom: 2px solid #800000;
-          position: relative;
-        }
-        .paper-sheet:first-of-type {
-          margin-top: 0;
-          border-top: 1px dashed #f1f5f9;
-        }
-        .sheet-header-full {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-          margin-bottom: 2.5rem;
-          padding-bottom: 1rem;
-          border-bottom: 2px solid #800000;
-        }
-        .header-top-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 1rem;
-        }
-        .header-logo-left, .header-logo-right {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-        }
-        .header-logo-left img, .header-logo-right img {
-          height: 32px;
-          min-width: 32px;
-          width: auto;
-          object-fit: contain;
-        }
-        .header-title-stack, .partner-stack {
-          display: flex;
-          flex-direction: column;
-          line-height: 1.1;
-        }
-        .journal-red-small { color: #800000; font-weight: 900; font-size: 6px; text-transform: uppercase; }
-        .journal-red-med { color: #800000; font-weight: 900; font-size: 8px; text-transform: uppercase; }
-        .journal-black-large { color: #0f172a; font-weight: 900; font-size: 10px; text-transform: uppercase; }
-        .journal-gray-type { color: #64748b; font-weight: 700; font-size: 8px; text-transform: uppercase; letter-spacing: 0.15em; }
-        .header-meta-center {
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          flex: 1;
-        }
-        .meta-row { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-        .meta-doi { font-size: 7px; font-weight: 700; color: #4f46e5; font-family: monospace; }
-        .partner-name { color: #0f172a; font-weight: 900; font-size: 8px; text-transform: uppercase; text-align: right; }
-        .partner-status { color: #94a3b8; font-weight: 700; font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
-        .page-number { position: absolute; font-size: 10px; font-weight: bold; color: #94a3b8; z-index: 100; }
-        .page-number.top-right { top: 3rem; right: 5rem; }
-        .page-number.bottom-center { bottom: 1.5rem; left: 50%; transform: translateX(-50%); }
-        .page-number.bottom-right { bottom: 1.5rem; right: 5rem; }
-        .page-footer { position: absolute; bottom: 1.5rem; left: 0; right: 0; text-align: center; font-size: 10px; color: #94a3b8; font-weight: bold; text-transform: uppercase; }
+        .academic-content h1 { font-size: 1.6em; margin-bottom: 0.8em; border-bottom: 1.5px solid #f1f5f9; padding-bottom: 0.5em; }
+        .academic-content h2 { font-size: 1.3em; border-left: 3.5px solid #800000; padding-left: 12px; }
+        .academic-content h3 { font-size: 1.15em; font-style: italic; color: #475569; }
+        
+        table { width: 100%; border-collapse: collapse; margin: 1.5em 0; }
+        th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
+        th { background: #f8fafc; font-weight: bold; color: #475569; }
+        
+        img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; border-radius: 4px; }
       </style>
     </head>
     <body>
       <div class="academic-content">
-        ${paper.formatted_content}
+        ${scrubbedContent}
       </div>
     </body>
     </html>
