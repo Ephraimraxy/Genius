@@ -1057,7 +1057,16 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
     .replace(/<div class="paper-sheet"[^>]*>/g, '')           // Strip sheet wrappers
     .replace(/<\/div>\s*<div class="paper-sheet"[^>]*>/g, '') // Clean transitions
     .replace(/page-break-after:\s*always/gi, 'page-break-after: auto') // Disable rigid breaks
-    .replace(/```html|```/g, '');                            // Strip code block wrappers
+    .replace(/```html|```/g, '')                            // Strip code block wrappers
+    // GHOST REMOVAL: Stripping redundant journal metadata and broken AI-injected logos
+    .replace(/<p[^>]*>Genius Multidisciplinary[\s\S]*?<\/p>/gi, '')
+    .replace(/<div[^>]*>ISSN:[\s\S]*?<\/div>/gi, '')
+    .replace(/ISSN: \d{4}-\d{4}/gi, '')
+    .replace(/10\.GMIJ\/PENDING/gi, '')
+    .replace(/Global Partner/gi, '')
+    .replace(/<img[^>]*alt="(Genius|NSUK)"[^>]*>/gi, '')
+    .replace(/<img[^>]*src="[^"]*journal-logo.png"[^>]*>/gi, '')
+    .replace(/<img[^>]*src="[^"]*Nasarawa-State-University.jpg"[^>]*>/gi, '');
 
   const fullHtml = `
     <!DOCTYPE html>
@@ -3060,11 +3069,15 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>.
           3. DEDUPLICATION: The Title, Authors, and Abstract provided above might ALSO exist inside the Source Content. You MUST merge them so they only appear ONCE at the very beginning of the document. Do not duplicate the title, authors, or abstract. If there is a short and long abstract, use the detailed one.
           4. ZERO OMISSION OF MAIN TEXT: You MUST preserve 100% of the actual manuscript body text, references, and acknowledgements. Do NOT truncate or summarize the core content.
-          5. NO PLACEHOLDERS: Do NOT generate "[Figure]", "[Image]", or any missing media placeholders. If an image is missing, simply omit the placeholder entirely.
-          6. NO RECURRING METADATA: Do NOT inject journal metadata, ISSNs, or branding blocks into the pages. Only format the raw academic content. 
-          7. STRUCTURE: Use <div class="paper-sheet"> to simulate real pages. Within each sheet, use standard HTML tags (<h1>, <h2>, <p>).
-          8. COPYEDITING & CLEANUP: You MUST rigorously fix all spelling and grammatical errors, remove completely all unwanted symbols/characters, eliminate weird text indentations, and strip out unnecessary extra spaces. The text must read flawlessly as a professionally copyedited scientific manuscript.
-          9. FONTS: Use standard serif fonts for the main body.`
+          5. NO PLACEHOLDERS: Do NOT generate "[Figure]", "[Image]", or any missing media placeholders.
+          6. NO RECURRING METADATA: Do NOT inject journal metadata, ISSNs, slogans, or branding blocks into the manuscript. Only format the raw academic content. 
+          7. START AT TITLE: Your output must begin directly with the manuscript title (<h1>). Do NOT include any logos or journal identifiers at the top. 
+          8. STRUCTURE: Use <div class="paper-sheet"> to simulate real pages. Within each sheet, use standard HTML tags (<h1>, <h2>, <p>).
+          9. ZERO OMISSION: You MUST preserve 100% of the actual manuscript body text.
+          10. NO BROKEN MEDIA: If an image or logo is referenced in the source but the path looks absolute or relative to a local system, omit it entirely. Do NOT generate <img> tags for logos.
+          11. COPYEDITING: Fix spelling and grammatical errors, remove completely all unwanted symbols/characters, eliminate weird text indentations, and strip out unnecessary extra spaces. The text must read flawlessly as a professionally copyedited scientific manuscript.
+          12. ENFORCEMENT: If you see "Genius Multidisciplinary International Journal" or "ISSN" at the top of the source, STRIP IT.
+          13. FONTS: Use standard serif fonts for the main body.`
         },
         { role: 'user', content: `Manuscript Title (TOPIC): ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
       ]
