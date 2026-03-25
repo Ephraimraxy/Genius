@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight, Download, BookOpen, ShieldCheck, List, Hash } from 'lucide-react'; // UI Icons
+import { Settings, FileText, Check, AlertCircle, FileCheck, RefreshCw, Layout, Loader2, ArrowRight, Download, BookOpen, ShieldCheck, List, Hash, Mail } from 'lucide-react'; // UI Icons
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
@@ -23,6 +23,7 @@ export default function FormattingEngine({
   const [formattedHtml, setFormattedHtml] = useState<string | null>(null);
   const [branding, setBranding] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isEmailing, setIsEmailing] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -125,6 +126,25 @@ export default function FormattingEngine({
       setError(err.message);
     } finally {
       setIsFormatting(false);
+    }
+  };
+
+  const handleEmailPDF = async () => {
+    if (!activePaperId) return;
+    setIsEmailing(true);
+    try {
+      const res = await fetch(`/api/format/${activePaperId}/email`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!res.ok) throw new Error('Email delivery failed');
+      addToast("Manuscript sent to your portal email address.", "success");
+    } catch (err: any) {
+      addToast(err.message, "error");
+    } finally {
+      setIsEmailing(false);
     }
   };
 
@@ -446,6 +466,30 @@ export default function FormattingEngine({
               {formattedHtml && (
                 <div className="mt-8 flex flex-col gap-3">
                   <div className="pt-6 border-t border-slate-100">
+                    <div className="grid grid-cols-2 gap-3">
+                      <button 
+                        onClick={handleEmailPDF}
+                        disabled={isEmailing}
+                        className="group bg-slate-100 hover:bg-slate-200 text-slate-700 py-5 rounded-2xl font-black tracking-widest uppercase text-[10px] flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                      >
+                        {isEmailing ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
+                        Email PDF
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = `/api/format/${activePaperId}/pdf`;
+                          link.download = `Formatted_Manuscript.pdf`;
+                          link.click();
+                        }}
+                        className="group bg-slate-100 hover:bg-slate-200 text-slate-700 py-5 rounded-2xl font-black tracking-widest uppercase text-[10px] flex items-center justify-center gap-2 transition-all"
+                      >
+                        <Download size={16} />
+                        Download
+                      </button>
+                    </div>
+
                     <button 
                       onClick={handleSendToNext}
                       disabled={isSending}

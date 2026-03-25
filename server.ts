@@ -2918,6 +2918,53 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.post('/api/format/:id/email', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const paperResult = await pool.query('SELECT title, user_id FROM papers WHERE id = $1', [id]);
+    const paper = paperResult.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    if (paper.user_id !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const pdfBuffer = await generateHighFidelityPaperPDF(id);
+    
+    await mailTransporter.sendMail({
+      from: `"Genius Publishing" <${process.env.EMAIL_USER}>`,
+      to: req.user.email,
+      subject: `[FINALIZED] ${paper.title}`,
+      text: `Your manuscript is ready. Please find the finalized PDF attached.`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+          <div style="background: #1e1b4b; padding: 30px; border-radius: 16px; text-align: center; color: white;">
+            <h1 style="margin: 0; font-size: 20px;">Formatted Manuscript Ready</h1>
+            <p style="margin-top: 5px; font-size: 14px; opacity: 0.8;">Genius Format Architect</p>
+          </div>
+          <div style="padding: 30px; border: 1px solid #e2e8f0; border-radius: 0 0 16px 16px;">
+            <p>Hello,</p>
+            <p>Your manuscript <strong>"${paper.title}"</strong> has been successfully formatted and is attached as a high-fidelity PDF.</p>
+            <p>This version matches the exact style and layout you approved in the Format Architect.</p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+            <p style="font-size: 11px; color: #94a3b8; text-align: center;">Genius Publishing Engine - Autonomous Academic Delivery</p>
+          </div>
+        </div>
+      `,
+      attachments: [
+        {
+          filename: `${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}_Formatted.pdf`,
+          content: pdfBuffer
+        }
+      ]
+    });
+
+    res.json({ success: true, message: `Manuscript successfully sent to ${req.user.email}` });
+  } catch (error: any) {
+    console.error('Email PDF error:', error);
+    res.status(500).json({ error: error.message || 'Failed to send email' });
+  }
+});
+
 function getStyleGuidelines(style: string, branding: any) {
   const metaHeader = `
     <div class="sheet-header-full">
