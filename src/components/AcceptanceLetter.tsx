@@ -7,9 +7,16 @@ interface AcceptanceLetterProps {
   authors: string;
   recipientName?: string;
   date?: string;
+  secretaryName?: string;
+  signatureImage?: string;
 }
 
-export default function AcceptanceLetter({ manuscriptId, title, authors, recipientName, date = new Date().toLocaleDateString('en-GB') }: AcceptanceLetterProps) {
+export default function AcceptanceLetter({ 
+  manuscriptId, title, authors, recipientName, 
+  date = new Date().toLocaleDateString('en-GB'),
+  secretaryName = 'Dr. Danjuma Namo',
+  signatureImage
+}: AcceptanceLetterProps) {
   // Smart author formatting: handle JSON arrays, stringified arrays, or plain text
   const formatAuthors = (raw: string): string => {
     if (!raw) return 'Researcher';
@@ -105,14 +112,18 @@ export default function AcceptanceLetter({ manuscriptId, title, authors, recipie
       <div className="mt-12 pt-8 border-t border-slate-100 flex justify-between items-end">
         <div>
           <p className="font-bold text-slate-900">Best regards,</p>
-          <div className="my-4 h-16 w-38 overflow-hidden opacity-80">
+          <div className="my-4 h-16 w-38 overflow-hidden opacity-80 flex items-center">
             {/* Signature Area */}
-            <svg width="150" height="60" viewBox="0 0 150 60" className="text-blue-600">
-               <path d="M10,40 Q30,10 50,40 T90,40 T130,20" fill="none" stroke="currentColor" strokeWidth="2" />
-               <path d="M20,30 C40,50 80,10 100,30" fill="none" stroke="currentColor" strokeWidth="1" />
-            </svg>
+            {signatureImage ? (
+                <img src={signatureImage} alt="Signature" className="max-h-full max-w-full object-contain mix-blend-multiply" />
+            ) : (
+                <svg width="150" height="60" viewBox="0 0 150 60" className="text-blue-600">
+                    <path d="M10,40 Q30,10 50,40 T90,40 T130,20" fill="none" stroke="currentColor" strokeWidth="2" />
+                    <path d="M20,30 C40,50 80,10 100,30" fill="none" stroke="currentColor" strokeWidth="1" />
+                </svg>
+            )}
           </div>
-          <p className="font-black text-slate-900 tracking-tight">Dr. Danjuma Namo</p>
+          <p className="font-black text-slate-900 tracking-tight">{secretaryName}</p>
           <p className="text-xs font-bold text-[#800000]">Secretary (GMIJP)</p>
         </div>
 

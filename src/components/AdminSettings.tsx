@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Settings, Banknote, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity, CreditCard, BookOpen, Hash, Layers } from 'lucide-react';
+import { Settings, Banknote, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity, CreditCard, BookOpen, Hash, Layers, Trash2 } from 'lucide-react';
 
 export default function AdminSettings() {
   const [pubPrice, setPubPrice] = useState<number>(5000);
@@ -23,8 +23,10 @@ export default function AdminSettings() {
   const [origJournal, setOrigJournal] = useState({ 
     volume: '1', issue: '1', issn: '2971-7760',
     maxManuscripts: '10', maxIssues: '3', maxPages: '20',
-    signature: ''
+    signature: '',
+    secretary: 'Dr. Danjuma Namo'
   });
+  const [journalSecretary, setJournalSecretary] = useState<string>('Dr. Danjuma Namo');
   const [savingJournal, setSavingJournal] = useState(false);
   const [savedJournal, setSavedJournal] = useState(false);
 
@@ -63,8 +65,10 @@ export default function AdminSettings() {
           maxManuscripts: data.max_manuscripts_per_issue.toString(),
           maxIssues: data.max_issues_per_volume.toString(),
           maxPages: data.max_pages_per_manuscript.toString(),
-          signature: data.journal_signature || ''
+          signature: data.journal_signature || '',
+          secretary: data.journal_secretary || 'Dr. Danjuma Namo'
         });
+        setJournalSecretary(data.journal_secretary || 'Dr. Danjuma Namo');
       })
       .catch(console.error);
 
@@ -131,7 +135,8 @@ export default function AdminSettings() {
           max_manuscripts_per_issue: parseInt(maxManuscripts),
           max_issues_per_volume: parseInt(maxIssues),
           max_pages_per_manuscript: parseInt(maxPages),
-          journal_signature: journalSignature
+          journal_signature: journalSignature,
+          journal_secretary: journalSecretary
         })
       });
       if (res.ok) {
@@ -142,7 +147,8 @@ export default function AdminSettings() {
           maxManuscripts,
           maxIssues,
           maxPages,
-          signature: journalSignature
+          signature: journalSignature,
+          secretary: journalSecretary
         });
         setSavedJournal(true);
         setTimeout(() => setSavedJournal(false), 3000);
@@ -160,7 +166,8 @@ export default function AdminSettings() {
     maxManuscripts !== origJournal.maxManuscripts ||
     maxIssues !== origJournal.maxIssues ||
     maxPages !== origJournal.maxPages ||
-    journalSignature !== origJournal.signature;
+    journalSignature !== origJournal.signature ||
+    journalSecretary !== origJournal.secretary;
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
@@ -276,7 +283,7 @@ export default function AdminSettings() {
                 </label>
                 <div className="flex flex-col md:flex-row items-start gap-8">
                   <div className="flex-1 w-full">
-                    <div className="relative group cursor-pointer">
+                    <div className="relative group cursor-pointer mb-6">
                       <input
                         type="file"
                         accept="image/*"
@@ -289,6 +296,18 @@ export default function AdminSettings() {
                         <p className="text-[10px] text-slate-400 font-medium">PNG or JPG (Recommended: 300x120 transparent)</p>
                       </div>
                     </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Current Secretary Name</label>
+                      <input 
+                        type="text"
+                        value={journalSecretary}
+                        onChange={(e) => setJournalSecretary(e.target.value)}
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all"
+                        placeholder="Dr. Danjuma Namo"
+                      />
+                      <p className="text-[9px] text-slate-400 mt-1 italic">This name appears below the signature on acceptance letters.</p>
+                    </div>
                   </div>
                   
                   <div className="w-full md:w-64">
@@ -298,10 +317,15 @@ export default function AdminSettings() {
                         <div className="relative group w-full h-full flex items-center justify-center">
                           <img src={journalSignature} alt="Signature" className="max-w-full max-h-full object-contain mix-blend-multiply" />
                           <button 
-                            onClick={() => setJournalSignature('')}
-                            className="absolute top-1 right-1 p-1.5 bg-white/90 text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-sm border border-slate-100"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setJournalSignature('');
+                            }}
+                            className="absolute top-1 right-1 p-1.5 bg-white shadow-xl text-red-500 rounded-lg hover:bg-red-50 transition-all border border-slate-100 z-30"
+                            title="Delete Signature"
                           >
-                            <AlertCircle size={14} />
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       ) : (

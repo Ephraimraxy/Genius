@@ -3422,36 +3422,52 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   // Sign-off
   page.drawLine({ start: { x: margin, y: y + 8 }, end: { x: width - margin, y: y + 8 }, thickness: 0.5, color: rgb(0.9, 0.9, 0.9) });
   page.drawText('Best regards,', { x: margin, y, size: 10, font, color: black });
-  y -= 40; // Space for signature
-
-  // Signature Implementation
+  
+  // Dynamic settings for Signature & Secretary
+  let sigImgBase64 = '';
+  let secretaryNameSetting = 'Dr. Danjuma Namo';
   try {
-    const sigRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_signature']);
-    const sigBase64 = sigRes.rows[0]?.value;
-    if (sigBase64 && sigBase64.startsWith('data:image')) {
-      const base64Data = sigBase64.split(',')[1];
+      const settingsRes = await pool.query('SELECT key, value FROM settings WHERE key IN ($1, $2)', ['journal_signature', 'journal_secretary']);
+      settingsRes.rows.forEach(r => {
+          if (r.key === 'journal_signature') sigImgBase64 = r.value;
+          if (r.key === 'journal_secretary') secretaryNameSetting = r.value;
+      });
+  } catch (err) {
+      console.error('Settings fetch error for PDF:', err);
+  }
+
+  y -= 45; // Base spacing for signature
+  
+  if (sigImgBase64 && sigImgBase64.startsWith('data:image')) {
+    try {
+      const base64Data = sigImgBase64.split(',')[1];
       const sigImgBytes = Buffer.from(base64Data, 'base64');
       let sigImg;
-      if (sigBase64.includes('image/png')) {
+      if (sigImgBase64.includes('image/png')) {
         sigImg = await pdfDoc.embedPng(sigImgBytes);
       } else {
         sigImg = await pdfDoc.embedJpg(sigImgBytes);
       }
       
-      const sigDims = sigImg.scaleToFit(150, 60);
+      const sigDims = sigImg.scaleToFit(140, 50);
       page.drawImage(sigImg, {
         x: margin,
-        y: y + 10, // Adjusted to sit between lines
+        y: y, // Position it correctly
         width: sigDims.width,
         height: sigDims.height,
       });
-      y -= (sigDims.height - 20); // Adjust Y based on signature height if needed, but keeping it flexible
+      y -= 10; // Extra breathing room after signature image
+    } catch (err) {
+      console.error('Failed to embed signature image:', err);
+      // Fallback: draw some space if signature fails
+      y -= 20;
     }
-  } catch (err) {
-    console.error('Failed to embed signature image:', err);
+  } else {
+    // Spacer if no signature is set
+    y -= 10;
   }
 
-  page.drawText('Dr. Danjuma Namo', { x: margin, y, size: 11, font: fontBold, color: black });
+  page.drawText(secretaryNameSetting, { x: margin, y, size: 11, font: fontBold, color: black });
   y -= 14;
   page.drawText('Secretary (GMIJP)', { x: margin, y, size: 9, font: fontBold, color: maroon });
 
@@ -4673,22 +4689,26 @@ app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res) =
 });
 
 // Journal Settings (Volume, Issue, ISSN)
+// Journal Settings (Volume, Issue, ISSN, Signature, Secretary)
 app.get('/api/admin/config/journal', authenticateToken, async (req: any, res) => {
   try {
-    const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
-    const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
-    const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
-    const maxManuResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_manuscripts_per_issue']);
-    const maxIssResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_issues_per_volume']);
-    const maxPageResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['max_pages_per_manuscript']);
+    const keys = ['current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue', 'max_issues_per_volume', 'max_pages_per_manuscript', 'journal_signature', 'journal_secretary'];
+    const results = await pool.query('SELECT key, value FROM settings WHERE key = ANY($1)', [keys]);
     
+    const settings: any = {};
+    results.rows.forEach(row => {
+        settings[row.key] = row.value;
+    });
+
     res.json({
-      current_volume: volResult.rows[0]?.value || '1',
-      current_issue: issueResult.rows[0]?.value || '1',
-      journal_issn: issnResult.rows[0]?.value || '2971-7760',
-      max_manuscripts_per_issue: parseInt(maxManuResult.rows[0]?.value || '10'),
-      max_issues_per_volume: parseInt(maxIssResult.rows[0]?.value || '3'),
-      max_pages_per_manuscript: parseInt(maxPageResult.rows[0]?.value || '20')
+      current_volume: settings.current_volume || '1',
+      current_issue: settings.current_issue || '1',
+      journal_issn: settings.journal_issn || '2971-7760',
+      max_manuscripts_per_issue: parseInt(settings.max_manuscripts_per_issue || '10'),
+      max_issues_per_volume: parseInt(settings.max_issues_per_volume || '3'),
+      max_pages_per_manuscript: parseInt(settings.max_pages_per_manuscript || '20'),
+      journal_signature: settings.journal_signature || '',
+      journal_secretary: settings.journal_secretary || 'Dr. Danjuma Namo'
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -4699,17 +4719,21 @@ app.post('/api/admin/config/journal', authenticateToken, async (req: any, res) =
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
   const { 
     current_volume, current_issue, journal_issn, 
-    max_manuscripts_per_issue, max_issues_per_volume, max_pages_per_manuscript 
+    max_manuscripts_per_issue, max_issues_per_volume, max_pages_per_manuscript,
+    journal_signature, journal_secretary
   } = req.body;
   try {
-    if (current_volume !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_volume', current_volume.toString()]);
-    if (current_issue !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_issue', current_issue.toString()]);
-    if (journal_issn !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_issn', journal_issn.toString()]);
+    const queries = [];
+    if (current_volume !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_volume', current_volume.toString()]));
+    if (current_issue !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_issue', current_issue.toString()]));
+    if (journal_issn !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_issn', journal_issn.toString()]));
+    if (max_manuscripts_per_issue !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_manuscripts_per_issue', max_manuscripts_per_issue.toString()]));
+    if (max_issues_per_volume !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_issues_per_volume', max_issues_per_volume.toString()]));
+    if (max_pages_per_manuscript !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_pages_per_manuscript', max_pages_per_manuscript.toString()]));
+    if (journal_signature !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_signature', journal_signature]));
+    if (journal_secretary !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_secretary', journal_secretary]));
     
-    if (max_manuscripts_per_issue !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_manuscripts_per_issue', max_manuscripts_per_issue.toString()]);
-    if (max_issues_per_volume !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_issues_per_volume', max_issues_per_volume.toString()]);
-    if (max_pages_per_manuscript !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_pages_per_manuscript', max_pages_per_manuscript.toString()]);
-    
+    await Promise.all(queries);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -5779,40 +5803,7 @@ app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res: a
   }
 });
 
-// Super Admin: Journal Registry Configuration
-app.get('/api/admin/config/journal', authenticateToken, async (req: any, res: any) => {
-  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
-  try {
-    const vol = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
-    const issue = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
-    const issn = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
-    const signature = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_signature']);
-    res.json({
-      current_volume: vol.rows[0]?.value || '1',
-      current_issue: issue.rows[0]?.value || '1',
-      journal_issn: issn.rows[0]?.value || '2971-7760',
-      journal_signature: signature.rows[0]?.value || ''
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch journal settings' });
-  }
-});
-
-app.post('/api/admin/config/journal', authenticateToken, async (req: any, res: any) => {
-  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
-  try {
-    const { current_volume, current_issue, journal_issn, journal_signature } = req.body;
-    await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_volume', current_volume.toString()]);
-    await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['current_issue', current_issue.toString()]);
-    await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_issn', journal_issn.toString()]);
-    if (journal_signature !== undefined) {
-      await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_signature', journal_signature]);
-    }
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update journal settings' });
-  }
-});
+// END OF FILE SCRUBBED: Removed redundant config endpoints.
 
 // SEO: Public Article Page with JSON-LD
 app.get('/article/:prefix/:suffix', async (req, res) => {
