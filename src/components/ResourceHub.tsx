@@ -48,11 +48,25 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
 
     const [categories, setCategories] = useState<{id: number, name: string, is_paid_entry: boolean, entry_fee: number}[]>([]);
     const [isUpdatingCategory, setIsUpdatingCategory] = useState<number | null>(null);
+    const [workspaceId, setWorkspaceId] = useState<string>('');
 
     useEffect(() => {
         fetchResources();
         fetchCategories();
+        fetchTenantInfo();
     }, []);
+
+    const fetchTenantInfo = async () => {
+        try {
+            const res = await fetch('/api/tenant/info', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.workspace_id) setWorkspaceId(data.workspace_id);
+        } catch (err) {
+            console.error('Failed to load tenant info');
+        }
+    };
 
     const fetchCategories = async () => {
         try {
@@ -243,7 +257,15 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                     <h2 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
                         Genius Resource Hub <Database className="text-blue-600" size={28} />
                     </h2>
-                    <p className="text-slate-500 font-medium">Global storage for your rosters and lecture notes. Upload once, use everywhere.</p>
+                    <div className="flex items-center gap-2 mt-1">
+                        <p className="text-slate-500 font-medium">Global storage for your rosters and lecture notes. Upload once, use everywhere.</p>
+                        {workspaceId && (
+                            <div className="ml-4 px-3 py-1 bg-blue-600 text-white rounded-lg flex items-center gap-2 shadow-lg shadow-blue-200 animate-pulse">
+                                <ShieldCheck size={14} />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Workspace ID: {workspaceId}</span>
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <button 
                     onClick={fetchResources}

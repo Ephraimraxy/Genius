@@ -443,6 +443,24 @@ async function initDB() {
   try { await pool.query('ALTER TABLE transactions ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN metadata JSONB DEFAULT \'{}\''); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN paper_id INTEGER REFERENCES papers(id)'); } catch (e) { }
+  try { await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS workspace_id VARCHAR(4) UNIQUE'); } catch (e) { }
+  
+  // Migration for existing tenants
+  try {
+    const tenantsRes = await pool.query('SELECT id FROM tenants WHERE workspace_id IS NULL');
+    for (const t of tenantsRes.rows) {
+        let workspace_id = '';
+        while (true) {
+            const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            const randomLetters = letters[Math.floor(Math.random() * 26)] + letters[Math.floor(Math.random() * 26)];
+            const digits = Math.floor(Math.random() * 90 + 10);
+            workspace_id = randomLetters + digits;
+            const check = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspace_id]);
+            if (check.rows.length === 0) break;
+        }
+        await pool.query('UPDATE tenants SET workspace_id = $1 WHERE id = $2', [workspace_id, t.id]);
+    }
+  } catch (e) { console.error('Migration error:', e); }
   
   try { await pool.query('ALTER TABLE papers ADD COLUMN volume TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN issue TEXT'); } catch (e) { }
@@ -653,10 +671,20 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
 
     // existingTenant check removed to allow duplicate names as per user request
 
-    // 1. Create Tenant
+    // 1. Create Tenant (plus generate unique 4-char Workspace ID)
+    let workspace_id = '';
+    while (true) {
+        const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const randomLetters = letters[Math.floor(Math.random() * 26)] + letters[Math.floor(Math.random() * 26)];
+        const digits = Math.floor(Math.random() * 90 + 10); // 10-99
+        workspace_id = randomLetters + digits;
+        const check = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspace_id]);
+        if (check.rows.length === 0) break;
+    }
+
     const tenantResult = await pool.query(
-      'INSERT INTO tenants (name, owner_name, owner_email) VALUES ($1, $2, $3) RETURNING id',
-      [tenantName, name, email]
+      'INSERT INTO tenants (name, owner_name, owner_email, workspace_id) VALUES ($1, $2, $3, $4) RETURNING id',
+      [tenantName, name, email, workspace_id]
     );
     const tenantId = tenantResult.rows[0].id;
 
@@ -675,11 +703,26 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
   }
 });
 
+// Public: Get all active academic workspaces (lecturers)
+app.get('/api/auth/workspaces', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT id, name, workspace_id FROM tenants ORDER BY name ASC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch workspaces' });
+    }
+});
+
 // Student Login (Matric Number + PIN + Optional Tenant ID/Context)
 app.post('/api/auth/student/login', authLimiter, async (req, res) => {
   try {
-    const { matricNumber, pin, tenantId } = req.body;
-    if (!matricNumber || !pin) return res.status(400).json({ error: 'Matric number and 4-digit PIN required' });
+    const { matricNumber, pin, workspaceId } = req.body;
+    if (!matricNumber || !pin || !workspaceId) return res.status(400).json({ error: 'Matric number, Workspace ID, and 4-digit PIN required' });
+
+    // 0. Resolve tenantId from workspaceId
+    const tResult = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspaceId.toUpperCase()]);
+    if (tResult.rows.length === 0) return res.status(401).json({ error: 'Invalid Workspace ID' });
+    const tenantId = tResult.rows[0].id;
 
     // 1. Find user (Student)
     let query = 'SELECT * FROM users WHERE matric_number = $1 AND role = \'student\'';
@@ -690,7 +733,7 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     }
 
     const result = await pool.query(query, params);
-    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid matric number or PIN' });
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Access Denied: You are not registered in this lecturer\'s workspace.' });
     
     const user = result.rows[0];
 
@@ -743,11 +786,16 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
 // Student: Recover PIN
 app.post('/api/auth/student/recover-pin', async (req, res) => {
     try {
-        const { matricNumber } = req.body;
-        if (!matricNumber) return res.status(400).json({ error: 'Matric number required' });
+        const { matricNumber, workspaceId } = req.body;
+        if (!matricNumber || !workspaceId) return res.status(400).json({ error: 'Matric number and Workspace ID required' });
 
-        const result = await pool.query('SELECT id, name, email, tenant_id FROM users WHERE matric_number = $1 AND role = \'student\'', [matricNumber]);
-        if (result.rows.length === 0) return res.status(404).json({ error: 'No student found with this matric number' });
+        // Resolve tenantId
+        const tResult = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspaceId.toUpperCase()]);
+        if (tResult.rows.length === 0) return res.status(404).json({ error: 'Invalid Workspace ID' });
+        const tenantId = tResult.rows[0].id;
+
+        const result = await pool.query('SELECT id, name, email, tenant_id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = \'student\'', [matricNumber, tenantId]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'No student found with these credentials in this workspace' });
 
         const priceRes = await pool.query("SELECT value FROM settings WHERE key = 'pin_recovery_price'");
         const price = parseInt(priceRes.rows[0]?.value || '1000');
@@ -5212,6 +5260,17 @@ app.put('/api/videos/:guid/settings', authenticateToken, checkSubscription, asyn
 
 // ─── MULTI-TENANT ACADEMIC ENDPOINTS ────────────────────────────────
 // ─── RESOURCE HUB ENDPOINTS ─────────────────────────────────────────
+// Get basic tenant info for current researcher/lecturer
+app.get('/api/tenant/info', authenticateToken, async (req: any, res) => {
+    try {
+        const result = await pool.query('SELECT id, name, workspace_id FROM tenants WHERE id = $1', [req.tenant_id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Tenant not found' });
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch tenant info' });
+    }
+});
+
 app.get('/api/resources', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
@@ -5499,6 +5558,10 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     }
 
     // 4. Add to roster
+    const tenantRes = await pool.query('SELECT workspace_id, name FROM tenants WHERE id = $1', [req.tenant_id]);
+    const workspaceId = tenantRes.rows[0]?.workspace_id || 'N/A';
+    const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
+
     await pool.query(
       'INSERT INTO students_roster (tenant_id, matric_number, name, email, course, setup_token, token_expires, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [req.tenant_id, matricNumber, name, email, course || '', setupToken, tokenExpires, category_id]
@@ -5523,8 +5586,9 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
               <a href="${setupLink}" style="background: #1a237e; color: white; padding: 15px 35px; border-radius: 12px; text-decoration: none; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(26, 35, 126, 0.3);">Set Up Secure PIN</a>
             </div>
             <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin-bottom: 25px;">
-               <p style="margin: 0; color: #475569; font-size: 13px;"><strong>Matriculation Number:</strong> ${matricNumber}</p>
-               <p style="margin: 5px 0 0 0; color: #475569; font-size: 13px;"><strong>Course/Department:</strong> ${course || 'Not Assigned'}</p>
+               <p style="margin: 0; color: #475569; font-size: 13px;"><strong>Workspace ID:</strong> <span style="color: #1a237e; font-weight: 800;">${workspaceId}</span></p>
+               <p style="margin: 5px 0 0 0; color: #475569; font-size: 13px;"><strong>Matriculation Number:</strong> ${matricNumber}</p>
+               <p style="margin: 5px 0 0 0; color: #475569; font-size: 13px;"><strong>Course/Department:</strong> ${workspaceName}</p>
             </div>
             <p style="color: #94a3b8; font-size: 12px; text-align: center; line-height: 1.5;">This invitation expires in 48 hours for security reasons.<br/>If you did not expect this, please ignore this email or contact your administrator.</p>
             <div style="border-top: 1px solid #e2e8f0; margin-top: 30px; padding-top: 20px; text-align: center;">

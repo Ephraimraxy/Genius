@@ -17,6 +17,8 @@ interface StudentAuthProps {
 export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: StudentAuthProps) {
     const [matricNumber, setMatricNumber] = useState('');
     const [pin, setPin] = useState('');
+    const [workspaceId, setWorkspaceId] = useState('');
+    const [workspaceList, setWorkspaceList] = useState<{id: number, name: string, workspace_id: string}[]>([]);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPin, setShowPin] = useState(false);
@@ -24,6 +26,22 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
     const [recoveryStep, setRecoveryStep] = useState<'input' | 'pay'>('input');
     const [recoveryData, setRecoveryData] = useState<{id: number, name: string, price: number} | null>(null);
     const [isInitializingPayment, setIsInitializingPayment] = useState(false);
+
+    React.useEffect(() => {
+        const fetchWorkspaces = async () => {
+            try {
+                const res = await fetch('/api/auth/workspaces');
+                const data = await res.json();
+                if (Array.isArray(data)) setWorkspaceList(data);
+            } catch (err) {
+                console.error('Failed to fetch workspaces');
+            }
+        };
+
+        fetchWorkspaces();
+        const interval = setInterval(fetchWorkspaces, 3000); // 3-second auto-refresh
+        return () => clearInterval(interval);
+    }, []);
 
     const formatMatricInput = (value: string) => {
         // Automatically uppercase and clean input
@@ -53,7 +71,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             const res = await fetch('/api/auth/student/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ matricNumber, pin })
+                body: JSON.stringify({ matricNumber, pin, workspaceId })
             });
 
             const data = await res.json();
@@ -77,12 +95,16 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             setError('Please enter your valid Matric Number first to recover PIN.');
             return;
         }
+        if (!workspaceId) {
+            setError('Please select your Lecturer/Workspace to recover PIN.');
+            return;
+        }
         setLoading(true);
         try {
             const res = await fetch('/api/auth/student/recover-pin', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ matricNumber })
+                body: JSON.stringify({ matricNumber, workspaceId })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
@@ -215,6 +237,30 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
                                         placeholder="NSUK/SCI/YYYY/NNNN"
                                     />
                                 </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-indigo-700 uppercase tracking-[0.2em] ml-2">SELECT YOUR LECTURER / WORKSPACE</label>
+                                <div className="relative group">
+                                    <ShieldCheck className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#1a237e] transition-colors z-10" size={20} />
+                                    <select
+                                        required
+                                        value={workspaceId}
+                                        onChange={(e) => setWorkspaceId(e.target.value)}
+                                        className="w-full pl-16 pr-10 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-[#1a237e] focus:bg-white outline-none transition-all text-slate-900 font-bold text-sm appearance-none cursor-pointer relative z-0"
+                                    >
+                                        <option value="" disabled>--- Choose Lecturer Workspace ---</option>
+                                        {workspaceList.map(ws => (
+                                            <option key={ws.id} value={ws.workspace_id}>
+                                                {ws.name} ({ws.workspace_id})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                        <ArrowRight size={16} className="rotate-90" />
+                                    </div>
+                                </div>
+                                <p className="text-[9px] text-slate-400 mt-1 italic ml-2">Select the academic hub assigned to your course.</p>
                             </div>
 
                             <div className="space-y-1">
