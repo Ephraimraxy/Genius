@@ -20,6 +20,10 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPin, setShowPin] = useState(false);
+    const [isRecovering, setIsRecovering] = useState(false);
+    const [recoveryStep, setRecoveryStep] = useState<'input' | 'pay'>('input');
+    const [recoveryData, setRecoveryData] = useState<{id: number, name: string, price: number} | null>(null);
+    const [isInitializingPayment, setIsInitializingPayment] = useState(false);
 
     const formatMatricInput = (value: string) => {
         // Automatically uppercase and clean input
@@ -65,6 +69,57 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             addToast(err.message || 'Authentication failed', 'error');
         } finally {
             setLoading(false);
+        }
+    };
+    
+    const startRecovery = async () => {
+        if (!MATRIC_REGEX.test(matricNumber)) {
+            setError('Please enter your valid Matric Number first to recover PIN.');
+            return;
+        }
+        setLoading(true);
+        try {
+            const res = await fetch('/api/auth/student/recover-pin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ matricNumber })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            setRecoveryData({ id: data.student.id, name: data.student.name, price: data.price });
+            setRecoveryStep('pay');
+            setIsRecovering(true);
+        } catch (err: any) {
+            addToast(err.message || 'Recovery check failed', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRecoveryPayment = async () => {
+        if (!recoveryData) return;
+        setIsInitializingPayment(true);
+        try {
+            const res = await fetch('/api/payment/pin-recovery/initialize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: recoveryData.id, matricNumber })
+            });
+            const data = await res.json();
+            
+            // Redirect to PaymentPoint (Simulated or via window.location if we had a hosted page)
+            // For this UI, we will open the GeniusPaymentModal if it's available or just show a message.
+            // Since we are in the Auth screen, we'll just show the bank transfer info (simulated).
+            addToast(`Payment Initialized. Reference: ${data.reference}. Please pay ₦${data.amount} to the displayed account.`, 'info');
+            // In a real app, this would trigger the actual payment gateway modal.
+            // For now, we'll tell the user their PIN will be sent to their email after payment.
+            setRecoveryStep('input');
+            setIsRecovering(false);
+            addToast('Once payment is confirmed, your new PIN will be sent to your registered email.', 'success');
+        } catch (err) {
+            addToast('Failed to initialize payment', 'error');
+        } finally {
+            setIsInitializingPayment(false);
         }
     };
 
@@ -206,9 +261,41 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
 
                         <div className="mt-8 p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-100/50 relative overflow-hidden group">
                            <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl -mr-12 -mt-12 transition-all group-hover:bg-indigo-500/10" />
-                           <p className="text-slate-400 font-bold text-[10px] leading-relaxed relative z-10 italic uppercase tracking-wider text-center">
-                             Lost your access PIN? Please contact the department administrator to reset your credentials. Secure academic monitoring is active.
-                           </p>
+                           {isRecovering ? (
+                               <div className="relative z-10 text-center">
+                                   <p className="text-slate-900 font-black text-xs uppercase mb-2">PIN Recovery for {matricNumber}</p>
+                                   <p className="text-slate-500 text-[10px] font-medium mb-4 italic">
+                                       To recover your lost PIN, a service fee of <span className="text-indigo-600 font-bold">₦{recoveryData?.price}</span> is required.
+                                   </p>
+                                   <div className="flex gap-2">
+                                       <button 
+                                           onClick={handleRecoveryPayment}
+                                           disabled={isInitializingPayment}
+                                           className="flex-1 bg-indigo-600 text-white text-[10px] font-black py-3 rounded-xl shadow-lg shadow-indigo-200"
+                                       >
+                                           {isInitializingPayment ? 'Initializing...' : 'Pay & Recover'}
+                                       </button>
+                                       <button 
+                                           onClick={() => setIsRecovering(false)}
+                                           className="px-4 bg-white border border-slate-200 text-slate-500 text-[10px] font-black rounded-xl"
+                                       >
+                                           Cancel
+                                       </button>
+                                   </div>
+                               </div>
+                           ) : (
+                               <div className="relative z-10 text-center">
+                                   <p className="text-slate-400 font-bold text-[10px] leading-relaxed italic uppercase tracking-wider">
+                                     Lost your access PIN? You can recover it instantly for a small fee.
+                                   </p>
+                                   <button 
+                                       onClick={startRecovery}
+                                       className="mt-3 text-indigo-600 font-black text-[10px] uppercase hover:underline"
+                                   >
+                                       Recover PIN Now
+                                   </button>
+                               </div>
+                           )}
                         </div>
 
                         <div className="mt-8 pt-6 border-t border-slate-100 text-center relative z-10">

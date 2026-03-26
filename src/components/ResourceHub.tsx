@@ -46,9 +46,25 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [previewName, setPreviewName] = useState<string>('');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
+    const [categories, setCategories] = useState<{id: number, name: string, is_paid_entry: boolean, entry_fee: number}[]>([]);
+    const [isUpdatingCategory, setIsUpdatingCategory] = useState<number | null>(null);
+
     useEffect(() => {
         fetchResources();
+        fetchCategories();
     }, []);
+
+    const fetchCategories = async () => {
+        try {
+            const res = await fetch('/api/courses/categories', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (Array.isArray(data)) setCategories(data);
+        } catch (err) {
+            console.error('Failed to load categories');
+        }
+    };
 
     const fetchResources = async () => {
         setIsLoading(true);
@@ -199,6 +215,27 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         }
     };
 
+    const updateCategoryFee = async (id: number, is_paid: boolean, fee: number) => {
+        setIsUpdatingCategory(id);
+        try {
+            const res = await fetch(`/api/courses/categories/${id}`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ is_paid_entry: is_paid, entry_fee: fee })
+            });
+            if (res.ok) {
+                addToast('Batch entry settings updated', 'success');
+                fetchCategories();
+            }
+        } catch (err) {
+            addToast('Failed to update category', 'error');
+        }
+        setIsUpdatingCategory(null);
+    };
+
     return (
         <div className="space-y-8 pb-12">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -282,16 +319,33 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                     </div>
 
                     <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
-                        <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4">Storage Insight</h4>
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm font-bold text-slate-600">Total Items</span>
-                                <span className="text-lg font-black text-slate-900">{resources.length}</span>
-                            </div>
-                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-blue-600 rounded-full" style={{ width: '15%' }}></div>
-                            </div>
-                            <p className="text-[10px] text-slate-400 font-medium">Using 45.2 MB of 2.0 GB Allocated Space</p>
+                        <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4">Batch Entry Fees</h4>
+                        <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                            {categories.length === 0 && <p className="text-xs text-slate-400">No student categories defined yet.</p>}
+                            {categories.map(cat => (
+                                <div key={cat.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <span className="text-xs font-black text-slate-900 uppercase truncate max-w-[120px]">{cat.name}</span>
+                                        <button 
+                                            onClick={() => updateCategoryFee(cat.id, !cat.is_paid_entry, cat.entry_fee)}
+                                            className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${cat.is_paid_entry ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-500'}`}
+                                        >
+                                            {cat.is_paid_entry ? 'Paid Entry' : 'Free Entry'}
+                                        </button>
+                                    </div>
+                                    {cat.is_paid_entry && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] font-black text-slate-400">₦</span>
+                                            <input 
+                                                type="number"
+                                                defaultValue={cat.entry_fee}
+                                                onBlur={(e) => updateCategoryFee(cat.id, true, parseInt(e.target.value) || 0)}
+                                                className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>

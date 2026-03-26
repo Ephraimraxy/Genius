@@ -79,33 +79,54 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
       const customerEmail = customer?.email;
       let result = await pool.query(
         `SELECT t.* FROM transactions t 
-         JOIN users u ON t.user_id = u.id 
-         WHERE u.email = $1 AND t.status = 'pending' 
-         ORDER BY t.created_at DESC LIMIT 1`,
-        [customerEmail]
+         WHERE t.reference = $1 AND t.status = 'pending'`,
+        [payload.transaction_id || payload.reference]
       );
 
       const tx = result?.rows?.[0];
 
       if (tx) {
-        if (tx.type === 'attendance_token') {
-          const now = new Date();
-          const expiresAt = new Date(tx.metadata?.expires_at);
-          if (now > expiresAt) {
-             await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['expired', tx.id]);
-             return res.status(400).send('Transaction window expired');
-          }
+        // Payment Logic for Over/Under payment
+        const requiredAmount = tx.amount;
+        const paidAmount = amount_paid;
+
+        if (paidAmount < requiredAmount) {
+          console.warn(`Underpayment received for ${tx.reference}. Expected ${requiredAmount}, got ${paidAmount}`);
+          await pool.query('UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3', 
+            ['partially_paid', JSON.stringify({ paid_so_far: paidAmount }), tx.id]);
+          return res.status(200).send('Underpayment logged');
         }
 
-        await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['success', tx.id]);
+        // Proceed with success
+        await pool.query('UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3', 
+          ['success', JSON.stringify({ overpaid: paidAmount > requiredAmount ? paidAmount - requiredAmount : 0 }), tx.id]);
         
-        // 2️⃣ Pre-upload Email Trigger: Send Payment Confirmation & Acceptance in Principle
+        // Handle specific transaction types
         if (tx.type === 'publication') {
-           const userRes = await pool.query('SELECT name FROM users WHERE email = $1', [customerEmail]);
+           const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [tx.user_id]);
            const userName = userRes.rows[0]?.name || 'Researcher';
-           
-           // Using a dedicated function for Pre-Upload Payment Email
            await sendPaymentSuccessEmail(customerEmail, userName, tx.reference);
+        }
+
+        if (tx.type === 'pin_recovery') {
+           const userRes = await pool.query('SELECT name, matric_number, email FROM users WHERE id = $1', [tx.user_id]);
+           const student = userRes.rows[0];
+           // We need to fetch the clear text PIN if handled via setup_token previously or just reset it.
+           // For simplicity in this flow, we will resend the hash or trigger a reset link.
+           // Better: PIN is stored in password for students. We can't decrypt bcrypt.
+           // So for recovery, we generate a NEW PIN and send it.
+           const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+           const hashedPin = await bcrypt.hash(newPin, 10);
+           await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPin, tx.user_id]);
+           await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE matric_number = $2 AND tenant_id = $3', 
+            [hashedPin, student.matric_number, tx.tenant_id]);
+           
+           await mailTransporter.sendMail({
+             from: `"Genius Recovery" <${process.env.SMTP_EMAIL}>`,
+             to: student.email,
+             subject: 'Your Recovered Genius PIN',
+             html: `<h2>PIN Recovered</h2><p>Your new 4-digit PIN is: <strong>${newPin}</strong></p>`
+           });
         }
 
         if (tx.type === 'subscription') {
@@ -170,6 +191,9 @@ async function bootstrapDB() {
         name TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      ALTER TABLE student_categories ADD COLUMN IF NOT EXISTS is_paid_entry BOOLEAN DEFAULT FALSE;
+      ALTER TABLE student_categories ADD COLUMN IF NOT EXISTS entry_fee INTEGER DEFAULT 0;
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
       ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
@@ -454,6 +478,7 @@ async function initDB() {
   await pool.query(`INSERT INTO settings (key, value) VALUES ('max_issues_per_volume', '3') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('max_pages_per_manuscript', '20') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('journal_signature', '') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('pin_recovery_price', '1000') ON CONFLICT (key) DO NOTHING`);
 }
 initDB().catch(err => {
   console.error('CRITICAL: Database initialization failed');
@@ -673,13 +698,105 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     const validPin = await bcrypt.compare(pin, user.password);
     if (!validPin) return res.status(401).json({ error: 'Invalid matric number or PIN' });
 
+
     // 3. Generate Token
-    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: 'student', tenant_id: user.tenant_id }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: 'student', tenant_id: user.tenant_id, matricNumber: user.matric_number } });
+    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: 'student', tenant_id: user.tenant_id, category_id: user.category_id }, JWT_SECRET, { expiresIn: '7d' });
+    
+    // 4. Check for Entry Fee requirement
+    let accessBlocked = false;
+    let entryFee = 0;
+    if (user.category_id) {
+        const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [user.category_id]);
+        const category = catRes.rows[0];
+        if (category?.is_paid_entry) {
+            // Check if paid
+            const payRes = await pool.query(
+                "SELECT id FROM transactions WHERE user_id = $1 AND type = 'portal_entry' AND status = 'success'",
+                [user.id]
+            );
+            if (payRes.rows.length === 0) {
+                accessBlocked = true;
+                entryFee = category.entry_fee;
+            }
+        }
+    }
+
+    res.json({ 
+        token, 
+        user: { 
+            id: user.id, 
+            email: user.email, 
+            name: user.name, 
+            role: 'student', 
+            tenant_id: user.tenant_id, 
+            matricNumber: user.matric_number,
+            accessBlocked,
+            entryFee
+        } 
+    });
   } catch (error: any) {
     console.error('Student login error:', error);
     res.status(500).json({ error: 'Login failed' });
   }
+});
+
+// Student: Recover PIN
+app.post('/api/auth/student/recover-pin', async (req, res) => {
+    try {
+        const { matricNumber } = req.body;
+        if (!matricNumber) return res.status(400).json({ error: 'Matric number required' });
+
+        const result = await pool.query('SELECT id, name, email, tenant_id FROM users WHERE matric_number = $1 AND role = \'student\'', [matricNumber]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'No student found with this matric number' });
+
+        const priceRes = await pool.query("SELECT value FROM settings WHERE key = 'pin_recovery_price'");
+        const price = parseInt(priceRes.rows[0]?.value || '1000');
+
+        res.json({ student: result.rows[0], price });
+    } catch (err) {
+        res.status(500).json({ error: 'Recovery check failed' });
+    }
+});
+
+app.post('/api/payment/pin-recovery/initialize', async (req, res) => {
+    try {
+        const { userId, matricNumber } = req.body;
+        const priceRes = await pool.query("SELECT value FROM settings WHERE key = 'pin_recovery_price'");
+        const amount = parseInt(priceRes.rows[0]?.value || '1000');
+        const reference = `PIN-REC-${Date.now()}-${userId}`;
+
+        const userRes = await pool.query('SELECT tenant_id FROM users WHERE id = $1', [userId]);
+        const tenant_id = userRes.rows[0]?.tenant_id;
+
+        await pool.query(
+            'INSERT INTO transactions (user_id, tenant_id, reference, amount, type, status) VALUES ($1, $2, $3, $4, $5, $6)',
+            [userId, tenant_id, reference, amount, 'pin_recovery', 'pending']
+        );
+
+        res.json({ reference, amount });
+    } catch (err) {
+        res.status(500).json({ error: 'Payment initialization failed' });
+    }
+});
+
+app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: any, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT sc.entry_fee FROM student_categories sc JOIN users u ON u.category_id = sc.id WHERE u.id = $1',
+            [req.user.id]
+        );
+        const amount = result.rows[0]?.entry_fee || 0;
+        const reference = `PORTAL-${Date.now()}-${req.user.id}`;
+
+        await pool.query(
+            'INSERT INTO transactions (user_id, tenant_id, reference, amount, type, status) VALUES ($1, $2, $3, $4, $5, $6)',
+            [req.user.id, req.tenant_id, reference, amount, 'portal_entry', 'pending']
+        );
+
+        res.json({ reference, amount });
+    } catch (err) {
+        res.status(500).json({ error: 'Payment initialization failed' });
+    }
 });
 
 app.post('/api/auth/login', authLimiter, async (req, res) => {
@@ -5313,6 +5430,21 @@ app.get('/api/courses/categories', authenticateToken, checkSubscription, async (
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch categories' });
   }
+});
+
+app.put('/api/courses/categories/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
+    if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+    try {
+        const { id } = req.params;
+        const { is_paid_entry, entry_fee } = req.body;
+        await pool.query(
+            'UPDATE student_categories SET is_paid_entry = $1, entry_fee = $2 WHERE id = $3 AND tenant_id = $4',
+            [is_paid_entry, entry_fee, id, req.tenant_id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Update failed' });
+    }
 });
 
 // Lecturer: Add student to roster with PIN setup invitation

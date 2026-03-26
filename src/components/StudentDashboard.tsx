@@ -31,6 +31,9 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
     // Dynamic Application State
     const [exams, setExams] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [accessBlocked, setAccessBlocked] = useState(profile?.user?.accessBlocked || false);
+    const [entryFee, setEntryFee] = useState(profile?.user?.entryFee || 0);
+    const [showPortalPayment, setShowPortalPayment] = useState(false);
 
     // Unified Data Management (Genius Real-System Pattern)
     useEffect(() => {
@@ -315,6 +318,55 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                 )}
             </AnimatePresence>
 
+            {/* Portal Entry Payment Blocker */}
+            <AnimatePresence>
+                {accessBlocked && (
+                    <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="fixed inset-0 z-[110] bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-6 text-center"
+                    >
+                        <motion.div 
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            className="max-w-md w-full bg-white rounded-[3rem] p-10 shadow-2xl"
+                        >
+                            <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <AlertCircle size={40} className="text-amber-600" />
+                            </div>
+                            <h2 className="text-2xl font-black text-slate-900 mb-2 uppercase tracking-tight">Portal Access Blocked</h2>
+                            <p className="text-slate-500 font-medium text-sm mb-8 leading-relaxed">
+                                Your batch/category requires a one-time portal access fee of <span className="text-indigo-600 font-bold">₦{entryFee}</span> to unlock your dashboard and assessments.
+                            </p>
+                            <button 
+                                onClick={() => setShowPortalPayment(true)}
+                                className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all uppercase tracking-widest text-xs mb-4"
+                            >
+                                Pay Now to Unlock
+                            </button>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Secure Academic Gateway &copy; 2026</p>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {showPortalPayment && (
+                <GeniusPaymentModal 
+                    amount={entryFee}
+                    courseId="PORTAL-ENTRY"
+                    courseName="Portal Access Activation"
+                    token={token}
+                    addToast={addToast}
+                    onClose={() => setShowPortalPayment(false)}
+                    onSuccess={() => {
+                        setShowPortalPayment(false);
+                        setAccessBlocked(false);
+                        addToast('Payment logged. Access will be granted shortly.', 'success');
+                        setTimeout(() => window.location.reload(), 2000);
+                    }}
+                    type="portal_entry"
+                />
+            )}
         </div>
     );
 }
