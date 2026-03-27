@@ -753,11 +753,16 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     // 3. Generate Token
     const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: 'student', tenant_id: user.tenant_id, category_id: user.category_id }, JWT_SECRET, { expiresIn: '7d' });
     
-    // 4. Check for Entry Fee requirement
+    // 4. Resolve Category and Check for Entry Fee requirement (Source of Truth: students_roster)
     let accessBlocked = false;
     let entryFee = 0;
-    if (user.category_id) {
-        const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [user.category_id]);
+    
+    // Always fetch the category from the roster for this specifics workspace
+    const rosterRes = await pool.query('SELECT category_id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, tenantId]);
+    const rosterCategory = rosterRes.rows[0]?.category_id;
+
+    if (rosterCategory) {
+        const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [rosterCategory]);
         const category = catRes.rows[0];
         if (category?.is_paid_entry) {
             // Check if paid
@@ -4140,27 +4145,33 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
       let entryFee = 0;
 
       if (freshUser.role === 'student' && freshUser.tenant_id) {
-          // 1. Recover missing matric_number from roster if needed
-          if (!freshUser.matric_number) {
-              const rosterRes = await pool.query(
-                'SELECT matric_number, category_id FROM students_roster WHERE email = $1 AND tenant_id = $2', 
-                [freshUser.email, freshUser.tenant_id]
-              );
-              if (rosterRes.rows.length > 0) {
-                  freshUser.matric_number = rosterRes.rows[0].matric_number;
-                  freshUser.category_id = rosterRes.rows[0].category_id;
-                  // Auto-sync back to users table
-                  await pool.query('UPDATE users SET matric_number = $1, category_id = $2 WHERE id = $3', [freshUser.matric_number, freshUser.category_id, userId]);
+          // Resolve current matric number and category from roster (Source of Truth for Workspace)
+          const rosterRes = await pool.query(
+            'SELECT matric_number, category_id FROM students_roster WHERE email = $1 AND tenant_id = $2', 
+            [freshUser.email, freshUser.tenant_id]
+          );
+          
+          let currentMatric = freshUser.matric_number;
+          let currentCatId = freshUser.category_id;
+
+          if (rosterRes.rows.length > 0) {
+              currentMatric = rosterRes.rows[0].matric_number;
+              currentCatId = rosterRes.rows[0].category_id;
+              
+              // Ensure user record is synced with roster
+              if (freshUser.matric_number !== currentMatric || freshUser.category_id !== currentCatId) {
+                  await pool.query('UPDATE users SET matric_number = $1, category_id = $2 WHERE id = $3', [currentMatric, currentCatId, userId]);
+                  freshUser.matric_number = currentMatric;
+                  freshUser.category_id = currentCatId;
               }
           }
           
           // Alias for frontend compatibility
-          freshUser.matricNumber = freshUser.matric_number;
+          freshUser.matricNumber = currentMatric;
 
-          // 2. Enforce Payment Gate
-          const catId = freshUser.category_id;
-          if (catId) {
-              const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [catId]);
+          // Enforce Payment Gate using the roster-resolved category
+          if (currentCatId) {
+              const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [currentCatId]);
               if (catRes.rows[0]?.is_paid_entry) {
                   const payRes = await pool.query(
                       "SELECT id FROM transactions WHERE user_id = $1 AND type = 'portal_entry' AND status = 'success'",
