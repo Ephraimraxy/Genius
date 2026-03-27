@@ -37,7 +37,7 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                         credits: { text: 'text-rose-600', bg: 'bg-rose-50' }
                     };
 
-                    const formattedStats = data.stats.map((s: any) => ({
+                    const formattedStats = (data.stats || []).map((s: any) => ({
                         ...s,
                         icon: iconMap[s.type] || BookOpen,
                         color: colorMap[s.type]?.text || 'text-indigo-600',

@@ -6050,15 +6050,15 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
     );
 
     // 2. Calculate Stats
-    const totalExams = results.rows.length;
-    const totalScore = results.rows.reduce((sum, r) => sum + (r.score || 0), 0);
+    const totalExams = results.rows ? results.rows.length : 0;
+    const totalScore = (results.rows || []).reduce((sum: number, r: any) => sum + (r.score || 0), 0);
     const avgScore = totalExams > 0 ? totalScore / totalExams : 0;
     
     // CGPA Calculation (Simplified: mapping 0-100 to 0-4.0)
     const cgpa = (avgScore / 100 * 4).toFixed(2);
     
     // Total Credits (Sum of points from exams)
-    const totalCredits = results.rows.reduce((sum, r) => sum + (r.max_points || 0), 0);
+    const totalCredits = (results.rows || []).reduce((sum: number, r: any) => sum + (r.max_points || 0), 0);
     
     // Global Rank (Relative to other students in the same tenant)
     const rankResult = await pool.query(
@@ -6069,7 +6069,7 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
        ORDER BY avg_score DESC`,
       [req.tenant_id]
     );
-    const rankIndex = rankResult.rows.findIndex(r => r.user_id === req.user.id);
+    const rankIndex = rankResult.rows ? rankResult.rows.findIndex((r: any) => r.user_id === req.user.id) : -1;
     const globalRank = rankIndex !== -1 ? `#${rankIndex + 1}` : 'N/A';
 
     // 3. Format Records
@@ -6100,6 +6100,7 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
     ];
 
     res.json({
+      success: true,
       stats: [
         { label: 'CGPA', value: cgpa, type: 'gpa' },
         { label: 'Courses Passed', value: totalExams.toString(), type: 'count' },
@@ -6108,7 +6109,7 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
       ],
       records: records.slice(0, 5), // Latest 5
       improvement: 12, // Placeholder
-      skills
+      skills: skills || []
     });
   } catch (error) {
     console.error('Performance stats error:', error);
@@ -6166,7 +6167,7 @@ app.get('/api/student/materials', authenticateToken, async (req: any, res) => {
        ORDER BY r.created_at DESC`,
       [req.user.id, req.tenant_id]
     );
-    res.json(result.rows);
+    res.json({ success: true, materials: result.rows || [] });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch materials' });
   }

@@ -61,12 +61,12 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
         syncDashboardData();
     }, [view, token]); // Sync when view context changes // Refetch when view changes
 
-    // Filter based on BOTH status AND view type
+    // Filter based on BOTH status AND view type (Harden against undefined)
     const activeType = view === 'dashboard' ? 'exam' : view === 'tests' ? 'test' : 'assignment';
     
-    const upcomingExams = exams.filter(e => e.status === 'pending' && e.type === activeType);
-    const pastExams = exams.filter(e => e.status === 'completed' && e.type === activeType);
-    const activeExams = exams.filter(e => e.status === 'active' && e.type === activeType);
+    const upcomingExams = (exams || []).filter(e => e && e.status === 'pending' && e.type === activeType);
+    const pastExams = (exams || []).filter(e => e && e.status === 'completed' && e.type === activeType);
+    const activeExams = (exams || []).filter(e => e && e.status === 'active' && e.type === activeType);
 
     const handleStartExamClick = (exam: any) => {
         if (exam.is_paid && !exam.hasPaid) {
@@ -134,7 +134,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
             </header>
 
             {/* Active Exams Banner */}
-            {activeExams.length > 0 && (
+            {activeExams.length > 0 && activeExams[0] && (
                 <motion.div 
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -146,9 +146,9 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                         </div>
                         <div className="min-w-0">
                             <h3 className="text-lg md:text-xl font-black mb-0.5 md:mb-1 truncate">Active {activeType.toUpperCase()} Available</h3>
-                            <p className="text-red-100 font-medium text-sm md:text-base truncate">{activeExams[0].course}</p>
+                            <p className="text-red-100 font-medium text-sm md:text-base truncate">{activeExams[0]?.course || 'Exam Session'}</p>
                             <p className="text-[10px] md:text-xs font-bold mt-1.5 md:mt-2 opacity-80 uppercase tracking-widest flex items-center gap-2">
-                                <Clock size={12} /> {activeType === 'assignment' ? 'Deadline' : 'Duration'}: {activeExams[0].duration}
+                                <Clock size={12} /> {activeType === 'assignment' ? 'Deadline' : 'Duration'}: {activeExams[0]?.duration || 'N/A'}
                             </p>
                         </div>
                     </div>
@@ -156,7 +156,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                         onClick={() => handleStartExamClick(activeExams[0])}
                         className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-white text-rose-600 font-black rounded-xl shadow-lg hover:bg-slate-50 transition-colors uppercase tracking-[0.1em] text-xs md:text-sm"
                     >
-                        {activeExams[0].is_paid && !activeExams[0].hasPaid ? 'Unlock Now' : (activeType === 'assignment' ? 'Open Assignment' : 'Start Now')}
+                        {activeExams[0]?.is_paid && !activeExams[0]?.hasPaid ? 'Unlock Now' : (activeType === 'assignment' ? 'Open Assignment' : 'Start Now')}
                     </button>
                 </motion.div>
             )}
