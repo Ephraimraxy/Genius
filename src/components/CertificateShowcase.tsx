@@ -5,6 +5,9 @@ import { Download, Printer, RefreshCw, Layers } from 'lucide-react';
 export default function CertificateShowcase() {
   const [title, setTitle] = useState("Impact of Artificial Intelligence on Modern Academic Publishing: A Neural Approach to Metadata Extraction");
   const [authors, setAuthors] = useState("Ephraim Raxy, Danjuma Namo, Genius AI");
+  const [doi, setDoi] = useState("10.GMIJP/2026/03.27");
+  const [volume, setVolume] = useState("12");
+  const [issue, setIssue] = useState("4");
   const [date, setDate] = useState(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }));
 
   return (
@@ -36,6 +39,30 @@ export default function CertificateShowcase() {
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#800000]/20 outline-none"
               />
             </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">DOI</label>
+              <input 
+                value={doi}
+                onChange={(e) => setDoi(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#800000]/20 outline-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Volume</label>
+              <input 
+                value={volume}
+                onChange={(e) => setVolume(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#800000]/20 outline-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Issue</label>
+              <input 
+                value={issue}
+                onChange={(e) => setIssue(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#800000]/20 outline-none"
+              />
+            </div>
           </div>
         </div>
 
@@ -61,6 +88,9 @@ export default function CertificateShowcase() {
           <PublicationCertificate 
             title={title}
             authors={authors}
+            doi={doi}
+            volume={volume}
+            issue={issue}
             date={date}
           />
         </div>

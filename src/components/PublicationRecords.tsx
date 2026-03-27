@@ -16,9 +16,11 @@ import {
   FileText, 
   XCircle,
   FileBadge,
-  Printer
+  Printer,
+  ShieldCheck
 } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
+import PublicationCertificate from './PublicationCertificate';
 // AcceptanceLetter import removed since we now use the PDF endpoint
 
 interface Publication {
@@ -43,6 +45,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [previewPub, setPreviewPub] = useState<Publication | null>(null);
   const [acceptancePub, setAcceptancePub] = useState<Publication | null>(null);
+  const [certificatePub, setCertificatePub] = useState<Publication | null>(null);
   const isAdmin = profile?.user?.role === 'super_admin' || profile?.user?.role === 'admin';
 
   useEffect(() => {
@@ -334,6 +337,15 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                             <FileBadge size={18} />
                           </button>
                         )}
+
+                        {pub.status === 'published' && (
+                          <button 
+                            onClick={() => setCertificatePub(pub)}
+                            className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                            title="View Publication Certificate">
+                            <ShieldCheck size={18} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </motion.tr>
@@ -354,6 +366,55 @@ export default function PublicationRecords({ profile }: { profile: any }) {
             />
           )}
         </AnimatePresence>
+
+        {/* Publication Certificate Modal */}
+        <AnimatePresence>
+          {certificatePub && (
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+               <motion.div 
+                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                 animate={{ opacity: 1, scale: 1, y: 0 }}
+                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                 className="relative w-full max-w-[1180px] my-10"
+               >
+                 <button 
+                   onClick={() => setCertificatePub(null)}
+                   className="absolute -top-12 right-0 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all flex items-center gap-2 group border border-white/20"
+                 >
+                   <XCircle size={24} className="group-hover:rotate-90 transition-transform" />
+                   <span className="text-xs font-bold uppercase tracking-widest pr-2">Close Certificate</span>
+                 </button>
+                 
+                 <div className="bg-white rounded-[3rem] shadow-2xl overflow-hidden">
+                    <PublicationCertificate 
+                      title={certificatePub.title}
+                      authors={certificatePub.authors}
+                      doi={certificatePub.doi}
+                      volume={certificatePub.volume}
+                      issue={certificatePub.issue}
+                      date={certificatePub.published_at || certificatePub.created_at}
+                    />
+                 </div>
+
+                 <div className="mt-8 flex justify-center">
+                    <button 
+                      onClick={() => {
+                        const originalTitle = document.title;
+                        document.title = `Certificate_${certificatePub.title.substring(0, 30)}`;
+                        window.print();
+                        document.title = originalTitle;
+                      }}
+                      className="px-10 py-5 bg-white text-slate-900 rounded-[2rem] font-black uppercase tracking-[0.2em] text-xs shadow-2xl hover:scale-105 transition-all flex items-center gap-4 border border-slate-100"
+                    >
+                      <Printer size={20} className="text-[#800000]" />
+                      Print Official Certificate
+                    </button>
+                 </div>
+               </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence>
         {previewPub && (
           <FilePreviewModal

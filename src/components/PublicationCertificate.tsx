@@ -5,6 +5,9 @@ interface PublicationCertificateProps {
   authors: string | string[];
   date?: string;
   certificateId?: string;
+  doi?: string;
+  volume?: string;
+  issue?: string;
   journalName?: string;
   publisherLogo?: string;
   institutionLogo?: string;
@@ -17,6 +20,9 @@ export default function PublicationCertificate({
   authors,
   date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
   certificateId = `GMIJP-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+  doi,
+  volume,
+  issue,
   journalName = "Genius Multidisciplinary International Journal Publication",
   publisherLogo = "/gmijp-logo.png",
   institutionLogo = "/Nasarawa-State-University.jpg",
@@ -146,10 +152,17 @@ export default function PublicationCertificate({
               <p className="text-[8px] font-black text-[#800000] mt-2 uppercase tracking-[0.3em]">Official Seal</p>
             </div>
 
-            {/* Meta Data */}
             <div className="text-right space-y-1">
-              <p className="text-sm font-bold text-slate-600">Issued Date: <span className="text-slate-900">{date}</span></p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Certificate ID: {certificateId}</p>
+              {doi && <p className="text-xs font-black text-[#800000] tracking-tight">DOI: {doi}</p>}
+              {(volume || issue) && (
+                <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                  {volume && `Volume ${volume}`} {issue && `· Issue ${issue}`}
+                </p>
+              )}
+              <div className="pt-2">
+                 <p className="text-sm font-bold text-slate-600">Issued Date: <span className="text-slate-900">{date}</span></p>
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Certificate ID: {certificateId}</p>
+              </div>
               <div className="mt-4">
                  <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg inline-block">
                     {/* Placeholder for QR Code */}
