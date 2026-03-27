@@ -50,6 +50,13 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [isUpdatingCategory, setIsUpdatingCategory] = useState<number | null>(null);
     const [workspaceId, setWorkspaceId] = useState<string>('');
 
+    // Batch Category Modal States
+    const [showBatchModal, setShowBatchModal] = useState(false);
+    const [selectedCatId, setSelectedCatId] = useState<string>('');
+    const [newCatName, setNewCatName] = useState('');
+    const [isPaidEntry, setIsPaidEntry] = useState(false);
+    const [entryFee, setEntryFee] = useState(0);
+
     useEffect(() => {
         fetchResources();
         fetchCategories();
@@ -102,6 +109,13 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
 
     const processUpload = async () => {
         if (!fileHandle) return;
+
+        // For roster, we must first ensure category is selected
+        if (uploadType === 'roster' && !showBatchModal && !selectedCatId && !newCatName) {
+            setShowBatchModal(true);
+            return;
+        }
+
         setIsUploading(true);
 
         // ─── AUDIO: Upload to Bunny Stream (same path as video) ───
@@ -161,9 +175,16 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             if (uploadType === 'roster') {
                 const lines = rawContent.split('\n');
                 finalContent = lines.map(line => {
-                    const [matric, email] = line.split(',');
-                    return { matricNumber: matric?.trim(), email: email?.trim() };
-                }).filter(s => s.matricNumber && s.email);
+                    const parts = line.split(',').map(p => p.trim());
+                    if (parts.length === 3) {
+                        // Order: Name, Matric, Email
+                        return { name: parts[0], matricNumber: parts[1], email: parts[2] };
+                    } else if (parts.length === 2) {
+                        // Order: Matric, Email (Legacy)
+                        return { name: parts[0], matricNumber: parts[0], email: parts[1] };
+                    }
+                    return null;
+                }).filter(s => s && s.matricNumber && s.email);
             }
 
             try {
@@ -176,7 +197,11 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                     body: JSON.stringify({
                         type: uploadType,
                         name: fileHandle.name,
-                        content: finalContent
+                        content: finalContent,
+                        categoryId: selectedCatId,
+                        categoryName: newCatName,
+                        isPaidEntry,
+                        entryFee
                     })
                 });
                 const data = await res.json();
@@ -314,6 +339,11 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 <p className="font-bold text-sm">
                                     {fileHandle ? fileHandle.name : 'Choose File'}
                                 </p>
+                                {uploadType === 'roster' && (
+                                    <p className="text-[10px] text-white/40 mt-2 text-center">
+                                        Support 3 columns: <span className="text-white/60 font-bold">Full Name, Matric, Email</span> for personalized onboarding.
+                                    </p>
+                                )}
                                 {fileHandle && (
                                     <button
                                         onClick={(e) => {
@@ -493,6 +523,113 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                     onClose={() => setIsPreviewOpen(false)}
                 />
             )}
+
+            {/* Batch Category Modal */}
+            <AnimatePresence>
+                {showBatchModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 sm:p-12">
+                        <motion.div 
+                            initial={{ opacity: 0 }} 
+                            animate={{ opacity: 1 }} 
+                            exit={{ opacity: 0 }}
+                            onClick={() => setShowBatchModal(false)}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+                        />
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                            className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden border border-slate-100"
+                        >
+                            <div className="bg-slate-900 p-8 text-white">
+                                <h3 className="text-xl font-black flex items-center gap-3">
+                                    <Users className="text-blue-400" /> Setup Student Batch
+                                </h3>
+                                <p className="text-slate-400 text-xs mt-2 font-medium">Assign these students to a category and set access rules.</p>
+                            </div>
+
+                            <div className="p-8 space-y-6">
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Choose Batch Category</label>
+                                        <select 
+                                            value={selectedCatId}
+                                            onChange={(e) => {
+                                                setSelectedCatId(e.target.value);
+                                                if(e.target.value) setNewCatName('');
+                                            }}
+                                            className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-600 outline-none font-bold text-sm"
+                                        >
+                                            <option value="">--- Create New Category ---</option>
+                                            {categories.map(c => (
+                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {!selectedCatId && (
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">New Batch Name</label>
+                                            <input 
+                                                type="text"
+                                                placeholder="e.g. 200 Level Maths"
+                                                value={newCatName}
+                                                onChange={(e) => setNewCatName(e.target.value)}
+                                                className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-600 outline-none font-bold text-sm"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="font-bold text-slate-900 text-sm">Access Control</p>
+                                            <p className="text-[10px] text-slate-500">Should students pay to access the portal?</p>
+                                        </div>
+                                        <button 
+                                            onClick={() => setIsPaidEntry(!isPaidEntry)}
+                                            className={`w-14 h-8 rounded-full relative transition-all ${isPaidEntry ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                                        >
+                                            <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all shadow-md ${isPaidEntry ? 'right-1' : 'left-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    {isPaidEntry && (
+                                        <motion.div 
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            className="pt-4 border-t border-slate-200"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl font-black text-slate-400">₦</span>
+                                                <input 
+                                                    type="number"
+                                                    placeholder="Set Entry Fee"
+                                                    value={entryFee}
+                                                    onChange={(e) => setEntryFee(parseInt(e.target.value) || 0)}
+                                                    className="flex-1 bg-transparent border-b-2 border-slate-200 focus:border-indigo-600 py-2 outline-none font-black text-xl"
+                                                />
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </div>
+
+                                <button 
+                                    onClick={() => {
+                                        if(!selectedCatId && !newCatName) return alert('Please name your batch');
+                                        setShowBatchModal(false);
+                                        processUpload();
+                                    }}
+                                    className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl hover:bg-slate-800 transition-all shadow-xl shadow-slate-200"
+                                >
+                                    Confirm & Start Batch Upload
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

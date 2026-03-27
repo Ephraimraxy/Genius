@@ -4,9 +4,9 @@ import { LogIn, Key, Loader2, ShieldCheck, ArrowRight, UserCircle, GraduationCap
 
 import { ToastType } from './ToastSystem';
 
-// Regex for Matriculation Number (e.g., NSUK/SCI/2021/1054)
-// Allows NSUK / 3 to 4 uppercase letters / 4 digits / 4 digits
-const MATRIC_REGEX = /^NSUK\/[A-Z]{3,4}\/\d{4}\/\d{4}$/;
+// Ultra-Flexible Regex for Matriculation/Registration Number
+// Supports alpha-numeric IDs with or without slashes or hyphens (e.g. PHD25EAP00047, NSUK/SCI/21/105)
+const MATRIC_REGEX = /^[A-Z0-9/-]{3,50}$/;
 
 interface StudentAuthProps {
     onAuthSuccess: (token: string, user: any) => void;
@@ -44,8 +44,8 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
     }, []);
 
     const formatMatricInput = (value: string) => {
-        // Automatically uppercase and clean input
-        let val = value.toUpperCase().replace(/[^A-Z0-9/]/g, '');
+        // Automatically uppercase and clean input (allow A-Z, 0-9, /, -)
+        let val = value.toUpperCase().replace(/[^A-Z0-9/-]/g, '');
         setMatricNumber(val);
         // Clear error if they start typing again
         if (error) setError('');
@@ -56,7 +56,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
         setError('');
 
         if (!MATRIC_REGEX.test(matricNumber)) {
-            setError('Invalid Matriculation Format. Expected: NSUK/DEP/YYYY/NNNN');
+            setError('Invalid Registration Number. Please ensure your ID is correct.');
             return;
         }
 
@@ -92,27 +92,32 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
     
     const startRecovery = async () => {
         if (!MATRIC_REGEX.test(matricNumber)) {
-            setError('Please enter your valid Matric Number first to recover PIN.');
+            setError('Please enter your valid Registration Number first to recover PIN.');
             return;
         }
         if (!workspaceId) {
             setError('Please select your Lecturer/Workspace to recover PIN.');
             return;
         }
+
         setLoading(true);
+
         try {
             const res = await fetch('/api/auth/student/recover-pin', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ matricNumber, workspaceId })
             });
+
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error);
-            setRecoveryData({ id: data.student.id, name: data.student.name, price: data.price });
+            if (!res.ok) throw new Error(data.error || 'Recovery failed');
+
+            setRecoveryData({ id: data.id, name: data.name, price: data.price });
             setRecoveryStep('pay');
             setIsRecovering(true);
+            
         } catch (err: any) {
-            addToast(err.message || 'Recovery check failed', 'error');
+            addToast(err.message, 'error');
         } finally {
             setLoading(false);
         }
@@ -122,24 +127,30 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
         if (!recoveryData) return;
         setIsInitializingPayment(true);
         try {
-            const res = await fetch('/api/payment/pin-recovery/initialize', {
+            const token = localStorage.getItem('token'); // Assuming token is available in localStorage
+            const res = await fetch('/api/payments/initialize', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: recoveryData.id, matricNumber })
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ 
+                    amount: recoveryData.price, 
+                    type: 'pin_recovery', 
+                    matricNumber,
+                    workspaceId 
+                })
             });
             const data = await res.json();
-            
-            // Redirect to PaymentPoint (Simulated or via window.location if we had a hosted page)
-            // For this UI, we will open the GeniusPaymentModal if it's available or just show a message.
-            // Since we are in the Auth screen, we'll just show the bank transfer info (simulated).
-            addToast(`Payment Initialized. Reference: ${data.reference}. Please pay ₦${data.amount} to the displayed account.`, 'info');
-            // In a real app, this would trigger the actual payment gateway modal.
-            // For now, we'll tell the user their PIN will be sent to their email after payment.
+            if (data.authorization_url) {
+                window.location.href = data.authorization_url;
+            } else {
+                addToast('Payment initialization failed', 'error');
+            }
+        } catch (err: any) {
             setRecoveryStep('input');
             setIsRecovering(false);
-            addToast('Once payment is confirmed, your new PIN will be sent to your registered email.', 'success');
-        } catch (err) {
-            addToast('Failed to initialize payment', 'error');
+            addToast(err.message || 'Failed to initialize payment', 'error');
         } finally {
             setIsInitializingPayment(false);
         }

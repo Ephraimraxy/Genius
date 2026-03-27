@@ -5310,32 +5310,129 @@ app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req:
 
 app.post('/api/resources/upload', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
-    const { type, name, content } = req.body;
+    const { type, name, content, categoryName, categoryId, isPaidEntry, entryFee } = req.body;
     if (!type || !name || !content) return res.status(400).json({ error: 'Missing required fields' });
 
-    // Sanitization and Critical Check
-    let status = 'ready';
+    // 1. Handle Category (Find or Create)
+    let final_category_id = categoryId;
+    if (categoryName && !final_category_id) {
+        const catCheck = await pool.query('SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
+        if (catCheck.rows.length > 0) {
+            final_category_id = catCheck.rows[0].id;
+        } else {
+            const catRes = await pool.query(
+                'INSERT INTO student_categories (tenant_id, name, is_paid_entry, entry_fee) VALUES ($1, $2, $3, $4) RETURNING id',
+                [req.tenant_id, categoryName.trim(), !!isPaidEntry, parseInt(entryFee) || 0]
+            );
+            final_category_id = catRes.rows[0].id;
+        }
+    } else if (final_category_id) {
+        // Update existing category settings if provided
+        await pool.query(
+            'UPDATE student_categories SET is_paid_entry = $1, entry_fee = $2 WHERE id = $3 AND tenant_id = $4',
+            [!!isPaidEntry, parseInt(entryFee) || 0, final_category_id, req.tenant_id]
+        );
+    }
+
+    // 2. Resolve Workspace Info for Email
+    const tenantRes = await pool.query('SELECT workspace_id, name FROM tenants WHERE id = $1', [req.tenant_id]);
+    const workspaceId = tenantRes.rows[0]?.workspace_id || 'N/A';
+    const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
+
+    // 3. Process Roster Students
     if (type === 'roster') {
         const students = Array.isArray(content) ? content : [];
         if (students.length === 0) return res.status(400).json({ error: 'Empty roster' });
         
-        const isValid = students.every((s: any) => 
-            s.matricNumber && 
-            s.email && 
-            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email)
-        );
-        if (!isValid) status = 'failed';
-    } else if (type === 'material') {
-        if (content.length < 50) status = 'failed';
+        for (const s of students) {
+            const matricNumber = s.matricNumber;
+            const email = s.email;
+            const studentName = s.name || s.matricNumber; // Use matric if name missing
+            
+            if (!matricNumber || !email) continue;
+
+            const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+            if (existing.rows.length === 0) {
+                const setupToken = require('crypto').randomBytes(32).toString('hex');
+                const tokenExpires = new Date(Date.now() + 48 * 60 * 60 * 1000);
+                
+                await pool.query(
+                    'INSERT INTO students_roster (tenant_id, matric_number, name, email, setup_token, token_expires, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+                    [req.tenant_id, matricNumber, studentName, email, setupToken, tokenExpires, final_category_id]
+                );
+
+                // Send Email
+                try {
+                    const setupLink = `${process.env.APP_URL || 'http://localhost:3000'}/setup-pin?token=${setupToken}&matric=${matricNumber}`;
+                    const feeInt = parseInt(entryFee as string) || 0;
+                    
+                    await mailTransporter.sendMail({
+                        from: `"Genius Academic Portal" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
+                        to: email,
+                        subject: `[Genius] Welcome ${studentName} - Secure Your Access`,
+                        html: `
+                          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; padding: 40px; background: #ffffff; border-radius: 24px; border: 1px solid #f1f5f9; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+                            <div style="text-align: center; margin-bottom: 30px;">
+                                <div style="width: 60px; height: 60px; background: #1a237e; border-radius: 15px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 15px;">
+                                    <span style="color: white; font-size: 24px; font-weight: bold;">G</span>
+                                </div>
+                                <h2 style="color: #0f172a; margin: 0; font-size: 24px; font-weight: 800;">Welcome to Genius Academy</h2>
+                                <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Your Secure Academic Hub</p>
+                            </div>
+
+                            <p style="color: #334155; font-size: 16px; line-height: 1.6;">Hi <b>${studentName}</b>,</p>
+                            <p style="color: #334155; font-size: 16px; line-height: 1.6;">You have been successfully added to the <b>${categoryName || 'Academic'}</b> batch. To access your lecture materials, assignments, and exams, please secure your account by setting up a 4-digit PIN.</p>
+                            
+                            <div style="text-align: center; margin: 35px 0;">
+                              <a href="${setupLink}" style="background: #1a237e; color: #ffffff; padding: 16px 32px; border-radius: 12px; text-decoration: none; font-weight: 800; font-size: 14px; letter-spacing: 0.5px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(26, 35, 126, 0.2);">SET UP SECURE PIN</a>
+                            </div>
+
+                            <div style="background: #f8fafc; padding: 25px; border-radius: 16px; border: 1px solid #e2e8f0;">
+                                <h4 style="margin: 0 0 15px 0; color: #0f172a; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Access Credentials</h4>
+                                <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Workspace ID:</td>
+                                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700; font-family: monospace;">${workspaceId}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Reg. Number:</td>
+                                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700;">${matricNumber}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Access Mode:</td>
+                                        <td style="padding: 6px 0; text-align: right; color: ${isPaidEntry ? '#ef4444' : '#10b981'}; font-weight: 800; text-transform: uppercase;">
+                                            ${isPaidEntry ? `Paid (₦${feeInt})` : 'Free Access'}
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+
+                            ${isPaidEntry ? `
+                            <p style="color: #ef4444; font-size: 12px; font-weight: 700; margin-top: 20px; text-align: center;">
+                                ⚠️ Payment required before full portal access is granted.
+                            </p>
+                            ` : ''}
+
+                            <div style="text-align: center; margin-top: 35px; border-top: 1px solid #f1f5f9; pt-20">
+                                <p style="color: #94a3b8; font-size: 11px; margin-top: 15px;">&copy; 2026 Genius Academic Publishing Pipeline. All rights reserved.</p>
+                            </div>
+                          </div>
+                        `
+                    });
+                } catch (emailErr) { console.error('Batch email failed for', email, emailErr); }
+            }
+        }
     }
 
+    // 4. Save the Resource Record
     const result = await pool.query(
-      'INSERT INTO resources (tenant_id, type, name, content, status) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [req.tenant_id, type, name, JSON.stringify(content), status]
+      'INSERT INTO resources (tenant_id, type, name, content, status, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [req.tenant_id, type, name, JSON.stringify(content), 'ready', final_category_id]
     );
 
-    res.json({ success: true, id: result.rows[0].id, status });
+    res.json({ success: true, id: result.rows[0].id, status: 'ready' });
   } catch (err: any) {
+    console.error('Batch upload error:', err);
     res.status(500).json({ error: err.message });
   }
 });
