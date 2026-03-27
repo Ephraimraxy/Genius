@@ -117,9 +117,9 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
            // So for recovery, we generate a NEW PIN and send it.
            const newPin = Math.floor(1000 + Math.random() * 9000).toString();
            const hashedPin = await bcrypt.hash(newPin, 10);
-           await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPin, tx.user_id]);
-           await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE matric_number = $2 AND tenant_id = $3', 
-            [hashedPin, student.matric_number, tx.tenant_id]);
+            await pool.query('UPDATE users SET password = $1, pin_code = $3 WHERE id = $2', [hashedPin, tx.user_id, newPin]);
+            await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE matric_number = $2 AND tenant_id = $3', 
+             [hashedPin, student.matric_number, tx.tenant_id]);
            
            await mailTransporter.sendMail({
              from: `"Genius Recovery" <${process.env.SMTP_EMAIL}>`,
@@ -200,6 +200,8 @@ async function bootstrapDB() {
       ALTER TABLE exams ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
       ALTER TABLE resources ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
 
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_code TEXT;
+      
       ALTER TABLE paper_references 
       ADD COLUMN IF NOT EXISTS ai_analysis TEXT,
       ADD COLUMN IF NOT EXISTS status TEXT,
@@ -474,6 +476,12 @@ async function initDB() {
   try { await pool.query('ALTER TABLE resources ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE resources ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE resources ADD COLUMN is_paid BOOLEAN DEFAULT FALSE'); } catch (e) { }
+  
+  // Migration: Global Student Uniqueness (Matric + Role)
+  try {
+    // If we want a global student PIN, matric_number + role must be unique
+    await pool.query('ALTER TABLE users ADD CONSTRAINT users_matric_role_key UNIQUE (matric_number, role)');
+  } catch (e) { }
   
   // Migration: Drop global email uniqueness and add role-scoped uniqueness
   try {
@@ -5407,24 +5415,34 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
 
             const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
             if (existing.rows.length === 0) {
-                // Auto-generate a 4-digit PIN
-                const autoPin = String(Math.floor(1000 + Math.random() * 9000));
-                const hashedPin = await bcrypt.hash(autoPin, 10);
+                // Resolve Global Student User & PIN
+                let hashedPin = '';
+                let autoPin = '';
+
+                const globalUserCheck = await pool.query('SELECT password, pin_code FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matricNumber]);
+                
+                if (globalUserCheck.rows.length > 0) {
+                    hashedPin = globalUserCheck.rows[0].password;
+                    autoPin = globalUserCheck.rows[0].pin_code || '****';
+                } else {
+                    autoPin = String(Math.floor(1000 + Math.random() * 9000));
+                    hashedPin = await bcrypt.hash(autoPin, 10);
+                }
                 
                 await pool.query(
                     'INSERT INTO students_roster (tenant_id, matric_number, name, email, pin_hash, category_id) VALUES ($1, $2, $3, $4, $5, $6)',
                     [req.tenant_id, matricNumber, studentName, email, hashedPin, final_category_id]
                 );
 
-                // Create user account immediately
+                // Create or Link User account
                 const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
                 if (userCheck.rows.length === 0) {
                     await pool.query(
-                        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-                        [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id]
+                        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+                        [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, autoPin]
                     );
                 } else {
-                    await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, final_category_id]);
+                    await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, autoPin, final_category_id]);
                 }
 
                 // Send Email with auto-generated PIN
@@ -5679,9 +5697,19 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
     if (existing.rows.length > 0) return res.status(400).json({ error: 'Student already in your roster.' });
 
-    // 2. Auto-generate a 4-digit PIN
-    const autoPin = String(Math.floor(1000 + Math.random() * 9000));
-    const hashedPin = await bcrypt.hash(autoPin, 10);
+    // 2. Resolve Global Student User & PIN
+    let hashedPin = '';
+    let autoPin = '';
+
+    const globalUserCheck = await pool.query('SELECT password, pin_code FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matricNumber]);
+    
+    if (globalUserCheck.rows.length > 0) {
+      hashedPin = globalUserCheck.rows[0].password;
+      autoPin = globalUserCheck.rows[0].pin_code || '****'; // Use existing if available
+    } else {
+      autoPin = String(Math.floor(1000 + Math.random() * 9000));
+      hashedPin = await bcrypt.hash(autoPin, 10);
+    }
 
     // 3. Handle Category Logic
     let category_id = null;
@@ -5705,15 +5733,15 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
       [req.tenant_id, matricNumber, name, email, course || '', hashedPin, category_id]
     );
 
-    // 5. Create user account immediately
+    // 5. Create or Link User account
     const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
     if (userCheck.rows.length === 0) {
       await pool.query(
-        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id]
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id, autoPin]
       );
     } else {
-      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, category_id]);
+      await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, autoPin, category_id]);
     }
 
     // 6. Send email with auto-generated PIN
@@ -5780,15 +5808,15 @@ app.post('/api/student/setup-pin', async (req, res) => {
       [hashedPin, student.id]
     );
 
-    // 3. Ensure User account exists
-    const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matric, student.tenant_id]);
+    // 3. Ensure linking/creation of global User account
+    const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matric]);
     if (userCheck.rows.length === 0) {
       await pool.query(
-        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [student.email, student.name, hashedPin, 'student', student.tenant_id, matric, student.category_id]
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [student.email, student.name, hashedPin, 'student', student.tenant_id, matric, student.category_id, pin]
       );
     } else {
-      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, student.category_id]);
+      await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, pin, student.category_id]);
     }
 
     res.json({ success: true, message: 'PIN set successfully. You can now log in.' });
