@@ -4133,57 +4133,57 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
       }
     };
 
+    // --- STUDENT PORTAL HARDENING (FOR BOTH IF/ELSE) ---
+    let accessBlocked = false;
+    let entryFee = 0;
+
+    if (freshUser.role === 'student' && freshUser.tenant_id) {
+        // Resolve current matric number and category from roster (Source of Truth for Workspace)
+        const rosterRes = await pool.query(
+          'SELECT matric_number, category_id FROM students_roster WHERE email = $1 AND tenant_id = $2', 
+          [freshUser.email, freshUser.tenant_id]
+        );
+        
+        let currentMatric = freshUser.matric_number;
+        let currentCatId = freshUser.category_id;
+
+        if (rosterRes.rows.length > 0) {
+            currentMatric = rosterRes.rows[0].matric_number;
+            currentCatId = rosterRes.rows[0].category_id;
+            
+            // Ensure user record is synced with roster
+            if (freshUser.matric_number !== currentMatric || freshUser.category_id !== currentCatId) {
+                await pool.query('UPDATE users SET matric_number = $1, category_id = $2 WHERE id = $3', [currentMatric, currentCatId, userId]);
+                freshUser.matric_number = currentMatric;
+                freshUser.category_id = currentCatId;
+            }
+        }
+        
+        // Alias for frontend compatibility
+        freshUser.matricNumber = currentMatric;
+
+        // Enforce Payment Gate using the roster-resolved category
+        if (currentCatId) {
+            const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [currentCatId]);
+            if (catRes.rows[0]?.is_paid_entry) {
+                const payRes = await pool.query(
+                    "SELECT id FROM transactions WHERE user_id = $1 AND type = 'portal_entry' AND status = 'success'",
+                    [userId]
+                );
+                if (payRes.rows.length === 0) {
+                    accessBlocked = true;
+                    entryFee = catRes.rows[0].entry_fee;
+                }
+            }
+        }
+    }
+
     if (profile) {
       profile.publications = safeParse(profile.publications, []);
       profile.metrics = safeParse(profile.metrics, { citations: 0, hIndex: 0, i10Index: 0 });
 
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       const papers = papersResult.rows;
-
-      // --- STUDENT PORTAL HARDENING ---
-      let accessBlocked = false;
-      let entryFee = 0;
-
-      if (freshUser.role === 'student' && freshUser.tenant_id) {
-          // Resolve current matric number and category from roster (Source of Truth for Workspace)
-          const rosterRes = await pool.query(
-            'SELECT matric_number, category_id FROM students_roster WHERE email = $1 AND tenant_id = $2', 
-            [freshUser.email, freshUser.tenant_id]
-          );
-          
-          let currentMatric = freshUser.matric_number;
-          let currentCatId = freshUser.category_id;
-
-          if (rosterRes.rows.length > 0) {
-              currentMatric = rosterRes.rows[0].matric_number;
-              currentCatId = rosterRes.rows[0].category_id;
-              
-              // Ensure user record is synced with roster
-              if (freshUser.matric_number !== currentMatric || freshUser.category_id !== currentCatId) {
-                  await pool.query('UPDATE users SET matric_number = $1, category_id = $2 WHERE id = $3', [currentMatric, currentCatId, userId]);
-                  freshUser.matric_number = currentMatric;
-                  freshUser.category_id = currentCatId;
-              }
-          }
-          
-          // Alias for frontend compatibility
-          freshUser.matricNumber = currentMatric;
-
-          // Enforce Payment Gate using the roster-resolved category
-          if (currentCatId) {
-              const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [currentCatId]);
-              if (catRes.rows[0]?.is_paid_entry) {
-                  const payRes = await pool.query(
-                      "SELECT id FROM transactions WHERE user_id = $1 AND type = 'portal_entry' AND status = 'success'",
-                      [userId]
-                  );
-                  if (payRes.rows.length === 0) {
-                      accessBlocked = true;
-                      entryFee = catRes.rows[0].entry_fee;
-                  }
-              }
-          }
-      }
 
       const responseData: any = { 
           user: { ...freshUser, accessBlocked, entryFee }, 
@@ -4195,10 +4195,8 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
 
       // If super_admin, include global platform stats
       if (freshUser.role === 'super_admin') {
-        const totalTenantsResult = await pool.query('SELECT COUNT(*) FROM tenants');
         const totalUsersResult = await pool.query('SELECT COUNT(*) FROM users');
         const totalPapersResult = await pool.query('SELECT COUNT(*) FROM papers');
-        const totalResultsResult = await pool.query('SELECT COUNT(*) FROM exam_results');
         const publishedPapersResult = await pool.query("SELECT COUNT(*) FROM papers WHERE status = 'published'");
         const pendingReviewResult = await pool.query("SELECT COUNT(*) FROM papers WHERE status IN ('peer_review', 'integrity_check', 'formatting')");
         const totalRevenueResult = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE status = 'success'");
@@ -4208,6 +4206,7 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
           LEFT JOIN users u ON p.user_id = u.id 
           LEFT JOIN tenants t ON p.tenant_id = t.id
           ORDER BY p.created_at DESC
+          LIMIT 100
         `);
         const recentUsersResult = await pool.query('SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC LIMIT 10');
 
@@ -4231,7 +4230,7 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
       );
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       res.json({
-        user: freshUser,
+        user: { ...freshUser, accessBlocked, entryFee },
         profile: { publications: [], metrics: { citations: 0, hIndex: 0, i10Index: 0 } },
         papers: papersResult.rows,
         tenant,
@@ -4280,9 +4279,13 @@ app.put('/api/profile', authenticateToken, async (req: any, res) => {
       }
     }
 
-    // Fetch and return updated profile
-    const updatedUser = await pool.query('SELECT id, email, name, affiliation, role FROM users WHERE id = $1', [userId]);
-    res.json({ success: true, user: updatedUser.rows[0] });
+    // Fetch and return updated profile (Full sync with hardened fields)
+    const updatedUserRes = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number FROM users WHERE id = $1', [userId]);
+    const updatedUser = updatedUserRes.rows[0];
+    if (updatedUser) {
+        updatedUser.matricNumber = updatedUser.matric_number;
+    }
+    res.json({ success: true, user: updatedUser });
   } catch (error) {
     console.error('Profile update error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
