@@ -8,6 +8,7 @@ import {
   Clock, 
   AlertCircle, 
   ExternalLink,
+  ChevronLeft,
   ChevronRight,
   User,
   Eye,
@@ -16,12 +17,13 @@ import {
   FileText, 
   XCircle,
   FileBadge,
-  Printer,
+  Download,
   ShieldCheck
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import FilePreviewModal from './FilePreviewModal';
 import PublicationCertificate from './PublicationCertificate';
-// AcceptanceLetter import removed since we now use the PDF endpoint
 
 interface Publication {
   id: number;
@@ -139,6 +141,117 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     (p.doi?.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (p.issn?.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const handleDownloadCertificate = async (pub: Publication) => {
+    const element = document.getElementById('publication-certificate');
+    if (!element) return;
+    
+    try {
+      const canvas = await html2canvas(element, { scale: 3, useCORS: true });
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+      pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210);
+      pdf.save(`Certificate_${pub.title.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+    } catch (error) {
+      console.error('Failed to generate certificate PDF:', error);
+    }
+  };
+
+  if (certificatePub) {
+    return (
+      <div className="space-y-6 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+          <button 
+            onClick={() => setCertificatePub(null)} 
+            className="flex items-center gap-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl text-slate-600 transition-colors font-bold text-sm border border-slate-200"
+          >
+            <ChevronLeft size={18} /> Back to Records
+          </button>
+          
+          <button 
+            onClick={() => handleDownloadCertificate(certificatePub)}
+            className="flex items-center gap-2 px-6 py-2 bg-[#800000] hover:bg-red-900 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+          >
+            <Download size={18} /> Download Certificate (PDF)
+          </button>
+        </div>
+
+        <div className="bg-white rounded-[2.5rem] shadow-xl overflow-hidden p-4 md:p-10 flex justify-center border border-slate-100 overflow-x-auto min-h-[600px]">
+          <div className="min-w-[800px] max-w-[1122px] w-full">
+            <PublicationCertificate 
+              title={certificatePub.title}
+              authors={certificatePub.authors}
+              doi={certificatePub.doi}
+              volume={certificatePub.volume}
+              issue={certificatePub.issue}
+              date={certificatePub.published_at || certificatePub.created_at}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (acceptancePub) {
+    return (
+      <div className="space-y-6 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between shrink-0">
+          <button 
+            onClick={() => setAcceptancePub(null)} 
+            className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm"
+          >
+            <ChevronLeft size={18} /> Back to Records
+          </button>
+        </div>
+        <div className="flex-1 rounded-[2.5rem] relative">
+          <FilePreviewModal
+            isOpen={true}
+            onClose={() => setAcceptancePub(null)}
+            file={`/api/papers/${acceptancePub.id}/acceptance-letter`}
+            fileName={`Acceptance_Letter_${acceptancePub.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`}
+            isInline={true}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (previewPub) {
+    return (
+      <div className="space-y-6 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between shrink-0">
+          <button 
+            onClick={() => setPreviewPub(null)} 
+            className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm"
+          >
+            <ChevronLeft size={18} /> Back to Records
+          </button>
+        </div>
+        <div className="flex-1 rounded-[2.5rem] relative">
+          <FilePreviewModal
+            isOpen={true}
+            onClose={() => setPreviewPub(null)}
+            file={`/api/papers/${previewPub.id}/published-pdf`}
+            fileName={`${previewPub.title}.pdf`}
+            publicationDetails={{
+              issn: previewPub.issn,
+              doi: previewPub.doi,
+              volume: previewPub.volume,
+              issue: previewPub.issue,
+              title: previewPub.title,
+              authors: previewPub.authors,
+              date: previewPub.published_at || previewPub.created_at
+            }}
+            isInline={true}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-12">
@@ -355,86 +468,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
           </table>
         </div>
         
-        {/* Acceptance Letter PDF Preview Modal */}
-        <AnimatePresence>
-          {acceptancePub && (
-            <FilePreviewModal
-              isOpen={!!acceptancePub}
-              onClose={() => setAcceptancePub(null)}
-              file={`/api/papers/${acceptancePub.id}/acceptance-letter`}
-              fileName={`Acceptance_Letter_${acceptancePub.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Publication Certificate Modal */}
-        <AnimatePresence>
-          {certificatePub && (
-            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-               <motion.div 
-                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                 className="relative w-full max-w-[1180px] my-10"
-               >
-                 <button 
-                   onClick={() => setCertificatePub(null)}
-                   className="absolute -top-12 right-0 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all flex items-center gap-2 group border border-white/20"
-                 >
-                   <XCircle size={24} className="group-hover:rotate-90 transition-transform" />
-                   <span className="text-xs font-bold uppercase tracking-widest pr-2">Close Certificate</span>
-                 </button>
-                 
-                 <div className="bg-white rounded-[3rem] shadow-2xl overflow-hidden">
-                    <PublicationCertificate 
-                      title={certificatePub.title}
-                      authors={certificatePub.authors}
-                      doi={certificatePub.doi}
-                      volume={certificatePub.volume}
-                      issue={certificatePub.issue}
-                      date={certificatePub.published_at || certificatePub.created_at}
-                    />
-                 </div>
-
-                 <div className="mt-8 flex justify-center">
-                    <button 
-                      onClick={() => {
-                        const originalTitle = document.title;
-                        document.title = `Certificate_${certificatePub.title.substring(0, 30)}`;
-                        window.print();
-                        document.title = originalTitle;
-                      }}
-                      className="px-10 py-5 bg-white text-slate-900 rounded-[2rem] font-black uppercase tracking-[0.2em] text-xs shadow-2xl hover:scale-105 transition-all flex items-center gap-4 border border-slate-100"
-                    >
-                      <Printer size={20} className="text-[#800000]" />
-                      Print Official Certificate
-                    </button>
-                 </div>
-               </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-        {previewPub && (
-          <FilePreviewModal
-            isOpen={!!previewPub}
-            onClose={() => setPreviewPub(null)}
-            file={`/api/papers/${previewPub.id}/published-pdf`}
-            fileName={`${previewPub.title}.pdf`}
-            publicationDetails={{
-              issn: previewPub.issn,
-              doi: previewPub.doi,
-              volume: previewPub.volume,
-              issue: previewPub.issue,
-              title: previewPub.title,
-              authors: previewPub.authors,
-              date: previewPub.published_at || previewPub.created_at
-            }}
-          />
-        )}
-      </AnimatePresence>
-    </div>
+      </div>
     </div>
   );
 }

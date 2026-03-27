@@ -1,4 +1,6 @@
 import React from 'react';
+import QRCode from 'react-qr-code';
+
 
 interface PublicationCertificateProps {
   title: string;
@@ -128,6 +130,15 @@ export default function PublicationCertificate({
                 has been accepted and successfully published in the <strong>{journalName}</strong>. 
                 The work demonstrates significant scholarly merit and professional integrity.
               </p>
+
+              <div className="flex flex-col items-center justify-center gap-1 mt-2 mb-2 shrink-0">
+                 <p className="text-[10px] md:text-xs font-black text-[#800000] tracking-tight">
+                    DOI: <span className="text-slate-900 drop-shadow-sm">{doi}</span>
+                 </p>
+                 <p className="text-[8px] md:text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                    Published: {date} &bull; Vol. {volume} &bull; No. {issue}
+                 </p>
+              </div>
             </div>
           </div>
 
@@ -163,25 +174,20 @@ export default function PublicationCertificate({
             </div>
 
             {/* Right: Technical Metadata Column */}
-            <div className="text-right space-y-0.5 md:space-y-1">
-              <div className="space-y-0.5">
-                <p className="text-[7px] md:text-[10px] font-black text-[#800000] tracking-tight whitespace-nowrap">DOI: <span className="text-slate-900">{doi}</span></p>
-                <p className="text-[6px] md:text-[8px] font-bold text-slate-600 uppercase tracking-widest">
-                  Vol. {volume} · No. {issue}
-                </p>
-              </div>
-              
-              <div className="pt-1">
-                 <p className="text-[8px] md:text-xs font-bold text-slate-600">Issued: <span className="text-slate-900">{date}</span></p>
-                 <p className="text-[6px] md:text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">ID: {certificateId}</p>
+            <div className="text-right flex flex-col items-end justify-end gap-1 md:gap-2">
+              <div className="text-right">
+                 <p className="text-[6px] md:text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">Verification ID</p>
+                 <p className="text-[7px] md:text-[9px] font-bold text-slate-900 uppercase tracking-widest truncate">{certificateId}</p>
               </div>
 
-              <div className="hidden md:block mt-1">
-                 <div className="bg-slate-50 border border-slate-100 p-1 rounded inline-flex items-center gap-1">
-                    <div className="w-8 h-8 bg-white border border-slate-200 rounded flex items-center justify-center text-[5px] font-bold text-slate-300 uppercase text-center p-0.5">
-                       Secure QR
-                    </div>
-                 </div>
+              <div className="bg-white border border-slate-200 p-1 md:p-1.5 rounded inline-block shadow-sm">
+                 <QRCode 
+                    value={`https://gmijp.com/verify/${certificateId}`} 
+                    size={compactMode ? 40 : 54} 
+                    level="L" 
+                    bgColor="#ffffff"
+                    fgColor="#0f172a"
+                 />
               </div>
             </div>
           </div>

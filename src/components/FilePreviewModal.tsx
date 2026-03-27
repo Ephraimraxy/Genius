@@ -38,9 +38,11 @@ interface FilePreviewModalProps {
     authors?: string;
     date?: string;
   };
+  isInline?: boolean;
 }
 
-export default function FilePreviewModal({ file, fileName, isOpen, onClose, publicationDetails }: FilePreviewModalProps) {
+
+export default function FilePreviewModal({ file, fileName, isOpen, onClose, publicationDetails, isInline = false }: FilePreviewModalProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fileType, setFileType] = useState<string>('');
@@ -325,28 +327,19 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
     }
   };
 
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 md:p-10 pointer-events-none">
+  const content = (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-md pointer-events-auto"
-            onClick={onClose}
-          />
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            initial={isInline ? { opacity: 0, y: 20 } : { scale: 0.9, opacity: 0, y: 20 }}
+            animate={isInline ? { opacity: 1, y: 0 } : { scale: 1, opacity: 1, y: 0 }}
+            exit={isInline ? { opacity: 0, y: 20 } : { scale: 0.9, opacity: 0, y: 20 }}
             className={`
-              relative bg-white shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] border border-white/10 overflow-hidden pointer-events-auto flex flex-col
-              ${isFullScreen ? 'w-full h-full rounded-none' : 'w-full max-w-7xl h-[85vh] rounded-[2.5rem]'}
+              relative bg-white overflow-hidden pointer-events-auto flex flex-col
+              ${isInline ? 'w-full h-[80vh] rounded-[2.5rem] shadow-xl border border-slate-200' : isFullScreen ? 'w-full h-full rounded-none shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] border border-white/10' : 'w-full max-w-7xl h-[85vh] rounded-[2.5rem] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] border border-white/10'}
             `}
           >
             {/* Header */}
             <header className="flex items-center justify-between px-6 py-4 border-b bg-white relative z-10 shrink-0">
+
               <div className="flex items-center gap-4">
                 <div className={`p-2.5 rounded-xl ${
                   fileType === 'pdf' ? 'bg-rose-50 text-rose-600' : 
@@ -389,13 +382,15 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
                   {isFullScreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
                 </button>
                 <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                <button 
-                  onClick={onClose}
-                  className="p-3 text-slate-400 hover:text-rose-600 hover:bg-slate-50 rounded-xl transition-all"
-                  title="Close Preview"
-                >
-                  <X size={20} />
-                </button>
+                {!isInline && (
+                  <button 
+                    onClick={onClose}
+                    className="p-3 text-slate-400 hover:text-rose-600 hover:bg-slate-50 rounded-xl transition-all"
+                    title="Close Preview"
+                  >
+                    <X size={20} />
+                  </button>
+                )}
               </div>
             </header>
 
@@ -484,7 +479,25 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
               </div>
             </div>
           </motion.div>
-        </div>
+  );
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        isInline ? (
+          content
+        ) : (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 md:p-10 pointer-events-none">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md pointer-events-auto"
+              onClick={onClose}
+            />
+            {content}
+          </div>
+        )
       )}
     </AnimatePresence>
   );
