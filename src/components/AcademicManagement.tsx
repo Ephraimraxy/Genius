@@ -236,7 +236,12 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         );
     };
 
-    const renderAttendanceContent = () => (
+    const renderAttendanceContent = () => {
+        const rosterCategory = selectedHubResource && selectedHubResource.category_id 
+            ? categories.find(c => c.id === selectedHubResource.category_id)?.name
+            : null;
+            
+        return (
         <div className="space-y-8">
             <div className="grid md:grid-cols-2 gap-8">
                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
@@ -265,8 +270,13 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 </div>
             </div>
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-8 border-b border-slate-100">
+                <div className="p-8 border-b border-slate-100 flex items-center gap-3">
                     <h3 className="text-lg font-bold text-slate-800">Student Roll Call</h3>
+                    {rosterCategory && (
+                        <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-black uppercase tracking-widest rounded-lg">
+                            {rosterCategory}
+                        </span>
+                    )}
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
@@ -294,7 +304,8 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 </div>
             </div>
         </div>
-    );
+        );
+    };
 
     const renderTestsContent = () => (
         <div className="space-y-8">

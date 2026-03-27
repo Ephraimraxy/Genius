@@ -5274,7 +5274,7 @@ app.get('/api/tenant/info', authenticateToken, async (req: any, res) => {
 app.get('/api/resources', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
-      'SELECT id, type, name, status, created_at, is_available, price, is_paid FROM resources WHERE tenant_id = $1 ORDER BY created_at DESC',
+      'SELECT id, type, name, status, created_at, is_available, price, is_paid, category_id FROM resources WHERE tenant_id = $1 ORDER BY created_at DESC',
       [req.tenant_id]
     );
     res.json(result.rows);
@@ -5291,6 +5291,57 @@ app.get('/api/resources/:id', authenticateToken, checkSubscription, async (req: 
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Resource not found' });
     res.json(result.rows[0]);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Download Resource File (Roster CSV, Material Content, etc)
+app.get('/api/resources/:id/download', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  try {
+    const result = await pool.query(
+      'SELECT name, type, content FROM resources WHERE id = $1 AND tenant_id = $2',
+      [req.params.id, req.tenant_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    const { name, type, content } = result.rows[0];
+
+    // Handle CSV Roster Download
+    if (type === 'roster') {
+      try {
+        const students = typeof content === 'string' ? JSON.parse(content) : content;
+        
+        // Build CSV string
+        const csvRows = ['Name,Matriculation Number,Email']; // Header
+        students.forEach((s: any) => {
+          csvRows.push(`"${s.name || ''}","${s.matricNumber || ''}","${s.email || ''}"`);
+        });
+        const csvString = csvRows.join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${name.endsWith('.csv') ? name : name + '.csv'}"`);
+        return res.send(csvString);
+        
+      } catch (e) {
+        return res.status(500).json({ error: 'Failed to parse roster content format' });
+      }
+    }
+
+    // Handle PDF / Generic Materials or Text
+    // Send as generic attachment based on how it was stored
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    if (typeof content === 'string') {
+        res.setHeader('Content-Type', 'text/plain');
+        return res.send(content);
+    } else {
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify(content, null, 2));
+    }
+
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -5353,23 +5404,34 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
 
             const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
             if (existing.rows.length === 0) {
-                const setupToken = require('crypto').randomBytes(32).toString('hex');
-                const tokenExpires = new Date(Date.now() + 48 * 60 * 60 * 1000);
+                // Auto-generate a 4-digit PIN
+                const autoPin = String(Math.floor(1000 + Math.random() * 9000));
+                const hashedPin = await bcrypt.hash(autoPin, 10);
                 
                 await pool.query(
-                    'INSERT INTO students_roster (tenant_id, matric_number, name, email, setup_token, token_expires, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-                    [req.tenant_id, matricNumber, studentName, email, setupToken, tokenExpires, final_category_id]
+                    'INSERT INTO students_roster (tenant_id, matric_number, name, email, pin_hash, category_id) VALUES ($1, $2, $3, $4, $5, $6)',
+                    [req.tenant_id, matricNumber, studentName, email, hashedPin, final_category_id]
                 );
 
-                // Send Email
+                // Create user account immediately
+                const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+                if (userCheck.rows.length === 0) {
+                    await pool.query(
+                        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+                        [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id]
+                    );
+                } else {
+                    await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, final_category_id]);
+                }
+
+                // Send Email with auto-generated PIN
                 try {
-                    const setupLink = `${process.env.APP_URL || 'http://localhost:3000'}/setup-pin?token=${setupToken}&matric=${matricNumber}`;
                     const feeInt = parseInt(entryFee as string) || 0;
                     
                     await mailTransporter.sendMail({
                         from: `"Genius Academic Portal" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
                         to: email,
-                        subject: `[Genius] Welcome ${studentName} - Secure Your Access`,
+                        subject: `[Genius] Welcome ${studentName} - Your Access Credentials`,
                         html: `
                           <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; padding: 40px; background: #ffffff; border-radius: 24px; border: 1px solid #f1f5f9; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
                             <div style="text-align: center; margin-bottom: 30px;">
@@ -5381,10 +5443,13 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
                             </div>
 
                             <p style="color: #334155; font-size: 16px; line-height: 1.6;">Hi <b>${studentName}</b>,</p>
-                            <p style="color: #334155; font-size: 16px; line-height: 1.6;">You have been successfully added to the <b>${categoryName || 'Academic'}</b> batch. To access your lecture materials, assignments, and exams, please secure your account by setting up a 4-digit PIN.</p>
+                            <p style="color: #334155; font-size: 16px; line-height: 1.6;">You have been successfully added to the <b>${categoryName || 'Academic'}</b> batch. Your account is ready — use the credentials below to log in.</p>
                             
                             <div style="text-align: center; margin: 35px 0;">
-                              <a href="${setupLink}" style="background: #1a237e; color: #ffffff; padding: 16px 32px; border-radius: 12px; text-decoration: none; font-weight: 800; font-size: 14px; letter-spacing: 0.5px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(26, 35, 126, 0.2);">SET UP SECURE PIN</a>
+                              <div style="background: #f0f1ff; border: 2px dashed #1a237e; border-radius: 16px; padding: 25px; display: inline-block;">
+                                <p style="color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin: 0 0 8px 0;">Your Secure PIN</p>
+                                <p style="color: #1a237e; font-size: 40px; font-weight: 900; letter-spacing: 12px; margin: 0; font-family: 'Courier New', monospace;">${autoPin}</p>
+                              </div>
                             </div>
 
                             <div style="background: #f8fafc; padding: 25px; border-radius: 16px; border: 1px solid #e2e8f0;">
@@ -5399,6 +5464,10 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
                                         <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700;">${matricNumber}</td>
                                     </tr>
                                     <tr>
+                                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Secure PIN:</td>
+                                        <td style="padding: 6px 0; text-align: right; color: #1a237e; font-weight: 800; font-family: monospace; font-size: 16px;">${autoPin}</td>
+                                    </tr>
+                                    <tr>
                                         <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Access Mode:</td>
                                         <td style="padding: 6px 0; text-align: right; color: ${isPaidEntry ? '#ef4444' : '#10b981'}; font-weight: 800; text-transform: uppercase;">
                                             ${isPaidEntry ? `Paid (₦${feeInt})` : 'Free Access'}
@@ -5407,8 +5476,12 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
                                 </table>
                             </div>
 
+                            <p style="color: #f59e0b; font-size: 12px; font-weight: 700; margin-top: 20px; text-align: center;">
+                                🔒 Keep your PIN private. Do not share it with anyone.
+                            </p>
+
                             ${isPaidEntry ? `
-                            <p style="color: #ef4444; font-size: 12px; font-weight: 700; margin-top: 20px; text-align: center;">
+                            <p style="color: #ef4444; font-size: 12px; font-weight: 700; margin-top: 10px; text-align: center;">
                                 ⚠️ Payment required before full portal access is granted.
                             </p>
                             ` : ''}
@@ -5627,7 +5700,7 @@ app.put('/api/courses/categories/:id', authenticateToken, checkSubscription, asy
     }
 });
 
-// Lecturer: Add student to roster with PIN setup invitation
+// Lecturer: Add student to roster with auto-generated PIN
 app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
@@ -5638,9 +5711,9 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
     if (existing.rows.length > 0) return res.status(400).json({ error: 'Student already in your roster.' });
 
-    // 2. Generate secure setup token
-    const setupToken = require('crypto').randomBytes(32).toString('hex');
-    const tokenExpires = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+    // 2. Auto-generate a 4-digit PIN
+    const autoPin = String(Math.floor(1000 + Math.random() * 9000));
+    const hashedPin = await bcrypt.hash(autoPin, 10);
 
     // 3. Handle Category Logic
     let category_id = null;
@@ -5654,42 +5727,82 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
       }
     }
 
-    // 4. Add to roster
+    // 4. Add to roster with hashed PIN
     const tenantRes = await pool.query('SELECT workspace_id, name FROM tenants WHERE id = $1', [req.tenant_id]);
     const workspaceId = tenantRes.rows[0]?.workspace_id || 'N/A';
     const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
 
     await pool.query(
-      'INSERT INTO students_roster (tenant_id, matric_number, name, email, course, setup_token, token_expires, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [req.tenant_id, matricNumber, name, email, course || '', setupToken, tokenExpires, category_id]
+      'INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [req.tenant_id, matricNumber, name, email, course || '', hashedPin, category_id]
     );
 
+    // 5. Create user account immediately
+    const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+    if (userCheck.rows.length === 0) {
+      await pool.query(
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id]
+      );
+    } else {
+      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, category_id]);
+    }
+
+    // 6. Send email with auto-generated PIN
     try {
-      const setupLink = `${process.env.APP_URL || 'http://localhost:3000'}/setup-pin?token=${setupToken}&matric=${matricNumber}`;
       const portalBranding = "Genius Academic Portal";
       await mailTransporter.sendMail({
         from: `"${portalBranding}" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
         to: email,
-        subject: `[${portalBranding}] Secure Your Student Access`,
+        subject: `[${portalBranding}] Welcome ${name} - Your Access Credentials`,
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 20px; border: 1px solid #e2e8f0;">
-            <div style="text-align: center; margin-bottom: 25px;">
-              <img src="/gmijp-logo.png" alt="Genius" style="width: 70px; height: 70px; border-radius: 50%; background: white; padding: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);" />
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; padding: 40px; background: #ffffff; border-radius: 24px; border: 1px solid #f1f5f9; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <div style="width: 60px; height: 60px; background: #1a237e; border-radius: 15px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 15px;">
+                    <span style="color: white; font-size: 24px; font-weight: bold;">G</span>
+                </div>
+                <h2 style="color: #0f172a; margin: 0; font-size: 24px; font-weight: 800;">Welcome to Genius Academy</h2>
+                <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Your Secure Academic Hub</p>
             </div>
-            <h2 style="color: #0f172a; text-align: center; font-size: 24px;">Welcome to Genius Academy</h2>
-            <p style="color: #64748b; font-size: 16px; line-height: 1.6;">Hi ${name},</p>
-            <p style="color: #64748b; font-size: 16px; line-height: 1.6;">You have been officially registered in the Academic Workspace. To access your portal, exams, and academic resources, please establish your secure 4-digit PIN.</p>
+
+            <p style="color: #334155; font-size: 16px; line-height: 1.6;">Hi <b>${name}</b>,</p>
+            <p style="color: #334155; font-size: 16px; line-height: 1.6;">You have been officially registered in the <b>${workspaceName}</b> workspace. Your account is ready — use the credentials below to log in.</p>
+            
             <div style="text-align: center; margin: 35px 0;">
-              <a href="${setupLink}" style="background: #1a237e; color: white; padding: 15px 35px; border-radius: 12px; text-decoration: none; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(26, 35, 126, 0.3);">Set Up Secure PIN</a>
+              <div style="background: #f0f1ff; border: 2px dashed #1a237e; border-radius: 16px; padding: 25px; display: inline-block;">
+                <p style="color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin: 0 0 8px 0;">Your Secure PIN</p>
+                <p style="color: #1a237e; font-size: 40px; font-weight: 900; letter-spacing: 12px; margin: 0; font-family: 'Courier New', monospace;">${autoPin}</p>
+              </div>
             </div>
-            <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin-bottom: 25px;">
-               <p style="margin: 0; color: #475569; font-size: 13px;"><strong>Workspace ID:</strong> <span style="color: #1a237e; font-weight: 800;">${workspaceId}</span></p>
-               <p style="margin: 5px 0 0 0; color: #475569; font-size: 13px;"><strong>Matriculation Number:</strong> ${matricNumber}</p>
-               <p style="margin: 5px 0 0 0; color: #475569; font-size: 13px;"><strong>Course/Department:</strong> ${workspaceName}</p>
+
+            <div style="background: #f8fafc; padding: 25px; border-radius: 16px; border: 1px solid #e2e8f0;">
+                <h4 style="margin: 0 0 15px 0; color: #0f172a; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Access Credentials</h4>
+                <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Workspace ID:</td>
+                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700; font-family: monospace;">${workspaceId}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Reg. Number:</td>
+                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700;">${matricNumber}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Secure PIN:</td>
+                        <td style="padding: 6px 0; text-align: right; color: #1a237e; font-weight: 800; font-family: monospace; font-size: 16px;">${autoPin}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Department:</td>
+                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700;">${workspaceName}</td>
+                    </tr>
+                </table>
             </div>
-            <p style="color: #94a3b8; font-size: 12px; text-align: center; line-height: 1.5;">This invitation expires in 48 hours for security reasons.<br/>If you did not expect this, please ignore this email or contact your administrator.</p>
-            <div style="border-top: 1px solid #e2e8f0; margin-top: 30px; padding-top: 20px; text-align: center;">
-               <p style="color: #cbd5e1; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px;">Genius Mindspark Academic Hub</p>
+
+            <p style="color: #f59e0b; font-size: 12px; font-weight: 700; margin-top: 20px; text-align: center;">
+                🔒 Keep your PIN private. Do not share it with anyone.
+            </p>
+
+            <div style="text-align: center; margin-top: 35px; border-top: 1px solid #f1f5f9; padding-top: 20px;">
+                <p style="color: #94a3b8; font-size: 11px;">&copy; 2026 Genius Academic Publishing Pipeline. All rights reserved.</p>
             </div>
           </div>
         `
@@ -5698,7 +5811,7 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
       console.error('Onboarding email failed:', emailErr);
     }
 
-    res.json({ success: true, message: 'Student added and invitation sent.' });
+    res.json({ success: true, message: 'Student added and credentials sent.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

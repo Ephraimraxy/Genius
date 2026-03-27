@@ -497,7 +497,26 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                             >
                                                 <Eye size={18} />
                                             </button>
-                                            <button className="p-3 bg-white text-slate-400 hover:text-blue-600 rounded-2xl border border-slate-200 shadow-sm transition-all hover:scale-105">
+                                            <button 
+                                                onClick={() => {
+                                                    fetch(`/api/resources/${item.id}/download`, {
+                                                        headers: { 'Authorization': `Bearer ${token}` }
+                                                    })
+                                                    .then(res => res.blob())
+                                                    .then(blob => {
+                                                        const url = window.URL.createObjectURL(blob);
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = item.name + (item.type === 'roster' && !item.name.toLowerCase().endsWith('.csv') ? '.csv' : '');
+                                                        document.body.appendChild(a);
+                                                        a.click();
+                                                        a.remove();
+                                                        window.URL.revokeObjectURL(url);
+                                                    })
+                                                    .catch(err => addToast('Download failed', 'error'));
+                                                }}
+                                                className="p-3 bg-white text-slate-400 hover:text-blue-600 rounded-2xl border border-slate-200 shadow-sm transition-all hover:scale-105"
+                                            >
                                                 <Download size={18} />
                                             </button>
                                             <button 
