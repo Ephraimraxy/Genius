@@ -771,7 +771,6 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
             }
         }
     }
-
     res.json({ 
         token, 
         user: { 
@@ -780,7 +779,8 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
             name: user.name, 
             role: 'student', 
             tenant_id: user.tenant_id, 
-            matricNumber: user.matric_number,
+            matricNumber: user.matric_number, // Aliased for frontend
+            matric_number: user.matric_number,
             accessBlocked,
             entryFee
         } 
@@ -3055,6 +3055,26 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
   }
 });
 
+
+// HIGH-FIDELITY PDF GENERATION VIA PUPPETEER (Shared Helper)
+app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const paperResult = await pool.query('SELECT title FROM papers WHERE id = $1', [id]);
+    const paper = paperResult.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    const pdfBuffer = await generateHighFidelityPaperPDF(id);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}_Final.pdf"`);
+    res.end(pdfBuffer);
+  } catch (error: any) {
+    console.error('High-fidelity PDF error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate high-fidelity PDF' });
+  }
+});
+
 app.post('/api/format/:id/email', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -4115,7 +4135,52 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       const papers = papersResult.rows;
 
-      const responseData: any = { user: freshUser, profile, papers, tenant, subscriptionPrice };
+      // --- STUDENT PORTAL HARDENING ---
+      let accessBlocked = false;
+      let entryFee = 0;
+
+      if (freshUser.role === 'student' && freshUser.tenant_id) {
+          // 1. Recover missing matric_number from roster if needed
+          if (!freshUser.matric_number) {
+              const rosterRes = await pool.query(
+                'SELECT matric_number, category_id FROM students_roster WHERE email = $1 AND tenant_id = $2', 
+                [freshUser.email, freshUser.tenant_id]
+              );
+              if (rosterRes.rows.length > 0) {
+                  freshUser.matric_number = rosterRes.rows[0].matric_number;
+                  freshUser.category_id = rosterRes.rows[0].category_id;
+                  // Auto-sync back to users table
+                  await pool.query('UPDATE users SET matric_number = $1, category_id = $2 WHERE id = $3', [freshUser.matric_number, freshUser.category_id, userId]);
+              }
+          }
+          
+          // Alias for frontend compatibility
+          freshUser.matricNumber = freshUser.matric_number;
+
+          // 2. Enforce Payment Gate
+          const catId = freshUser.category_id;
+          if (catId) {
+              const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [catId]);
+              if (catRes.rows[0]?.is_paid_entry) {
+                  const payRes = await pool.query(
+                      "SELECT id FROM transactions WHERE user_id = $1 AND type = 'portal_entry' AND status = 'success'",
+                      [userId]
+                  );
+                  if (payRes.rows.length === 0) {
+                      accessBlocked = true;
+                      entryFee = catRes.rows[0].entry_fee;
+                  }
+              }
+          }
+      }
+
+      const responseData: any = { 
+          user: { ...freshUser, accessBlocked, entryFee }, 
+          profile, 
+          papers, 
+          tenant, 
+          subscriptionPrice 
+      };
 
       // If super_admin, include global platform stats
       if (freshUser.role === 'super_admin') {
