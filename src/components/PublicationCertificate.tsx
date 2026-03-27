@@ -81,18 +81,18 @@ export default function PublicationCertificate({
         <div className={`relative z-10 w-full h-full flex flex-col ${compactMode ? 'p-6 md:p-10' : 'p-12 md:p-16'} text-center overflow-hidden`}>
           
           {/* 1. Header Section (Shrink Allowed) */}
-          <div className={`shrink-0 w-full flex justify-between items-center ${compactMode ? 'gap-2 mb-2 md:mb-4' : 'gap-4 mb-6 md:mb-10'}`}>
-            <img src={publisherLogo} alt="GMIJP" className={`${compactMode ? 'w-12 h-12 md:w-16 md:h-16' : 'w-16 h-16 md:w-24 md:h-24'} object-contain`} />
+          <div className={`shrink-0 w-full flex justify-between items-center ${compactMode ? 'gap-2 mb-1 md:mb-2' : 'gap-4 mb-6 md:mb-10'}`}>
+            <img src={publisherLogo} alt="GMIJP" className={`${compactMode ? 'w-10 h-10 md:w-16 md:h-16' : 'w-16 h-16 md:w-24 md:h-24'} object-contain`} />
             <div className="flex-1">
-              <h1 className={`${compactMode ? 'text-lg md:text-xl' : 'text-xl md:text-2xl'} font-black text-slate-900 uppercase tracking-tight leading-tight`}>
+              <h1 className={`${compactMode ? 'text-sm md:text-lg' : 'text-xl md:text-2xl'} font-black text-slate-900 uppercase tracking-tight leading-tight`}>
                 Genius Multidisciplinary<br />
                 International Journal Publication
               </h1>
-              <p className="text-[8px] md:text-xs font-bold text-[#800000] mt-0.5 tracking-[0.2em] uppercase">
+              <p className="text-[7px] md:text-xs font-bold text-[#800000] mt-0.5 tracking-[0.2em] uppercase">
                 Academic Excellence & Global Reach
               </p>
             </div>
-            <img src={institutionLogo} alt="NSUK" className={`${compactMode ? 'w-12 h-12 md:w-16 md:h-16' : 'w-16 h-16 md:w-24 md:h-24'} object-contain`} />
+            <img src={institutionLogo} alt="NSUK" className={`${compactMode ? 'w-10 h-10 md:w-16 md:h-16' : 'w-16 h-16 md:w-24 md:h-24'} object-contain`} />
           </div>
 
           {/* 2. Main Body (Scrollable or Clipped if absolutely necessary, but intended to fit) */}
@@ -115,16 +115,16 @@ export default function PublicationCertificate({
                 </h3>
               </div>
 
-              <div className="py-1 md:py-2">
+              <div className="shrink-0 py-1 md:py-2">
                 <p className={`${compactMode ? 'text-[10px] md:text-xs' : 'text-sm md:text-lg'} text-slate-500 font-medium mb-1`}>authored by</p>
-                <div className="max-h-[20%] overflow-hidden">
+                <div className="max-h-[80px] md:max-h-[120px] overflow-hidden flex items-center justify-center">
                   <h4 className={`${authorsSizeClass} font-bold text-slate-900 underline decoration-[#800000] decoration-2 underline-offset-4 inline-block px-4 max-w-full italic`}>
                     {authorNames}
                   </h4>
                 </div>
               </div>
 
-              <p className={`${compactMode ? 'text-[10px] md:text-sm' : 'text-sm md:text-lg'} text-slate-600 leading-relaxed px-4 md:px-16`}>
+              <p className={`${compactMode ? 'text-[9px] md:text-sm' : 'text-sm md:text-lg'} text-slate-600 leading-relaxed px-4 md:px-16 pb-2 shrink-0`}>
                 has been accepted and successfully published in the <strong>{journalName}</strong>. 
                 The work demonstrates significant scholarly merit and professional integrity.
               </p>
