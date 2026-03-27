@@ -5409,12 +5409,18 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         // Deep Sanitize the entire students array to prevent PG errors on JSON storage later
         const sanitizedStudents = students.map((s: any) => {
             const clean = (val: any) => typeof val === 'string' ? val.replace(/\0/g, '').trim() : val;
+            // Support various frontend property names
+            const email = clean(s.email || s.studentEmail || s.emailAddress || s.Email);
+            const name = clean(s.name || s.studentName || s.fullName || s.Name);
+            const matric = clean(s.matricNumber || s.regNumber || s.matricNo || s.matric);
+            const course = clean(s.course || s.department || s.program);
+            
             return {
                 ...s,
-                name: clean(s.name || s.studentName),
-                email: clean(s.email),
-                matricNumber: clean(s.matricNumber || s.regNumber),
-                course: clean(s.course)
+                name,
+                email,
+                matricNumber: matric,
+                course
             };
         });
 
@@ -5720,11 +5726,12 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const clean = (val: any) => typeof val === 'string' ? val.replace(/\0/g, '').trim() : val;
-    const matricNumber = clean(req.body.matricNumber);
-    const name = clean(req.body.name);
-    const email = clean(req.body.email);
-    const course = clean(req.body.course);
-    const categoryName = clean(req.body.categoryName);
+    const b = req.body;
+    const matricNumber = clean(b.matricNumber || b.regNumber || b.matricNo || b.matric);
+    const name = clean(b.name || b.studentName || b.fullName || b.Name);
+    const email = clean(b.email || b.studentEmail || b.emailAddress || b.Email);
+    const course = clean(b.course || b.department || b.program);
+    const categoryName = clean(b.categoryName);
 
     if (!matricNumber || !email || !name) return res.status(400).json({ error: 'Matric Number, Name, and Email are required.' });
     if (!email.includes('@') || email.length < 5) return res.status(400).json({ error: 'Invalid email address.' });
