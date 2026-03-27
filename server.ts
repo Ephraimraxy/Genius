@@ -5406,13 +5406,30 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         const students = Array.isArray(content) ? content : [];
         if (students.length === 0) return res.status(400).json({ error: 'Empty roster' });
         
-        for (const s of students) {
-            // Strip null bytes to prevent PostgreSQL UTF8 invalid byte sequence errors
-            const sanitizeStr = (str: any) => typeof str === 'string' ? str.replace(/\0/g, '').trim() : str;
+        // Deep Sanitize the entire students array to prevent PG errors on JSON storage later
+        const sanitizedStudents = students.map((s: any) => {
+            const clean = (val: any) => typeof val === 'string' ? val.replace(/\0/g, '').trim() : val;
+            return {
+                ...s,
+                name: clean(s.name || s.studentName),
+                email: clean(s.email),
+                matricNumber: clean(s.matricNumber || s.regNumber),
+                course: clean(s.course)
+            };
+        });
 
-            const matricNumber = sanitizeStr(s.matricNumber);
-            const email = sanitizeStr(s.email);
-            const studentName = sanitizeStr(s.name) || matricNumber; // Use matric if name missing
+        for (const s of sanitizedStudents) {
+            const matricNumber = s.matricNumber;
+            const email = s.email;
+            const studentName = s.name || matricNumber;
+            
+            if (!matricNumber || !email) continue;
+
+            // Basic email validation to prevent nodemailer crashes
+            if (!email.includes('@') || email.length < 5) {
+                console.warn(`Skipping invalid email: ${email}`);
+                continue;
+            }
             
             if (!matricNumber || !email) continue;
 
@@ -5486,10 +5503,14 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         }
     }
 
-    // 4. Save the Resource Record
+    // 4. Save the Resource Record (using potentially sanitized content)
     const result = await pool.query(
       'INSERT INTO resources (tenant_id, type, name, content, status, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [req.tenant_id, type, name, JSON.stringify(content), 'ready', final_category_id]
+      [req.tenant_id, type, name, JSON.stringify(Array.isArray(content) ? (type === 'roster' ? (students as any).map((s: any) => ({
+          name: typeof s.name === 'string' ? s.name.replace(/\0/g, '') : s.name,
+          email: typeof s.email === 'string' ? s.email.replace(/\0/g, '') : s.email,
+          matricNumber: typeof s.matricNumber === 'string' ? s.matricNumber.replace(/\0/g, '') : s.matricNumber
+      })) : content) : content), 'ready', final_category_id]
     );
 
     res.json({ success: true, id: result.rows[0].id, status: 'ready' });
@@ -5697,8 +5718,15 @@ app.put('/api/courses/categories/:id', authenticateToken, checkSubscription, asy
 app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const { matricNumber, name, email, course, categoryName } = req.body;
+    const clean = (val: any) => typeof val === 'string' ? val.replace(/\0/g, '').trim() : val;
+    const matricNumber = clean(req.body.matricNumber);
+    const name = clean(req.body.name);
+    const email = clean(req.body.email);
+    const course = clean(req.body.course);
+    const categoryName = clean(req.body.categoryName);
+
     if (!matricNumber || !email || !name) return res.status(400).json({ error: 'Matric Number, Name, and Email are required.' });
+    if (!email.includes('@') || email.length < 5) return res.status(400).json({ error: 'Invalid email address.' });
 
     // 1. Check if student already in roster for this tenant
     const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
