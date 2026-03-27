@@ -5504,9 +5504,10 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
     }
 
     // 4. Save the Resource Record (using potentially sanitized content)
+    const rawStudents = Array.isArray(content) ? content : [];
     const result = await pool.query(
       'INSERT INTO resources (tenant_id, type, name, content, status, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [req.tenant_id, type, name, JSON.stringify(Array.isArray(content) ? (type === 'roster' ? (students as any).map((s: any) => ({
+      [req.tenant_id, type, name, JSON.stringify(Array.isArray(content) ? (type === 'roster' ? rawStudents.map((s: any) => ({
           name: typeof s.name === 'string' ? s.name.replace(/\0/g, '') : s.name,
           email: typeof s.email === 'string' ? s.email.replace(/\0/g, '') : s.email,
           matricNumber: typeof s.matricNumber === 'string' ? s.matricNumber.replace(/\0/g, '') : s.matricNumber
