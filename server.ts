@@ -5396,9 +5396,12 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         if (students.length === 0) return res.status(400).json({ error: 'Empty roster' });
         
         for (const s of students) {
-            const matricNumber = s.matricNumber;
-            const email = s.email;
-            const studentName = s.name || s.matricNumber; // Use matric if name missing
+            // Strip null bytes to prevent PostgreSQL UTF8 invalid byte sequence errors
+            const sanitizeStr = (str: any) => typeof str === 'string' ? str.replace(/\0/g, '').trim() : str;
+
+            const matricNumber = sanitizeStr(s.matricNumber);
+            const email = sanitizeStr(s.email);
+            const studentName = sanitizeStr(s.name) || matricNumber; // Use matric if name missing
             
             if (!matricNumber || !email) continue;
 
@@ -5433,63 +5436,28 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
                         to: email,
                         subject: `[Genius] Welcome ${studentName} - Your Access Credentials`,
                         html: `
-                          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; padding: 40px; background: #ffffff; border-radius: 24px; border: 1px solid #f1f5f9; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
-                            <div style="text-align: center; margin-bottom: 30px;">
-                                <div style="width: 60px; height: 60px; background: #1a237e; border-radius: 15px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 15px;">
-                                    <span style="color: white; font-size: 24px; font-weight: bold;">G</span>
-                                </div>
-                                <h2 style="color: #0f172a; margin: 0; font-size: 24px; font-weight: 800;">Welcome to Genius Academy</h2>
-                                <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Your Secure Academic Hub</p>
-                            </div>
-
-                            <p style="color: #334155; font-size: 16px; line-height: 1.6;">Hi <b>${studentName}</b>,</p>
-                            <p style="color: #334155; font-size: 16px; line-height: 1.6;">You have been successfully added to the <b>${categoryName || 'Academic'}</b> batch. Your account is ready — use the credentials below to log in.</p>
-                            
-                            <div style="text-align: center; margin: 35px 0;">
-                              <div style="background: #f0f1ff; border: 2px dashed #1a237e; border-radius: 16px; padding: 25px; display: inline-block;">
-                                <p style="color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin: 0 0 8px 0;">Your Secure PIN</p>
-                                <p style="color: #1a237e; font-size: 40px; font-weight: 900; letter-spacing: 12px; margin: 0; font-family: 'Courier New', monospace;">${autoPin}</p>
-                              </div>
-                            </div>
-
-                            <div style="background: #f8fafc; padding: 25px; border-radius: 16px; border: 1px solid #e2e8f0;">
-                                <h4 style="margin: 0 0 15px 0; color: #0f172a; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Access Credentials</h4>
-                                <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
-                                    <tr>
-                                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Workspace ID:</td>
-                                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700; font-family: monospace;">${workspaceId}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Reg. Number:</td>
-                                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700;">${matricNumber}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Secure PIN:</td>
-                                        <td style="padding: 6px 0; text-align: right; color: #1a237e; font-weight: 800; font-family: monospace; font-size: 16px;">${autoPin}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Access Mode:</td>
-                                        <td style="padding: 6px 0; text-align: right; color: ${isPaidEntry ? '#ef4444' : '#10b981'}; font-weight: 800; text-transform: uppercase;">
-                                            ${isPaidEntry ? `Paid (₦${feeInt})` : 'Free Access'}
-                                        </td>
-                                    </tr>
-                                </table>
-                            </div>
-
-                            <p style="color: #f59e0b; font-size: 12px; font-weight: 700; margin-top: 20px; text-align: center;">
-                                🔒 Keep your PIN private. Do not share it with anyone.
-                            </p>
-
-                            ${isPaidEntry ? `
-                            <p style="color: #ef4444; font-size: 12px; font-weight: 700; margin-top: 10px; text-align: center;">
-                                ⚠️ Payment required before full portal access is granted.
-                            </p>
-                            ` : ''}
-
-                            <div style="text-align: center; margin-top: 35px; border-top: 1px solid #f1f5f9; pt-20">
-                                <p style="color: #94a3b8; font-size: 11px; margin-top: 15px;">&copy; 2026 Genius Academic Publishing Pipeline. All rights reserved.</p>
-                            </div>
-                          </div>
+<div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: 0 auto; line-height: 1.5;">
+  <h2 style="color: #1a237e; margin-top: 0;">Welcome to Genius Academy</h2>
+  <p>Hi <b>${studentName}</b>,</p>
+  <p>You have been added to the <b>${categoryName || 'Academic'}</b> batch. Your account is ready!</p>
+  
+  <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin: 25px 0;">
+    <h3 style="margin-top: 0; color: #0f172a; font-size: 16px; text-transform: uppercase;">Your Access Credentials</h3>
+    <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
+      <tr><td style="padding: 8px 0; color: #64748b;">Workspace ID:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${workspaceId}</td></tr>
+      <tr><td style="padding: 8px 0; color: #64748b;">Reg. Number:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${matricNumber}</td></tr>
+      <tr><td style="padding: 8px 0; color: #64748b;">Secure PIN:</td><td style="padding: 8px 0; text-align: right;"><span style="background: #e0e7ff; color: #3730a3; padding: 6px 12px; border-radius: 6px; font-weight: bold; letter-spacing: 2px;">${autoPin}</span></td></tr>
+      <tr><td style="padding: 8px 0; color: #64748b;">Access Mode:</td><td style="padding: 8px 0; text-align: right; font-weight: bold; color: ${isPaidEntry ? '#ef4444' : '#10b981'};">${isPaidEntry ? `Paid (₦${feeInt})` : 'Free Access'}</td></tr>
+    </table>
+  </div>
+  
+  <p style="color: #d97706; font-weight: bold; font-size: 14px; text-align: center;">🔒 Keep your PIN private. Do not share it.</p>
+  ${isPaidEntry ? `<p style="color: #ef4444; font-weight: bold; font-size: 14px; text-align: center;">⚠️ Payment required before full portal access.</p>` : ''}
+  
+  <div style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #94a3b8; font-size: 12px;">
+    &copy; 2026 Genius Academic Publishing. All rights reserved.
+  </div>
+</div>
                         `
                     });
                 } catch (emailErr) { console.error('Batch email failed for', email, emailErr); }
@@ -5756,55 +5724,27 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
         to: email,
         subject: `[${portalBranding}] Welcome ${name} - Your Access Credentials`,
         html: `
-          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; padding: 40px; background: #ffffff; border-radius: 24px; border: 1px solid #f1f5f9; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
-            <div style="text-align: center; margin-bottom: 30px;">
-                <div style="width: 60px; height: 60px; background: #1a237e; border-radius: 15px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 15px;">
-                    <span style="color: white; font-size: 24px; font-weight: bold;">G</span>
-                </div>
-                <h2 style="color: #0f172a; margin: 0; font-size: 24px; font-weight: 800;">Welcome to Genius Academy</h2>
-                <p style="color: #64748b; font-size: 14px; margin-top: 5px;">Your Secure Academic Hub</p>
-            </div>
-
-            <p style="color: #334155; font-size: 16px; line-height: 1.6;">Hi <b>${name}</b>,</p>
-            <p style="color: #334155; font-size: 16px; line-height: 1.6;">You have been officially registered in the <b>${workspaceName}</b> workspace. Your account is ready — use the credentials below to log in.</p>
-            
-            <div style="text-align: center; margin: 35px 0;">
-              <div style="background: #f0f1ff; border: 2px dashed #1a237e; border-radius: 16px; padding: 25px; display: inline-block;">
-                <p style="color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin: 0 0 8px 0;">Your Secure PIN</p>
-                <p style="color: #1a237e; font-size: 40px; font-weight: 900; letter-spacing: 12px; margin: 0; font-family: 'Courier New', monospace;">${autoPin}</p>
-              </div>
-            </div>
-
-            <div style="background: #f8fafc; padding: 25px; border-radius: 16px; border: 1px solid #e2e8f0;">
-                <h4 style="margin: 0 0 15px 0; color: #0f172a; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Access Credentials</h4>
-                <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
-                    <tr>
-                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Workspace ID:</td>
-                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700; font-family: monospace;">${workspaceId}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Reg. Number:</td>
-                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700;">${matricNumber}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Secure PIN:</td>
-                        <td style="padding: 6px 0; text-align: right; color: #1a237e; font-weight: 800; font-family: monospace; font-size: 16px;">${autoPin}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Department:</td>
-                        <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 700;">${workspaceName}</td>
-                    </tr>
-                </table>
-            </div>
-
-            <p style="color: #f59e0b; font-size: 12px; font-weight: 700; margin-top: 20px; text-align: center;">
-                🔒 Keep your PIN private. Do not share it with anyone.
-            </p>
-
-            <div style="text-align: center; margin-top: 35px; border-top: 1px solid #f1f5f9; padding-top: 20px;">
-                <p style="color: #94a3b8; font-size: 11px;">&copy; 2026 Genius Academic Publishing Pipeline. All rights reserved.</p>
-            </div>
-          </div>
+<div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: 0 auto; line-height: 1.5;">
+  <h2 style="color: #1a237e; margin-top: 0;">Welcome to Genius Academy</h2>
+  <p>Hi <b>${name}</b>,</p>
+  <p>You have been registered in the <b>${workspaceName}</b> workspace. Your account is ready!</p>
+  
+  <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin: 25px 0;">
+    <h3 style="margin-top: 0; color: #0f172a; font-size: 16px; text-transform: uppercase;">Your Access Credentials</h3>
+    <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
+      <tr><td style="padding: 8px 0; color: #64748b;">Workspace ID:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${workspaceId}</td></tr>
+      <tr><td style="padding: 8px 0; color: #64748b;">Reg. Number:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${matricNumber}</td></tr>
+      <tr><td style="padding: 8px 0; color: #64748b;">Secure PIN:</td><td style="padding: 8px 0; text-align: right;"><span style="background: #e0e7ff; color: #3730a3; padding: 6px 12px; border-radius: 6px; font-weight: bold; letter-spacing: 2px;">${autoPin}</span></td></tr>
+      <tr><td style="padding: 8px 0; color: #64748b;">Department:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${workspaceName}</td></tr>
+    </table>
+  </div>
+  
+  <p style="color: #d97706; font-weight: bold; font-size: 14px; text-align: center;">🔒 Keep your PIN private. Do not share it.</p>
+  
+  <div style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #94a3b8; font-size: 12px;">
+    &copy; 2026 Genius Academic Publishing. All rights reserved.
+  </div>
+</div>
         `
       });
     } catch (emailErr) {
