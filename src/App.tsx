@@ -739,7 +739,7 @@ export default function App() {
         </header>
 
         <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 pb-24 md:pb-8 scroll-smooth bg-slate-50/30">
-          <div className="max-w-7xl mx-auto h-full">
+          <div className="max-w-[1920px] mx-auto h-full">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}
