@@ -5386,9 +5386,12 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
             final_category_id = catRes.rows[0].id;
         }
     } else if (final_category_id) {
-        // Update existing category settings if provided
+        // Price Lock: Update only if current fee is 0
         await pool.query(
-            'UPDATE student_categories SET is_paid_entry = $1, entry_fee = $2 WHERE id = $3 AND tenant_id = $4',
+            `UPDATE student_categories 
+             SET is_paid_entry = CASE WHEN entry_fee = 0 THEN $1 ELSE is_paid_entry END,
+                 entry_fee = CASE WHEN entry_fee = 0 THEN $2 ELSE entry_fee END
+             WHERE id = $3 AND tenant_id = $4`,
             [!!isPaidEntry, parseInt(entryFee) || 0, final_category_id, req.tenant_id]
         );
     }
@@ -5676,11 +5679,15 @@ app.put('/api/courses/categories/:id', authenticateToken, checkSubscription, asy
     try {
         const { id } = req.params;
         const { is_paid_entry, entry_fee } = req.body;
+        // Price Lock Enforcement: Only update if current entry_fee is 0
         await pool.query(
-            'UPDATE student_categories SET is_paid_entry = $1, entry_fee = $2 WHERE id = $3 AND tenant_id = $4',
+            `UPDATE student_categories 
+             SET is_paid_entry = CASE WHEN entry_fee = 0 THEN $1 ELSE is_paid_entry END,
+                 entry_fee = CASE WHEN entry_fee = 0 THEN $2 ELSE entry_fee END 
+             WHERE id = $3 AND tenant_id = $4`,
             [is_paid_entry, entry_fee, id, req.tenant_id]
         );
-        res.json({ success: true });
+        res.json({ success: true, message: 'Settings updated (Price lock applied if non-zero)' });
     } catch (err) {
         res.status(500).json({ error: 'Update failed' });
     }
@@ -5711,12 +5718,15 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
       hashedPin = await bcrypt.hash(autoPin, 10);
     }
 
-    // 3. Handle Category Logic
+    // 3. Handle Category Logic (Price Lock)
     let category_id = null;
     if (categoryName) {
-      const catCheck = await pool.query('SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
+      const catCheck = await pool.query('SELECT id, entry_fee FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
       if (catCheck.rows.length > 0) {
         category_id = catCheck.rows[0].id;
+        // Optional: If categoryName provided but no fees set, we could potentially update it, 
+        // but the upload/single-add payload doesn't usually carry fee info for existing categories here.
+        // We stick to the Price Lock in the dedicated PIT and Bulk Upload.
       } else {
         const catInsert = await pool.query('INSERT INTO student_categories (tenant_id, name) VALUES ($1, $2) RETURNING id', [req.tenant_id, categoryName.trim()]);
         category_id = catInsert.rows[0].id;
@@ -5822,6 +5832,54 @@ app.post('/api/student/setup-pin', async (req, res) => {
     res.json({ success: true, message: 'PIN set successfully. You can now log in.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Lecturer: Delete Student from Roster
+app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    
+    // 1. Get student info first to handle user account cleanup
+    const studentRes = await pool.query('SELECT matric_number FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    if (studentRes.rows.length === 0) return res.status(404).json({ error: 'Student not found in your roster' });
+    const matric = studentRes.rows[0].matric_number;
+
+    // 2. Delete from users (tenant-scoped)
+    await pool.query('DELETE FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = \'student\'', [matric, req.tenant_id]);
+    
+    // 3. Delete from roster
+    await pool.query('DELETE FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    
+    res.json({ success: true, message: 'Student removed from workspace successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Deletion failed' });
+  }
+});
+
+// Lecturer: Delete Full Batch (Category)
+app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+
+    // 1. Verify category belongs to tenant
+    const catCheck = await pool.query('SELECT id FROM student_categories WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    if (catCheck.rows.length === 0) return res.status(404).json({ error: 'Category not found' });
+
+    // 2. Delete all students in this category for this tenant
+    // Note: We delete from users first (tenant-scoped) then from students_roster
+    await pool.query('DELETE FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = \'student\'', [id, req.tenant_id]);
+    await pool.query('DELETE FROM students_roster WHERE category_id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+
+    // 3. Delete the category itself
+    await pool.query('DELETE FROM student_categories WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+
+    res.json({ success: true, message: 'Batch category and all associated student records deleted successfully' });
+  } catch (err: any) {
+    console.error('Batch delete error:', err);
+    res.status(500).json({ error: 'Batch deletion failed' });
   }
 });
 
