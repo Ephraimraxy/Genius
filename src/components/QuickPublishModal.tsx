@@ -12,9 +12,11 @@ import {
   ArrowRight,
   Clock,
   Settings,
-  X
+  X,
+  Eye
 } from 'lucide-react';
 import { ToastType } from './ToastSystem';
+import PublicationCertificate from './PublicationCertificate';
 
 interface QuickPublishModalProps {
   isOpen: boolean;
@@ -40,6 +42,8 @@ export default function QuickPublishModal({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
   const [journalConfig, setJournalConfig] = useState<any>(null);
+  const [paperData, setPaperData] = useState<any>(null);
+  const [previewMode, setPreviewMode] = useState<'none' | 'certificate' | 'manuscript'>('none');
 
   useEffect(() => {
     if (isOpen && paperId && token) {
@@ -59,8 +63,16 @@ export default function QuickPublishModal({
     setStep('fetching_meta');
     setProgress(10);
     setError(null);
+    setPreviewMode('none');
 
     try {
+      // 0. Fetch Paper Data for Preview (Optional but helpful)
+      const paperRes = await fetch(`/api/papers/${paperId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (paperRes.ok) {
+        setPaperData(await paperRes.json());
+      }
       // 1. Fetch Journal Config for Defaults
       const configRes = await fetch('/api/admin/config/journal', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -193,6 +205,57 @@ export default function QuickPublishModal({
                    <p className="text-slate-500 font-medium mt-1">Your manuscript is now live and your certificate has been emailed.</p>
                 </div>
 
+                <div className="flex items-center justify-center gap-3 mb-6">
+                    <button 
+                      onClick={() => setPreviewMode(previewMode === 'certificate' ? 'none' : 'certificate')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${previewMode === 'certificate' ? 'bg-[#800000] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      <ShieldCheck size={14} /> {previewMode === 'certificate' ? 'Hide Certificate' : 'Preview Certificate'}
+                    </button>
+                    <button 
+                      onClick={() => setPreviewMode(previewMode === 'manuscript' ? 'none' : 'manuscript')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${previewMode === 'manuscript' ? 'bg-[#800000] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      <Eye size={14} /> {previewMode === 'manuscript' ? 'Hide Manuscript' : 'Preview Manuscript'}
+                    </button>
+                </div>
+
+                <AnimatePresence mode="wait">
+                    {previewMode === 'certificate' && journalConfig && paperData && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mb-8 border-2 border-dashed border-slate-200 rounded-[2rem] p-4 bg-slate-50 flex justify-center overflow-auto"
+                      >
+                         <div className="scale-[0.45] origin-top h-[300px]">
+                            <PublicationCertificate 
+                               title={paperData.title}
+                               authors={paperData.authors || []}
+                               doi={result.doi || 'Pending'}
+                               volume={journalConfig.current_volume}
+                               issue={journalConfig.current_issue}
+                               date={new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            />
+                         </div>
+                      </motion.div>
+                    )}
+                    {previewMode === 'manuscript' && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mb-8 border-2 border-dashed border-slate-200 rounded-[2rem] overflow-hidden"
+                      >
+                        <iframe 
+                          src={result.pdfUrl} 
+                          className="w-full h-[400px]" 
+                          title="Manuscript Preview"
+                        />
+                      </motion.div>
+                    )}
+                </AnimatePresence>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                    <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Assigned DOI</p>
@@ -213,7 +276,7 @@ export default function QuickPublishModal({
                      rel="noopener noreferrer"
                      className="flex-1 px-6 py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/10"
                    >
-                     <Download size={18} /> View Branded PDF
+                     <Download size={18} /> View Full PDF
                    </a>
                    <button 
                      onClick={onClose}
