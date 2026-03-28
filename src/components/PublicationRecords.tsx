@@ -142,22 +142,39 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     (p.issn?.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const handleDownloadCertificate = async (pub: Publication) => {
     const element = document.getElementById('publication-certificate');
     if (!element) return;
     
+    setIsDownloading(true);
     try {
-      const canvas = await html2canvas(element, { scale: 3, useCORS: true });
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      // Small delay to ensure any dynamic content is fullly rendered
+      await new Promise(r => setTimeout(r, 500));
+      
+      const canvas = await html2canvas(element, { 
+        scale: 2, // Scale 2 is usually enough for high quality without being too slow
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#ffffff',
+        logging: false
+      });
+      
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
         format: 'a4'
       });
+      
       pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210);
-      pdf.save(`Certificate_${pub.title.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+      pdf.save(`Certificate_${pub.id}_${pub.title.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
     } catch (error) {
       console.error('Failed to generate certificate PDF:', error);
+      alert('Certificate download failed. Please try again or use Print (Ctrl+P).');
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -173,10 +190,21 @@ export default function PublicationRecords({ profile }: { profile: any }) {
           </button>
           
           <button 
+            disabled={isDownloading}
             onClick={() => handleDownloadCertificate(certificatePub)}
-            className="flex items-center gap-2 px-6 py-2 bg-[#800000] hover:bg-red-900 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+            className={`flex items-center gap-2 px-6 py-2 bg-[#800000] hover:bg-red-900 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 ${isDownloading ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
-            <Download size={18} /> Download Certificate (PDF)
+            {isDownloading ? (
+               <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Generating...</span>
+               </div>
+            ) : (
+               <>
+                  <Download size={18} /> 
+                  <span>Download Certificate (PDF)</span>
+               </>
+            )}
           </button>
         </div>
 

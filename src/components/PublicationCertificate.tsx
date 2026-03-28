@@ -81,11 +81,14 @@ export default function PublicationCertificate({
 
         {/* Content Layer (Flexbox to force footer into view) */}
         <div className={`relative z-10 w-full h-full flex flex-col ${compactMode ? 'p-6 md:p-10' : 'p-12 md:p-16'} text-center overflow-hidden`}>
-          
           {/* 1. Header Section (Shrink Allowed) */}
-          <div className={`shrink-0 w-full flex justify-between items-center ${compactMode ? 'gap-2 mb-1 md:mb-2' : 'gap-4 mb-6 md:mb-10'}`}>
-            <img src={publisherLogo} alt="GMIJP" className={`${compactMode ? 'w-10 h-10 md:w-16 md:h-16' : 'w-16 h-16 md:w-24 md:h-24'} object-contain`} />
-            <div className="flex-1">
+          <div className={`shrink-0 w-full flex justify-between items-start ${compactMode ? 'gap-2 mb-1 md:mb-2' : 'gap-4 mb-6 md:mb-10'} relative overflow-visible`}>
+            <img 
+              src={publisherLogo} 
+              alt="GMIJP" 
+              className={`${compactMode ? 'w-10 h-10 md:w-16 md:h-16 ml-2 mt-2' : 'w-16 h-16 md:w-24 md:h-24 ml-8 mt-4'} object-contain transition-all`} 
+            />
+            <div className="flex-1 pt-4">
               <h1 className={`${compactMode ? 'text-sm md:text-lg' : 'text-xl md:text-2xl'} font-black text-slate-900 uppercase tracking-tight leading-tight`}>
                 Genius Multidisciplinary<br />
                 International Journal Publication
@@ -94,7 +97,11 @@ export default function PublicationCertificate({
                 Academic Excellence & Global Reach
               </p>
             </div>
-            <img src={institutionLogo} alt="NSUK" className={`${compactMode ? 'w-10 h-10 md:w-16 md:h-16' : 'w-16 h-16 md:w-24 md:h-24'} object-contain`} />
+            <img 
+              src={institutionLogo} 
+              alt="NSUK" 
+              className={`${compactMode ? 'w-10 h-10 md:w-16 md:h-16 mr-4 mt-4' : 'w-16 h-16 md:w-24 md:h-24 mr-12 mt-8'} object-contain transition-all`} 
+            />
           </div>
 
           {/* 2. Main Body (Scrollable or Clipped if absolutely necessary, but intended to fit) */}

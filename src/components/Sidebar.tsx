@@ -98,7 +98,6 @@ export default function Sidebar({
     { id: 'reviews', label: 'Peer Review', icon: MessageSquare, section: 'Publishing' },
     { id: 'journals', label: 'Journal Match', icon: BookMarked },
     { id: 'records', label: 'Pub. Records', icon: History },
-    { id: 'showcase', label: 'Cert. Showcase', icon: ShieldCheck },
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
   ];
 
