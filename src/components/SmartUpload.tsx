@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User, Copy, Clock, PartyPopper } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User, Copy, Clock, PartyPopper, Zap } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
 
 import { ToastType } from './ToastSystem';
@@ -9,12 +9,14 @@ export default function SmartUpload({
   onUploadComplete, 
   addToast,
   profile,
-  onNavigate
+  onNavigate,
+  onQuickPublish
 }: { 
   onUploadComplete: (id: number) => void,
   addToast: (message: string, type?: ToastType) => void,
   profile?: any,
-  onNavigate?: (tab: string) => void
+  onNavigate?: (tab: string) => void,
+  onQuickPublish?: () => void
 }) {
   const [isUploading, setIsUploading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -491,29 +493,42 @@ export default function SmartUpload({
                   Your document has been ingested and analyzed. Please check your email inbox for your official <strong>Acceptance Letter</strong>. You can review the extracted metadata below, then proceed to <strong>Writing Assistant</strong> to refine your manuscript prose.
                 </p>
               </div>
-              {onNavigate && (
-                <button
-                  onClick={async () => {
-                    try {
-                      await fetch(`/api/papers/${paperId}/status`, {
-                        method: 'PUT',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        },
-                        body: JSON.stringify({ status: 'writing_assistant' }) // Or we can make a new status 'apa_validation', but this works for now
-                      });
-                      onNavigate('apa_validation');
-                    } catch (e) {
-                      console.error('Failed to move to APA validation', e);
-                    }
-                  }}
-                  className="shrink-0 px-8 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-600/30 hover:scale-105 transition-all flex items-center gap-3"
-                >
-                  Send to APA Rule Engine
-                  <ArrowRight size={18} />
-                </button>
-              )}
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                {onQuickPublish && (
+                  <button
+                    onClick={() => {
+                      onQuickPublish();
+                    }}
+                    className="shrink-0 px-8 py-4 bg-[#800000] hover:bg-red-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all flex items-center gap-3"
+                  >
+                    <Zap size={18} fill="white" />
+                    Instant Quick Publish
+                  </button>
+                )}
+                {onNavigate && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await fetch(`/api/papers/${paperId}/status`, {
+                          method: 'PUT',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                          },
+                          body: JSON.stringify({ status: 'writing_assistant' })
+                        });
+                        onNavigate('apa_validation');
+                      } catch (e) {
+                        console.error('Failed to move to APA validation', e);
+                      }
+                    }}
+                    className="shrink-0 px-8 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-600/30 hover:scale-105 transition-all flex items-center gap-3"
+                  >
+                    Send to APA Rule Engine
+                    <ArrowRight size={18} />
+                  </button>
+                )}
+              </div>
             </motion.div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
