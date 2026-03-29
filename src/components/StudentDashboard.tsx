@@ -318,12 +318,13 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                 )}
             </AnimatePresence>
 
-            {/* Portal Entry Payment Blocker */}
+            {/* Portal Entry Payment Blocker — hidden when payment modal is open */}
             <AnimatePresence>
-                {accessBlocked && (
+                {accessBlocked && !showPortalPayment && (
                     <motion.div 
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
                         className="fixed inset-0 z-[110] bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-6 text-center"
                     >
                         <motion.div 
@@ -350,23 +351,25 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                 )}
             </AnimatePresence>
 
-            {showPortalPayment && (
-                <GeniusPaymentModal 
-                    amount={entryFee}
-                    courseId="PORTAL-ENTRY"
-                    courseName="Portal Access Activation"
-                    token={token}
-                    addToast={addToast}
-                    onClose={() => setShowPortalPayment(false)}
-                    onSuccess={() => {
-                        setShowPortalPayment(false);
-                        setAccessBlocked(false);
-                        addToast('Payment logged. Access will be granted shortly.', 'success');
-                        setTimeout(() => window.location.reload(), 2000);
-                    }}
-                    type="portal_entry"
-                />
-            )}
+            <AnimatePresence>
+                {showPortalPayment && (
+                    <GeniusPaymentModal 
+                        amount={entryFee}
+                        courseId="PORTAL-ENTRY"
+                        courseName="Portal Access Activation"
+                        token={token}
+                        addToast={addToast}
+                        onClose={() => setShowPortalPayment(false)}
+                        onSuccess={() => {
+                            setShowPortalPayment(false);
+                            setAccessBlocked(false);
+                            addToast('Payment logged. Access will be granted shortly.', 'success');
+                            setTimeout(() => window.location.reload(), 2000);
+                        }}
+                        type="portal_entry"
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 }

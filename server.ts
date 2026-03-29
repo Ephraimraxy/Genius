@@ -143,6 +143,68 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
     res.status(500).send('Internal server error');
   }
 });
+
+// Secure Webhook for Kora (Korapay) — Must be before global JSON parser for raw body
+app.post('/api/payment/webhook/kora', express.raw({ type: 'application/json' }), async (req: any, res) => {
+  const signature = req.headers['x-korapay-signature'];
+  const secretKey = process.env.KORA_WEBHOOK_SECRET;
+
+  if (!signature || !secretKey) return res.status(400).send('Missing signature or configuration');
+
+  try {
+    const hmac = crypto.createHmac('sha256', secretKey);
+    const calculatedSignature = hmac.update(req.body).digest('hex');
+
+    if (calculatedSignature !== signature) {
+      console.warn('Invalid Kora webhook signature');
+      return res.status(401).send('Invalid signature');
+    }
+
+    const payload = JSON.parse(req.body.toString());
+    const { event, data } = payload;
+
+    if (event === 'charge.success' && data?.status === 'success') {
+      const reference = data.reference;
+      const amountPaid = data.amount;
+
+      const result = await pool.query(
+        `SELECT t.* FROM transactions t WHERE t.reference = $1 AND t.status = 'pending'`,
+        [reference]
+      );
+      const tx = result?.rows?.[0];
+
+      if (tx) {
+        const requiredAmount = tx.amount;
+        if (amountPaid < requiredAmount) {
+          await pool.query('UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+            ['partially_paid', JSON.stringify({ paid_so_far: amountPaid }), tx.id]);
+          return res.status(200).send('Underpayment logged');
+        }
+
+        await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['success', tx.id]);
+
+        if (tx.type === 'subscription') {
+          const expiry = new Date();
+          expiry.setFullYear(expiry.getFullYear() + 1);
+          await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
+        }
+
+        if (tx.type === 'publication') {
+          const userRes = await pool.query('SELECT name, email FROM users WHERE id = $1', [tx.user_id]);
+          const user = userRes.rows[0];
+          if (user) await sendPaymentSuccessEmail(user.email, user.name, tx.reference);
+        }
+
+        console.log(`Kora webhook: Transaction ${reference} marked as success`);
+      }
+    }
+    res.status(200).send('Webhook processed');
+  } catch (err) {
+    console.error('Kora webhook error:', err);
+    res.status(500).send('Internal server error');
+  }
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -842,6 +904,8 @@ app.post('/api/payment/pin-recovery/initialize', async (req, res) => {
 
 app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: any, res) => {
     try {
+        const { gateway = 'paymentpoint' } = req.body;
+
         const result = await pool.query(
             'SELECT sc.entry_fee FROM student_categories sc JOIN users u ON u.category_id = sc.id WHERE u.id = $1',
             [req.user.id]
@@ -849,14 +913,27 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
         const amount = result.rows[0]?.entry_fee || 0;
         const reference = `PORTAL-${Date.now()}-${req.user.id}`;
 
+        // Call the appropriate payment gateway to get virtual bank account details
+        let bankAccounts: any[];
+        if (gateway === 'kora') {
+            bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+        } else {
+            bankAccounts = await initializePaymentPointVirtualAccount(req.user);
+        }
+
         await pool.query(
-            'INSERT INTO transactions (user_id, tenant_id, reference, amount, type, status) VALUES ($1, $2, $3, $4, $5, $6)',
-            [req.user.id, req.tenant_id, reference, amount, 'portal_entry', 'pending']
+            'INSERT INTO transactions (user_id, tenant_id, reference, amount, type, status, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [req.user.id, req.tenant_id, reference, amount, 'portal_entry', 'pending', JSON.stringify({ gateway })]
         );
 
-        res.json({ reference, amount });
-    } catch (err) {
-        res.status(500).json({ error: 'Payment initialization failed' });
+        const expires_at_date = new Date();
+        expires_at_date.setMinutes(expires_at_date.getMinutes() + 30);
+        const expires_at = expires_at_date.toISOString();
+
+        res.json({ reference, amount, bankAccounts, expires_at });
+    } catch (err: any) {
+        console.error('Portal entry payment init error:', err);
+        res.status(500).json({ error: 'Payment initialization failed', details: err.message });
     }
 });
 
@@ -4881,128 +4958,194 @@ app.get('/api/settings/price', async (req, res) => {
   res.json({ price: parseInt(result.rows[0]?.value || '5000', 10) });
 });
 
-// PaymentPoint Integration — Virtual Account Flow (per official docs)
+// ─── PAYMENT GATEWAY TOGGLE CONTROL ───────────────────────────────────────
+
+// Public: Fetch active gateway configuration (polled by frontend payment modal — no auth needed)
+app.get('/api/payment/gateways', async (_req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT key, value FROM settings WHERE key IN ('gateway_paymentpoint_enabled', 'gateway_kora_enabled')"
+    );
+    const map: Record<string, string> = {};
+    result.rows.forEach(r => { map[r.key] = r.value; });
+    res.json({
+      paymentpoint: map['gateway_paymentpoint_enabled'] !== 'false',
+      kora: map['gateway_kora_enabled'] !== 'false'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch gateway config' });
+  }
+});
+
+// Admin: Get gateway toggle settings
+app.get('/api/admin/config/gateways', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query(
+      "SELECT key, value FROM settings WHERE key IN ('gateway_paymentpoint_enabled', 'gateway_kora_enabled')"
+    );
+    const map: Record<string, string> = {};
+    result.rows.forEach(r => { map[r.key] = r.value; });
+    res.json({
+      paymentpoint: map['gateway_paymentpoint_enabled'] !== 'false',
+      kora: map['gateway_kora_enabled'] !== 'false'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch gateway config' });
+  }
+});
+
+// Admin: Update gateway toggle settings
+app.post('/api/admin/config/gateways', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  const { paymentpoint, kora } = req.body;
+  try {
+    await pool.query(
+      "INSERT INTO settings (key, value) VALUES ('gateway_paymentpoint_enabled', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+      [paymentpoint === false ? 'false' : 'true']
+    );
+    await pool.query(
+      "INSERT INTO settings (key, value) VALUES ('gateway_kora_enabled', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+      [kora === false ? 'false' : 'true']
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update gateway config' });
+  }
+});
+
+// ─── SHARED PAYMENT HELPERS ─────────────────────────────────────────
+
+// Helper: Create a Kora (Korapay) bank transfer charge and return virtual account details
+async function initializeKoraVirtualAccount(user: any, amount: number, reference: string): Promise<any[]> {
+  const KORA_SECRET_KEY = process.env.KORA_SECRET_KEY;
+  if (!KORA_SECRET_KEY) throw new Error('Kora gateway is not configured.');
+
+  const response = await fetch('https://api.korapay.com/merchant/api/v1/charges/initialize', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${KORA_SECRET_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      reference,
+      amount,
+      currency: 'NGN',
+      customer: {
+        email: user.email,
+        name: user.name || user.email.split('@')[0]
+      },
+      channels: ['bank_transfer']
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Kora failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (!data.status) throw new Error(data.message || 'Kora charge initialization failed');
+
+  // Normalize Kora bank transfer response to match our bankAccounts shape
+  const transfer = data.data?.payment_options?.bank_transfer;
+  if (!transfer) throw new Error('Kora did not return bank transfer details');
+
+  return [{
+    bankName: transfer.bank_name || 'Kora Bank',
+    accountNumber: transfer.account_number,
+    accountName: transfer.account_name || user.name
+  }];
+}
+
+// Helper: Create a PaymentPoint virtual account and return bank account details
+async function initializePaymentPointVirtualAccount(user: any): Promise<any[]> {
+  const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
+  const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
+  const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
+
+  if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
+    throw new Error('PaymentPoint gateway is not configured.');
+  }
+
+  const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
+      'api-key': PAYMENTPOINT_API_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      email: user.email,
+      name: user.name || user.email.split('@')[0],
+      phoneNumber: (user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
+      bankCode: ['20946', '20897'],
+      businessId: PAYMENTPOINT_BUSINESS_ID
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`PaymentPoint failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
+  return data.bankAccounts || [];
+}
+
+// PaymentPoint / Kora — Publication Payment
 app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => {
-  const { amount, type } = req.body; // type: 'subscription' or 'other'
+  const { amount, type, gateway = 'paymentpoint' } = req.body;
   const reference = `GMIJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
-    const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
-    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
-
-    if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
-      console.error('Missing PaymentPoint environment variables. Ensure PAYMENTPOINT_API_KEY, PAYMENTPOINT_SECRET_KEY, and PAYMENTPOINT_BUSINESS_ID are set.');
-      return res.status(500).json({ error: 'Payment gateway is not configured. Please contact support.' });
+    let bankAccounts: any[];
+    if (gateway === 'kora') {
+      bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+    } else {
+      bankAccounts = await initializePaymentPointVirtualAccount(req.user);
     }
 
-    // Step 1: Create a Virtual Account for the customer via PaymentPoint API
-    const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
-        'api-key': PAYMENTPOINT_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        email: req.user.email,
-        name: req.user.name || req.user.email.split('@')[0],
-        phoneNumber: (req.user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
-        bankCode: ['20946', '20897'], // PalmPay + OPay
-        businessId: PAYMENTPOINT_BUSINESS_ID
-      })
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('PaymentPoint Virtual Account creation failed:', response.status, errorText);
-      throw new Error(`PaymentPoint failed (${response.status}): ${errorText}`);
-    }
-
-    const data = await response.json();
-    if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
-    
-    // Step 2: Record the pending transaction
     await pool.query(
-      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type) VALUES ($1, $2, $3, $4, $5, $6)', 
-      [req.user.id, req.tenant_id, reference, amount, 'pending', type || 'publication']
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
+      [req.user.id, req.tenant_id, reference, amount, 'pending', type || 'publication', JSON.stringify({ gateway })]
     );
     
-    // Step 3: Return virtual account details to the frontend
-    // The user will transfer the exact amount to one of these bank accounts.
-    // PaymentPoint webhook will fire when money lands.
     res.json({
       reference,
       amount,
-      customer_id: data.customer?.customer_id,
-      bankAccounts: data.bankAccounts || [],
+      bankAccounts,
       message: `Transfer ₦${Number(amount).toLocaleString()} to any of the bank accounts below to complete your payment.`
     });
   } catch (err: any) {
     console.error('Payment initialization error:', err);
-    res.status(500).json({ 
-      error: 'Payment initialization failed', 
-      details: err.message,
-      code: err.code || 'UNKNOWN'
-    });
+    res.status(500).json({ error: 'Payment initialization failed', details: err.message });
   }
 });
 
-// Student Attendance Integration - Dynamic Virtual Account Flow
+// Student Attendance — PaymentPoint / Kora
 app.post('/api/payment/attendance/initialize', authenticateToken, async (req: any, res) => {
-  const { course_id, amount } = req.body;
+  const { course_id, amount, gateway = 'paymentpoint' } = req.body;
   if (!course_id || !amount) return res.status(400).json({ error: 'course_id and amount are required' });
 
   const reference = `ATT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
-    const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
-    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
-
-    if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
-      return res.status(500).json({ error: 'Payment gateway is not configured.' });
+    let bankAccounts: any[];
+    if (gateway === 'kora') {
+      bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+    } else {
+      bankAccounts = await initializePaymentPointVirtualAccount(req.user);
     }
-
-    // Step 1: Create a Dynamic Virtual Account for the customer via PaymentPoint API
-    const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
-        'api-key': PAYMENTPOINT_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        email: req.user.email,
-        name: req.user.name || req.user.email.split('@')[0],
-        phoneNumber: (req.user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
-        bankCode: ['20946', '20897'], // PalmPay + OPay
-        businessId: PAYMENTPOINT_BUSINESS_ID
-      })
-    });
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`PaymentPoint failed (${response.status}): ${errorText}`);
-    }
-
-    const data = await response.json();
-    if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
-    
-    // Step 2: Record the pending transaction with course, date, and expiration metadata
-    const attendance_date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const attendance_date = new Date().toISOString().split('T')[0];
     const expires_at_date = new Date();
-    expires_at_date.setMinutes(expires_at_date.getMinutes() + 30); // 30-minute expiration
+    expires_at_date.setMinutes(expires_at_date.getMinutes() + 30);
     const expires_at = expires_at_date.toISOString();
 
-    const metadata = {
-        course_id,
-        attendance_date,
-        expires_at
-    };
+    const metadata = { course_id, attendance_date, expires_at, gateway };
 
-    // Note: tenant_id here represents the lecturer who owns the course. 
-    // Usually passed in request or inferred from user's tenant_id.
     await pool.query(
       'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
       [req.user.id, req.tenant_id, reference, amount, 'pending', 'attendance_token', metadata]
@@ -5011,8 +5154,7 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
     res.json({
       reference,
       amount,
-      customer_id: data.customer?.customer_id,
-      bankAccounts: data.bankAccounts || [],
+      bankAccounts,
       expires_at,
       message: `Transfer ₦${Number(amount).toLocaleString()} to sign attendance for ${course_id}.`
     });
@@ -5647,55 +5789,33 @@ app.put('/api/exams/:id/settings', authenticateToken, checkSubscription, async (
   }
 });
 
-// Payment for Material Access
+// Payment for Material Access — PaymentPoint / Kora
 app.post('/api/payment/material/initialize', authenticateToken, async (req: any, res) => {
-  const { resource_id, amount } = req.body;
+  const { resource_id, amount, gateway = 'paymentpoint' } = req.body;
   if (!resource_id || !amount) return res.status(400).json({ error: 'resource_id and amount are required' });
 
   const reference = `MAT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
-    const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
-    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
-
-    if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
-      return res.status(500).json({ error: 'Payment gateway is not configured.' });
+    let bankAccounts: any[];
+    if (gateway === 'kora') {
+      bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+    } else {
+      bankAccounts = await initializePaymentPointVirtualAccount(req.user);
     }
-
-    const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
-        'api-key': PAYMENTPOINT_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        email: req.user.email,
-        name: req.user.name || req.user.email.split('@')[0],
-        phoneNumber: (req.user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
-        bankCode: ['20946', '20897'],
-        businessId: PAYMENTPOINT_BUSINESS_ID
-      })
-    });
-    
-    if (!response.ok) throw new Error(`PaymentPoint failed (${response.status})`);
-
-    const data = await response.json();
-    if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
     
     const resourceRes = await pool.query('SELECT tenant_id FROM resources WHERE id = $1', [resource_id]);
     const tenant_id = resourceRes.rows[0]?.tenant_id;
 
     await pool.query(
       'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
-      [req.user.id, tenant_id, reference, amount, 'pending', 'material_access', { resource_id }]
+      [req.user.id, tenant_id, reference, amount, 'pending', 'material_access', { resource_id, gateway }]
     );
     
     res.json({
       reference,
       amount,
-      bankAccounts: data.bankAccounts || [],
+      bankAccounts,
       message: `Transfer ₦${Number(amount).toLocaleString()} to access this material.`
     });
   } catch (err: any) {
@@ -5703,55 +5823,33 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
   }
 });
 
-// Payment for Assessment Access
+// Payment for Assessment Access — PaymentPoint / Kora
 app.post('/api/payment/assessment/initialize', authenticateToken, async (req: any, res) => {
-  const { exam_id, amount } = req.body;
+  const { exam_id, amount, gateway = 'paymentpoint' } = req.body;
   if (!exam_id || !amount) return res.status(400).json({ error: 'exam_id and amount are required' });
 
   const reference = `ASM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
-    const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
-    const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
-
-    if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
-      return res.status(500).json({ error: 'Payment gateway is not configured.' });
+    let bankAccounts: any[];
+    if (gateway === 'kora') {
+      bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+    } else {
+      bankAccounts = await initializePaymentPointVirtualAccount(req.user);
     }
-
-    const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
-        'api-key': PAYMENTPOINT_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        email: req.user.email,
-        name: req.user.name || req.user.email.split('@')[0],
-        phoneNumber: (req.user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
-        bankCode: ['20946', '20897'],
-        businessId: PAYMENTPOINT_BUSINESS_ID
-      })
-    });
-    
-    if (!response.ok) throw new Error(`PaymentPoint failed (${response.status})`);
-
-    const data = await response.json();
-    if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
     
     const examRes = await pool.query('SELECT tenant_id FROM exams WHERE id = $1', [exam_id]);
     const tenant_id = examRes.rows[0]?.tenant_id;
 
     await pool.query(
       'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
-      [req.user.id, tenant_id, reference, amount, 'pending', 'assessment_access', { exam_id }]
+      [req.user.id, tenant_id, reference, amount, 'pending', 'assessment_access', { exam_id, gateway }]
     );
     
     res.json({
       reference,
       amount,
-      bankAccounts: data.bankAccounts || [],
+      bankAccounts,
       message: `Transfer ₦${Number(amount).toLocaleString()} to access this assessment.`
     });
   } catch (err: any) {

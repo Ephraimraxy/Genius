@@ -12,6 +12,10 @@ export default function AdminSettings() {
   const [health, setHealth] = useState<any>(null);
   const [loadingHealth, setLoadingHealth] = useState(true);
 
+  // Gateways State
+  const [gateways, setGateways] = useState({ paymentpoint: true, kora: true });
+  const [savingGateways, setSavingGateways] = useState(false);
+
   // Journal Settings State
   const [journalVolume, setJournalVolume] = useState<string>('1');
   const [journalIssue, setJournalIssue] = useState<string>('1');
@@ -42,6 +46,16 @@ export default function AdminSettings() {
         setNewPubPrice(data.publication_price.toString());
         setSubPrice(data.subscription_price);
         setNewSubPrice(data.subscription_price.toString());
+      })
+      .catch(console.error);
+
+    // Fetch gateway settings
+    fetch('/api/admin/config/gateways', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.error) setGateways(data);
       })
       .catch(console.error);
 
@@ -119,6 +133,25 @@ export default function AdminSettings() {
       console.error('Failed to save price', err);
     }
     setSaving(false);
+  };
+
+  const handleToggleGateway = async (key: 'paymentpoint' | 'kora') => {
+    setSavingGateways(true);
+    const newGateways = { ...gateways, [key]: !gateways[key] };
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/admin/config/gateways', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(newGateways)
+      });
+      if (res.ok) {
+        setGateways(newGateways);
+      }
+    } catch (err) {
+      console.error('Failed to update gateways', err);
+    }
+    setSavingGateways(false);
   };
 
   const handleSaveJournal = async () => {
@@ -423,6 +456,53 @@ export default function AdminSettings() {
                   {saving ? 'Saving...' : saved ? 'Saved!' : 'Update'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Payment Gateways Config */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden lg:col-span-2">
+          <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
+            <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
+              <Banknote size={20} className="text-indigo-600" /> Active Payment Gateways
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">Control which gateways users see when initiating a transaction.</p>
+          </div>
+          <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* PaymentPoint Toggle */}
+            <div className={`p-6 rounded-2xl border-2 transition-all ${gateways.paymentpoint ? 'border-indigo-100 bg-indigo-50/30' : 'border-slate-100 bg-slate-50 opacity-70'}`}>
+              <div className="flex items-start justify-between mb-4">
+                <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600">
+                  <CreditCard size={24} />
+                </div>
+                <button 
+                  onClick={() => handleToggleGateway('paymentpoint')}
+                  disabled={savingGateways}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${gateways.paymentpoint ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${gateways.paymentpoint ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              <h4 className="text-lg font-black text-slate-900 mb-1">PaymentPoint</h4>
+              <p className="text-xs font-medium text-slate-500">Enable PalmPay/OPay virtual account generation for users.</p>
+            </div>
+
+            {/* Kora Toggle */}
+            <div className={`p-6 rounded-2xl border-2 transition-all ${gateways.kora ? 'border-emerald-100 bg-emerald-50/30' : 'border-slate-100 bg-slate-50 opacity-70'}`}>
+              <div className="flex items-start justify-between mb-4">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600">
+                  <Banknote size={24} />
+                </div>
+                <button 
+                  onClick={() => handleToggleGateway('kora')}
+                  disabled={savingGateways}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${gateways.kora ? 'bg-emerald-600' : 'bg-slate-300'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${gateways.kora ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              <h4 className="text-lg font-black text-slate-900 mb-1">Kora (Korapay)</h4>
+              <p className="text-xs font-medium text-slate-500">Enable Kora dynamic bank transfer generation for users.</p>
             </div>
           </div>
         </div>

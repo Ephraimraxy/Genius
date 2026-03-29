@@ -34,9 +34,10 @@ import SubscriptionModal from './components/SubscriptionModal'; // NEW
 import StudentMaterialView from './components/StudentMaterialView';
 import TokenStatusView from './components/TokenStatusView';
 import VideoLectures from './components/VideoLectures';
+import QuickPublishModal from './components/QuickPublishModal';
 
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
-import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
+import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff, Zap } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'apa_validation' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures';
 
@@ -204,6 +205,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(true);
   const [openChatUserId, setOpenChatUserId] = useState<number | null>(null);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [isQuickPublishOpen, setIsQuickPublishOpen] = useState(false);
   const { toasts, addToast, removeToast } = useToasts();
 
   const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({
@@ -517,7 +519,7 @@ export default function App() {
     switch (activeTab) {
       case 'dashboard': return <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
       case 'courseManagement': return <CourseManagement addToast={addToast} token={token} />;
-      case 'upload': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} profile={profile?.user} onNavigate={setActiveTab} />;
+      case 'upload': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <SmartUpload onUploadComplete={(id) => setActivePaperId(id)} addToast={addToast} profile={profile?.user} onNavigate={setActiveTab} onQuickPublish={() => setIsQuickPublishOpen(true)} />;
       case 'apa_validation': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <APAValidator activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
       case 'formatting': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <FormattingEngine activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} addToast={addToast} />;
       case 'writing': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <WritingAssistant activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
@@ -624,13 +626,26 @@ export default function App() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="hidden md:flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-2xl"
+                className="hidden xl:flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-2xl"
               >
                 <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
                 <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">
                   Working on Paper #{activePaperId}
                 </span>
               </motion.div>
+            )}
+
+            {/* Quick Publish Trigger — NEW */}
+            {activePaperId && !isAdmin && !isLecturer && !isStudent && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setIsQuickPublishOpen(true)}
+                className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 bg-[#800000] text-white rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-lg shadow-[#800000]/20 border border-white/10 hover:bg-red-900 transition-all"
+              >
+                <Zap size={16} fill="white" className="hidden sm:block" />
+                <span>Quick Publish</span>
+              </motion.button>
             )}
           </div>
 
@@ -754,6 +769,18 @@ export default function App() {
         </div>
 
         <ChatWidget profile={profile} forcedOpenThread={forcedChatThread} />
+        
+        <QuickPublishModal 
+          isOpen={isQuickPublishOpen}
+          onClose={() => setIsQuickPublishOpen(false)}
+          paperId={activePaperId}
+          token={token}
+          addToast={addToast}
+          onComplete={() => {
+            setActiveTab('records'); // Take to history on success
+            setActivePaperId(null);
+          }}
+        />
       </main>
 
       <AnimatePresence>
