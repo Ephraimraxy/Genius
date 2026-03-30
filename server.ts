@@ -5710,6 +5710,50 @@ async function initializeKoraVirtualAccount(user: any, amount: number, reference
   }];
 }
 
+// Helper: Create a Korapay checkout session (hosted payment page)
+async function initializeKoraCheckout(user: any, amount: number, reference: string, options: {
+  redirectUrl?: string;
+  notificationUrl?: string;
+  channels?: string[];
+} = {}): Promise<string> {
+  const KORA_SECRET_KEY = process.env.KORA_SECRET_KEY;
+  if (!KORA_SECRET_KEY) throw new Error('Kora gateway is not configured.');
+
+  const payload: Record<string, any> = {
+    reference,
+    amount,
+    currency: 'NGN',
+    customer: {
+      email: user.email,
+      name: user.name || user.email.split('@')[0]
+    },
+    channels: options.channels || ['bank_transfer', 'card', 'pay_with_bank']
+  };
+
+  if (options.redirectUrl) payload.redirect_url = options.redirectUrl;
+  if (options.notificationUrl) payload.notification_url = options.notificationUrl;
+
+  const response = await fetch('https://api.korapay.com/merchant/api/v1/charges/initialize', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${KORA_SECRET_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Kora failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (!data.status) throw new Error(data.message || 'Kora checkout initialization failed');
+  const checkoutUrl = data.data?.checkout_url;
+  if (!checkoutUrl) throw new Error('Kora did not return a checkout URL');
+  return checkoutUrl;
+}
+
 // Helper: Create a PaymentPoint virtual account and return bank account details
 async function initializePaymentPointVirtualAccount(user: any): Promise<any[]> {
   const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
@@ -5748,25 +5792,34 @@ async function initializePaymentPointVirtualAccount(user: any): Promise<any[]> {
 
 // PaymentPoint / Kora — Publication Payment
 app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => {
-  const { amount, type, gateway = 'paymentpoint' } = req.body;
+  const { amount, type, gateway = 'paymentpoint', mode = 'virtual_account' } = req.body;
   const reference = `GMIJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    let bankAccounts: any[];
+    let bankAccounts: any[] = [];
+    let checkoutUrl: string | null = null;
     if (gateway === 'kora') {
-      bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+      if (mode === 'checkout') {
+        checkoutUrl = await initializeKoraCheckout(req.user, amount, reference, {
+          redirectUrl: `${APP_URL}/?source=kora`,
+          notificationUrl: `${APP_URL}/api/payment/webhook/kora`
+        });
+      } else {
+        bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+      }
     } else {
       bankAccounts = await initializePaymentPointVirtualAccount(req.user);
     }
 
     await pool.query(
       'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
-      [req.user.id, req.tenant_id, reference, amount, 'pending', type || 'publication', JSON.stringify({ gateway })]
+      [req.user.id, req.tenant_id, reference, amount, 'pending', type || 'publication', JSON.stringify({ gateway, mode })]
     );
     
     res.json({
       reference,
       amount,
+      checkout_url: checkoutUrl,
       bankAccounts,
       message: `Transfer ₦${Number(amount).toLocaleString()} to any of the bank accounts below to complete your payment.`
     });

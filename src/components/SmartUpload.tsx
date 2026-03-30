@@ -64,15 +64,10 @@ export default function SmartUpload({
           kora: data?.kora !== false
         };
         setGatewaysStatus(status);
-        if (!selectedGateway) {
-          if (status.paymentpoint) setSelectedGateway('paymentpoint');
-          else if (status.kora) setSelectedGateway('kora');
-        }
       })
       .catch(() => {
         if (!isMounted) return;
         setGatewaysStatus({ paymentpoint: true, kora: true });
-        if (!selectedGateway) setSelectedGateway('paymentpoint');
       });
     return () => {
       isMounted = false;
@@ -264,9 +259,13 @@ export default function SmartUpload({
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ amount: price, gateway: selectedGateway })
+        body: JSON.stringify({ amount: price, gateway: selectedGateway, mode: selectedGateway === 'kora' ? 'checkout' : 'virtual_account' })
       });
       const data = await res.json();
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+        return;
+      }
       if (data.bankAccounts && data.bankAccounts.length > 0) {
         setBankAccounts(data.bankAccounts);
         setPaymentRef(data.reference);
@@ -397,18 +396,40 @@ export default function SmartUpload({
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Payment Method</label>
-                    <select
-                      value={selectedGateway || ''}
-                      onChange={(e) => setSelectedGateway(e.target.value as 'paymentpoint' | 'kora')}
-                      disabled={isPaying}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#800000]/20"
-                    >
-                      {!selectedGateway && <option value="" disabled>Select a gateway</option>}
-                      {gatewaysStatus.paymentpoint && <option value="paymentpoint">PaymentPoint (Bank Transfer)</option>}
-                      {gatewaysStatus.kora && <option value="kora">Kora (Bank Transfer)</option>}
-                    </select>
-                    <p className="text-[11px] text-slate-400 font-medium mt-2">Available methods are controlled by Super Admin settings.</p>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Payment Method</label>
+                    <div className="grid gap-3">
+                      {gatewaysStatus.paymentpoint && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGateway('paymentpoint')}
+                          disabled={isPaying}
+                          className={`w-full text-left px-4 py-3 rounded-xl border text-sm font-bold transition-all ${
+                            selectedGateway === 'paymentpoint'
+                              ? 'border-[#800000] bg-[#800000]/5 text-[#800000]'
+                              : 'border-slate-200 text-slate-700 hover:border-[#800000]/40'
+                          }`}
+                        >
+                          PaymentPoint
+                          <span className="block text-[11px] text-slate-400 font-medium mt-1">Bank transfer virtual account</span>
+                        </button>
+                      )}
+                      {gatewaysStatus.kora && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGateway('kora')}
+                          disabled={isPaying}
+                          className={`w-full text-left px-4 py-3 rounded-xl border text-sm font-bold transition-all ${
+                            selectedGateway === 'kora'
+                              ? 'border-[#800000] bg-[#800000]/5 text-[#800000]'
+                              : 'border-slate-200 text-slate-700 hover:border-[#800000]/40'
+                          }`}
+                        >
+                          Kora Checkout
+                          <span className="block text-[11px] text-slate-400 font-medium mt-1">Card, bank transfer, pay with bank</span>
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium mt-3">Available methods are controlled by Super Admin settings.</p>
                   </div>
                 )}
               </div>
@@ -466,13 +487,22 @@ export default function SmartUpload({
                 )}
               </div>
             ) : (
-              <button
-                onClick={handlePayment}
-                disabled={isPaying || !selectedGateway || (!!gatewaysStatus && !gatewaysStatus.paymentpoint && !gatewaysStatus.kora)}
-                className="px-12 py-5 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-[#800000]/30 hover:scale-105 transition-all flex items-center gap-4 disabled:opacity-50 relative z-10"
-              >
-                {isPaying ? <Loader2 className="animate-spin" size={20} /> : <><span className="text-xl font-bold">₦</span> Initialize Checkout</>}
-              </button>
+              selectedGateway && (
+                <button
+                  onClick={handlePayment}
+                  disabled={isPaying || (!!gatewaysStatus && !gatewaysStatus.paymentpoint && !gatewaysStatus.kora)}
+                  className="px-12 py-5 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-[#800000]/30 hover:scale-105 transition-all flex items-center gap-4 disabled:opacity-50 relative z-10"
+                >
+                  {isPaying ? (
+                    <Loader2 className="animate-spin" size={20} />
+                  ) : (
+                    <>
+                      <span className="text-xl font-bold">₦</span>
+                      {selectedGateway === 'kora' ? 'Open Kora Checkout' : 'Generate Transfer Account'}
+                    </>
+                  )}
+                </button>
+              )
             )}
           </motion.div>
         ) : !metadata ? (
