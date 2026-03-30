@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react'; 
 import Sidebar from './components/Sidebar';
 import DashboardOverview from './components/DashboardOverview';
@@ -196,6 +196,7 @@ export default function App() {
   };
   const [activePaperId, setActivePaperId] = useState<number | null>(null);
   const [profile, setProfile] = useState<any>(null);
+  const profileRef = useRef<any>(null);
   const [showLanding, setShowLanding] = useState(!token);
   const [showStudentAuth, setShowStudentAuth] = useState(false);
   const [showPortalSelection, setShowPortalSelection] = useState(false);
@@ -203,6 +204,8 @@ export default function App() {
   const [authIsLogin, setAuthIsLogin] = useState(true);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncTick, setSyncTick] = useState(0);
   const [openChatUserId, setOpenChatUserId] = useState<number | null>(null);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [isQuickPublishOpen, setIsQuickPublishOpen] = useState(false);
@@ -240,6 +243,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
       setShowNetworkStatus(true);
@@ -260,6 +267,9 @@ export default function App() {
 
   useEffect(() => {
     if (token) {
+      setIsSyncing(true);
+      setSyncError(null);
+
       const syncProfile = () => {
         fetch('/api/profile', {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -269,18 +279,32 @@ export default function App() {
               handleLogout();
               return null;
             }
-            if (!res.ok) return null;
+            if (!res.ok) {
+              throw new Error(`PROFILE_HTTP_${res.status}`);
+            }
             return res.json();
           })
           .then(data => {
             if (data && data.user) {
               setProfile(data);
-              setIsSyncing(false); // Only stop syncing once we have the profile
+              setSyncError(null);
+              setIsSyncing(false);
+              return;
+            }
+            if (!profileRef.current) {
+              setSyncError('We could not load your profile. Please retry.');
+              setIsSyncing(false);
             }
           })
           .catch(err => {
-            console.error('Failed to load profile', err);
-            setIsSyncing(false);
+            if (!profileRef.current) {
+              const match = typeof err?.message === 'string' ? err.message.match(/PROFILE_HTTP_(\d+)/) : null;
+              const detail = match ? `Server responded with ${match[1]}.` : 'Network connection failed.';
+              setSyncError(`Profile sync failed. ${detail}`);
+              setIsSyncing(false);
+            } else {
+              console.error('Background profile sync failed:', err);
+            }
           });
       };
 
@@ -291,8 +315,9 @@ export default function App() {
       return () => clearInterval(interval);
     } else {
       setIsSyncing(false);
+      setSyncError(null);
     }
-  }, [token]);
+  }, [token, syncTick]);
 
   useEffect(() => {
     // Safety fallback: Force hide loader after 8 seconds if profile fails to load
@@ -301,9 +326,8 @@ export default function App() {
       if (isSyncing || (token && !profile)) {
         setIsSyncing(false);
         // If we have a token but no profile after 8s, something is wrong with the API
-        // We'll set a minimal mock profile to allow interaction and Logout
         if (token && !profile) {
-          setProfile({ user: { name: 'User', role: 'researcher', email: 'sync-error@genius.com' }, papers: [] });
+          setSyncError('Profile sync timed out. Please retry.');
         }
       }
     }, 8000);
@@ -471,10 +495,43 @@ export default function App() {
     const isStudent = role === 'student';
 
   const renderContent = () => {
-    if (!profile) return null; // Prevent default view flash
-    // If we have a token but no profile yet, we are still syncing.
-    // Return a loading state or nothing to prevent dashboard flash.
     if (token && !profile) {
+      if (syncError) {
+        return (
+          <div className="flex items-center justify-center h-full">
+            <div className="w-full max-w-xl bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex flex-col gap-3">
+                <div className="text-xs uppercase tracking-[0.35em] text-slate-400 font-semibold">Sync Error</div>
+                <h2 className="text-xl font-black text-slate-900">We could not load your profile</h2>
+                <p className="text-sm text-slate-500">
+                  The server did not respond in time or returned an error. Please retry the sync. If this keeps happening, log out and sign in again.
+                </p>
+                <div className="text-[11px] text-slate-400 font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  {syncError}
+                </div>
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setSyncError(null);
+                      setIsSyncing(true);
+                      setSyncTick((tick) => tick + 1);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-[#800000] text-white font-semibold text-sm hover:bg-[#6c0000] transition-colors"
+                  >
+                    Retry Sync
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:text-[#800000] hover:border-[#800000]/40 transition-colors"
+                  >
+                    Log Out
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="flex items-center justify-center h-full">
           <div className="flex flex-col items-center gap-4">
@@ -484,6 +541,7 @@ export default function App() {
         </div>
       );
     }
+    if (!profile) return null; // Prevent default view flash
 
     // Student View
     if (isStudent && activeTab !== 'profile') {
@@ -876,7 +934,7 @@ export default function App() {
           </motion.div>
       </AnimatePresence>
       <ConfirmModal {...confirmConfig} />
-      <GlobalLoader show={isSyncing || (!!token && !profile)} />
+      <GlobalLoader show={isSyncing || (!!token && !profile && !syncError)} />
     </div>
     );
   };
@@ -889,4 +947,4 @@ export default function App() {
       {renderMainContent() || mainView()}
     </>
   );
-}
+}
