@@ -5435,6 +5435,8 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
        await pool.query('DELETE FROM students_roster WHERE tenant_id = $1', [user.tenant_id]);
        await pool.query('DELETE FROM resources WHERE tenant_id = $1', [user.tenant_id]);
        await pool.query('DELETE FROM exams WHERE tenant_id = $1', [user.tenant_id]);
+       await pool.query('UPDATE users SET category_id = NULL WHERE tenant_id = $1', [user.tenant_id]);
+       await pool.query('DELETE FROM student_categories WHERE tenant_id = $1', [user.tenant_id]);
        await pool.query('DELETE FROM tenants WHERE id = $1', [user.tenant_id]);
     }
 
