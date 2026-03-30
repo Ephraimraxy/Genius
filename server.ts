@@ -5802,7 +5802,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     if (gateway === 'kora') {
       if (mode === 'checkout') {
         checkoutUrl = await initializeKoraCheckout(req.user, amount, reference, {
-          redirectUrl: `${APP_URL}/?source=kora`,
+          redirectUrl: `${APP_URL}/?tab=upload&source=kora`,
           notificationUrl: `${APP_URL}/api/payment/webhook/kora`
         });
       } else {

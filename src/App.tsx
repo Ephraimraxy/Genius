@@ -320,6 +320,19 @@ export default function App() {
   }, [token, syncTick]);
 
   useEffect(() => {
+    if (!token || !profile) return;
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab') as Tab | null;
+    if (!tab) return;
+    if (!Object.prototype.hasOwnProperty.call(TAB_LABELS, tab)) return;
+    const role = profile?.user?.role;
+    const isStudent = role === 'student';
+    const isLecturer = role === 'tenant_admin';
+    if (isStudent || isLecturer) return;
+    setActiveTab(tab);
+  }, [token, profile]);
+
+  useEffect(() => {
     // Safety fallback: Force hide loader after 8 seconds if profile fails to load
     // This prevents "white screen" on slow mobile networks or API failures
     const timer = setTimeout(() => {
