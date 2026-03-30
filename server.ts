@@ -5755,6 +5755,33 @@ async function initializeKoraCheckout(user: any, amount: number, reference: stri
   return checkoutUrl;
 }
 
+// Helper: Verify a Korapay charge by reference
+async function verifyKoraCharge(reference: string): Promise<{ status: string; amount?: number; amountPaid?: number }> {
+  const KORA_SECRET_KEY = process.env.KORA_SECRET_KEY;
+  if (!KORA_SECRET_KEY) throw new Error('Kora gateway is not configured.');
+
+  const response = await fetch(`https://api.korapay.com/merchant/api/v1/charges/${reference}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${KORA_SECRET_KEY}`
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Kora verify failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (!data.status) throw new Error(data.message || 'Kora verify failed');
+
+  return {
+    status: String(data?.data?.status || '').toLowerCase(),
+    amount: Number(data?.data?.amount || 0),
+    amountPaid: Number(data?.data?.amount_paid || 0)
+  };
+}
+
 // Helper: Create a PaymentPoint virtual account and return bank account details
 async function initializePaymentPointVirtualAccount(user: any): Promise<any[]> {
   const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
@@ -5875,11 +5902,34 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
   try {
     const { reference } = req.params;
     const result = await pool.query(
-      'SELECT status, amount, type FROM transactions WHERE reference = $1 AND user_id = $2',
+      'SELECT id, status, amount, type, metadata FROM transactions WHERE reference = $1 AND user_id = $2',
       [reference, req.user.id]
     );
     const txn = result.rows[0];
     if (!txn) return res.status(404).json({ status: 'not_found', error: 'Transaction not found' });
+
+    const gateway = txn.metadata?.gateway || txn.metadata?.gateway?.toString?.();
+    if (txn.status !== 'success' && gateway === 'kora' && process.env.KORA_SECRET_KEY) {
+      try {
+        const verifyResult = await verifyKoraCharge(reference);
+        if (verifyResult.status === 'success') {
+          await pool.query(
+            'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+            ['success', JSON.stringify({ kora_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]
+          );
+          txn.status = 'success';
+        } else if (verifyResult.status === 'failed') {
+          await pool.query(
+            'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+            ['failed', JSON.stringify({ kora_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]
+          );
+          txn.status = 'failed';
+        }
+      } catch (verifyErr) {
+        console.error('Kora verify error:', verifyErr);
+      }
+    }
+
     res.json({ status: txn.status, amount: txn.amount, type: txn.type });
   } catch (error) {
     console.error('Payment verify error:', error);
