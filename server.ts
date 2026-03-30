@@ -169,11 +169,13 @@ app.post('/api/payment/webhook/kora', express.raw({ type: 'application/json' }),
   if (shouldVerify && !signature) return res.status(400).send('Missing signature');
 
   try {
+    const payload = JSON.parse(req.body.toString());
     if (shouldVerify) {
-      const hmac = crypto.createHmac('sha256', secretKey as string);
-      const calculatedSignature = hmac.update(req.body).digest('hex');
+      const dataString = JSON.stringify(payload?.data ?? {});
+      const calculatedSignature = crypto.createHmac('sha256', secretKey as string).update(dataString).digest('hex');
+      const incomingSignature = Array.isArray(signature) ? signature[0] : String(signature);
 
-      if (calculatedSignature !== signature) {
+      if (!incomingSignature || calculatedSignature !== incomingSignature) {
         console.warn('Invalid Kora webhook signature');
         return res.status(401).send('Invalid signature');
       }
@@ -181,7 +183,6 @@ app.post('/api/payment/webhook/kora', express.raw({ type: 'application/json' }),
       console.warn('Kora webhook secret not configured; skipping signature verification.');
     }
 
-    const payload = JSON.parse(req.body.toString());
     const { event, data } = payload;
 
     if (event === 'charge.success' && data?.status === 'success') {
