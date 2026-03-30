@@ -363,7 +363,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                         onSuccess={() => {
                             setShowPortalPayment(false);
                             setAccessBlocked(false);
-                            addToast('Payment logged. Access will be granted shortly.', 'success');
+                            addToast('Payment confirmed. Portal access unlocked.', 'success');
                             setTimeout(() => window.location.reload(), 2000);
                         }}
                         type="portal_entry"

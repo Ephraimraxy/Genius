@@ -21,10 +21,12 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
   const [loading, setLoading] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
   const [paymentRef, setPaymentRef] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState<number>(Number(amount) || 0);
   const [isVerifying, setIsVerifying] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string>('--:--');
   const [isExpired, setIsExpired] = useState(false);
+  const [isConfirmed, setIsConfirmed] = useState(false);
 
   // Fetch active gateways configuration on mount
   useEffect(() => {
@@ -60,8 +62,9 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         endpoint = '/api/payment/assessment/initialize';
         body = { amount, exam_id: parseInt(courseId), gateway: selectedGateway };
       } else if (type === 'audio') {
-        endpoint = '/api/payment/audio/initialize';
-        body = { amount, record_id: parseInt(courseId), gateway: selectedGateway };
+        addToast('Audio payments are temporarily unavailable while the secure flow is being finalized.', 'info');
+        onClose();
+        return;
       } else if (type === 'portal_entry') {
         endpoint = '/api/payment/portal-entry/initialize';
         body = { amount, gateway: selectedGateway };
@@ -81,6 +84,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
       if (response.ok) {
         setBankAccounts(data.bankAccounts);
         setPaymentRef(data.reference);
+        setPaymentAmount(Number(data.amount || amount || 0));
         setExpiresAt(data.expires_at);
       } else {
         addToast(data.error || 'Failed to initialize payment', 'error');
@@ -127,16 +131,65 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
     addToast('Account number copied!', 'success');
   };
 
-  const verifyPaymentLocally = () => {
-    setIsVerifying(true);
-    setTimeout(() => {
-      setIsVerifying(false);
-      addToast('Transfer logged. You will be marked present once the bank confirms receipt.', 'success');
-      onSuccess();
-    }, 1500);
+  const completeVerifiedPayment = () => {
+    if (isConfirmed) return;
+    setIsConfirmed(true);
+    addToast('Payment confirmed. Access unlocked.', 'success');
+    onSuccess();
+  };
+
+  const verifyPaymentStatus = async (silent = false) => {
+    if (!paymentRef || !token || isConfirmed) return;
+
+    if (!silent) {
+      setIsVerifying(true);
+    }
+
+    try {
+      const response = await fetch(`/api/payment/verify/${paymentRef}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to verify payment right now.');
+      }
+
+      if (data.status === 'success' || data.status === 'consumed') {
+        completeVerifiedPayment();
+        return;
+      }
+
+      if (!silent) {
+        if (data.status === 'partially_paid') {
+          addToast('Underpayment detected. Please complete the exact transfer amount.', 'error');
+        } else {
+          addToast('Payment is still pending bank confirmation. Please check again shortly.', 'info');
+        }
+      }
+    } catch (err: any) {
+      if (!silent) {
+        addToast(err.message || 'Unable to verify payment right now.', 'error');
+      }
+    } finally {
+      if (!silent) {
+        setIsVerifying(false);
+      }
+    }
   };
 
   const gatewayLabel = gateway === 'kora' ? 'Premium Gateway' : 'Standard Gateway';
+  const formattedAmount = paymentAmount.toLocaleString();
+
+  useEffect(() => {
+    if (!paymentRef || !token || isExpired || isConfirmed) return;
+
+    const interval = window.setInterval(() => {
+      void verifyPaymentStatus(true);
+    }, 8000);
+
+    return () => window.clearInterval(interval);
+  }, [paymentRef, token, isExpired, isConfirmed]);
 
   return (
     <motion.div
@@ -307,7 +360,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                   <div className="flex items-baseline gap-1">
                     <span className="text-slate-400 text-sm font-bold">₦</span>
                     <span className="text-3xl font-black text-slate-900 tracking-tighter">
-                      {amount}
+                      {formattedAmount}
                     </span>
                   </div>
                 </div>
@@ -319,7 +372,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
 
               {/* Bank Transfer Instructions */}
               <div className="mb-6">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Transfer exactly ₦{amount} to:</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Transfer exactly ₦{formattedAmount} to:</p>
                 
                 <div className="space-y-3">
                   {bankAccounts.length === 0 ? (
@@ -354,9 +407,11 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                       setGateway(null);
                       setBankAccounts([]);
                       setPaymentRef('');
+                      setPaymentAmount(Number(amount) || 0);
                       setExpiresAt(null);
                       setTimeLeft('--:--');
                       setIsExpired(false);
+                      setIsConfirmed(false);
                     }}
                     className="text-xs text-slate-400 hover:text-indigo-600 underline underline-offset-2 transition-colors"
                   >
@@ -368,15 +423,15 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
               {/* Verification Button */}
               <div className="mt-auto">
                 <button
-                  onClick={verifyPaymentLocally}
-                  disabled={isVerifying || isExpired || bankAccounts.length === 0}
+                  onClick={() => void verifyPaymentStatus(false)}
+                  disabled={isVerifying || isExpired || bankAccounts.length === 0 || isConfirmed}
                   className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] flex items-center justify-center gap-3 hover:bg-indigo-600 transition-all disabled:opacity-50"
                 >
                   {isVerifying ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
-                  I've Made the Transfer
+                  {isConfirmed ? 'Payment Confirmed' : 'Check Payment Status'}
                 </button>
                 <p className="text-center text-[10px] text-slate-400 font-medium mt-4">
-                  Do not close this window until you have clicked the verification button above. Reference: {paymentRef || '...'}
+                  Keep this window open while your transfer is being confirmed. Reference: {paymentRef || '...'}
                 </p>
               </div>
             </>

@@ -21,7 +21,6 @@ import cors from 'cors';
 import OpenAI from 'openai';
 import { Pool } from 'pg';
 import * as cheerio from 'cheerio';
-import { Resend } from 'resend';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import stringSimilarity from 'string-similarity';
 import natural from 'natural';
@@ -29,26 +28,43 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import nodemailer from 'nodemailer';
 import puppeteer from 'puppeteer-core';
 
-// Global Journal Branding Assets: Pre-loaded as Base64 to ensure 1:1 PDF fidelity across all pages.
-const getBase64Image = (fileName: string) => {
-  try {
-    const filePath = path.join(process.cwd(), 'public', fileName);
-    if (fs.existsSync(filePath)) {
-      const bitmap = fs.readFileSync(filePath);
-      const extension = path.extname(fileName).slice(1);
-      return `data:image/${extension};base64,${bitmap.toString('base64')}`;
+const JOURNAL_NAME = 'Genius Multidisciplinary International Journal Publication';
+const JOURNAL_DISPLAY_NAME = 'Genius Multidisciplinary International Journal';
+const JOURNAL_SHORT_NAME = 'GMIJP';
+const PARTNER_INSTITUTION_NAME = 'Nasarawa State University, Keffi';
+const PUBLICATION_STATUSES = ['uploaded', 'writing_assistant', 'formatting', 'reference_intel', 'peer_review', 'integrity_check', 'ready', 'accepted', 'published', 'doi_validation_failed', 'rejected'];
+
+const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, '');
+
+const resolveAssetPath = (fileNames: string[]) => {
+  for (const folder of ['public', 'tools']) {
+    for (const fileName of fileNames) {
+      const filePath = path.join(process.cwd(), folder, fileName);
+      if (fs.existsSync(filePath)) return filePath;
     }
-  } catch (e) {
-    console.error(`[GLOBAL] Failed to load logo ${fileName}:`, e);
   }
   return '';
 };
 
-const journalLogoBase64 = getBase64Image('journal-logo.png');
-const nsukLogoBase64 = getBase64Image('Nasarawa-State-University.jpg');
+// Global Journal Branding Assets: Pre-loaded as Base64 to ensure 1:1 PDF fidelity across all pages.
+const getBase64Image = (fileNames: string[]) => {
+  try {
+    const filePath = resolveAssetPath(fileNames);
+    if (filePath) {
+      const bitmap = fs.readFileSync(filePath);
+      const extension = path.extname(filePath).slice(1);
+      return `data:image/${extension};base64,${bitmap.toString('base64')}`;
+    }
+  } catch (e) {
+    console.error(`[GLOBAL] Failed to load logo ${fileNames.join(', ')}:`, e);
+  }
+  return '';
+};
+
+const journalLogoBase64 = getBase64Image(['journal-logo.png', 'gmijp-logo.png', 'ain logo.jpeg']);
+const nsukLogoBase64 = getBase64Image(['Nasarawa-State-University.jpg', 'university-logo.jpg']);
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -121,8 +137,8 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
             await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE matric_number = $2 AND tenant_id = $3', 
              [hashedPin, student.matric_number, tx.tenant_id]);
            
-           await mailTransporter.sendMail({
-             from: `"Genius Recovery" <${process.env.SMTP_EMAIL}>`,
+           await sendResendEmail({
+             fromName: 'Genius Recovery',
              to: student.email,
              subject: 'Your Recovered Genius PIN',
              html: `<h2>PIN Recovered</h2><p>Your new 4-digit PIN is: <strong>${newPin}</strong></p>`
@@ -147,17 +163,22 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
 // Secure Webhook for Kora (Korapay) — Must be before global JSON parser for raw body
 app.post('/api/payment/webhook/kora', express.raw({ type: 'application/json' }), async (req: any, res) => {
   const signature = req.headers['x-korapay-signature'];
-  const secretKey = process.env.KORA_WEBHOOK_SECRET;
+  const secretKey = process.env.KORA_WEBHOOK_SECRET || process.env.KORA_SECRET_KEY;
 
-  if (!signature || !secretKey) return res.status(400).send('Missing signature or configuration');
+  const shouldVerify = Boolean(secretKey);
+  if (shouldVerify && !signature) return res.status(400).send('Missing signature');
 
   try {
-    const hmac = crypto.createHmac('sha256', secretKey);
-    const calculatedSignature = hmac.update(req.body).digest('hex');
+    if (shouldVerify) {
+      const hmac = crypto.createHmac('sha256', secretKey as string);
+      const calculatedSignature = hmac.update(req.body).digest('hex');
 
-    if (calculatedSignature !== signature) {
-      console.warn('Invalid Kora webhook signature');
-      return res.status(401).send('Invalid signature');
+      if (calculatedSignature !== signature) {
+        console.warn('Invalid Kora webhook signature');
+        return res.status(401).send('Invalid signature');
+      }
+    } else {
+      console.warn('Kora webhook secret not configured; skipping signature verification.');
     }
 
     const payload = JSON.parse(req.body.toString());
@@ -240,8 +261,154 @@ const pool = new Pool({
 });
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const RESEND_FROM = process.env.RESEND_FROM || 'onboarding@resend.dev';
-const APP_URL = process.env.APP_URL || 'https://geniusapp.com';
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || process.env.RESEND_FROM || 'onboarding@resend.dev';
+const APP_URL = normalizeBaseUrl(process.env.APP_URL || 'https://geniusapp.com');
+
+type ResendAttachment = { filename: string; content: string };
+type ResendEmailOptions = {
+  to: string | string[];
+  subject: string;
+  html: string;
+  attachments?: ResendAttachment[];
+  fromName?: string;
+};
+
+const sendResendEmail = async ({ to, subject, html, attachments, fromName }: ResendEmailOptions) => {
+  if (!RESEND_API_KEY) {
+    console.warn('RESEND_API_KEY not set - skipping email.');
+    return;
+  }
+
+  const payload = {
+    from: `${fromName || JOURNAL_SHORT_NAME} <${RESEND_FROM_EMAIL}>`,
+    to: Array.isArray(to) ? to : [to],
+    subject,
+    html,
+    ...(attachments && attachments.length ? { attachments } : {})
+  };
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error('Resend email failed:', response.status, errText);
+  }
+};
+
+const safeJsonParse = <T = any>(value: any, fallback: T): T => {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'object') return value as T;
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const normalizeAuthorNames = (authors: any): string[] => {
+  const parsed = Array.isArray(authors) ? authors : safeJsonParse<any[]>(authors, []);
+  return parsed
+    .map((author: any) => typeof author === 'string' ? author.trim() : String(author?.name || '').trim())
+    .filter(Boolean);
+};
+
+const buildSafeFilename = (value: string, suffix = '') => {
+  const safe = String(value || 'manuscript')
+    .replace(/[^a-zA-Z0-9\s_-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .substring(0, 100) || 'manuscript';
+  return suffix ? `${safe}${suffix}` : safe;
+};
+
+const estimatePageCountFromText = (text: string) => {
+  const words = String(text || '').split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 550));
+};
+
+const buildPageWindow = (sourcePages: number) => {
+  const target = Math.max(1, Math.round(sourcePages || 1));
+  let tolerance = 1;
+  if (target >= 8) tolerance = 2;
+  if (target >= 16) tolerance = 3;
+  if (target >= 25) tolerance = 4;
+  return {
+    target,
+    tolerance,
+    min: Math.max(1, target - tolerance),
+    max: target + tolerance
+  };
+};
+
+const resolveSourcePageCount = (metadata: any, content: string) => {
+  const fromMetadata = Number(metadata?.sourcePageCount || metadata?.pageCount || 0);
+  if (fromMetadata > 0) return fromMetadata;
+  return estimatePageCountFromText(content);
+};
+
+const isWithinPageWindow = (pageCount: number, pageWindow: any) => {
+  if (!pageWindow) return true;
+  const min = Number(pageWindow.min || 1);
+  const max = Number(pageWindow.max || pageCount);
+  return pageCount >= min && pageCount <= max;
+};
+
+const buildCertificateId = (paperId: number | string, publishedAt?: string | Date | null) => {
+  const year = new Date(publishedAt || new Date()).getFullYear();
+  return `${JOURNAL_SHORT_NAME}-CERT-${year}-${String(paperId).padStart(6, '0')}`;
+};
+
+const buildCertificateVerificationUrl = (paper: any) => {
+  if (paper?.doi) {
+    return `https://doi.org/${paper.doi}`;
+  }
+  return `${APP_URL}/publications/${paper?.id || ''}`;
+};
+
+async function getJournalConfig() {
+  const keys = ['current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue', 'max_issues_per_volume', 'max_pages_per_manuscript', 'journal_signature', 'journal_secretary'];
+  const result = await pool.query('SELECT key, value FROM settings WHERE key = ANY($1)', [keys]);
+  const settings: Record<string, string> = {};
+  result.rows.forEach((row: any) => {
+    settings[row.key] = row.value;
+  });
+
+  return {
+    currentVolume: settings.current_volume || '1',
+    currentIssue: settings.current_issue || '1',
+    journalIssn: settings.journal_issn || '2971-7760',
+    maxManuscriptsPerIssue: parseInt(settings.max_manuscripts_per_issue || '10', 10),
+    maxIssuesPerVolume: parseInt(settings.max_issues_per_volume || '3', 10),
+    maxPagesPerManuscript: parseInt(settings.max_pages_per_manuscript || '20', 10),
+    journalSignature: settings.journal_signature || '',
+    journalSecretary: settings.journal_secretary || 'Dr. Danjuma Namo'
+  };
+}
+
+const buildPaperBranding = (paper: any, config: any, overrides: Record<string, any> = {}) => {
+  const publicationDate = overrides.publishedAt || paper?.published_at || paper?.created_at || new Date();
+  return {
+    volume: String(overrides.volume || paper?.volume || config.currentVolume || '1'),
+    issue: String(overrides.issue || paper?.issue || config.currentIssue || '1'),
+    issn: String(overrides.issn || paper?.issn || config.journalIssn || '2971-7760'),
+    doi: String(overrides.doi || paper?.doi || 'DOI Pending'),
+    date: overrides.date || new Date(publicationDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+    startPageNumber: overrides.startPageNumber || 1
+  };
+};
+
+async function embedJournalAsset(pdfDoc: PDFDocument, fileNames: string[]) {
+  const filePath = resolveAssetPath(fileNames);
+  if (!filePath) return null;
+  const fileBytes = fs.readFileSync(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  return ext === '.png' ? pdfDoc.embedPng(fileBytes) : pdfDoc.embedJpg(fileBytes);
+}
 
 async function bootstrapDB() {
   try {
@@ -304,9 +471,54 @@ async function sendPaymentSuccessEmail(to: string, name: string, ref: string) {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: `GMIJP <${RESEND_FROM}>`, to: [to], subject: `Payment Received — Ref: ${ref}`, html: htmlBody, attachments })
+      body: JSON.stringify({ from: `GMIJP <${RESEND_FROM_EMAIL}>`, to: [to], subject: `Payment Received — Ref: ${ref}`, html: htmlBody, attachments })
     });
   } catch (err) { console.error('Payment success email error:', err); }
+}
+
+async function sendSubmissionReceivedEmail(to: string, researcherName: string, manuscriptTitle: string, manuscriptId: number, sourcePageCount: number) {
+  if (!RESEND_API_KEY) {
+    console.warn('RESEND_API_KEY not set - skipping submission receipt email.');
+    return;
+  }
+
+  const submissionRef = `${JOURNAL_SHORT_NAME}/${new Date().getFullYear()}/${String(manuscriptId).padStart(4, '0')}`;
+  const htmlBody = `
+    <div style="font-family: Georgia, serif; max-width: 640px; margin: 0 auto; color: #1a202c; line-height: 1.7;">
+      <div style="border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden;">
+        <div style="padding: 28px 32px; background: linear-gradient(135deg, #fff7ed 0%, #ffffff 70%); border-bottom: 3px solid #800000;">
+          <h1 style="margin: 0; color: #800000; font-size: 24px;">Submission Received</h1>
+          <p style="margin: 8px 0 0; color: #475569; font-size: 14px;">${JOURNAL_NAME}</p>
+        </div>
+        <div style="padding: 32px;">
+          <p>Dear ${researcherName},</p>
+          <p>Your manuscript titled <strong>${manuscriptTitle}</strong> has been received into the editorial workflow.</p>
+          <p><strong>Submission Ref:</strong> ${submissionRef}<br/>
+          <strong>Detected Source Length:</strong> ${sourcePageCount} page${sourcePageCount === 1 ? '' : 's'}</p>
+          <p>The manuscript will now proceed through editorial screening, structural validation, refinement, reference checks, and final production review before publication.</p>
+          <p style="margin-bottom: 0;">This acknowledgement is not an acceptance letter and does not confirm publication.</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: `GMIJP <${RESEND_FROM_EMAIL}>`,
+        to: [to],
+        subject: `Submission Received - ${manuscriptTitle.substring(0, 80)}`,
+        html: htmlBody
+      })
+    });
+  } catch (error) {
+    console.error('Submission receipt email error:', error);
+  }
 }
 
 async function initDB() {
@@ -400,6 +612,9 @@ async function initDB() {
       issue TEXT,
       formatted_content TEXT,
       file_blob BYTEA,
+      final_pdf BYTEA,
+      final_pdf_filename TEXT,
+      certificate_id TEXT,
       published_at TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
@@ -531,6 +746,9 @@ async function initDB() {
   try { await pool.query('ALTER TABLE papers ADD COLUMN file_blob BYTEA'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN published_at TIMESTAMP'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN formatted_content TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN final_pdf BYTEA'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN final_pdf_filename TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN certificate_id TEXT'); } catch (e) { }
   
   try { await pool.query('ALTER TABLE exams ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE exams ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
@@ -566,6 +784,7 @@ async function initDB() {
   await pool.query(`INSERT INTO settings (key, value) VALUES ('max_issues_per_volume', '3') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('max_pages_per_manuscript', '20') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('journal_signature', '') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('journal_secretary', 'Dr. Danjuma Namo') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('pin_recovery_price', '1000') ON CONFLICT (key) DO NOTHING`);
 }
 initDB().catch(err => {
@@ -688,7 +907,7 @@ app.get('/api/diag', (req, res) => {
       OPENAI_API_KEY: obfuscate(process.env.OPENAI_API_KEY),
       JWT_SECRET: obfuscate(process.env.JWT_SECRET),
       ZENODO_ACCESS_TOKEN: obfuscate(process.env.ZENODO_ACCESS_TOKEN),
-      APP_URL: process.env.APP_URL
+      APP_URL: APP_URL
     },
     uptime: process.uptime(),
     timestamp: new Date().toISOString()
@@ -1001,15 +1220,6 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 // ─── PASSWORD RESET SYSTEM ──────────────────────────────────────────
 const resetCodes = new Map<string, { code: string; expires: number }>();
 
-// Configure email transporter (uses Gmail App Password or any SMTP)
-const mailTransporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com',
-    pass: process.env.SMTP_PASSWORD || '' // Gmail App Password required
-  }
-});
-
 // User-facing: Request a reset code via email
 app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
   try {
@@ -1028,14 +1238,14 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
 
     // Attempt to send email
     try {
-      await mailTransporter.sendMail({
-        from: `"Genius Mindspark Portal" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
+      await sendResendEmail({
+        fromName: 'Genius Mindspark Portal',
         to: email,
         subject: 'Your Genius Portal Password Reset Code',
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 16px;">
               <div style="text-align: center; margin-bottom: 20px;">
-                <img src="/gmijp-logo.png" alt="Genius" style="width: 60px; height: 60px; border-radius: 50%; background: white; padding: 5px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" />
+                <img src="${APP_URL}/gmijp-logo.png" alt="Genius" style="width: 60px; height: 60px; border-radius: 50%; background: white; padding: 5px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" />
               </div>
               <h2 style="color: #0f172a; margin-bottom: 10px;">Password Reset</h2>
             <p style="color: #64748b;">Hi ${user.name || 'there'},</p>
@@ -1123,14 +1333,14 @@ app.post('/api/auth/contact-admin-reset', authLimiter, async (req, res) => {
 
     // Also send an email notification to the admin
     try {
-      await mailTransporter.sendMail({
-        from: `"Genius Portal" <${process.env.SMTP_EMAIL || 'noreply@genius.app'}>`,
+      await sendResendEmail({
+        fromName: 'Genius Portal',
         to: 'burstbrainconcept@gmail.com',
         subject: `Password Reset Request from ${email}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background: #f8fafc; border-radius: 16px;">
             <div style="text-align: center; margin-bottom: 20px;">
-              <img src="/gmijp-logo.png" alt="Genius" style="width: 60px; height: 60px; border-radius: 50%; background: white; padding: 5px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" />
+              <img src="${APP_URL}/gmijp-logo.png" alt="Genius" style="width: 60px; height: 60px; border-radius: 50%; background: white; padding: 5px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" />
             </div>
             <h2 style="color: #0f172a;">Password Reset Request</h2>
             <p style="color: #64748b;">A user has requested a password reset via the Contact Admin form:</p>
@@ -1298,9 +1508,9 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
  * SHARED HELPER: Generates a high-fidelity PDF using Puppeteer
  * MIRRORS the FormattingEngine.tsx preview EXACTLY.
  */
-async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer> {
+async function generateHighFidelityPaperPDF(id: number | string, overrides: Record<string, any> = {}): Promise<Buffer> {
   const paperResult = await pool.query(
-    'SELECT title, formatted_content, volume, issue, issn, doi FROM papers WHERE id = $1', 
+    'SELECT id, title, formatted_content, volume, issue, issn, doi, status, published_at, created_at FROM papers WHERE id = $1', 
     [id]
   );
   const paper = paperResult.rows[0];
@@ -1308,18 +1518,14 @@ async function generateHighFidelityPaperPDF(id: number | string): Promise<Buffer
     throw new Error('Paper or formatted content not found for high-fidelity generation');
   }
 
-  // Fetch journal configs for branding
-  const volResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
-  const issueResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
-  const issnResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
-
-  const branding = {
-    volume: paper.volume || volResult.rows[0]?.value || '1',
-    issue: paper.issue || issueResult.rows[0]?.value || '1',
-    issn: (paper.issn && paper.issn !== 'Pending') ? paper.issn : (issnResult.rows[0]?.value || '2971-7760'),
-    doi: (paper.doi && paper.doi !== 'Pending') ? paper.doi : (paper.status === 'published' ? `10.5555/genius.${id}` : 'Verification Pending'),
-    date: paper.published_at ? new Date(paper.published_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')
-  };
+  const journalConfig = await getJournalConfig();
+  const fallbackDoi = (paper.doi && paper.doi !== 'Pending')
+    ? paper.doi
+    : (paper.status === 'published' ? `10.5555/genius.${id}` : 'Verification Pending');
+  const branding = buildPaperBranding(paper, journalConfig, {
+    ...overrides,
+    doi: overrides.doi || fallbackDoi
+  });
 
   const scrubbedContent = paper.formatted_content
     .replace(/<div class="header-sheet"[\s\S]*?<\/div>/g, '') // Strip legacy headers if they use the old class
@@ -1485,10 +1691,8 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
   let logoGenius: any = null;
   let logoNsuk: any = null;
   try {
-    const pathGenius = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
-    const pathNsuk = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
-    if (fs.existsSync(pathGenius)) logoGenius = await pdfDoc.embedJpg(fs.readFileSync(pathGenius));
-    if (fs.existsSync(pathNsuk)) logoNsuk = await pdfDoc.embedJpg(fs.readFileSync(pathNsuk));
+    logoGenius = await embedJournalAsset(pdfDoc, ['journal-logo.png', 'gmijp-logo.png', 'ain logo.jpeg']);
+    logoNsuk = await embedJournalAsset(pdfDoc, ['Nasarawa-State-University.jpg', 'university-logo.jpg']);
   } catch (err) {
     console.error('PDF Logo Embed Error:', err);
   }
@@ -1507,7 +1711,7 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     }
 
     // 2. Center Text (Journal Name + Metadata)
-    const journalTitle = "GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL PUBLICATION";
+    const journalTitle = JOURNAL_NAME.toUpperCase();
     p.drawText(journalTitle, { 
       x: width / 2 - fontBold.widthOfTextAtSize(journalTitle, 9) / 2, 
       y: curY - 10, 
@@ -1525,7 +1729,17 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
       color: gray 
     });
 
-    curY -= 35;
+    if (branding.doi) {
+      p.drawText(`DOI: ${branding.doi}`, {
+        x: width / 2 - font.widthOfTextAtSize(`DOI: ${branding.doi}`, 6) / 2,
+        y: curY - 31,
+        size: 6,
+        font,
+        color: maroon
+      });
+    }
+
+    curY -= 42;
     p.drawLine({ 
       start: { x: 40, y: curY }, 
       end: { x: width - 40, y: curY }, 
@@ -1775,7 +1989,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
 
     // 1️⃣ & 4️⃣ Payment Enforcement: Check for existing unused publication credit
     const creditCheck = await pool.query(
-      "SELECT id FROM transactions WHERE user_id = $1 AND type = 'publication' AND status = 'success' AND (metadata->>'consumed')::boolean IS NOT TRUE LIMIT 1",
+      "SELECT id FROM transactions WHERE user_id = $1 AND type = 'publication' AND status = 'success' AND paper_id IS NULL AND (metadata->>'consumed')::boolean IS NOT TRUE LIMIT 1",
       [userId]
     );
     
@@ -1785,13 +1999,14 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
 
     let textContent = '';
     let metadata: any = null;
+    const uploadedAt = new Date().toISOString();
 
     if (req.file.mimetype === 'application/pdf') {
       metadata = await parseWithGrobid(req.file.buffer);
       const data = await pdfParse(req.file.buffer);
       textContent = data.text;
       if (!metadata) metadata = {};
-      metadata.pageCount = data.numpages;
+      metadata.sourcePageCount = data.numpages;
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       const result = await mammoth.extractRawText({ buffer: req.file.buffer });
       textContent = result.value;
@@ -1828,9 +2043,39 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       }
     }
 
-    // Ensure authors column remains a string array (names only) for compatibility, 
+    const journalConfig = await getJournalConfig();
+    const sourcePageCount = resolveSourcePageCount(metadata, textContent);
+    const pageWindow = buildPageWindow(sourcePageCount);
+
+    if (sourcePageCount > journalConfig.maxPagesPerManuscript) {
+      return res.status(400).json({
+        error: `This manuscript is ${sourcePageCount} pages. The journal currently accepts up to ${journalConfig.maxPagesPerManuscript} pages per manuscript.`
+      });
+    }
+
+    metadata = {
+      ...metadata,
+      mimetype: req.file.mimetype,
+      originalFilename: req.file.originalname,
+      sourcePageCount,
+      pageCount: sourcePageCount,
+      pageWindow,
+      sourceWordCount: String(textContent || '').split(/\s+/).filter(Boolean).length,
+      uploadedAt,
+      history: [
+        ...(Array.isArray(metadata?.history) ? metadata.history : []),
+        {
+          action: 'submitted',
+          timestamp: uploadedAt,
+          sourcePageCount,
+          mimetype: req.file.mimetype
+        }
+      ]
+    };
+
+    // Ensure authors column remains a string array (names only) for compatibility,
     // while full objects are preserved in the metadata JSONB
-    const authorNames = (metadata.authors || []).map((a: any) => typeof a === 'string' ? a : a.name);
+    const authorNames = normalizeAuthorNames(metadata.authors);
 
     const result = await pool.query(
       'INSERT INTO papers (user_id, title, authors, abstract, content, metadata, file_blob) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
@@ -1850,20 +2095,23 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
     // Link the transaction and mark it as consumed
     const txId = creditCheck.rows[0].id;
     await pool.query(
-      "UPDATE transactions SET metadata = metadata || $1, status = 'consumed' WHERE id = $2",
-      [JSON.stringify({ consumed: true, paper_id: newPaperId, consumed_at: new Date().toISOString() }), txId]
+      "UPDATE transactions SET paper_id = $1, metadata = metadata || $2 WHERE id = $3",
+      [newPaperId, JSON.stringify({ consumed: true, paper_id: newPaperId, consumed_at: new Date().toISOString() }), txId]
     );
 
     // 2️⃣ Acceptance Letter is now handled by Payment Webhook or this route 
     // Moving to follow-up: sendAcceptanceEmail is now triggered here for the specific paper
-    await sendAcceptanceEmail(req.user.email, req.body.researcherName || 'Researcher', metadata.title || 'Untitled', newPaperId);
+    await sendSubmissionReceivedEmail(req.user.email, req.body.researcherName || 'Researcher', metadata.title || 'Untitled', newPaperId, sourcePageCount);
 
 
     res.json({ 
       id: newPaperId,
       title: metadata.title,
       authors: metadata.authors,
-      abstract: metadata.abstract
+      abstract: metadata.abstract,
+      metadata,
+      status: 'uploaded',
+      message: 'Submission received. Editorial screening and refinement are now underway.'
     });
   } catch (error: any) {
     console.error('Upload error:', error);
@@ -1898,6 +2146,35 @@ app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.get('/api/papers/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query(
+      `SELECT p.id, p.user_id, p.title, p.authors, p.abstract, p.status, p.doi, p.volume, p.issue, p.issn,
+              p.metadata, p.published_at, p.created_at, p.certificate_id
+       FROM papers p
+       WHERE p.id = $1`,
+      [id]
+    );
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    if (paper.user_id !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const metadata = safeJsonParse<any>(paper.metadata, {});
+    res.json({
+      ...paper,
+      metadata,
+      authors: normalizeAuthorNames(paper.authors),
+      sourcePageCount: metadata.sourcePageCount || metadata.pageCount || null,
+      pageWindow: metadata.pageWindow || null
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== Pipeline Progression APIs =====
 app.get('/api/papers/queue/:status', authenticateToken, async (req: any, res) => {
   try {
@@ -1916,9 +2193,12 @@ app.put('/api/papers/:id/status', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const { status } = req.body;
+    if (!PUBLICATION_STATUSES.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
     
     // Automatically lock paper if it moves to final stages
-    const isLocked = (status === 'integrity_check' || status === 'published');
+    const isLocked = (status === 'accepted' || status === 'published');
 
     await pool.query(
       'UPDATE papers SET status = $1, is_locked = CASE WHEN $2 = true THEN true ELSE is_locked END WHERE id = $3 AND user_id = $4',
@@ -1959,13 +2239,20 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
 // ===== SHARED PDF GENERATION HELPERS =====
 async function generatePublishedArticlePDF(paperId: number | string): Promise<{ buffer: Buffer; filename: string }> {
   const result = await pool.query(
-    'SELECT id, title, authors, abstract, content, formatted_content, metadata, doi, volume, issue, issn, published_at, created_at FROM papers WHERE id = $1',
+    'SELECT id, title, authors, abstract, content, formatted_content, metadata, doi, volume, issue, issn, published_at, created_at, final_pdf, final_pdf_filename FROM papers WHERE id = $1',
     [paperId]
   );
   const paper = result.rows[0];
   if (!paper) throw new Error('Paper not found');
 
   const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+
+  if (paper.final_pdf) {
+    return {
+      buffer: Buffer.from(paper.final_pdf),
+      filename: paper.final_pdf_filename || `${buildSafeFilename(paper.title || 'article', '_Published.pdf')}`
+    };
+  }
   
   // HIGHEST PRIORITY: Use High-Fidelity Formatted HTML (Matches Formatting Preview 1:1)
   if (paper.formatted_content) {
@@ -2018,14 +2305,12 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
   const lightGray = rgb(0.6, 0.6, 0.6);
   const indigo = rgb(0.26, 0.27, 0.53);
 
-  // Dynamic Logo Loading
+  // Dynamic Logo Loading (consistent journal branding)
   let logoLeft: any = null;
   let logoRight: any = null;
   try {
-    const lpL = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
-    const lpR = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
-    if (fs.existsSync(lpL)) logoLeft = await pdfDoc.embedJpg(fs.readFileSync(lpL));
-    if (fs.existsSync(lpR)) logoRight = await pdfDoc.embedJpg(fs.readFileSync(lpR));
+    logoLeft = await embedJournalAsset(pdfDoc, ['journal-logo.png', 'gmijp-logo.png', 'ain logo.jpeg']);
+    logoRight = await embedJournalAsset(pdfDoc, ['Nasarawa-State-University.jpg', 'university-logo.jpg']);
   } catch (e) {
     console.error('Logo load failed:', e);
   }
@@ -2309,7 +2594,151 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
   return { buffer: Buffer.from(pdfB), filename: `${sfT}_Published.pdf` };
 }
 
-async function sendPublicationEmail(to: string, researcherName: string, manuscriptTitle: string, doi: string, url: string, pdfBuffer: Buffer) {
+async function generatePublicationCertificatePDF(
+  paper: any,
+  branding: any,
+  certificateId: string,
+  journalConfig?: any
+): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([842, 595]); // A4 landscape
+  const { width, height } = page.getSize();
+  const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+  const maroon = rgb(0.5, 0, 0);
+  const gray = rgb(0.4, 0.4, 0.4);
+  const black = rgb(0, 0, 0);
+
+  const config = journalConfig || await getJournalConfig();
+  const secretaryName = config.journalSecretary || 'Dr. Danjuma Namo';
+  const signatureBase64 = config.journalSignature || '';
+
+  const title = sanitizePdfText(paper?.title || 'Untitled Manuscript');
+  const authorsList = normalizeAuthorNames(paper?.authors || paper?.metadata?.authors || []);
+  const authorsLine = sanitizePdfText(authorsList.length ? authorsList.join(', ') : 'Researcher');
+  const doi = sanitizePdfText(String(branding?.doi || paper?.doi || 'Pending'));
+  const issn = sanitizePdfText(String(branding?.issn || paper?.issn || config.journalIssn || '2971-7760'));
+  const volume = sanitizePdfText(String(branding?.volume || paper?.volume || config.currentVolume || '1'));
+  const issue = sanitizePdfText(String(branding?.issue || paper?.issue || config.currentIssue || '1'));
+  const publishedDate = sanitizePdfText(String(
+    branding?.date || new Date(paper?.published_at || paper?.created_at || new Date())
+      .toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  ));
+  const verifyUrl = sanitizePdfText(buildCertificateVerificationUrl({ id: paper?.id, doi }));
+
+  const logoLeft = await embedJournalAsset(pdfDoc, ['journal-logo.png', 'gmijp-logo.png', 'ain logo.jpeg']);
+  const logoRight = await embedJournalAsset(pdfDoc, ['Nasarawa-State-University.jpg', 'university-logo.jpg']);
+
+  page.drawRectangle({ x: 20, y: 20, width: width - 40, height: height - 40, borderColor: maroon, borderWidth: 2 });
+  page.drawRectangle({ x: 32, y: 32, width: width - 64, height: height - 64, borderColor: maroon, borderWidth: 1 });
+
+  if (logoLeft) page.drawImage(logoLeft, { x: 50, y: height - 115, width: 60, height: 60 });
+  if (logoRight) page.drawImage(logoRight, { x: width - 110, y: height - 115, width: 60, height: 60 });
+
+  const titleText = 'CERTIFICATE OF PUBLICATION';
+  page.drawText(titleText, {
+    x: width / 2 - fontBold.widthOfTextAtSize(titleText, 22) / 2,
+    y: height - 95,
+    size: 22,
+    font: fontBold,
+    color: maroon
+  });
+
+  const journalLine = JOURNAL_NAME.toUpperCase();
+  page.drawText(journalLine, {
+    x: width / 2 - fontBold.widthOfTextAtSize(journalLine, 10) / 2,
+    y: height - 118,
+    size: 10,
+    font: fontBold,
+    color: gray
+  });
+
+  const wrapText = (text: string, usedFont: any, size: number, maxWidth: number) => {
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let line = '';
+    for (const word of words) {
+      const testLine = line ? `${line} ${word}` : word;
+      if (usedFont.widthOfTextAtSize(testLine, size) > maxWidth) {
+        if (line) lines.push(line);
+        line = word;
+      } else {
+        line = testLine;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  };
+
+  const drawCenteredLines = (lines: string[], y: number, usedFont: any, size: number, color: any, lineGap = 8) => {
+    for (const line of lines) {
+      page.drawText(line, {
+        x: width / 2 - usedFont.widthOfTextAtSize(line, size) / 2,
+        y,
+        size,
+        font: usedFont,
+        color
+      });
+      y -= size + lineGap;
+    }
+    return y;
+  };
+
+  let y = height - 160;
+  y = drawCenteredLines(wrapText('This is to certify that the manuscript titled', fontItalic, 12, width - 160), y, fontItalic, 12, gray, 6);
+  y -= 4;
+  y = drawCenteredLines(wrapText(`"${title}"`, fontBold, 18, width - 160), y, fontBold, 18, black, 6);
+  y -= 4;
+  y = drawCenteredLines(wrapText('authored by', fontItalic, 11, width - 160), y, fontItalic, 11, gray, 4);
+  y = drawCenteredLines(wrapText(authorsLine, fontBold, 14, width - 180), y, fontBold, 14, black, 6);
+  y -= 6;
+  y = drawCenteredLines(
+    wrapText(`has been accepted and published in the ${JOURNAL_DISPLAY_NAME}.`, font, 12, width - 160),
+    y,
+    font,
+    12,
+    black,
+    6
+  );
+
+  y -= 6;
+  y = drawCenteredLines(wrapText(`DOI: ${doi}`, fontBold, 11, width - 160), y, fontBold, 11, maroon, 4);
+  y = drawCenteredLines(
+    wrapText(`ISSN: ${issn}   |   Volume ${volume}   |   Issue ${issue}`, font, 10, width - 160),
+    y,
+    font,
+    10,
+    gray,
+    4
+  );
+  y = drawCenteredLines(wrapText(`Published: ${publishedDate}`, fontItalic, 10, width - 160), y, fontItalic, 10, gray, 4);
+
+  const signatureY = 95;
+  if (signatureBase64 && signatureBase64.startsWith('data:image')) {
+    try {
+      const base64Data = signatureBase64.split(',')[1];
+      const sigBytes = Buffer.from(base64Data, 'base64');
+      const sigImg = signatureBase64.includes('image/png') ? await pdfDoc.embedPng(sigBytes) : await pdfDoc.embedJpg(sigBytes);
+      const sigDims = sigImg.scaleToFit(140, 50);
+      page.drawImage(sigImg, { x: 80, y: signatureY + 15, width: sigDims.width, height: sigDims.height });
+    } catch (err) {
+      console.error('Failed to embed certificate signature image:', err);
+    }
+  }
+  page.drawLine({ start: { x: 80, y: signatureY }, end: { x: 260, y: signatureY }, thickness: 1, color: gray });
+  page.drawText(secretaryName, { x: 80, y: signatureY - 16, size: 11, font: fontBold, color: black });
+  page.drawText('Secretary, Editorial Board', { x: 80, y: signatureY - 30, size: 9, font, color: gray });
+
+  page.drawText(`Certificate ID: ${certificateId}`, { x: width - 320, y: 95, size: 9, font: fontBold, color: black });
+  page.drawText(`Verification: ${verifyUrl}`, { x: width - 320, y: 80, size: 8, font, color: gray });
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
+
+/* LEGACY PUBLICATION EMAIL (deprecated in favor of server-issued certificate)
+async function sendPublicationEmailLegacy(to: string, researcherName: string, manuscriptTitle: string, doi: string, url: string, pdfBuffer: Buffer) {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
@@ -2347,6 +2776,93 @@ async function sendPublicationEmail(to: string, researcherName: string, manuscri
       ]
     });
     console.log(`Publication email sent successfully to ${to}`);
+  } catch (error) {
+    console.error('Failed to send publication email:', error);
+  }
+}
+*/
+
+async function sendPublicationEmail(
+  to: string,
+  researcherName: string,
+  manuscriptTitle: string,
+  payload: {
+    doi: string;
+    url: string;
+    volume: string;
+    issue: string;
+    issn: string;
+    publishedAt: string;
+    certificateId: string;
+    pdfBuffer: Buffer;
+    certificateBuffer: Buffer;
+  }
+) {
+  if (!RESEND_API_KEY) {
+    console.warn('RESEND_API_KEY not set - skipping publication email.');
+    return;
+  }
+
+  const {
+    doi,
+    url,
+    volume,
+    issue,
+    issn,
+    publishedAt,
+    certificateId,
+    pdfBuffer,
+    certificateBuffer
+  } = payload;
+
+  const htmlBody = `
+    <div style="font-family: Georgia, serif; max-width: 640px; margin: 0 auto; color: #1a202c; line-height: 1.7;">
+      <div style="border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden;">
+        <div style="padding: 28px 32px; background: linear-gradient(135deg, #fff7ed 0%, #ffffff 70%); border-bottom: 3px solid #800000;">
+          <h1 style="margin: 0; color: #800000; font-size: 24px;">Publication Confirmed</h1>
+          <p style="margin: 8px 0 0; color: #475569; font-size: 14px;">${JOURNAL_NAME}</p>
+        </div>
+        <div style="padding: 32px;">
+          <p>Dear ${researcherName},</p>
+          <p>Your manuscript titled <strong>${manuscriptTitle}</strong> has been formally published.</p>
+          <p><strong>DOI:</strong> ${doi}<br/>
+          <strong>Volume / Issue:</strong> ${volume} / ${issue}<br/>
+          <strong>ISSN:</strong> ${issn}<br/>
+          <strong>Published:</strong> ${publishedAt}</p>
+          <p>The official published manuscript and your publication certificate are attached.</p>
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${url}" style="background: #800000; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">View DOI Record</a>
+          </div>
+          <p style="font-size: 11px; color: #94a3b8; text-align: center;">Certificate ID: ${certificateId}</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: `GMIJP <${RESEND_FROM_EMAIL}>`,
+        to: [to],
+        subject: `Publication Confirmed - ${manuscriptTitle.substring(0, 80)}`,
+        html: htmlBody,
+        attachments: [
+          {
+            filename: `Published_Manuscript_${doi.replace(/\//g, '_')}.pdf`,
+            content: pdfBuffer.toString('base64')
+          },
+          {
+            filename: `Publication_Certificate_${certificateId}.pdf`,
+            content: certificateBuffer.toString('base64')
+          }
+        ]
+      })
+    });
   } catch (error) {
     console.error('Failed to send publication email:', error);
   }
@@ -3138,25 +3654,6 @@ app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
 });
 
 
-// HIGH-FIDELITY PDF GENERATION VIA PUPPETEER (Shared Helper)
-app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
-  try {
-    const { id } = idParamSchema.parse(req.params);
-    const paperResult = await pool.query('SELECT title FROM papers WHERE id = $1', [id]);
-    const paper = paperResult.rows[0];
-    if (!paper) return res.status(404).json({ error: 'Paper not found' });
-
-    const pdfBuffer = await generateHighFidelityPaperPDF(id);
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}_Final.pdf"`);
-    res.end(pdfBuffer);
-  } catch (error: any) {
-    console.error('High-fidelity PDF error:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate high-fidelity PDF' });
-  }
-});
-
 app.post('/api/format/:id/email', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -3169,11 +3666,10 @@ app.post('/api/format/:id/email', authenticateToken, async (req: any, res) => {
 
     const pdfBuffer = await generateHighFidelityPaperPDF(id);
     
-    await mailTransporter.sendMail({
-      from: `"Genius Publishing" <${process.env.EMAIL_USER}>`,
+    await sendResendEmail({
+      fromName: 'Genius Publishing',
       to: req.user.email,
       subject: `[FINALIZED] ${paper.title}`,
-      text: `Your manuscript is ready. Please find the finalized PDF attached.`,
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
           <div style="background: #1e1b4b; padding: 30px; border-radius: 16px; text-align: center; color: white;">
@@ -3192,7 +3688,7 @@ app.post('/api/format/:id/email', authenticateToken, async (req: any, res) => {
       attachments: [
         {
           filename: `${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}_Formatted.pdf`,
-          content: pdfBuffer
+          content: pdfBuffer.toString('base64')
         }
       ]
     });
@@ -3337,19 +3833,13 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    const metadata = safeJsonParse<any>(paper.metadata, {});
+    const pageWindow = metadata.pageWindow || buildPageWindow(resolveSourcePageCount(metadata, paper.content));
+    const targetPageCount = pageWindow.target;
 
     // Fetch branding metadata for the formatter
-    const issnRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
-    const volRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
-    const issRes = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
-    
-    const branding = {
-      issn: paper.issn || issnRes.rows[0]?.value || '2971-7760',
-      volume: paper.volume || volRes.rows[0]?.value || '1',
-      issue: paper.issue || issRes.rows[0]?.value || '1',
-      doi: paper.doi || '10.GMIJ/PENDING',
-      date: (paper.published_at || paper.created_at || new Date()).toLocaleDateString('en-GB')
-    };
+    const journalConfig = await getJournalConfig();
+    const branding = buildPaperBranding(paper, journalConfig, { doi: paper.doi || '10.GMIJ/PENDING' });
 
     console.log(`[DEBUG] Formatting paper ${id}: PaperVol=${paper.volume}, SettingVol=${volRes.rows[0]?.value}, FinalVol=${branding.volume}`);
 
@@ -3386,7 +3876,8 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           10. NO BROKEN MEDIA: If an image or logo is referenced in the source but the path looks absolute or relative to a local system, omit it entirely. Do NOT generate <img> tags for logos.
           11. COPYEDITING: Fix spelling and grammatical errors, remove completely all unwanted symbols/characters, eliminate weird text indentations, and strip out unnecessary extra spaces. The text must read flawlessly as a professionally copyedited scientific manuscript.
           12. ENFORCEMENT: If you see "Genius Multidisciplinary International Journal" or "ISSN" at the top of the source, STRIP IT.
-          13. FONTS: Use standard serif fonts for the main body.`
+          13. FONTS: Use standard serif fonts for the main body.
+          14. PAGE DISCIPLINE: The source manuscript is approximately ${targetPageCount} pages. Keep the formatted result very close to that length. Avoid compressing the paper to an unrealistically short output and avoid inflating it with unnecessary spacing or repeated headings.`
         },
         { role: 'user', content: `Manuscript Title (TOPIC): ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
       ]
@@ -3397,14 +3888,17 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     formattedHtml = formattedHtml.replace(/^```html\n?/, '').replace(/\n?```$/, '');
 
     // PERSISTENCE: Save the formatted content to the database so it can be used for PDF/Email generation
+    const nextStatus = ['published', 'accepted', 'ready'].includes(paper.status) ? paper.status : 'formatting';
     await pool.query(
-      'UPDATE papers SET formatted_content = $1, status = $2 WHERE id = $3 AND user_id = $4',
-      [formattedHtml, 'published', id, req.user.id]
+      'UPDATE papers SET formatted_content = $1, status = $2, metadata = $3 WHERE id = $4 AND user_id = $5',
+      [formattedHtml, nextStatus, JSON.stringify({ ...metadata, pageWindow, targetPageCount }), id, req.user.id]
     );
 
     res.json({ 
       formattedHtml,
-      branding 
+      branding,
+      pageWindow,
+      targetPageCount
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to format' });
@@ -3426,6 +3920,10 @@ app.get('/api/papers/:id/acceptance-letter', authenticateToken, async (req: any,
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
+    if (!['accepted', 'published'].includes(paper.status)) {
+      return res.status(409).json({ error: 'Acceptance letter is issued only after editorial acceptance.' });
+    }
+
     const titleStr = paper.title || 'Untitled';
     const nameStr = paper.researcher_name || 'Researcher';
     
@@ -3437,6 +3935,54 @@ app.get('/api/papers/:id/acceptance-letter', authenticateToken, async (req: any,
   } catch (error) {
     console.error('Acceptance letter generation error:', error);
     res.status(500).json({ error: 'Failed to generate acceptance letter PDF' });
+  }
+});
+
+app.get('/api/papers/:id/certificate', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query(
+      'SELECT p.*, u.name as researcher_name FROM papers p JOIN users u ON p.user_id = u.id WHERE p.id = $1',
+      [id]
+    );
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin' && paper.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (paper.status !== 'published') {
+      return res.status(409).json({ error: 'Certificate is available only after publication.' });
+    }
+
+    const journalConfig = await getJournalConfig();
+    const branding = buildPaperBranding(paper, journalConfig, {
+      doi: paper.doi,
+      volume: paper.volume || journalConfig.currentVolume,
+      issue: paper.issue || journalConfig.currentIssue,
+      issn: paper.issn || journalConfig.journalIssn,
+      publishedAt: paper.published_at || paper.created_at
+    });
+
+    const certificateId = paper.certificate_id || buildCertificateId(paper.id, paper.published_at || paper.created_at);
+    if (!paper.certificate_id) {
+      await pool.query('UPDATE papers SET certificate_id = $1 WHERE id = $2', [certificateId, paper.id]);
+    }
+
+    const pdfBuffer = await generatePublicationCertificatePDF(
+      { ...paper, metadata: safeJsonParse(paper.metadata, {}) },
+      branding,
+      certificateId,
+      journalConfig
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Publication_Certificate_${paper.id}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Certificate generation error:', error);
+    res.status(500).json({ error: 'Failed to generate publication certificate' });
   }
 });
 
@@ -3466,20 +4012,14 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   const margin = 60;
   let y = height - 50;
 
-  // Load and embed logos
+  // Load and embed logos (consistent journal branding)
   try {
-    const logoPathLeft = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
-    const logoPathRight = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
-    
-    if (fs.existsSync(logoPathLeft)) {
-      const logoLeftBytes = fs.readFileSync(logoPathLeft);
-      const logoLeft = await pdfDoc.embedJpg(logoLeftBytes);
+    const logoLeft = await embedJournalAsset(pdfDoc, ['journal-logo.png', 'gmijp-logo.png', 'ain logo.jpeg']);
+    const logoRight = await embedJournalAsset(pdfDoc, ['Nasarawa-State-University.jpg', 'university-logo.jpg']);
+    if (logoLeft) {
       page.drawImage(logoLeft, { x: margin, y: y - 50, width: 50, height: 50 });
     }
-    
-    if (fs.existsSync(logoPathRight)) {
-      const logoRightBytes = fs.readFileSync(logoPathRight);
-      const logoRight = await pdfDoc.embedJpg(logoRightBytes);
+    if (logoRight) {
       page.drawImage(logoRight, { x: width - margin - 50, y: y - 50, width: 50, height: 50 });
     }
   } catch (err) {
@@ -3489,7 +4029,7 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   // Header Title
   const title1 = 'GENIUS MULTIDISCIPLINARY';
   const title2 = 'INTERNATIONAL JOURNAL PUBLICATION';
-  const uniNameText = 'Nasarawa State University, Keffi';
+  const uniNameText = PARTNER_INSTITUTION_NAME;
 
   page.drawText(title1, { 
     x: width / 2 - fontBold.widthOfTextAtSize(title1, 14) / 2, 
@@ -3659,17 +4199,15 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
   const drawHeader = async (p: any, isFirst: boolean) => {
     let curY = height - 50;
     try {
-      const logoPathLeft = path.join(process.cwd(), 'tools', 'ain logo.jpeg');
-      const logoPathRight = path.join(process.cwd(), 'tools', 'Nasarawa-State-University.jpg');
-      if (fs.existsSync(logoPathLeft)) {
-        const logo = await pdfDoc.embedJpg(fs.readFileSync(logoPathLeft));
-        p.drawImage(logo, { x: margin, y: curY - 50, width: 50, height: 50 });
+      const logoLeft = await embedJournalAsset(pdfDoc, ['journal-logo.png', 'gmijp-logo.png', 'ain logo.jpeg']);
+      const logoRight = await embedJournalAsset(pdfDoc, ['Nasarawa-State-University.jpg', 'university-logo.jpg']);
+      if (logoLeft) {
+        p.drawImage(logoLeft, { x: margin, y: curY - 50, width: 50, height: 50 });
       }
-      if (fs.existsSync(logoPathRight)) {
-        const logo = await pdfDoc.embedJpg(fs.readFileSync(logoPathRight));
-        p.drawImage(logo, { x: width - margin - 50, y: curY - 50, width: 50, height: 50 });
+      if (logoRight) {
+        p.drawImage(logoRight, { x: width - margin - 50, y: curY - 50, width: 50, height: 50 });
       }
-    } catch(e) {}
+    } catch (e) {}
 
     const titleStack = ['GENIUS MULTIDISCIPLINARY', 'INTERNATIONAL JOURNAL'];
     p.drawText(titleStack[0], { x: margin + 60, y: curY - 15, size: 10, font: fontBold, color: maroon });
@@ -3895,7 +4433,6 @@ app.get('/api/papers/:id/formatted-download', async (req, res) => {
 // ===== Resend Email: Acceptance Letter =====
 async function sendAcceptanceEmail(to: string, researcherName: string, manuscriptTitle: string, manuscriptId: number) {
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
-  const RESEND_FROM = process.env.RESEND_FROM_EMAIL || 'info@cssfarmstvet.ng';
   if (!RESEND_API_KEY) {
     console.warn('RESEND_API_KEY not set \u2014 skipping acceptance email.');
     return;
@@ -3903,7 +4440,7 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
 
   const refNumber = `GMIJP/${new Date().getFullYear()}/${manuscriptId.toString().padStart(4, '0')}`;
   const currentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  const appUrl = process.env.APP_URL || 'https://gmijp-edu.up.railway.app';
+  const appUrl = APP_URL;
   const gmijpLogo = `${appUrl}/gmijp-logo.png`;
   const nsukLogo = `${appUrl}/university-logo.jpg`;
 
@@ -3952,7 +4489,7 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: `GMIJP <${RESEND_FROM}>`,
+        from: `GMIJP <${RESEND_FROM_EMAIL}>`,
         to: [to],
         subject: `Acceptance Letter \u2014 ${manuscriptTitle.substring(0, 80)}`,
         html: htmlBody,
@@ -3986,7 +4523,7 @@ async function sendDoiFailureEmail(to: string, name: string, title: string, reas
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: `GMIJP <${RESEND_FROM}>`,
+        from: `GMIJP <${RESEND_FROM_EMAIL}>`,
         to: [to],
         subject: `ACTION REQUIRED: DOI Validation Failed — ${title.substring(0, 50)}`,
         html: htmlBody
@@ -4006,6 +4543,35 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+
+    if (paper.status === 'published' && paper.doi) {
+      const existingUrl = `https://doi.org/${paper.doi}`;
+      return res.json({
+        success: true,
+        doi: paper.doi,
+        url: existingUrl,
+        title: paper.title || 'Untitled',
+        volume: paper.volume,
+        issue: paper.issue,
+        issn: paper.issn,
+        publishedAt: paper.published_at,
+        certificateId: paper.certificate_id,
+        pdfUrl: `/api/papers/${paperId}/published-pdf`,
+        certificateUrl: `/api/papers/${paperId}/certificate`
+      });
+    }
+
+    if (!['ready', 'accepted', 'doi_validation_failed'].includes(paper.status)) {
+      return res.status(400).json({ error: 'Manuscript is not in a publishable stage. Move it to accepted before publishing.' });
+    }
+
+    if (metadata.similarityScore && metadata.similarityScore > 25) {
+      return res.status(400).json({ error: `Publication REJECTED: Similarity score of ${metadata.similarityScore}% exceeds the 25% journal limit.` });
+    }
+
+    const sourcePageCount = resolveSourcePageCount(metadata, paper.content || '');
+    const pageWindow = metadata.pageWindow || buildPageWindow(sourcePageCount);
+
     let ast = metadata.ast;
     
     // AUTONOMOUS FALLBACK: If AST is missing, generate it on-the-fly
@@ -4017,17 +4583,19 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
           return res.status(400).json({ error: `Structural Rewrite failed: ${e.message}. Please fix the manuscript manually.` });
         }
     }
+    if (!metadata.ast && ast) {
+      metadata.ast = ast;
+    }
+    paper.metadata = metadata;
 
     const zenodoToken = process.env.ZENODO_ACCESS_TOKEN;
     if (!zenodoToken) throw new Error("Zenodo Access Token missing.");
 
     // 1. Resolve Journal Branding
-    const settingsRes = await pool.query("SELECT key, value FROM settings WHERE key IN ('current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue')");
-    const settings = Object.fromEntries(settingsRes.rows.map(r => [r.key, r.value]));
-    
-    const vol = parseInt(settings.current_volume || '1');
-    const iss = parseInt(settings.current_issue || '1');
-    const issn = settings.journal_issn || '2971-7760';
+    const journalConfig = await getJournalConfig();
+    const vol = parseInt(journalConfig.currentVolume || '1', 10);
+    const iss = parseInt(journalConfig.currentIssue || '1', 10);
+    const issn = journalConfig.journalIssn || '2971-7760';
 
     // 1.5 Calculate Sequential Page Offset
     const previousPapers = await pool.query(
@@ -4049,35 +4617,60 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
         throw new Error("Invalid DOI prereserved from registry.");
     }
 
-    // Prepare Branding (Verified but not yet burned into the FINAL binary)
-    const branding = { vol, issue: iss, issn, startPageNumber, doi: prereservedDoi };
-
     let finalDoi = '';
-    let pdfBuffer: Buffer;
-    
+    let draftPdfBuffer: Buffer = Buffer.alloc(0);
+    let finalPdfBuffer: Buffer = Buffer.alloc(0);
+    let certificateBuffer: Buffer = Buffer.alloc(0);
+    let certificateId = '';
+    let publishedAt = '';
+
     try {
-      // Step A: Generate "Draft" binary for initial Zenodo upload
-      const initialPdfBytes = await generateFinalManuscriptPDF(ast, branding);
-      
-      // Step B: Finalize Zenodo Publish (Upload & Trigger Registrar)
-      finalDoi = await finalizeZenodoPublish(depositionId, zenodoToken, paper, Buffer.from(initialPdfBytes), bucketUrl);
-      
-      // Step C: OPTIONAL TRUTH WAIT
-      // We check if DOI is live, but we no longer fail the whole pipeline if it's pending
+      let draftPdfBytes: Buffer | Uint8Array;
+      if (paper.formatted_content) {
+        try {
+          draftPdfBytes = await generateHighFidelityPaperPDF(paperId, {
+            doi: prereservedDoi,
+            volume: vol,
+            issue: iss,
+            issn,
+            publishedAt: new Date().toISOString(),
+            startPageNumber
+          });
+        } catch (err) {
+          console.warn(`[PUBLISH] High-fidelity draft failed for paper ${paperId}. Falling back to structural PDF.`, err);
+          draftPdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber, doi: prereservedDoi });
+        }
+      } else {
+        draftPdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber, doi: prereservedDoi });
+      }
+
+      draftPdfBuffer = Buffer.isBuffer(draftPdfBytes) ? draftPdfBytes : Buffer.from(draftPdfBytes);
+      const draftPdf = await PDFDocument.load(draftPdfBuffer);
+      const draftPageCount = draftPdf.getPageCount();
+
+      if (!isWithinPageWindow(draftPageCount, pageWindow)) {
+        const updatedMetadata = {
+          ...metadata,
+          sourcePageCount,
+          pageWindow,
+          pageCount: draftPageCount,
+          pageCountWithinWindow: false
+        };
+        await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [JSON.stringify(updatedMetadata), paperId]);
+        return res.status(400).json({
+          error: `Page count mismatch: expected ${pageWindow.min}-${pageWindow.max} pages, got ${draftPageCount}.`,
+          pageCount: draftPageCount,
+          pageWindow
+        });
+      }
+
+      finalDoi = await finalizeZenodoPublish(depositionId, zenodoToken, paper, draftPdfBuffer, bucketUrl);
+
       console.log(`Checking DOI resolution status for ${finalDoi}...`);
       const isLive = await validateDOI(finalDoi);
       if (!isLive) {
-          console.warn("DOI is registered but not yet live on global resolution servers. Proceeding with database archival.");
+        console.warn('DOI is registered but not yet live on global resolution servers. Proceeding with database archival.');
       }
-
-      // Step D: POST-VALIDATION BRANDING
-      // We generate the final PDF using the confirmed DOI from Step B
-      console.log(`Generating Final Branded Artifact for ${finalDoi}...`);
-      const pdfBytes = await generateFinalManuscriptPDF(ast, branding);
-      pdfBuffer = Buffer.from(pdfBytes);
-      
-      // Store pdfBytes in function scope for later use in pageCount extraction
-      (global as any).lastPdfBytes = pdfBytes; 
     } catch (e: any) {
       console.error('Zenodo/DOI Critical Failure:', e.message);
       
@@ -4094,62 +4687,97 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
         await sendDoiFailureEmail(userRes.rows[0].email, userRes.rows[0].name, ast.title || paper.title, e.message);
       }
       
-      return res.status(400).json({ 
-        error: `DOI Registration Issue: ${e.message}`, 
+      return res.status(400).json({
+        error: `DOI Registration Issue: ${e.message}`,
         status: 'doi_validation_failed',
         doi: recoveryDoi
       });
     }
-    
-    // Use the final confirmed DOI
-    const doi = finalDoi;
-    
-    // 3.5 MANDATORY: Plagiarism Gatekeeper
-    if (metadata.similarityScore && metadata.similarityScore > 25) {
-       return res.status(400).json({ error: `Publication REJECTED: Similarity score of ${metadata.similarityScore}% exceeds the 25% journal limit.` });
-    }
 
+    const doi = finalDoi || prereservedDoi;
     const url = `https://doi.org/${doi}`;
+    publishedAt = new Date().toISOString();
 
-    // 4. Update Database with Version History
-    const history = metadata.history || [];
+    let finalPdfBytes: Buffer | Uint8Array;
+    if (paper.formatted_content) {
+      try {
+        finalPdfBytes = await generateHighFidelityPaperPDF(paperId, {
+          doi,
+          volume: vol,
+          issue: iss,
+          issn,
+          publishedAt,
+          startPageNumber
+        });
+      } catch (err) {
+        console.warn(`[PUBLISH] High-fidelity final failed for paper ${paperId}. Falling back to structural PDF.`, err);
+        finalPdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber, doi });
+      }
+    } else {
+      finalPdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber, doi });
+    }
+    finalPdfBuffer = Buffer.isBuffer(finalPdfBytes) ? finalPdfBytes : Buffer.from(finalPdfBytes);
+    const finalPdfDoc = await PDFDocument.load(finalPdfBuffer);
+    const finalPageCount = finalPdfDoc.getPageCount();
+    const pageCountWithinWindow = isWithinPageWindow(finalPageCount, pageWindow);
+
+    const history = Array.isArray(metadata.history) ? metadata.history : [];
+    const nextVersion = (metadata.version || 1) + 1;
     history.push({
       action: 'published',
-      version: (metadata.version || 1) + 1,
+      version: nextVersion,
       doi,
       url,
-      timestamp: new Date().toISOString()
+      timestamp: publishedAt,
+      pageCount: finalPageCount
     });
 
-    const pdfBytes = (global as any).lastPdfBytes;
-    const currentPdf = await PDFDocument.load(pdfBytes);
-    const currentPageCount = currentPdf.getPageCount();
-
-    const updatedMetadata = { 
-        ...metadata, 
-        doi, 
-        url, 
-        volume: vol, 
-        issue: iss, 
-        publishedAt: new Date().toISOString(),
-        version: (metadata.version || 1) + 1,
-        history,
-        startPageNumber,
-        pageCount: currentPageCount
+    const updatedMetadata = {
+      ...metadata,
+      doi,
+      url,
+      volume: vol,
+      issue: iss,
+      issn,
+      publishedAt,
+      version: nextVersion,
+      history,
+      startPageNumber,
+      pageCount: finalPageCount,
+      sourcePageCount,
+      pageWindow,
+      pageCountWithinWindow
     };
 
+    const finalFilename = `${buildSafeFilename(paper.title || 'article')}_Published.pdf`;
+    certificateId = paper.certificate_id || buildCertificateId(paperId, publishedAt);
+    const certificateBranding = buildPaperBranding(paper, journalConfig, {
+      doi,
+      volume: vol,
+      issue: iss,
+      issn,
+      publishedAt
+    });
+    certificateBuffer = await generatePublicationCertificatePDF(
+      { ...paper, metadata },
+      certificateBranding,
+      certificateId,
+      journalConfig
+    );
+
     await pool.query(
-      "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4, issn = $5 WHERE id = $6",
-      [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), issn, paperId]
+      "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4, issn = $5, published_at = $6, final_pdf = $7, final_pdf_filename = $8, certificate_id = $9, is_locked = TRUE WHERE id = $10",
+      [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), issn, publishedAt, finalPdfBuffer, finalFilename, certificateId, paperId]
     );
 
     // 5. Volume/Issue Increment Logic
     const countRes = await pool.query("SELECT COUNT(*) FROM papers WHERE status = 'published' AND volume = $1 AND issue = $2", [vol.toString(), iss.toString()]);
     const count = parseInt(countRes.rows[0].count);
-    const max = parseInt(settings.max_manuscripts_per_issue || '10');
+    const max = journalConfig.maxManuscriptsPerIssue || 10;
+    const maxIssues = journalConfig.maxIssuesPerVolume || 12;
 
     if (count >= max) {
-      if (iss >= 12) {
+      if (iss >= maxIssues) {
         await pool.query("UPDATE settings SET value = $1 WHERE key = 'current_volume'", [(vol + 1).toString()]);
         await pool.query("UPDATE settings SET value = '1' WHERE key = 'current_issue'");
       } else {
@@ -4161,10 +4789,32 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [userId]);
     const user = userRes.rows[0];
     if (user) {
-      await sendPublicationEmail(user.email, user.name, ast.title || paper.title, doi, url, pdfBuffer);
+      await sendPublicationEmail(user.email, user.name, ast.title || paper.title, {
+        doi,
+        url,
+        volume: vol.toString(),
+        issue: iss.toString(),
+        issn,
+        publishedAt,
+        certificateId,
+        pdfBuffer: finalPdfBuffer,
+        certificateBuffer
+      });
     }
 
-    res.json({ success: true, doi, url, title: ast.title || paper.title });
+    res.json({
+      success: true,
+      doi,
+      url,
+      title: ast.title || paper.title,
+      volume: vol.toString(),
+      issue: iss.toString(),
+      issn,
+      publishedAt,
+      certificateId,
+      pdfUrl: `/api/papers/${paperId}/published-pdf`,
+      certificateUrl: `/api/papers/${paperId}/certificate`
+    });
 
   } catch (error: any) {
     console.error('Final Publishing Error:', error);
@@ -4859,7 +5509,7 @@ app.put('/api/admin/papers/:id/metadata', authenticateToken, async (req: any, re
 app.put('/api/admin/papers/:id/status', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   const { status } = req.body;
-  const validStatuses = ['uploaded', 'formatting', 'peer_review', 'integrity_check', 'ready', 'published', 'rejected'];
+  const validStatuses = PUBLICATION_STATUSES;
   if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -5652,7 +6302,7 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
             
             if (!matricNumber || !email) continue;
 
-            // Basic email validation to prevent nodemailer crashes
+            // Basic email validation to prevent email delivery issues
             if (!email.includes('@') || email.length < 5) {
                 console.warn(`Skipping invalid email: ${email}`);
                 continue;
@@ -5696,8 +6346,8 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
                 try {
                     const feeInt = parseInt(entryFee as string) || 0;
                     
-                    await mailTransporter.sendMail({
-                        from: `"Genius Academic Portal" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
+                    await sendResendEmail({
+                        fromName: 'Genius Academic Portal',
                         to: email,
                         subject: `[Genius] Welcome ${studentName} - Your Access Credentials`,
                         html: `
@@ -5970,8 +6620,8 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     // 6. Send email with auto-generated PIN
     try {
       const portalBranding = "Genius Academic Portal";
-      await mailTransporter.sendMail({
-        from: `"${portalBranding}" <${process.env.SMTP_EMAIL || 'burstbrainconcept@gmail.com'}>`,
+      await sendResendEmail({
+        fromName: portalBranding,
         to: email,
         subject: `[${portalBranding}] Welcome ${name} - Your Access Credentials`,
         html: `

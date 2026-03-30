@@ -46,10 +46,19 @@ export default function FormattingEngine({
 
       if (!saveRes.ok) throw new Error('Failed to synchronize content for export');
 
-      // 2. Trigger the High-Fidelity Server-Side PDF Export
-      window.open(`/api/format/${activePaperId}/pdf?token=${token}`, '_blank');
+      // 2. Trigger the High-Fidelity Server-Side PDF Export (auth header, no query token)
+      const pdfRes = await fetch(`/api/format/${activePaperId}/pdf`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!pdfRes.ok) throw new Error('Failed to generate high-fidelity PDF');
+      const blob = await pdfRes.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
       
-      addToast('High-fidelity PDF generation started on server...', 'info');
+      addToast('High-fidelity PDF generated successfully.', 'success');
 
     } catch (err: any) {
       console.error('PDF Export Error:', err);

@@ -1,11 +1,14 @@
 import fetch from 'node-fetch';
 
-// The credentials from .env.example
-const PAYMENTPOINT_API_KEY = "19085ad3e44547fa426b4f3906983aa116c5f558";
-const PAYMENTPOINT_BUSINESS_ID = "efc92704614b5559c8d742ea71cd1c7641002022";
-const PAYMENTPOINT_SECRET_KEY = "536f87279e4671e59ace4a04d132cd24cf5353a667b7b3d1423f778b886850967ccd01bfc189e782b17981eab823f0a4551aa6ac28fd0f520a364426";
+const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
+const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
+const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
 
 async function testPaymentPoint() {
+  if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_BUSINESS_ID || !PAYMENTPOINT_SECRET_KEY) {
+    throw new Error('Set PAYMENTPOINT_API_KEY, PAYMENTPOINT_BUSINESS_ID, and PAYMENTPOINT_SECRET_KEY before running this test.');
+  }
+
   console.log('Testing PaymentPoint Virtual Account Creation...');
   console.log('Using endpoint: https://api.paymentpoint.co/api/v1/createVirtualAccount');
 

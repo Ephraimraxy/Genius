@@ -35,6 +35,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
   const [newPrice, setNewPrice] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'standard' | 'attendance' | 'audio' | 'video'>('standard');
   const isAdmin = profile?.user?.role === 'admin';
+  const isSettledStatus = (status: string) => status === 'success' || status === 'consumed';
 
   useEffect(() => {
     fetchTransactions();
@@ -83,7 +84,9 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'success': return <CheckCircle2 className="text-green-500" size={18} />;
+      case 'success':
+      case 'consumed':
+        return <CheckCircle2 className="text-green-500" size={18} />;
       case 'pending': return <Clock className="text-amber-500" size={18} />;
       default: return <AlertCircle className="text-red-500" size={18} />;
     }
@@ -101,19 +104,19 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
     standardTransactions;
 
   const totalAttendanceIncome = attendanceTransactions
-    .filter(t => t.status === 'success')
+    .filter(t => isSettledStatus(t.status))
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const totalAudioIncome = audioTransactions
-    .filter(t => t.status === 'success')
+    .filter(t => isSettledStatus(t.status))
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const totalVideoIncome = videoTransactions
-    .filter(t => t.status === 'success')
+    .filter(t => isSettledStatus(t.status))
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const totalStandardIncome = standardTransactions
-    .filter(t => t.status === 'success')
+    .filter(t => isSettledStatus(t.status))
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const totalWalletBalance = totalAttendanceIncome + totalAudioIncome + totalVideoIncome + totalStandardIncome;
@@ -123,7 +126,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
   // ══════════════════════════════════════════════════════════════
   if (mode === 'researcher') {
     const totalSpent = standardTransactions
-      .filter(t => t.status === 'success')
+      .filter(t => isSettledStatus(t.status))
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     return (
@@ -136,7 +139,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
             </div>
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Completed</p>
-              <p className="text-xl font-black text-slate-900">{standardTransactions.filter(t => t.status === 'success').length}</p>
+              <p className="text-xl font-black text-slate-900">{standardTransactions.filter(t => isSettledStatus(t.status)).length}</p>
             </div>
           </div>
           <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center gap-4">
@@ -215,7 +218,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
                       <td className="px-8 py-5">
                         <span className="text-sm font-medium text-slate-600">
                           {t.type === 'subscription' ? 'Platform Subscription' : 
-                           t.type === 'publication_fee' ? 'Manuscript Upload Fee' : 
+                           t.type === 'publication' || t.type === 'publication_fee' ? 'Manuscript Upload Fee' : 
                            t.type || 'Payment'}
                         </span>
                       </td>
@@ -225,8 +228,8 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-2">
                           {getStatusIcon(t.status)}
-                          <span className={`text-[10px] font-black uppercase tracking-wider ${t.status === 'success' ? 'text-green-600' : t.status === 'pending' ? 'text-amber-600' : 'text-red-500'}`}>
-                            {t.status}
+                          <span className={`text-[10px] font-black uppercase tracking-wider ${isSettledStatus(t.status) ? 'text-green-600' : t.status === 'pending' ? 'text-amber-600' : 'text-red-500'}`}>
+                            {isSettledStatus(t.status) ? 'settled' : t.status}
                           </span>
                         </div>
                       </td>
@@ -289,7 +292,7 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
           </div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Successful</p>
-            <p className="text-xl font-black text-slate-900">{transactions.filter(t => t.status === 'success').length}</p>
+            <p className="text-xl font-black text-slate-900">{transactions.filter(t => isSettledStatus(t.status)).length}</p>
           </div>
         </div>
         <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center gap-4">
@@ -485,8 +488,8 @@ export default function TransactionHistory({ profile, mode = 'lecturer' }: { pro
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-2">
                         {getStatusIcon(t.status)}
-                        <span className={`text-[10px] font-black uppercase tracking-wider ${t.status === 'success' ? 'text-green-600' : 'text-amber-600'}`}>
-                          {t.status}
+                        <span className={`text-[10px] font-black uppercase tracking-wider ${isSettledStatus(t.status) ? 'text-green-600' : 'text-amber-600'}`}>
+                          {isSettledStatus(t.status) ? 'settled' : t.status}
                         </span>
                       </div>
                     </td>

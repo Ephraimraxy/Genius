@@ -5,18 +5,14 @@ import {
   Loader2, 
   CheckCircle2, 
   AlertCircle, 
-  FileText, 
-  ExternalLink, 
   Download, 
   ShieldCheck, 
   ArrowRight,
-  Clock,
-  Settings,
   X,
   Eye
 } from 'lucide-react';
 import { ToastType } from './ToastSystem';
-import PublicationCertificate from './PublicationCertificate';
+import FilePreviewModal from './FilePreviewModal';
 
 interface QuickPublishModalProps {
   isOpen: boolean;
@@ -42,7 +38,6 @@ export default function QuickPublishModal({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
   const [journalConfig, setJournalConfig] = useState<any>(null);
-  const [paperData, setPaperData] = useState<any>(null);
   const [previewMode, setPreviewMode] = useState<'none' | 'certificate' | 'manuscript'>('none');
 
   useEffect(() => {
@@ -66,13 +61,6 @@ export default function QuickPublishModal({
     setPreviewMode('none');
 
     try {
-      // 0. Fetch Paper Data for Preview (Optional but helpful)
-      const paperRes = await fetch(`/api/papers/${paperId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (paperRes.ok) {
-        setPaperData(await paperRes.json());
-      }
       // 1. Fetch Journal Config for Defaults
       const configRes = await fetch('/api/admin/config/journal', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -100,8 +88,19 @@ export default function QuickPublishModal({
         })
       });
       if (!formatRes.ok) throw new Error('Document refining failed');
-      const formatData = await formatRes.json();
+      await formatRes.json();
       setProgress(60);
+
+      // 2.5 Mark as accepted before publishing
+      const statusRes = await fetch(`/api/papers/${paperId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: 'accepted' })
+      });
+      if (!statusRes.ok) throw new Error('Failed to move manuscript to accepted status');
 
       // 3. Finalize Publication & Dispatch Records
       setStep('publishing');
@@ -116,11 +115,7 @@ export default function QuickPublishModal({
       setProgress(90);
 
       // 4. Success
-      setResult({
-        doi: formatData.branding?.doi || 'Pending Assignment',
-        pdfUrl: `/api/format/${paperId}/pdf`,
-        certificateUrl: `/api/papers/${paperId}/certificate`
-      });
+      setResult(publishData);
       setStep('complete');
       setProgress(100);
       addToast('Quick Publish successful! Publication & Certificate dispatched to your email.', 'success');
@@ -221,36 +216,35 @@ export default function QuickPublishModal({
                 </div>
 
                 <AnimatePresence mode="wait">
-                    {previewMode === 'certificate' && journalConfig && paperData && (
-                      <motion.div 
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="mb-8 border-2 border-dashed border-slate-200 rounded-[2rem] p-4 bg-slate-50 flex justify-center overflow-auto"
-                      >
-                         <div className="scale-[0.45] origin-top h-[300px]">
-                            <PublicationCertificate 
-                               title={paperData.title}
-                               authors={paperData.authors || []}
-                               doi={result.doi || 'Pending'}
-                               volume={journalConfig.current_volume}
-                               issue={journalConfig.current_issue}
-                               date={new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-                            />
-                         </div>
-                      </motion.div>
-                    )}
-                    {previewMode === 'manuscript' && (
+                    {previewMode === 'certificate' && result?.certificateUrl && (
                       <motion.div 
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
                         className="mb-8 border-2 border-dashed border-slate-200 rounded-[2rem] overflow-hidden"
                       >
-                        <iframe 
-                          src={result.pdfUrl} 
-                          className="w-full h-[400px]" 
-                          title="Manuscript Preview"
+                        <FilePreviewModal
+                          isOpen={true}
+                          onClose={() => setPreviewMode('none')}
+                          file={result.certificateUrl}
+                          fileName={`Publication_Certificate_${result.certificateId || paperId}.pdf`}
+                          isInline={true}
+                        />
+                      </motion.div>
+                    )}
+                    {previewMode === 'manuscript' && result?.pdfUrl && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mb-8 border-2 border-dashed border-slate-200 rounded-[2rem] overflow-hidden"
+                      >
+                        <FilePreviewModal
+                          isOpen={true}
+                          onClose={() => setPreviewMode('none')}
+                          file={result.pdfUrl}
+                          fileName={`Published_Manuscript_${result.doi || paperId}.pdf`}
+                          isInline={true}
                         />
                       </motion.div>
                     )}
@@ -259,19 +253,19 @@ export default function QuickPublishModal({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                    <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Assigned DOI</p>
-                      <p className="text-sm font-mono font-black text-[#800000] truncate">{result.doi}</p>
+                      <p className="text-sm font-mono font-black text-[#800000] truncate">{result?.doi || 'Pending'}</p>
                    </div>
                    <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Journal Stamp</p>
                       <p className="text-sm font-black text-slate-900">
-                        Vol {journalConfig?.current_volume} &bull; Issue {journalConfig?.current_issue}
+                        Vol {result?.volume || journalConfig?.current_volume} &bull; Issue {result?.issue || journalConfig?.current_issue}
                       </p>
                    </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3 pt-4">
                    <a 
-                     href={result.pdfUrl} 
+                     href={result?.pdfUrl || '#'} 
                      target="_blank"
                      rel="noopener noreferrer"
                      className="flex-1 px-6 py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/10"

@@ -183,7 +183,7 @@ export default function SmartUpload({
       onUploadComplete(data.id);
 
       // Inform user and auto-navigate after a brief delay
-      addToast('Neural Ingestion Successful. Acceptance letter dispatched.', 'success');
+      addToast('Submission received. Editorial screening and refinement are now underway.', 'success');
       
       if (onNavigate) {
         setTimeout(() => {

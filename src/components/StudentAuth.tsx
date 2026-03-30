@@ -112,7 +112,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Recovery failed');
 
-            setRecoveryData({ id: data.id, name: data.name, price: data.price });
+            setRecoveryData({ id: data.student.id, name: data.student.name, price: data.price });
             setRecoveryStep('pay');
             setIsRecovering(true);
             
@@ -125,35 +125,10 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
 
     const handleRecoveryPayment = async () => {
         if (!recoveryData) return;
-        setIsInitializingPayment(true);
-        try {
-            const token = localStorage.getItem('token'); // Assuming token is available in localStorage
-            const res = await fetch('/api/payments/initialize', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ 
-                    amount: recoveryData.price, 
-                    type: 'pin_recovery', 
-                    matricNumber,
-                    workspaceId 
-                })
-            });
-            const data = await res.json();
-            if (data.authorization_url) {
-                window.location.href = data.authorization_url;
-            } else {
-                addToast('Payment initialization failed', 'error');
-            }
-        } catch (err: any) {
-            setRecoveryStep('input');
-            setIsRecovering(false);
-            addToast(err.message || 'Failed to initialize payment', 'error');
-        } finally {
-            setIsInitializingPayment(false);
-        }
+        addToast('PIN recovery payment is temporarily unavailable while the secure payment flow is being rebuilt.', 'info');
+        setRecoveryStep('input');
+        setIsRecovering(false);
+        setIsInitializingPayment(false);
     };
 
     return (

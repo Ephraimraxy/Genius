@@ -44,9 +44,15 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();
-                
-                if (data.success && data.exam) {
-                    const questions = data.exam.questions || [];
+
+                if (!res.ok) {
+                    throw new Error(data.error || 'Failed to load exam questions.');
+                }
+
+                const exam = data.exam || {};
+                const questions = exam.questions || data.questions || [];
+
+                if (data.success && exam) {
                     const processed = questions.map((q: any) => {
                         // Ensure options are handled (the API returns JSON array)
                         const rawOptions = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
@@ -54,19 +60,19 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
                         
                         return {
                             id: q.id,
-                            text: q.question_text,
+                            text: q.question_text || q.text,
                             options: shuffled,
                             correct: q.correct_answer // Hidden from frontend mostly
                         };
                     }).sort(() => Math.random() - 0.5);
 
                     setShuffledQuestions(processed);
-                    if (data.exam.duration) setTimeLeft(data.exam.duration * 60);
+                    if (exam.duration) setTimeLeft(exam.duration * 60);
                 } else {
                     addToast("Failed to load exam questions.", "error");
                 }
-            } catch (err) {
-                addToast("Network error loading exam.", "error");
+            } catch (err: any) {
+                addToast(err.message || "Network error loading exam.", "error");
             }
             questionStartTime.current = Date.now();
         };
@@ -107,7 +113,7 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify({ answers: submissionPayload })
+                    body: JSON.stringify({ answers: submissionPayload, riskScore, violations: suspiciousFlags })
                 });
             } catch (err) {
                 console.error("Failed to submit results to API", err);
@@ -522,4 +528,3 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
         </div>
     );
 }
-

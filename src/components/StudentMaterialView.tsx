@@ -36,7 +36,10 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
-            setMaterials(data);
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to load materials');
+            }
+            setMaterials(data.materials || []);
         } catch (err) {
             addToast('Failed to load materials', 'error');
         } finally {
@@ -48,16 +51,39 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
         fetchMaterials();
     }, [token]);
 
-    const handleDownload = (material: Material) => {
+    const handleDownload = async (material: Material) => {
         if (material.is_paid && !material.hasPaid) {
             setSelectedMaterial(material);
             setShowPaymentModal(true);
             return;
         }
-        
-        // Logic to download file
-        window.open(`/api/resources/${material.id}/download?token=${token}`, '_blank');
-        addToast('Download started', 'success');
+
+        try {
+            const res = await fetch(`/api/resources/${material.id}/download`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!res.ok) {
+                const data = await res.json().catch(() => null);
+                throw new Error(data?.error || 'Download failed');
+            }
+
+            const blob = await res.blob();
+            const disposition = res.headers.get('content-disposition') || '';
+            const match = disposition.match(/filename="?([^"]+)"?/i);
+            const fileName = match?.[1] || material.name;
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            addToast('Download started', 'success');
+        } catch (err: any) {
+            addToast(err.message || 'Download failed', 'error');
+        }
     };
 
     const filteredMaterials = materials.filter(m => {
