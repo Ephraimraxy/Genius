@@ -43,6 +43,8 @@ export default function SmartUpload({
   const [showAgreement, setShowAgreement] = useState(false);
   const [agreedGuidelines, setAgreedGuidelines] = useState(false);
   const [agreedRefund, setAgreedRefund] = useState(false);
+  const [gatewaysStatus, setGatewaysStatus] = useState<{ paymentpoint: boolean; kora: boolean } | null>(null);
+  const [selectedGateway, setSelectedGateway] = useState<'paymentpoint' | 'kora' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -50,6 +52,32 @@ export default function SmartUpload({
       setEditedMetadata(JSON.parse(JSON.stringify(metadata)));
     }
   }, [metadata]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/payment/gateways')
+      .then(res => res.json())
+      .then(data => {
+        if (!isMounted) return;
+        const status = {
+          paymentpoint: data?.paymentpoint !== false,
+          kora: data?.kora !== false
+        };
+        setGatewaysStatus(status);
+        if (!selectedGateway) {
+          if (status.paymentpoint) setSelectedGateway('paymentpoint');
+          else if (status.kora) setSelectedGateway('kora');
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setGatewaysStatus({ paymentpoint: true, kora: true });
+        if (!selectedGateway) setSelectedGateway('paymentpoint');
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleUpdateMetadata = async () => {
     if (!paperId || !editedMetadata) return;
@@ -219,6 +247,14 @@ export default function SmartUpload({
       setShowAgreement(true);
       return;
     }
+    if (gatewaysStatus && !gatewaysStatus.paymentpoint && !gatewaysStatus.kora) {
+      setError('All payment gateways are currently disabled. Please contact support.');
+      return;
+    }
+    if (!selectedGateway) {
+      setError('Select a payment gateway to continue.');
+      return;
+    }
     setIsPaying(true);
     setError(null);
     try {
@@ -228,7 +264,7 @@ export default function SmartUpload({
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ amount: price })
+        body: JSON.stringify({ amount: price, gateway: selectedGateway })
       });
       const data = await res.json();
       if (data.bankAccounts && data.bankAccounts.length > 0) {
@@ -353,6 +389,31 @@ export default function SmartUpload({
                </div>
             </div>
 
+            {gatewaysStatus && bankAccounts.length === 0 && (
+              <div className="w-full max-w-md mb-10 relative z-10">
+                {!gatewaysStatus.paymentpoint && !gatewaysStatus.kora ? (
+                  <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-sm font-bold">
+                    All payment gateways are currently disabled. Please contact support.
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Payment Method</label>
+                    <select
+                      value={selectedGateway || ''}
+                      onChange={(e) => setSelectedGateway(e.target.value as 'paymentpoint' | 'kora')}
+                      disabled={isPaying}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#800000]/20"
+                    >
+                      {!selectedGateway && <option value="" disabled>Select a gateway</option>}
+                      {gatewaysStatus.paymentpoint && <option value="paymentpoint">PaymentPoint (Bank Transfer)</option>}
+                      {gatewaysStatus.kora && <option value="kora">Kora (Bank Transfer)</option>}
+                    </select>
+                    <p className="text-[11px] text-slate-400 font-medium mt-2">Available methods are controlled by Super Admin settings.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {error && (
               <div className="mb-8 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 relative z-10 max-w-md w-full">
                 <AlertCircle size={18} className="text-rose-500 shrink-0" />
@@ -407,7 +468,7 @@ export default function SmartUpload({
             ) : (
               <button
                 onClick={handlePayment}
-                disabled={isPaying}
+                disabled={isPaying || !selectedGateway || (!!gatewaysStatus && !gatewaysStatus.paymentpoint && !gatewaysStatus.kora)}
                 className="px-12 py-5 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-[#800000]/30 hover:scale-105 transition-all flex items-center gap-4 disabled:opacity-50 relative z-10"
               >
                 {isPaying ? <Loader2 className="animate-spin" size={20} /> : <><span className="text-xl font-bold">₦</span> Initialize Checkout</>}
