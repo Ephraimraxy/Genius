@@ -32,7 +32,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentAmount, setPaymentAmount] = useState(0);
-  const [selectedGateway, setSelectedGateway] = useState<Gateway>('paystack');
+  const [selectedGateway, setSelectedGateway] = useState<Gateway | null>(null);
   const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean; kora: boolean } | null>(null);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [paidSoFar, setPaidSoFar] = useState<number | null>(null);
@@ -388,7 +388,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                    </div>
                 </div>
               )}
-              <button onClick={handleSubscribe} disabled={loading} className="w-full bg-gradient-to-br from-indigo-600 to-blue-800 text-white py-3.5 md:py-6 rounded-xl md:rounded-3xl font-black text-[10px] md:text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2 md:gap-4 shadow-xl md:shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
+              <button onClick={handleSubscribe} disabled={loading || !selectedGateway} className="w-full bg-gradient-to-br from-indigo-600 to-blue-800 text-white py-3.5 md:py-6 rounded-xl md:rounded-3xl font-black text-[10px] md:text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2 md:gap-4 shadow-xl md:shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
               >
                 {loading ? <Loader2 className="animate-spin" size={18} /> : (
                   <>

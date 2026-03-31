@@ -303,7 +303,7 @@ export default function SmartUpload({
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ amount: price, gateway: selectedGateway, mode: selectedGateway === 'kora' ? 'checkout' : 'virtual_account' })
+        body: JSON.stringify({ amount: price, gateway: selectedGateway, mode: 'checkout' })
       });
       const data = await res.json();
       if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
@@ -1131,9 +1131,37 @@ export default function SmartUpload({
                     </div>
                   </div>
 
+                  {/* Gateway Selection */}
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <button
+                      onClick={() => setSelectedGateway('paystack')}
+                      className={`
+                        p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2
+                        ${selectedGateway === 'paystack' 
+                          ? 'border-indigo-500 bg-indigo-50/50 shadow-md scale-[1.02]' 
+                          : 'border-slate-100 bg-white hover:border-slate-200'}
+                      `}
+                    >
+                      <Zap size={24} className={selectedGateway === 'paystack' ? 'text-indigo-600' : 'text-slate-400'} />
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${selectedGateway === 'paystack' ? 'text-indigo-900' : 'text-slate-500'}`}>Paystack</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedGateway('kora')}
+                      className={`
+                        p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2
+                        ${selectedGateway === 'kora' 
+                          ? 'border-[#800000] bg-[#800000]/5 shadow-md scale-[1.02]' 
+                          : 'border-slate-100 bg-white hover:border-slate-200'}
+                      `}
+                    >
+                      <CreditCard size={24} className={selectedGateway === 'kora' ? 'text-[#800000]' : 'text-slate-400'} />
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${selectedGateway === 'kora' ? 'text-slate-900' : 'text-slate-500'}`}>Kora</span>
+                    </button>
+                  </div>
+
                   <button 
                     onClick={handlePayment}
-                    disabled={isPaying}
+                    disabled={isPaying || !selectedGateway}
                     className="w-full py-4 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-xl shadow-[#800000]/20 flex items-center justify-center gap-3 hover:scale-[1.02] transition-all disabled:opacity-50"
                   >
                     {isPaying ? (
@@ -1141,11 +1169,13 @@ export default function SmartUpload({
                     ) : (
                       <>
                         <span className="text-lg font-bold">₦</span>
-                        Pay ₦{price.toLocaleString()} & Publish
+                        {selectedGateway ? `Pay with ${selectedGateway === 'paystack' ? 'Paystack' : 'Kora'}` : 'Select Gateway'}
                       </>
                     )}
                   </button>
-                  <p className="text-[10px] text-slate-400 text-center mt-4 font-bold uppercase tracking-wider">Secure Payment via Paystack</p>
+                  <p className="text-[10px] text-slate-400 text-center mt-4 font-bold uppercase tracking-wider">
+                    {selectedGateway ? `Secure Payment via ${selectedGateway === 'paystack' ? 'Paystack' : 'Kora'}` : "Select a secure channel to proceed"}
+                  </p>
                 </div>
               </div>
             </div>

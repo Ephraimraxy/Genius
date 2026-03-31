@@ -1311,13 +1311,13 @@ app.post('/api/payment/pin-recovery/initialize', async (req, res) => {
         );
 
         const redirectUrl = buildPaymentReturnUrl(reference, 'paystack', 'pin_recovery');
-        const v_payment_response = await initializePaystackCheckout({ id: userId }, amount, reference, { redirectUrl });
+        const paymentResponse = await initializePaystackCheckout({ id: userId }, amount, reference, { redirectUrl });
 
         res.json({ 
           reference, 
           amount,
-          checkout_url: typeof v_payment_response === 'string' ? v_payment_response : (v_payment_response as any)?.checkoutUrl,
-          ...(typeof v_payment_response === 'object' ? v_payment_response : {})
+          checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+          ...(typeof paymentResponse === 'object' ? paymentResponse : {})
         });
     } catch (err) {
         res.status(500).json({ error: 'Payment initialization failed' });
@@ -1339,12 +1339,12 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
         const creditResult = await applyUserCredit(req.user.id, amount);
         const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'portal_entry');
         let bankAccounts: any[] = [];
-        let v_payment_response: any = null;
+        let paymentResponse: any = null;
         const chargeAmount = creditResult.chargeAmount;
         if (chargeAmount > 0) {
             if (gateway === 'kora') {
                 if (mode === 'checkout') {
-                    v_payment_response = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+                    paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
                       redirectUrl,
                       notificationUrl: `${APP_URL}/api/payment/webhook/kora`
                     });
@@ -1352,7 +1352,7 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
                     bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
                 }
             } else {
-                v_payment_response = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+                paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
             }
         }
 
@@ -1397,8 +1397,8 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
           reference,
           amount,
           bankAccounts,
-          checkout_url: typeof v_payment_response === 'string' ? v_payment_response : (v_payment_response as any)?.checkoutUrl,
-          ...(typeof v_payment_response === 'object' ? v_payment_response : {}),
+          checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+          ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
           expires_at,
           credit_applied: creditResult.creditApplied,
           credit_used: creditResult.creditUsed,
@@ -6403,13 +6403,13 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     const creditResult = await applyUserCredit(req.user.id, requestedAmount);
     const redirectUrl = buildPaymentReturnUrl(reference, gateway, resolvedType);
     let bankAccounts: any[] = [];
-    let v_payment_response: any = null;
+    let paymentResponse: any = null;
     const chargeAmount = creditResult.chargeAmount;
 
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
         if (mode === 'checkout') {
-          v_payment_response = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+          paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
           });
@@ -6417,7 +6417,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
           bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
         }
       } else {
-        v_payment_response = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
       }
     }
 
@@ -6462,8 +6462,8 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
       remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0),
       credit_applied: creditResult.creditApplied,
       credit_used: creditResult.creditUsed,
-      checkout_url: typeof v_payment_response === 'string' ? v_payment_response : (v_payment_response as any)?.checkoutUrl,
-      ...(typeof v_payment_response === 'object' ? v_payment_response : {}),
+      checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+      ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
       bankAccounts,
       message: `Transfer ₦${Number(amount).toLocaleString()} to any of the bank accounts below to complete your payment.`
     });
@@ -6485,12 +6485,12 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
     const creditResult = await applyUserCredit(req.user.id, requestedAmount);
     const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'attendance_token');
     let bankAccounts: any[] = [];
-    let v_payment_response: any = null;
+    let paymentResponse: any = null;
     const chargeAmount = creditResult.chargeAmount;
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
         if (mode === 'checkout') {
-          v_payment_response = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+          paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
           });
@@ -6498,7 +6498,7 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
           bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
         }
       } else {
-        v_payment_response = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
       }
     }
     
@@ -6537,8 +6537,8 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
     }
     
     res.json({ reference, amount: requestedAmount, bankAccounts, 
-      checkout_url: typeof v_payment_response === 'string' ? v_payment_response : (v_payment_response as any)?.checkoutUrl,
-      ...(typeof v_payment_response === 'object' ? v_payment_response : {}),
+      checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+      ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
       expires_at,
       credit_applied: creditResult.creditApplied,
       credit_used: creditResult.creditUsed,
@@ -6610,11 +6610,11 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
     const resolvedGateway = gateway || meta.gateway || 'paystack';
     const redirectUrl = buildPaymentReturnUrl(topupRef, resolvedGateway, 'payment_topup');
     let bankAccounts: any[] = [];
-    let v_payment_response: any = null;
+    let paymentResponse: any = null;
 
     if (resolvedGateway === 'kora') {
       if (mode === 'checkout') {
-        v_payment_response = await initializeKoraCheckout(req.user, newRemaining, topupRef, {
+        paymentResponse = await initializeKoraCheckout(req.user, newRemaining, topupRef, {
           redirectUrl,
           notificationUrl: `${APP_URL}/api/payment/webhook/kora`
         });
@@ -6622,7 +6622,7 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
         bankAccounts = await initializeKoraVirtualAccount(req.user, newRemaining, topupRef);
       }
     } else {
-      v_payment_response = await initializePaystackCheckout(req.user, newRemaining, topupRef, { redirectUrl });
+      paymentResponse = await initializePaystackCheckout(req.user, newRemaining, topupRef, { redirectUrl });
     }
 
 
@@ -6662,8 +6662,8 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
       amount: newRemaining,
       remaining_amount: newRemaining,
       bankAccounts,
-      checkout_url: typeof v_payment_response === 'string' ? v_payment_response : (v_payment_response as any)?.checkoutUrl,
-      ...(typeof v_payment_response === 'object' ? v_payment_response : {}),
+      checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+      ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
       credit_used: creditResult.creditUsed,
       topup_for: reference
     });
@@ -7399,12 +7399,12 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
     const creditResult = await applyUserCredit(req.user.id, requestedAmount);
     const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'material_access');
     let bankAccounts: any[] = [];
-    let v_payment_response: any = null;
+    let paymentResponse: any = null;
     const chargeAmount = creditResult.chargeAmount;
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
         if (mode === 'checkout') {
-          v_payment_response = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+          paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
           });
@@ -7412,7 +7412,7 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
           bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
         }
       } else {
-        v_payment_response = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
       }
     }
     
@@ -7447,8 +7447,8 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
     }
     
     res.json({ reference, amount: requestedAmount, bankAccounts, 
-      checkout_url: typeof v_payment_response === 'string' ? v_payment_response : (v_payment_response as any)?.checkoutUrl,
-      ...(typeof v_payment_response === 'object' ? v_payment_response : {}),
+      checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+      ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
       credit_applied: creditResult.creditApplied,
       credit_used: creditResult.creditUsed,
       remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0),
@@ -7471,12 +7471,12 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
     const creditResult = await applyUserCredit(req.user.id, requestedAmount);
     const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'assessment_access');
     let bankAccounts: any[] = [];
-    let v_payment_response: any = null;
+    let paymentResponse: any = null;
     const chargeAmount = creditResult.chargeAmount;
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
         if (mode === 'checkout') {
-          v_payment_response = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+          paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
           });
@@ -7484,7 +7484,7 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
           bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
         }
       } else {
-        v_payment_response = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
       }
     }
     
@@ -7519,8 +7519,8 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
     }
     
     res.json({ reference, amount: requestedAmount, bankAccounts, 
-      checkout_url: typeof v_payment_response === 'string' ? v_payment_response : (v_payment_response as any)?.checkoutUrl,
-      ...(typeof v_payment_response === 'object' ? v_payment_response : {}),
+      checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+      ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
       credit_applied: creditResult.creditApplied,
       credit_used: creditResult.creditUsed,
       remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0),
