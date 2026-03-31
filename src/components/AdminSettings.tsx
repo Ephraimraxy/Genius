@@ -24,10 +24,14 @@ export default function AdminSettings() {
   const [maxIssues, setMaxIssues] = useState<string>('3');
   const [maxPages, setMaxPages] = useState<string>('20');
   const [journalSignature, setJournalSignature] = useState<string>('');
+  const [doiAutoRetryEnabled, setDoiAutoRetryEnabled] = useState<boolean>(true);
+  const [doiAutoRetryInterval, setDoiAutoRetryInterval] = useState<string>('20');
   const [origJournal, setOrigJournal] = useState({ 
     volume: '1', issue: '1', issn: '2971-7760',
     maxManuscripts: '10', maxIssues: '3', maxPages: '20',
     signature: '',
+    doiAutoRetryEnabled: true,
+    doiAutoRetryInterval: '20',
     secretary: 'Dr. Danjuma Namo'
   });
   const [journalSecretary, setJournalSecretary] = useState<string>('Dr. Danjuma Namo');
@@ -72,6 +76,8 @@ export default function AdminSettings() {
         setMaxIssues(data.max_issues_per_volume.toString());
         setMaxPages(data.max_pages_per_manuscript.toString());
         setJournalSignature(data.journal_signature || '');
+        setDoiAutoRetryEnabled(data.doi_auto_retry_enabled !== false);
+        setDoiAutoRetryInterval((data.doi_auto_retry_interval_minutes || 20).toString());
         setOrigJournal({ 
           volume: data.current_volume, 
           issue: data.current_issue, 
@@ -80,6 +86,8 @@ export default function AdminSettings() {
           maxIssues: data.max_issues_per_volume.toString(),
           maxPages: data.max_pages_per_manuscript.toString(),
           signature: data.journal_signature || '',
+          doiAutoRetryEnabled: data.doi_auto_retry_enabled !== false,
+          doiAutoRetryInterval: (data.doi_auto_retry_interval_minutes || 20).toString(),
           secretary: data.journal_secretary || 'Dr. Danjuma Namo'
         });
         setJournalSecretary(data.journal_secretary || 'Dr. Danjuma Namo');
@@ -169,7 +177,9 @@ export default function AdminSettings() {
           max_issues_per_volume: parseInt(maxIssues),
           max_pages_per_manuscript: parseInt(maxPages),
           journal_signature: journalSignature,
-          journal_secretary: journalSecretary
+          journal_secretary: journalSecretary,
+          doi_auto_retry_enabled: doiAutoRetryEnabled,
+          doi_auto_retry_interval_minutes: parseInt(doiAutoRetryInterval || '20', 10)
         })
       });
       if (res.ok) {
@@ -181,6 +191,8 @@ export default function AdminSettings() {
           maxIssues,
           maxPages,
           signature: journalSignature,
+          doiAutoRetryEnabled,
+          doiAutoRetryInterval,
           secretary: journalSecretary
         });
         setSavedJournal(true);
@@ -200,6 +212,8 @@ export default function AdminSettings() {
     maxIssues !== origJournal.maxIssues ||
     maxPages !== origJournal.maxPages ||
     journalSignature !== origJournal.signature ||
+    doiAutoRetryEnabled !== origJournal.doiAutoRetryEnabled ||
+    doiAutoRetryInterval !== origJournal.doiAutoRetryInterval ||
     journalSecretary !== origJournal.secretary;
 
   return (
@@ -307,6 +321,41 @@ export default function AdminSettings() {
                   placeholder="20"
                 />
                 <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Limit for automated check</p>
+              </div>
+              <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white rounded-2xl border border-slate-100 p-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">DOI Auto-Retry</label>
+                  <button
+                    onClick={() => setDoiAutoRetryEnabled((prev) => !prev)}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
+                      doiAutoRetryEnabled
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200 bg-slate-50 text-slate-500'
+                    }`}
+                    type="button"
+                  >
+                    {doiAutoRetryEnabled ? 'Enabled' : 'Disabled'}
+                    <span className={`inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      doiAutoRetryEnabled ? 'bg-emerald-600' : 'bg-slate-300'
+                    }`}>
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        doiAutoRetryEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </span>
+                  </button>
+                  <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Retry DOI minting automatically.</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-slate-100 p-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2">Retry Interval (minutes)</label>
+                  <input
+                    type="number"
+                    min={10}
+                    value={doiAutoRetryInterval}
+                    onChange={(e) => setDoiAutoRetryInterval(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all"
+                  />
+                  <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Minimum 10 minutes.</p>
+                </div>
               </div>
 
               {/* Signature Upload — NEW */}
@@ -569,4 +618,3 @@ export default function AdminSettings() {
     </motion.div>
   );
 }
-

@@ -372,7 +372,7 @@ const buildCertificateVerificationUrl = (paper: any) => {
 };
 
 async function getJournalConfig() {
-  const keys = ['current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue', 'max_issues_per_volume', 'max_pages_per_manuscript', 'journal_signature', 'journal_secretary'];
+  const keys = ['current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue', 'max_issues_per_volume', 'max_pages_per_manuscript', 'journal_signature', 'journal_secretary', 'doi_auto_retry_enabled', 'doi_auto_retry_interval_minutes'];
   const result = await pool.query('SELECT key, value FROM settings WHERE key = ANY($1)', [keys]);
   const settings: Record<string, string> = {};
   result.rows.forEach((row: any) => {
@@ -387,7 +387,9 @@ async function getJournalConfig() {
     maxIssuesPerVolume: parseInt(settings.max_issues_per_volume || '3', 10),
     maxPagesPerManuscript: parseInt(settings.max_pages_per_manuscript || '20', 10),
     journalSignature: settings.journal_signature || '',
-    journalSecretary: settings.journal_secretary || 'Dr. Danjuma Namo'
+    journalSecretary: settings.journal_secretary || 'Dr. Danjuma Namo',
+    doiAutoRetryEnabled: settings.doi_auto_retry_enabled !== 'false',
+    doiAutoRetryIntervalMinutes: parseInt(settings.doi_auto_retry_interval_minutes || '20', 10)
   };
 }
 
@@ -3939,6 +3941,190 @@ app.get('/api/papers/:id/acceptance-letter', authenticateToken, async (req: any,
   }
 });
 
+const finalizePublicationFromRetry = async (paperId: number) => {
+  const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1', [paperId]);
+  const paper = paperResult.rows[0];
+  if (!paper) throw new Error('Paper not found');
+
+  if (!['accepted', 'doi_validation_failed'].includes(paper.status)) {
+    throw new Error(`Paper is not in retry-eligible status (${paper.status})`);
+  }
+
+  const metadata = safeJsonParse<any>(paper.metadata, {});
+  const journalConfig = await getJournalConfig();
+  const vol = parseInt(journalConfig.currentVolume || '1', 10);
+  const iss = parseInt(journalConfig.currentIssue || '1', 10);
+  const issn = journalConfig.journalIssn || '2971-7760';
+
+  const sourcePageCount = resolveSourcePageCount(metadata, paper.content || '');
+  const pageWindow = metadata.pageWindow || buildPageWindow(sourcePageCount);
+
+  let ast = metadata.ast;
+  if (!ast) {
+    ast = await performStructuralRewrite(paper);
+  }
+
+  const zenodoToken = process.env.ZENODO_ACCESS_TOKEN;
+  if (!zenodoToken) throw new Error('Zenodo Access Token missing.');
+
+  const previousPapers = await pool.query(
+    "SELECT metadata FROM papers WHERE status = 'published' AND volume = $1 AND issue = $2",
+    [vol.toString(), iss.toString()]
+  );
+  let startPageNumber = 1;
+  previousPapers.rows.forEach(r => {
+    const m = typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata;
+    startPageNumber += (m.pageCount || 0);
+  });
+
+  const { depositionId, doi: prereservedDoi, bucketUrl } = await prereserveDOI(zenodoToken);
+  if (!prereservedDoi || !prereservedDoi.startsWith('10.')) {
+    throw new Error('Invalid DOI prereserved from registry.');
+  }
+
+  let draftPdfBytes: Buffer | Uint8Array;
+  if (paper.formatted_content) {
+    try {
+      draftPdfBytes = await generateHighFidelityPaperPDF(paperId, {
+        doi: prereservedDoi,
+        volume: vol,
+        issue: iss,
+        issn,
+        publishedAt: new Date().toISOString(),
+        startPageNumber
+      });
+    } catch (err) {
+      console.warn(`[DOI RETRY] High-fidelity draft failed for paper ${paperId}. Falling back to structural PDF.`, err);
+      draftPdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber, doi: prereservedDoi });
+    }
+  } else {
+    draftPdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber, doi: prereservedDoi });
+  }
+
+  const draftPdfBuffer = Buffer.isBuffer(draftPdfBytes) ? draftPdfBytes : Buffer.from(draftPdfBytes);
+  const draftPdf = await PDFDocument.load(draftPdfBuffer);
+  const draftPageCount = draftPdf.getPageCount();
+  if (!isWithinPageWindow(draftPageCount, pageWindow)) {
+    const updatedMetadata = {
+      ...metadata,
+      sourcePageCount,
+      pageWindow,
+      pageCount: draftPageCount,
+      pageCountWithinWindow: false
+    };
+    await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [JSON.stringify(updatedMetadata), paperId]);
+    throw new Error(`Page count mismatch: expected ${pageWindow.min}-${pageWindow.max}, got ${draftPageCount}.`);
+  }
+
+  const finalDoi = await finalizeZenodoPublish(depositionId, zenodoToken, paper, draftPdfBuffer, bucketUrl);
+  const doi = finalDoi || prereservedDoi;
+  const url = `https://doi.org/${doi}`;
+  const publishedAt = new Date().toISOString();
+
+  let finalPdfBytes: Buffer | Uint8Array;
+  if (paper.formatted_content) {
+    try {
+      finalPdfBytes = await generateHighFidelityPaperPDF(paperId, {
+        doi,
+        volume: vol,
+        issue: iss,
+        issn,
+        publishedAt,
+        startPageNumber
+      });
+    } catch (err) {
+      console.warn(`[DOI RETRY] High-fidelity final failed for paper ${paperId}. Falling back to structural PDF.`, err);
+      finalPdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber, doi });
+    }
+  } else {
+    finalPdfBytes = await generateFinalManuscriptPDF(ast, { vol, issue: iss, issn, startPageNumber, doi });
+  }
+
+  const finalPdfBuffer = Buffer.isBuffer(finalPdfBytes) ? finalPdfBytes : Buffer.from(finalPdfBytes);
+  const finalPdfDoc = await PDFDocument.load(finalPdfBuffer);
+  const finalPageCount = finalPdfDoc.getPageCount();
+  const pageCountWithinWindow = isWithinPageWindow(finalPageCount, pageWindow);
+
+  const history = Array.isArray(metadata.history) ? metadata.history : [];
+  const nextVersion = (metadata.version || 1) + 1;
+  history.push({
+    action: 'published',
+    version: nextVersion,
+    doi,
+    url,
+    timestamp: publishedAt,
+    pageCount: finalPageCount
+  });
+
+  const updatedMetadata = {
+    ...metadata,
+    doi,
+    url,
+    volume: vol,
+    issue: iss,
+    issn,
+    publishedAt,
+    version: nextVersion,
+    history,
+    startPageNumber,
+    pageCount: finalPageCount,
+    sourcePageCount,
+    pageWindow,
+    pageCountWithinWindow
+  };
+
+  const finalFilename = `${buildSafeFilename(paper.title || 'article')}_Published.pdf`;
+  const certificateId = paper.certificate_id || buildCertificateId(paperId, publishedAt);
+  const certificateBranding = buildPaperBranding(paper, journalConfig, {
+    doi,
+    volume: vol,
+    issue: iss,
+    issn,
+    publishedAt
+  });
+  const certificateBuffer = await generatePublicationCertificatePDF(
+    { ...paper, metadata },
+    certificateBranding,
+    certificateId,
+    journalConfig
+  );
+
+  await pool.query(
+    "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4, issn = $5, published_at = $6, final_pdf = $7, final_pdf_filename = $8, certificate_id = $9, is_locked = TRUE WHERE id = $10",
+    [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), issn, publishedAt, finalPdfBuffer, finalFilename, certificateId, paperId]
+  );
+
+  const countRes = await pool.query("SELECT COUNT(*) FROM papers WHERE status = 'published' AND volume = $1 AND issue = $2", [vol.toString(), iss.toString()]);
+  const count = parseInt(countRes.rows[0].count);
+  const max = journalConfig.maxManuscriptsPerIssue || 10;
+  const maxIssues = journalConfig.maxIssuesPerVolume || 12;
+
+  if (count >= max) {
+    if (iss >= maxIssues) {
+      await pool.query("UPDATE settings SET value = $1 WHERE key = 'current_volume'", [(vol + 1).toString()]);
+      await pool.query("UPDATE settings SET value = '1' WHERE key = 'current_issue'");
+    } else {
+      await pool.query("UPDATE settings SET value = $1 WHERE key = 'current_issue'", [(iss + 1).toString()]);
+    }
+  }
+
+  const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [paper.user_id]);
+  const user = userRes.rows[0];
+  if (user) {
+    await sendPublicationEmail(user.email, user.name, ast.title || paper.title, {
+      doi,
+      url,
+      volume: vol.toString(),
+      issue: iss.toString(),
+      issn,
+      publishedAt,
+      certificateId,
+      pdfBuffer: finalPdfBuffer,
+      certificateBuffer
+    });
+  }
+};
+
 app.get('/api/papers/:id/certificate', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -4535,6 +4721,28 @@ async function sendDoiFailureEmail(to: string, name: string, title: string, reas
   }
 }
 
+const scheduleDoiRetry = async (paperId: number) => {
+  try {
+    const journalConfig = await getJournalConfig();
+    if (!journalConfig.doiAutoRetryEnabled) {
+      console.log(`[DOI RETRY] Disabled. Skipping retry for paper ${paperId}.`);
+      return;
+    }
+    const intervalMinutes = Math.max(10, journalConfig.doiAutoRetryIntervalMinutes || 20);
+    console.log(`[DOI RETRY] Scheduling retry for paper ${paperId} in ${intervalMinutes} minutes.`);
+    setTimeout(async () => {
+      try {
+        console.log(`[DOI RETRY] Attempting retry for paper ${paperId}...`);
+        await finalizePublicationFromRetry(paperId);
+      } catch (err) {
+        console.error(`[DOI RETRY] Retry failed for paper ${paperId}:`, err);
+      }
+    }, intervalMinutes * 60 * 1000);
+  } catch (err) {
+    console.error('[DOI RETRY] Failed to schedule retry:', err);
+  }
+};
+
 app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id: paperId } = idParamSchema.parse(req.params);
@@ -4688,10 +4896,12 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
         await sendDoiFailureEmail(userRes.rows[0].email, userRes.rows[0].name, ast.title || paper.title, e.message);
       }
       
+      scheduleDoiRetry(paperId);
       return res.status(400).json({
         error: `DOI Registration Issue: ${e.message}`,
         status: 'doi_validation_failed',
-        doi: recoveryDoi
+        doi: recoveryDoi,
+        autoRetryScheduled: true
       });
     }
 
@@ -5575,7 +5785,7 @@ app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res) =
 // Journal Settings (Volume, Issue, ISSN, Signature, Secretary)
 app.get('/api/admin/config/journal', authenticateToken, async (req: any, res) => {
   try {
-    const keys = ['current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue', 'max_issues_per_volume', 'max_pages_per_manuscript', 'journal_signature', 'journal_secretary'];
+    const keys = ['current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue', 'max_issues_per_volume', 'max_pages_per_manuscript', 'journal_signature', 'journal_secretary', 'doi_auto_retry_enabled', 'doi_auto_retry_interval_minutes'];
     const results = await pool.query('SELECT key, value FROM settings WHERE key = ANY($1)', [keys]);
     
     const settings: any = {};
@@ -5591,7 +5801,9 @@ app.get('/api/admin/config/journal', authenticateToken, async (req: any, res) =>
       max_issues_per_volume: parseInt(settings.max_issues_per_volume || '3'),
       max_pages_per_manuscript: parseInt(settings.max_pages_per_manuscript || '20'),
       journal_signature: settings.journal_signature || '',
-      journal_secretary: settings.journal_secretary || 'Dr. Danjuma Namo'
+      journal_secretary: settings.journal_secretary || 'Dr. Danjuma Namo',
+      doi_auto_retry_enabled: settings.doi_auto_retry_enabled !== 'false',
+      doi_auto_retry_interval_minutes: parseInt(settings.doi_auto_retry_interval_minutes || '20')
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -5603,7 +5815,8 @@ app.post('/api/admin/config/journal', authenticateToken, async (req: any, res) =
   const { 
     current_volume, current_issue, journal_issn, 
     max_manuscripts_per_issue, max_issues_per_volume, max_pages_per_manuscript,
-    journal_signature, journal_secretary
+    journal_signature, journal_secretary,
+    doi_auto_retry_enabled, doi_auto_retry_interval_minutes
   } = req.body;
   try {
     const queries = [];
@@ -5615,6 +5828,8 @@ app.post('/api/admin/config/journal', authenticateToken, async (req: any, res) =
     if (max_pages_per_manuscript !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['max_pages_per_manuscript', max_pages_per_manuscript.toString()]));
     if (journal_signature !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_signature', journal_signature]));
     if (journal_secretary !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_secretary', journal_secretary]));
+    if (doi_auto_retry_enabled !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['doi_auto_retry_enabled', doi_auto_retry_enabled ? 'true' : 'false']));
+    if (doi_auto_retry_interval_minutes !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['doi_auto_retry_interval_minutes', doi_auto_retry_interval_minutes.toString()]));
     
     await Promise.all(queries);
     res.json({ success: true });
