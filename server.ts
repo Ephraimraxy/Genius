@@ -5525,10 +5525,28 @@ app.put('/api/admin/papers/:id/status', authenticateToken, async (req: any, res)
     queryParams.push(id);
     await pool.query(`${updateQuery} WHERE id = $${queryParams.length}`, queryParams);
     const updated = await pool.query(`
-      SELECT p.id, p.title, p.status, p.doi, p.created_at, u.name as researcher_name, u.email as researcher_email
+      SELECT p.id, p.title, p.status, p.doi, p.created_at, p.metadata, u.name as researcher_name, u.email as researcher_email
       FROM papers p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = $1
     `, [id]);
-    res.json({ success: true, paper: updated.rows[0] });
+    const paper = updated.rows[0];
+
+    if (paper?.status === 'accepted' && paper?.researcher_email) {
+      const metadata = safeJsonParse<any>(paper.metadata, {});
+      if (!metadata.acceptanceEmailSent) {
+        try {
+          await sendAcceptanceEmail(paper.researcher_email, paper.researcher_name || 'Researcher', paper.title || 'Untitled', paper.id);
+          const nextMetadata = {
+            ...metadata,
+            acceptanceEmailSent: true,
+            acceptanceEmailSentAt: new Date().toISOString()
+          };
+          await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [JSON.stringify(nextMetadata), paper.id]);
+        } catch (emailErr) {
+          console.error('Auto acceptance email failed:', emailErr);
+        }
+      }
+    }
+    res.json({ success: true, paper });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update paper status' });
   }
