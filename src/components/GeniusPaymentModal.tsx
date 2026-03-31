@@ -4,6 +4,13 @@ import { X, CreditCard, Loader2, CheckCircle2, ShieldUser, Copy, Clock, AlertCir
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
 
+declare global {
+  interface Window {
+    PaystackPop: any;
+    Korapay: any;
+  }
+}
+
 interface GeniusPaymentModalProps {
   onClose: () => void;
   onSuccess: () => void;
@@ -103,7 +110,13 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         setPopupBlocked(false);
         setCreditApplied(Boolean(data.credit_applied));
         setCreditUsed(Number(data.credit_used || 0) || null);
-        if (data.checkout_url) openCheckoutPopup(data.checkout_url);
+        
+        if (data.publicKey && data.reference) {
+          openCheckoutPopup(data);
+        } else if (data.checkout_url) {
+          openCheckoutPopup(data);
+        }
+
         setPaymentRef(data.reference);
         setPaymentAmount(Number(data.amount || amount || 0));
         setExpiresAt(data.expires_at);
@@ -135,12 +148,62 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
     initializePayment(selectedGateway);
   };
 
-  const openCheckoutPopup = (url: string) => {
-    const popup = openPaymentPopup(url, {
-      onBlocked: () => setPopupBlocked(true)
+  const handlePaystackSDK = (data: any) => {
+    if (!window.PaystackPop) {
+      addToast('Paystack SDK not loaded yet. Please wait or refresh.', 'error');
+      return;
+    }
+
+    const handler = window.PaystackPop.setup({
+      key: data.publicKey,
+      email: data.email,
+      amount: Math.round(data.amount * 100), // in kobo
+      currency: data.currency || 'NGN',
+      ref: data.reference,
+      onClose: () => {
+        addToast('Payment window closed.', 'info');
+      },
+      callback: (response: any) => {
+        console.log('Paystack success response:', response);
+        verifyPaymentStatus(true);
+      }
     });
-    if (popup) {
-      setPopupBlocked(false);
+    handler.openIframe();
+  };
+
+  const handleKoraSDK = (data: any) => {
+    if (!window.Korapay) {
+      addToast('Kora SDK not loaded yet. Please wait or refresh.', 'error');
+      return;
+    }
+
+    window.Korapay.initialize({
+      key: data.publicKey,
+      reference: data.reference,
+      amount: data.amount,
+      currency: data.currency || "NGN",
+      customer: {
+        email: data.email,
+        name: data.name || ""
+      },
+      onClose: () => {
+        addToast('Payment window closed.', 'info');
+      },
+      onSuccess: (response: any) => {
+        console.log('Kora success response:', response);
+        verifyPaymentStatus(true);
+      }
+    });
+  };
+
+  const openCheckoutPopup = (data: any) => {
+    if (gateway === 'paystack') {
+      handlePaystackSDK(data);
+    } else if (gateway === 'kora') {
+      handleKoraSDK(data);
+    } else if (data.checkout_url) {
+      // Fallback
+      window.open(data.checkout_url, '_blank', 'width=600,height=700');
     }
   };
 
@@ -172,8 +235,10 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         return;
       }
 
-      if (data.checkout_url) {
-        openCheckoutPopup(data.checkout_url);
+      if (data.publicKey && data.reference) {
+        openCheckoutPopup(data);
+      } else if (data.checkout_url) {
+        openCheckoutPopup(data);
       }
       if (data.bankAccounts) {
         setBankAccounts(data.bankAccounts);

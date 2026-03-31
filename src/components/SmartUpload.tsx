@@ -5,6 +5,13 @@ import FilePreviewModal from './FilePreviewModal';
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
 
+declare global {
+  interface Window {
+    PaystackPop: any;
+    Korapay: any;
+  }
+}
+
 import { ToastType } from './ToastSystem';
 
 export default function SmartUpload({ 
@@ -324,7 +331,11 @@ export default function SmartUpload({
             setPaidSoFar(Number(data.credit_used));
           }
         }
-        openCheckoutPopup(data.checkout_url);
+        if (data.publicKey && data.reference) {
+          openCheckoutPopup(data);
+        } else if (data.checkout_url) {
+          openCheckoutPopup(data.checkout_url);
+        }
         setPaymentRef(data.reference || ''); 
         setIsVerifying(true);
         setExpiresAt(new Date(Date.now() + 30 * 60000).toISOString());
@@ -359,7 +370,11 @@ export default function SmartUpload({
             setPaidSoFar(Number(data.credit_used));
           }
         }
-        openCheckoutPopup(data.authorization_url);
+        if (data.publicKey && data.reference) {
+          openCheckoutPopup(data);
+        } else if (data.authorization_url) {
+          openCheckoutPopup(data.authorization_url);
+        }
         setPaymentRef(data.reference || '');
         setIsVerifying(true);
         setExpiresAt(new Date(Date.now() + 30 * 60000).toISOString());
@@ -375,9 +390,63 @@ export default function SmartUpload({
     }
   };
 
-  const openCheckoutPopup = (url: string) => {
-    const popup = openPaymentPopup(url, { onBlocked: () => setPopupBlocked(true) });
-    if (popup) setPopupBlocked(false);
+  const handlePaystackSDK = (data: any) => {
+    if (!window.PaystackPop) {
+      addToast('Paystack SDK not loaded yet. Please wait or refresh.', 'error');
+      return;
+    }
+
+    const handler = window.PaystackPop.setup({
+      key: data.publicKey,
+      email: data.email,
+      amount: Math.round(data.amount * 100), // in kobo
+      currency: data.currency || 'NGN',
+      ref: data.reference,
+      onClose: () => {
+        addToast('Payment window closed.', 'info');
+      },
+      callback: (response: any) => {
+        console.log('Paystack success response:', response);
+        verifyPaymentOnce();
+      }
+    });
+    handler.openIframe();
+  };
+
+  const handleKoraSDK = (data: any) => {
+    if (!window.Korapay) {
+      addToast('Kora SDK not loaded yet. Please wait or refresh.', 'error');
+      return;
+    }
+
+    window.Korapay.initialize({
+      key: data.publicKey,
+      reference: data.reference,
+      amount: data.amount,
+      currency: data.currency || "NGN",
+      customer: {
+        email: data.email,
+        name: researcherName || ""
+      },
+      onClose: () => {
+        addToast('Payment window closed.', 'info');
+      },
+      onSuccess: (response: any) => {
+        console.log('Kora success response:', response);
+        verifyPaymentOnce();
+      }
+    });
+  };
+
+  const openCheckoutPopup = (data: any) => {
+    if (selectedGateway === 'paystack') {
+      handlePaystackSDK(data);
+    } else if (selectedGateway === 'kora') {
+      handleKoraSDK(data);
+    } else if (data.checkout_url) {
+      // Fallback
+      window.open(data.checkout_url, '_blank', 'width=600,height=700');
+    }
   };
 
   const handlePayRemaining = async () => {
@@ -404,7 +473,9 @@ export default function SmartUpload({
         return;
       }
 
-      if (data.checkout_url) {
+      if (data.publicKey && data.reference) {
+        openCheckoutPopup(data);
+      } else if (data.checkout_url) {
         openCheckoutPopup(data.checkout_url);
       }
       if (data.bankAccounts) {

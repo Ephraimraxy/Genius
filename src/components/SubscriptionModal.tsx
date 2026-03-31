@@ -4,6 +4,13 @@ import { ShieldCheck, CreditCard, ArrowRight, Loader2, Lock, Gift, Star, CheckCi
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
 
+declare global {
+  interface Window {
+    PaystackPop: any;
+    Korapay: any;
+  }
+}
+
 interface BankAccount {
   bankCode: string;
   accountNumber: string;
@@ -71,7 +78,11 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       setPopupBlocked(false);
       setCreditApplied(Boolean(data.credit_applied));
       setCreditUsed(Number(data.credit_used || 0) || null);
-      if (data.checkout_url) openCheckoutPopup(data.checkout_url);
+      if (data.publicKey && data.reference) {
+        openCheckoutPopup(data);
+      } else if (data.checkout_url) {
+        openCheckoutPopup(data.checkout_url);
+      }
       setPaymentRef(data.reference);
       setPaymentAmount(data.amount || price);
       if (data.remaining_amount !== undefined) {
@@ -98,9 +109,63 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
     }
   };
 
-  const openCheckoutPopup = (url: string) => {
-    const popup = openPaymentPopup(url, { onBlocked: () => setPopupBlocked(true) });
-    if (popup) setPopupBlocked(false);
+  const handlePaystackSDK = (data: any) => {
+    if (!window.PaystackPop) {
+      addToast('Paystack SDK not loaded yet. Please wait or refresh.', 'error');
+      return;
+    }
+
+    const handler = window.PaystackPop.setup({
+      key: data.publicKey,
+      email: data.email,
+      amount: Math.round(data.amount * 100), // in kobo
+      currency: data.currency || 'NGN',
+      ref: data.reference,
+      onClose: () => {
+        addToast('Payment window closed.', 'info');
+      },
+      callback: (response: any) => {
+        console.log('Paystack success response:', response);
+        checkPaymentStatusOnce();
+      }
+    });
+    handler.openIframe();
+  };
+
+  const handleKoraSDK = (data: any) => {
+    if (!window.Korapay) {
+      addToast('Kora SDK not loaded yet. Please wait or refresh.', 'error');
+      return;
+    }
+
+    window.Korapay.initialize({
+      key: data.publicKey,
+      reference: data.reference,
+      amount: data.amount,
+      currency: data.currency || "NGN",
+      customer: {
+        email: data.email,
+        name: profile?.name || ""
+      },
+      onClose: () => {
+        addToast('Payment window closed.', 'info');
+      },
+      onSuccess: (response: any) => {
+        console.log('Kora success response:', response);
+        checkPaymentStatusOnce();
+      }
+    });
+  };
+
+  const openCheckoutPopup = (data: any) => {
+    if (selectedGateway === 'paystack') {
+      handlePaystackSDK(data);
+    } else if (selectedGateway === 'kora') {
+      handleKoraSDK(data);
+    } else if (data.checkout_url) {
+      // Fallback
+      window.open(data.checkout_url, '_blank', 'width=600,height=700');
+    }
   };
 
   const handlePayRemaining = async () => {
@@ -127,7 +192,9 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
         return;
       }
 
-      if (data.checkout_url) {
+      if (data.publicKey && data.reference) {
+        openCheckoutPopup(data);
+      } else if (data.checkout_url) {
         openCheckoutPopup(data.checkout_url);
       }
       if (data.bankAccounts) {
