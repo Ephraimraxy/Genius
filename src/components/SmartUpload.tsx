@@ -36,6 +36,7 @@ export default function SmartUpload({
   const [editedMetadata, setEditedMetadata] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [paymentRef, setPaymentRef] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -290,7 +291,12 @@ export default function SmartUpload({
       });
       const data = await res.json();
       if (data.checkout_url) {
-        window.location.href = data.checkout_url;
+        setCheckoutUrl(data.checkout_url);
+        window.open(data.checkout_url, '_blank');
+        setPaymentRef(data.reference || ''); 
+        setIsVerifying(true);
+        setExpiresAt(new Date(Date.now() + 30 * 60000).toISOString());
+        addToast('Secure checkout opened. Complete your payment to proceed.', 'info');
         return;
       }
       if (data.bankAccounts && data.bankAccounts.length > 0) {
@@ -469,7 +475,24 @@ export default function SmartUpload({
               </div>
             )}
 
-            {bankAccounts.length > 0 ? (
+            {checkoutUrl ? (
+              <div className="w-full max-w-lg relative z-10 space-y-6">
+                <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center shadow-sm">
+                  <h3 className="text-xl font-black text-indigo-900 mb-2">Checkout Details</h3>
+                  <p className="text-sm font-medium text-indigo-700 mb-6">A secure Paystack payment window has been opened. Please complete your transaction.</p>
+                  <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/30">
+                    Open Payment Gateway
+                  </a>
+                </div>
+
+                {isVerifying && (
+                  <div className="flex items-center justify-center gap-3 py-4">
+                    <Loader2 className="animate-spin text-[#800000]" size={20} />
+                    <span className="text-sm font-bold text-slate-500">Listening for payment confirmation...</span>
+                  </div>
+                )}
+              </div>
+            ) : bankAccounts.length > 0 ? (
               <div className="w-full max-w-lg relative z-10 space-y-6">
                 <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
