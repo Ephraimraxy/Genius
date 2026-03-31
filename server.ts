@@ -99,7 +99,7 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
       const result = await pool.query('SELECT * FROM transactions WHERE reference = $1', [reference]);
       const tx = result?.rows?.[0];
       if (tx) {
-        const meta = safeJsonParse(tx.metadata, {});
+        const meta = safeJsonParse<any>(tx.metadata, {});
         const gateway = meta.gateway || 'paystack';
         const parentRef = tx.type === 'payment_topup' ? (meta.topup_for || tx.reference) : tx.reference;
 
@@ -170,7 +170,7 @@ app.post('/api/payment/webhook/kora', express.raw({ type: 'application/json' }),
       const tx = result?.rows?.[0];
 
       if (tx) {
-        const meta = safeJsonParse(tx.metadata, {});
+        const meta = safeJsonParse<any>(tx.metadata, {});
         const gateway = meta.gateway || 'kora';
         const parentRef = tx.type === 'payment_topup' ? (meta.topup_for || tx.reference) : tx.reference;
 
@@ -350,7 +350,7 @@ const sumPaymentEvents = async (reference: string) => {
 };
 
 async function handleTransactionSuccess(tx: any) {
-  const meta = safeJsonParse(tx.metadata, {});
+  const meta = safeJsonParse<any>(tx.metadata, {});
   if (meta?.fulfilled_at) return;
 
   if (tx.type === 'publication') {
@@ -396,7 +396,7 @@ const recomputeTransaction = async (reference: string, sourceGateway: string) =>
   if (!tx) return null;
 
   const requiredAmount = Number(tx.amount || 0);
-  const meta = safeJsonParse(tx.metadata, {});
+  const meta = safeJsonParse<any>(tx.metadata, {});
   const isTopup = tx.type === 'payment_topup';
   const paidSoFar = await sumPaymentEvents(reference);
   const remainingAmount = Math.max(requiredAmount - paidSoFar, 0);
@@ -1996,7 +1996,7 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
   };
 
   const wrapText = (text: any, size: number, f: any, maxW: number) => {
-    const str = String(text || '');
+    const str = sanitizePdfText(String(text || ''));
     if (!str) return [];
     const words = str.split(/\s+/);
     const lines = [];
@@ -2004,9 +2004,15 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
 
     for (const word of words) {
       const testLine = currentLine ? `${currentLine} ${word}` : word;
-      if (f.widthOfTextAtSize(testLine, size) < maxW) {
-        currentLine = testLine;
-      } else {
+      try {
+        if (f.widthOfTextAtSize(testLine, size) < maxW) {
+          currentLine = testLine;
+        } else {
+          lines.push(currentLine);
+          currentLine = word;
+        }
+      } catch (e) {
+        // Fallback for encoding issues during width calculation
         lines.push(currentLine);
         currentLine = word;
       }
@@ -2016,17 +2022,24 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
   };
 
   const drawJustifiedText = (targetPage: any, line: string, textFont: any, fontSize: number, xPos: number, yPos: number, maxW: number, isLastLine: boolean) => {
-    if (isLastLine || !line.trim().includes(' ')) {
-      targetPage.drawText(line, { x: xPos, y: yPos, size: fontSize, font: textFont });
+    const sanitizedLine = sanitizePdfText(line);
+    if (isLastLine || !sanitizedLine.trim().includes(' ')) {
+      targetPage.drawText(sanitizedLine, { x: xPos, y: yPos, size: fontSize, font: textFont });
       return;
     }
-    const words = line.split(' ');
+    const words = sanitizedLine.split(' ');
     let textWidth = 0;
-    words.forEach(w => textWidth += textFont.widthOfTextAtSize(w, fontSize));
+    words.forEach(w => {
+      try {
+        textWidth += textFont.widthOfTextAtSize(w, fontSize);
+      } catch (e) {
+        textWidth += textFont.widthOfTextAtSize('?', fontSize);
+      }
+    });
     
     // Safety check just in case all words are exactly the max width
     if (textWidth >= maxW) {
-       targetPage.drawText(line, { x: xPos, y: yPos, size: fontSize, font: textFont });
+       targetPage.drawText(sanitizedLine, { x: xPos, y: yPos, size: fontSize, font: textFont });
        return;
     }
     
@@ -4088,7 +4101,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     const journalConfig = await getJournalConfig();
     const branding = buildPaperBranding(paper, journalConfig, { doi: paper.doi || '10.GMIJ/PENDING' });
 
-    console.log(`[DEBUG] Formatting paper ${id}: PaperVol=${paper.volume}, SettingVol=${volRes.rows[0]?.value}, FinalVol=${branding.volume}`);
+    console.log(`[DEBUG] Formatting paper ${id}: PaperVol=${paper.volume}, FinalVol=${branding.volume}`);
 
     // High-fidelity structural extraction for the AI
     let sourceContent = paper.content;
@@ -4425,12 +4438,26 @@ const sanitizePdfText = (text: string): string => {
     .replace(/[\u2018\u2019]/g, "'") // Fancy single quotes
     .replace(/[\u2013\u2014]/g, '-') // En and Em dashes
     .replace(/\u00A0/g, ' ')         // Non-breaking space
-    .replace(/[\r\n]+/g, ' ')       // NEW: Replace newlines and CRs with spaces to prevent WinAnsi crash
+    .replace(/[\r\n]+/g, ' ')        // Replace newlines and CRs with spaces
+    // Transliterate common Greek characters for academic papers
+    .replace(/\u03C7/g, 'chi')       // χ
+    .replace(/\u03B1/g, 'alpha')     // α
+    .replace(/\u03B2/g, 'beta')      // β
+    .replace(/\u03B3/g, 'gamma')     // γ
+    .replace(/\u03B4/g, 'delta')     // δ
+    .replace(/\u03B5/g, 'epsilon')   // ε
+    .replace(/\u03B8/g, 'theta')     // θ
+    .replace(/\u03BC/g, 'mu')        // μ
+    .replace(/\u03C0/g, 'pi')        // π
+    .replace(/\u03C3/g, 'sigma')     // σ
+    .replace(/\u03C9/g, 'omega')     // ω
     .replace(/[^\x00-\x7F]/g, '?');  // Fallback for everything else non-ASCII
 };
 
 // ===== PDF Generation: Acceptance Letter =====
 async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTitle: string, manuscriptId: number): Promise<Buffer> {
+  const sName = sanitizePdfText(researcherName);
+  const sTitle = sanitizePdfText(manuscriptTitle);
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595, 842]); // A4
   const { width, height } = page.getSize();
@@ -4497,7 +4524,7 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   y -= 30;
 
   // Salutation
-  page.drawText(`Dear ${researcherName},`, { x: margin, y, size: 12, font: fontBold, color: black });
+  page.drawText(`Dear ${sName},`, { x: margin, y, size: 12, font: fontBold, color: black });
   y -= 28;
 
   // Subject
@@ -4510,8 +4537,9 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
 
   // Helper to draw wrapped text
   const drawWrappedText = (text: string, usedFont = font, size = 10, lineHeight = 16, color = black) => {
+    const sText = sanitizePdfText(text);
     const maxWidth = width - 2 * margin;
-    const words = text.split(' ');
+    const words = sText.split(' ');
     let line = '';
     for (const word of words) {
       const testLine = line ? `${line} ${word}` : word;
@@ -4534,7 +4562,7 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
 
   // Title block
   page.drawLine({ start: { x: margin, y: y + 6 }, end: { x: margin, y: y - 24 }, thickness: 3, color: maroon });
-  drawWrappedText(`"${manuscriptTitle}"`, fontItalic, 11, 16, black);
+  drawWrappedText(`"${sTitle}"`, fontItalic, 11, 16, black);
   y -= 8;
 
   drawWrappedText('has been accepted for publication in our journal.');
@@ -6495,7 +6523,7 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
     if (!parentTx) return res.status(404).json({ error: 'Transaction not found' });
 
     await recomputeTransaction(reference, parentTx.metadata?.gateway || gateway || 'paystack');
-    const meta = safeJsonParse(parentTx.metadata, {});
+    const meta = safeJsonParse<any>(parentTx.metadata, {});
     const paidSoFar = await sumPaymentEvents(reference);
     const requiredAmount = Number(parentTx.amount || 0);
     const remaining = Math.max(requiredAmount - paidSoFar, 0);
@@ -6576,7 +6604,7 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
     );
 
     try {
-      const parentMeta = safeJsonParse(parentTx.metadata, {});
+      const parentMeta = safeJsonParse<any>(parentTx.metadata, {});
       const existingRefs = Array.isArray(parentMeta.topup_refs) ? parentMeta.topup_refs : [];
       await pool.query(
         'UPDATE transactions SET metadata = metadata || $1 WHERE id = $2',
@@ -6612,7 +6640,7 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
     const txn = result.rows[0];
     if (!txn) return res.status(404).json({ status: 'not_found', error: 'Transaction not found' });
 
-    const meta = safeJsonParse(txn.metadata, {});
+    const meta = safeJsonParse<any>(txn.metadata, {});
     const gateway = meta?.gateway || txn.metadata?.gateway || txn.metadata?.gateway?.toString?.();
 
     if (txn.status !== 'success') {
@@ -6695,7 +6723,7 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
 
     const latest = await pool.query('SELECT status, amount, metadata, type FROM transactions WHERE reference = $1', [parentRef]);
     const latestTx = latest.rows[0];
-    const latestMeta = safeJsonParse(latestTx?.metadata, {});
+    const latestMeta = safeJsonParse<any>(latestTx?.metadata, {});
     const paidSoFar = Number(latestMeta?.paid_so_far || 0);
     const remainingAmount = Number(latestMeta?.remaining_amount || 0);
     const overpaid = Number(latestMeta?.overpaid || 0);
