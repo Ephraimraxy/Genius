@@ -15,13 +15,29 @@ interface SubscriptionModalProps {
   addToast: (msg: string, type: any) => void;
 }
 
+type Gateway = 'paystack' | 'kora';
+
 export default function SubscriptionModal({ profile, onSuccess, addToast }: SubscriptionModalProps) {
   const [loading, setLoading] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentAmount, setPaymentAmount] = useState(0);
+  const [selectedGateway, setSelectedGateway] = useState<Gateway>('paystack');
+  const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean; kora: boolean } | null>(null);
   const price = profile?.subscriptionPrice || 15000;
+
+  useEffect(() => {
+    fetch('/api/payment/gateways')
+      .then(res => res.json())
+      .then(data => {
+        setGatewaysStatus({
+          paystack: data?.paystack !== false,
+          kora: data?.kora !== false
+        });
+      })
+      .catch(() => setGatewaysStatus({ paystack: true, kora: true }));
+  }, []);
 
   const handleSubscribe = async () => {
     setLoading(true);
@@ -32,7 +48,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ amount: price, type: 'subscription' })
+        body: JSON.stringify({ amount: price, type: 'subscription', gateway: selectedGateway, mode: 'checkout' })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Payment failed to initialize.');
@@ -43,7 +59,11 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       if (data.checkout_url) window.open(data.checkout_url, '_blank');
       setPaymentRef(data.reference);
       setPaymentAmount(data.amount || price);
-      addToast('Virtual account generated. Transfer to activate.', 'info');
+      if (data.checkout_url) {
+        addToast('Secure checkout opened. Please complete payment to activate.', 'info');
+      } else {
+        addToast('Virtual account generated. Transfer to activate.', 'info');
+      }
       
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -155,14 +175,62 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                   <span className="text-slate-400 text-sm md:text-base font-bold">/year</span>
                 </div>
                 <p className="text-[8px] md:text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
-                  Secure payment handled by <span className="text-indigo-600">Paystack</span> PCI-DSS gateway.
+                  Secure payment handled by <span className="text-indigo-600">{selectedGateway === 'paystack' ? 'Paystack' : 'Kora Checkout'}</span> secure gateway.
                 </p>
               </div>
 
-              <button
-                onClick={handleSubscribe}
-                disabled={loading}
-                className="w-full bg-gradient-to-br from-indigo-600 to-blue-800 text-white py-3.5 md:py-6 rounded-xl md:rounded-3xl font-black text-[10px] md:text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2 md:gap-4 shadow-xl md:shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
+              
+              {gatewaysStatus && (
+                <div className="mb-8 w-full">
+                   <div className="flex items-center gap-2 mb-4 bg-indigo-50/50 px-4 py-2 rounded-2xl border border-indigo-100/50 w-fit">
+                      <ShieldCheck size={14} className="text-indigo-600" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-900">Choose Gateway</span>
+                   </div>
+                   <div className="grid grid-cols-2 gap-4">
+                      {gatewaysStatus.paystack && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGateway('paystack')}
+                          className={`p-5 rounded-3xl border-2 transition-all text-left group ${
+                            selectedGateway === 'paystack' 
+                              ? 'border-indigo-600 bg-indigo-50 shadow-lg shadow-indigo-600/10' 
+                              : 'border-slate-100 hover:border-indigo-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${selectedGateway === 'paystack' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-indigo-100'}`}>
+                                <CreditCard size={20} />
+                             </div>
+                             {selectedGateway === 'paystack' && <CheckCircle2 size={16} className="text-indigo-600" />}
+                          </div>
+                          <p className="font-black text-slate-900 text-sm">Paystack</p>
+                          <p className="text-[10px] text-slate-500 font-bold mt-1 leading-tight">Cards, USSD, Transfer</p>
+                        </button>
+                      )}
+                      {gatewaysStatus.kora && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGateway('kora')}
+                          className={`p-5 rounded-3xl border-2 transition-all text-left group ${
+                            selectedGateway === 'kora' 
+                              ? 'border-indigo-600 bg-indigo-50 shadow-lg shadow-indigo-600/10' 
+                              : 'border-slate-100 hover:border-indigo-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${selectedGateway === 'kora' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-indigo-100'}`}>
+                                <Building2 size={20} />
+                             </div>
+                             {selectedGateway === 'kora' && <CheckCircle2 size={16} className="text-indigo-600" />}
+                          </div>
+                          <p className="font-black text-slate-900 text-sm">Kora</p>
+                          <p className="text-[10px] text-slate-500 font-bold mt-1 leading-tight">Instant Bank Transfer</p>
+                        </button>
+                      )}
+                   </div>
+                </div>
+              )}
+              <button onClick={handleSubscribe} disabled={loading} className="w-full bg-gradient-to-br from-indigo-600 to-blue-800 text-white py-3.5 md:py-6 rounded-xl md:rounded-3xl font-black text-[10px] md:text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2 md:gap-4 shadow-xl md:shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:scale-100"
               >
                 {loading ? <Loader2 className="animate-spin" size={18} /> : (
                   <>

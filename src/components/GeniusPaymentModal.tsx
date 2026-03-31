@@ -58,17 +58,20 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
 
       if (type === 'material') {
         endpoint = '/api/payment/material/initialize';
-        body = { amount, resource_id: parseInt(courseId), gateway: selectedGateway };
+        body = { amount, resource_id: parseInt(courseId), gateway: selectedGateway, mode: 'checkout' };
       } else if (type === 'assessment') {
         endpoint = '/api/payment/assessment/initialize';
-        body = { amount, exam_id: parseInt(courseId), gateway: selectedGateway };
+        body = { amount, exam_id: parseInt(courseId), gateway: selectedGateway, mode: 'checkout' };
       } else if (type === 'audio') {
         addToast('Audio payments are temporarily unavailable while the secure flow is being finalized.', 'info');
         onClose();
         return;
       } else if (type === 'portal_entry') {
         endpoint = '/api/payment/portal-entry/initialize';
-        body = { amount, gateway: selectedGateway };
+        body = { amount, gateway: selectedGateway, mode: 'checkout' };
+      } else {
+        // Attendance
+        body = { amount, course_id: courseId, gateway: selectedGateway, mode: 'checkout' };
       }
 
       const response = await fetch(endpoint, {
