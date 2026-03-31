@@ -138,7 +138,7 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
   if (!activePaperId) {
     return (
       <WaitingDraftsQueue 
-        expectedStatus="uploading" // Or other status before APA
+        expectedStatus="uploaded"
         onSelect={setActivePaperId} 
         title="APA Protocol Gatekeeper" 
         icon={ShieldCheck} 

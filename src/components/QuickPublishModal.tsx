@@ -87,8 +87,13 @@ export default function QuickPublishModal({
           } 
         })
       });
-      if (!formatRes.ok) throw new Error('Document refining failed');
-      await formatRes.json();
+      if (!formatRes.ok) {
+        const errData = await formatRes.json().catch(() => ({}));
+        console.warn('Quick publish formatting failed, continuing with structural pipeline.', errData);
+        addToast('Formatting skipped due to a processing error. Publishing will continue with structural layout.', 'warning');
+      } else {
+        await formatRes.json();
+      }
       setProgress(60);
 
       // 2.5 Mark as accepted before publishing

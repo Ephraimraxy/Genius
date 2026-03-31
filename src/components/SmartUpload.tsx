@@ -47,6 +47,31 @@ export default function SmartUpload({
   const [selectedGateway, setSelectedGateway] = useState<'paymentpoint' | 'kora' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const buildStructuralAudit = (validationResult: any) => {
+    if (!validationResult) return null;
+    const missingRaw = Array.isArray(validationResult?.sections?.missing) ? validationResult.sections.missing : [];
+    const missing = missingRaw.map((item: any) => String(item || '').toLowerCase());
+    const baseSections = ['Introduction', 'Methods', 'Results', 'Discussion', 'Conclusion'];
+
+    if (missing.length === 0 && !Array.isArray(validationResult?.sections?.found)) {
+      return [{
+        name: 'Structure Check',
+        status: validationResult.isValid ? 'ok' : 'warning',
+        msg: validationResult.isValid ? '' : 'Structure requires review.'
+      }];
+    }
+
+    return baseSections.map((name) => {
+      const key = name.toLowerCase();
+      const isMissing = missing.some((value: string) => value.includes(key));
+      return {
+        name,
+        status: isMissing ? 'error' : 'ok',
+        msg: isMissing ? 'Section not detected in manuscript.' : ''
+      };
+    });
+  };
+
   useEffect(() => {
     if (metadata) {
       setEditedMetadata(JSON.parse(JSON.stringify(metadata)));
@@ -218,15 +243,17 @@ export default function SmartUpload({
       setIsUploading(false);
       setIsValidating(true);
 
-      const valRes = await fetch(`/api/validate/${data.id}`, {
+      const valRes = await fetch(`/api/manuscript/validate-apa/${data.id}`, {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        },
+        body: JSON.stringify({ phase: 0 })
       });
       if (valRes.ok) {
         const valData = await valRes.json();
-        setValidation(valData.validation);
+        setValidation(buildStructuralAudit(valData.validation));
         addToast('Manuscript ingestion and audit complete!', 'success');
       }
     } catch (err: any) {
