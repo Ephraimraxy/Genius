@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, CreditCard, ArrowRight, Loader2, Lock, Gift, Star, CheckCircle2, Copy, Building2 } from 'lucide-react';
+import { openPaymentPopup } from './paymentPopup';
+import { subscribePaymentReturn } from './paymentChannel';
 
 interface BankAccount {
   bankCode: string;
@@ -25,6 +27,13 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [selectedGateway, setSelectedGateway] = useState<Gateway>('paystack');
   const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean; kora: boolean } | null>(null);
+  const [popupBlocked, setPopupBlocked] = useState(false);
+  const [paidSoFar, setPaidSoFar] = useState<number | null>(null);
+  const [remainingAmount, setRemainingAmount] = useState<number | null>(null);
+  const [overpaidAmount, setOverpaidAmount] = useState<number | null>(null);
+  const [creditApplied, setCreditApplied] = useState(false);
+  const [creditUsed, setCreditUsed] = useState<number | null>(null);
+  const [isTopupLoading, setIsTopupLoading] = useState(false);
   const price = profile?.subscriptionPrice || 15000;
 
   useEffect(() => {
@@ -56,9 +65,26 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       // Display checkout or virtual accounts
       setBankAccounts(data.bankAccounts || []);
       setCheckoutUrl(data.checkout_url || null);
-      if (data.checkout_url) window.open(data.checkout_url, '_blank');
+      setPaidSoFar(null);
+      setRemainingAmount(null);
+      setOverpaidAmount(null);
+      setPopupBlocked(false);
+      setCreditApplied(Boolean(data.credit_applied));
+      setCreditUsed(Number(data.credit_used || 0) || null);
+      if (data.checkout_url) openCheckoutPopup(data.checkout_url);
       setPaymentRef(data.reference);
       setPaymentAmount(data.amount || price);
+      if (data.remaining_amount !== undefined) {
+        setRemainingAmount(Number(data.remaining_amount));
+        if (Number(data.remaining_amount) > 0 && Number(data.credit_used || 0) > 0) {
+          setPaidSoFar(Number(data.credit_used));
+        }
+      }
+      if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
+        addToast('Wallet credit applied. Workspace activating...', 'success');
+        setTimeout(onSuccess, 1500);
+        return;
+      }
       if (data.checkout_url) {
         addToast('Secure checkout opened. Please complete payment to activate.', 'info');
       } else {
@@ -72,29 +98,94 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
     }
   };
 
+  const openCheckoutPopup = (url: string) => {
+    const popup = openPaymentPopup(url, { onBlocked: () => setPopupBlocked(true) });
+    if (popup) setPopupBlocked(false);
+  };
+
+  const handlePayRemaining = async () => {
+    if (!paymentRef) return;
+    setIsTopupLoading(true);
+    try {
+      const res = await fetch('/api/payment/topup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ reference: paymentRef, gateway: selectedGateway })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Top-up failed');
+
+      if (data.credit_used) setCreditUsed(Number(data.credit_used));
+      if (data.remaining_amount !== undefined) setRemainingAmount(Number(data.remaining_amount));
+
+      if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
+        addToast('Wallet credit applied. Workspace activating...', 'success');
+        setTimeout(onSuccess, 1500);
+        return;
+      }
+
+      if (data.checkout_url) {
+        openCheckoutPopup(data.checkout_url);
+      }
+      if (data.bankAccounts) {
+        setBankAccounts(data.bankAccounts);
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Top-up failed. Please try again.', 'error');
+    } finally {
+      setIsTopupLoading(false);
+    }
+  };
+
+  const checkPaymentStatusOnce = async () => {
+    if (!paymentRef) return;
+    try {
+      const res = await fetch(`/api/payment/verify/${paymentRef}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const paidSoFarValue = Number(data?.paid_so_far || 0);
+      const remainingValue = Number(data?.remaining_amount || Math.max(paymentAmount - paidSoFarValue, 0));
+      const overpaidValue = Number(data?.overpaid || 0);
+
+      if (data.status === 'success') {
+        if (paidSoFarValue > 0) setPaidSoFar(paidSoFarValue);
+        setRemainingAmount(0);
+        if (overpaidValue > 0) setOverpaidAmount(overpaidValue);
+        addToast('Payment detected! Workspace activating...', 'success');
+        setTimeout(onSuccess, 1500);
+      } else if (data.status === 'partially_paid') {
+        setPaidSoFar(paidSoFarValue);
+        setRemainingAmount(remainingValue);
+        addToast(`Partial payment detected. Remaining ₦${remainingValue.toLocaleString()}.`, 'error');
+      }
+    } catch (e) {
+      console.error('Polling error:', e);
+    }
+  };
+
   useEffect(() => {
     let pollInterval: any;
     if (paymentRef && (bankAccounts.length > 0 || checkoutUrl)) {
-      pollInterval = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/payment/verify/${paymentRef}`, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.status === 'success') {
-              clearInterval(pollInterval);
-              addToast('Payment detected! Workspace activating...', 'success');
-              setTimeout(onSuccess, 1500);
-            }
-          }
-        } catch (e) {
-          console.error('Polling error:', e);
-        }
+      pollInterval = setInterval(() => {
+        void checkPaymentStatusOnce();
       }, 10000); // Poll every 10 seconds
     }
     return () => clearInterval(pollInterval);
-  }, [paymentRef, bankAccounts]);
+  }, [paymentRef, bankAccounts, checkoutUrl, paymentAmount]);
+
+  useEffect(() => {
+    if (!paymentRef) return;
+    const unsubscribe = subscribePaymentReturn((message) => {
+      if (message.reference && message.reference !== paymentRef) return;
+      void checkPaymentStatusOnce();
+    });
+    return unsubscribe;
+  }, [paymentRef, paymentAmount]);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -244,13 +335,48 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
           ) : (
             <>
               {/* Checkout or Bank transfer details — shown after API call succeeds */}
+              {remainingAmount !== null && remainingAmount > 0 && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-100 rounded-2xl text-amber-700 text-xs font-bold space-y-3">
+                  <div>
+                    Partial payment detected. Paid ₦{(paidSoFar || 0).toLocaleString()}. Remaining ₦{remainingAmount.toLocaleString()}.
+                  </div>
+                  <button
+                    onClick={handlePayRemaining}
+                    disabled={isTopupLoading}
+                    className="w-full bg-amber-600 text-white py-2.5 rounded-xl font-black text-[9px] uppercase tracking-[0.2em] hover:bg-amber-700 transition disabled:opacity-50"
+                  >
+                    {isTopupLoading ? 'Processing...' : 'Pay Remaining Balance'}
+                  </button>
+                </div>
+              )}
+
+              {creditUsed !== null && creditUsed > 0 && (
+                <div className="mb-4 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl text-indigo-700 text-xs font-bold">
+                  Wallet credit applied: ₦{creditUsed.toLocaleString()}.
+                </div>
+              )}
+
+              {overpaidAmount !== null && overpaidAmount > 0 && (
+                <div className="mb-4 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-emerald-700 text-xs font-bold">
+                  Overpayment of ₦{overpaidAmount.toLocaleString()} recorded. Support will reconcile or credit this amount.
+                </div>
+              )}
+
               {checkoutUrl ? (
                 <div className="mb-6 text-center md:text-left bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
                   <h3 className="text-slate-900 text-xl font-black mb-2">Checkout Details</h3>
                   <p className="text-sm text-slate-600 mb-4">A secure Paystack payment window has been opened. Please complete your transaction.</p>
-                  <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition">
-                      Open Payment Gateway
-                  </a>
+                  <button
+                    onClick={() => openCheckoutPopup(checkoutUrl)}
+                    className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition"
+                  >
+                    Open Payment Gateway
+                  </button>
+                  {popupBlocked && (
+                    <div className="mt-3 text-[11px] text-slate-500">
+                      Popup blocked? <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="underline">Open in new tab</a>
+                    </div>
+                  )}
                 </div>
               ) : (
               <>
@@ -294,23 +420,8 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
               <button
                 onClick={() => {
                   addToast('Checking payment status...', 'info');
-                  setTimeout(async () => {
-                    try {
-                      const verifyRes = await fetch(`/api/payment/verify/${paymentRef}`, {
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                      });
-                      if (verifyRes.ok) {
-                        const vData = await verifyRes.json();
-                        if (vData.status === 'success') {
-                          addToast('Payment confirmed! Workspace activated.', 'success');
-                          onSuccess();
-                        } else {
-                          addToast('Payment not yet received. Please wait a few minutes after transferring.', 'info');
-                        }
-                      }
-                    } catch {
-                      addToast('Could not verify payment. Please try again shortly.', 'error');
-                    }
+                  setTimeout(() => {
+                    void checkPaymentStatusOnce();
                   }, 1000);
                 }}
                 className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] flex items-center justify-center gap-3 hover:bg-blue-800 transition-all"

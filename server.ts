@@ -92,65 +92,41 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
     const { notification_status, transaction_id, amount_paid, settlement_amount, transaction_status, customer } = payload;
 
     if (transaction_status === 'success' && notification_status === 'payment_successful') {
-      const customerEmail = customer?.email;
-      let result = await pool.query(
-        `SELECT t.* FROM transactions t 
-         WHERE t.reference = $1 AND t.status = 'pending'`,
-        [payload.transaction_id || payload.reference]
-      );
+      const reference = payload.transaction_id || payload.reference;
+      const paidAmount = Number(amount_paid || 0);
+      const eventKey = `paymentpoint:${reference}:${transaction_id || 'na'}:${paidAmount}`;
 
+      const result = await pool.query('SELECT * FROM transactions WHERE reference = $1', [reference]);
       const tx = result?.rows?.[0];
-
       if (tx) {
-        // Payment Logic for Over/Under payment
-        const requiredAmount = tx.amount;
-        const paidAmount = amount_paid;
+        const meta = safeJsonParse(tx.metadata, {});
+        const gateway = meta.gateway || 'paystack';
+        const parentRef = tx.type === 'payment_topup' ? (meta.topup_for || tx.reference) : tx.reference;
 
-        if (paidAmount < requiredAmount) {
-          console.warn(`Underpayment received for ${tx.reference}. Expected ${requiredAmount}, got ${paidAmount}`);
-          await pool.query('UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3', 
-            ['partially_paid', JSON.stringify({ paid_so_far: paidAmount }), tx.id]);
-          return res.status(200).send('Underpayment logged');
+        await insertPaymentEvent({
+          reference: tx.reference,
+          gateway,
+          eventType: 'payment',
+          amount: paidAmount,
+          eventKey,
+          payload
+        });
+
+        if (parentRef !== tx.reference) {
+          await insertPaymentEvent({
+            reference: parentRef,
+            gateway,
+            eventType: 'payment',
+            amount: paidAmount,
+            eventKey: `${eventKey}:parent`,
+            payload: { ...payload, child_reference: tx.reference }
+          });
         }
 
-        // Proceed with success
-        await pool.query('UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3', 
-          ['success', JSON.stringify({ overpaid: paidAmount > requiredAmount ? paidAmount - requiredAmount : 0 }), tx.id]);
-        
-        // Handle specific transaction types
-        if (tx.type === 'publication') {
-           const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [tx.user_id]);
-           const userName = userRes.rows[0]?.name || 'Researcher';
-           await sendPaymentSuccessEmail(customerEmail, userName, tx.reference);
+        await recomputeTransaction(tx.reference, gateway);
+        if (parentRef !== tx.reference) {
+          await recomputeTransaction(parentRef, gateway);
         }
-
-        if (tx.type === 'pin_recovery') {
-           const userRes = await pool.query('SELECT name, matric_number, email FROM users WHERE id = $1', [tx.user_id]);
-           const student = userRes.rows[0];
-           // We need to fetch the clear text PIN if handled via setup_token previously or just reset it.
-           // For simplicity in this flow, we will resend the hash or trigger a reset link.
-           // Better: PIN is stored in password for students. We can't decrypt bcrypt.
-           // So for recovery, we generate a NEW PIN and send it.
-           const newPin = Math.floor(1000 + Math.random() * 9000).toString();
-           const hashedPin = await bcrypt.hash(newPin, 10);
-            await pool.query('UPDATE users SET password = $1, pin_code = $3 WHERE id = $2', [hashedPin, tx.user_id, newPin]);
-            await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE matric_number = $2 AND tenant_id = $3', 
-             [hashedPin, student.matric_number, tx.tenant_id]);
-           
-           await sendResendEmail({
-             fromName: 'Genius Recovery',
-             to: student.email,
-             subject: 'Your Recovered Genius PIN',
-             html: `<h2>PIN Recovered</h2><p>Your new 4-digit PIN is: <strong>${newPin}</strong></p>`
-           });
-        }
-
-        if (tx.type === 'subscription') {
-          const expiry = new Date();
-          expiry.setFullYear(expiry.getFullYear() + 1);
-          await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
-        }
-        console.log(`PaymentPoint webhook: Transaction ${tx.reference} marked as success`);
       }
     }
     res.status(200).send('Webhook processed');
@@ -187,37 +163,41 @@ app.post('/api/payment/webhook/kora', express.raw({ type: 'application/json' }),
 
     if (event === 'charge.success' && data?.status === 'success') {
       const reference = data.reference;
-      const amountPaid = data.amount;
+      const amountPaid = Number(data.amount || 0);
+      const eventKey = `kora:${reference}:${data?.id || 'na'}:${amountPaid}`;
 
-      const result = await pool.query(
-        `SELECT t.* FROM transactions t WHERE t.reference = $1 AND t.status = 'pending'`,
-        [reference]
-      );
+      const result = await pool.query('SELECT * FROM transactions WHERE reference = $1', [reference]);
       const tx = result?.rows?.[0];
 
       if (tx) {
-        const requiredAmount = tx.amount;
-        if (amountPaid < requiredAmount) {
-          await pool.query('UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
-            ['partially_paid', JSON.stringify({ paid_so_far: amountPaid }), tx.id]);
-          return res.status(200).send('Underpayment logged');
+        const meta = safeJsonParse(tx.metadata, {});
+        const gateway = meta.gateway || 'kora';
+        const parentRef = tx.type === 'payment_topup' ? (meta.topup_for || tx.reference) : tx.reference;
+
+        await insertPaymentEvent({
+          reference: tx.reference,
+          gateway,
+          eventType: 'payment',
+          amount: amountPaid,
+          eventKey,
+          payload
+        });
+
+        if (parentRef !== tx.reference) {
+          await insertPaymentEvent({
+            reference: parentRef,
+            gateway,
+            eventType: 'payment',
+            amount: amountPaid,
+            eventKey: `${eventKey}:parent`,
+            payload: { ...payload, child_reference: tx.reference }
+          });
         }
 
-        await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', ['success', tx.id]);
-
-        if (tx.type === 'subscription') {
-          const expiry = new Date();
-          expiry.setFullYear(expiry.getFullYear() + 1);
-          await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
+        await recomputeTransaction(tx.reference, gateway);
+        if (parentRef !== tx.reference) {
+          await recomputeTransaction(parentRef, gateway);
         }
-
-        if (tx.type === 'publication') {
-          const userRes = await pool.query('SELECT name, email FROM users WHERE id = $1', [tx.user_id]);
-          const user = userRes.rows[0];
-          if (user) await sendPaymentSuccessEmail(user.email, user.name, tx.reference);
-        }
-
-        console.log(`Kora webhook: Transaction ${reference} marked as success`);
       }
     }
     res.status(200).send('Webhook processed');
@@ -264,6 +244,16 @@ const pool = new Pool({
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || process.env.RESEND_FROM || 'onboarding@resend.dev';
 const APP_URL = normalizeBaseUrl(process.env.APP_URL || 'https://geniusapp.com');
+const ADMIN_ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL || 'burstbrainconcept@gmail.com';
+
+const buildPaymentReturnUrl = (reference: string, gateway: string, type: string) => {
+  const params = new URLSearchParams({
+    reference,
+    gateway,
+    type
+  });
+  return `${APP_URL}/payment/return?${params.toString()}`;
+};
 
 type ResendAttachment = { filename: string; content: string };
 type ResendEmailOptions = {
@@ -300,7 +290,185 @@ const sendResendEmail = async ({ to, subject, html, attachments, fromName }: Res
   }
 };
 
-const safeJsonParse = <T = any>(value: any, fallback: T): T => {
+type PaymentEventInput = {
+  reference: string;
+  gateway: string;
+  eventType: string;
+  amount?: number;
+  eventKey: string;
+  payload?: any;
+};
+
+const insertPaymentEvent = async ({ reference, gateway, eventType, amount = 0, eventKey, payload = {} }: PaymentEventInput) => {
+  try {
+    const result = await pool.query(
+      'INSERT INTO payment_events (reference, gateway, event_type, amount, event_key, payload) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (event_key) DO NOTHING RETURNING id',
+      [reference, gateway, eventType, Math.max(0, Number(amount || 0)), eventKey, JSON.stringify(payload || {})]
+    );
+    return result.rowCount > 0;
+  } catch (err) {
+    console.error('Payment event insert failed:', err);
+    return false;
+  }
+};
+
+const sendAdminPaymentAlert = async (subject: string, html: string) => {
+  try {
+    await sendResendEmail({
+      fromName: 'Genius Payments',
+      to: ADMIN_ALERT_EMAIL,
+      subject,
+      html
+    });
+  } catch (err) {
+    console.error('Admin payment alert failed:', err);
+  }
+};
+
+const applyUserCredit = async (userId: number, amount: number) => {
+  const safeAmount = Math.max(0, Number(amount || 0));
+  if (safeAmount === 0) return { chargeAmount: 0, creditUsed: 0, creditApplied: false };
+  const creditRes = await pool.query('SELECT credit_balance FROM users WHERE id = $1', [userId]);
+  const creditBalance = Number(creditRes.rows[0]?.credit_balance || 0);
+  if (creditBalance <= 0) return { chargeAmount: safeAmount, creditUsed: 0, creditApplied: false };
+
+  if (creditBalance >= safeAmount) {
+    await pool.query('UPDATE users SET credit_balance = credit_balance - $1 WHERE id = $2', [safeAmount, userId]);
+    return { chargeAmount: 0, creditUsed: safeAmount, creditApplied: true };
+  }
+
+  await pool.query('UPDATE users SET credit_balance = 0 WHERE id = $1', [userId]);
+  return { chargeAmount: safeAmount - creditBalance, creditUsed: creditBalance, creditApplied: false };
+};
+
+const sumPaymentEvents = async (reference: string) => {
+  const res = await pool.query(
+    "SELECT COALESCE(SUM(amount), 0) as total FROM payment_events WHERE reference = $1 AND event_type = 'payment'",
+    [reference]
+  );
+  return Number(res.rows[0]?.total || 0);
+};
+
+async function handleTransactionSuccess(tx: any) {
+  const meta = safeJsonParse(tx.metadata, {});
+  if (meta?.fulfilled_at) return;
+
+  if (tx.type === 'publication') {
+    const userRes = await pool.query('SELECT name, email FROM users WHERE id = $1', [tx.user_id]);
+    const user = userRes.rows[0];
+    if (user) {
+      await sendPaymentSuccessEmail(user.email, user.name || 'Researcher', tx.reference);
+    }
+  }
+
+  if (tx.type === 'pin_recovery') {
+    const userRes = await pool.query('SELECT name, matric_number, email FROM users WHERE id = $1', [tx.user_id]);
+    const student = userRes.rows[0];
+    if (student) {
+      const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+      const hashedPin = await bcrypt.hash(newPin, 10);
+      await pool.query('UPDATE users SET password = $1, pin_code = $3 WHERE id = $2', [hashedPin, tx.user_id, newPin]);
+      await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE matric_number = $2 AND tenant_id = $3',
+        [hashedPin, student.matric_number, tx.tenant_id]);
+
+      await sendResendEmail({
+        fromName: 'Genius Recovery',
+        to: student.email,
+        subject: 'Your Recovered Genius PIN',
+        html: `<h2>PIN Recovered</h2><p>Your new 4-digit PIN is: <strong>${newPin}</strong></p>`
+      });
+    }
+  }
+
+  if (tx.type === 'subscription') {
+    const expiry = new Date();
+    expiry.setFullYear(expiry.getFullYear() + 1);
+    await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
+  }
+
+  await pool.query('UPDATE transactions SET metadata = metadata || $1 WHERE id = $2',
+    [JSON.stringify({ fulfilled_at: new Date().toISOString() }), tx.id]);
+}
+
+const recomputeTransaction = async (reference: string, sourceGateway: string) => {
+  const txRes = await pool.query('SELECT * FROM transactions WHERE reference = $1', [reference]);
+  const tx = txRes.rows[0];
+  if (!tx) return null;
+
+  const requiredAmount = Number(tx.amount || 0);
+  const meta = safeJsonParse(tx.metadata, {});
+  const isTopup = tx.type === 'payment_topup';
+  const paidSoFar = await sumPaymentEvents(reference);
+  const remainingAmount = Math.max(requiredAmount - paidSoFar, 0);
+  const overpaid = Math.max(paidSoFar - requiredAmount, 0);
+
+  let nextStatus = tx.status;
+  if (paidSoFar <= 0) {
+    nextStatus = tx.status === 'failed' ? 'failed' : 'pending';
+  } else if (paidSoFar < requiredAmount) {
+    nextStatus = 'partially_paid';
+  } else {
+    nextStatus = 'success';
+  }
+
+  const updateMeta: Record<string, any> = {
+    paid_so_far: paidSoFar,
+    remaining_amount: remainingAmount,
+    overpaid
+  };
+
+  await pool.query(
+    'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+    [nextStatus, JSON.stringify(updateMeta), tx.id]
+  );
+
+  if (nextStatus === 'partially_paid' && !isTopup) {
+    const partialInserted = await insertPaymentEvent({
+      reference,
+      gateway: sourceGateway,
+      eventType: 'partial',
+      amount: remainingAmount,
+      eventKey: `partial:${reference}:${remainingAmount}`,
+      payload: { paid_so_far: paidSoFar, remaining_amount: remainingAmount }
+    });
+    if (partialInserted) {
+      await sendAdminPaymentAlert(
+        `Partial payment detected (${reference})`,
+        `<p>Reference: ${reference}</p><p>Paid so far: ₦${paidSoFar}</p><p>Remaining: ₦${remainingAmount}</p>`
+      );
+    }
+  }
+
+  if (nextStatus === 'success' && overpaid > 0 && !isTopup && !meta?.credit_applied) {
+    await pool.query('UPDATE users SET credit_balance = credit_balance + $1 WHERE id = $2', [overpaid, tx.user_id]);
+    await pool.query(
+      'UPDATE transactions SET metadata = metadata || $1 WHERE id = $2',
+      [JSON.stringify({ credit_applied: true, credit_amount: overpaid }), tx.id]
+    );
+    const overpaidInserted = await insertPaymentEvent({
+      reference,
+      gateway: sourceGateway,
+      eventType: 'overpaid',
+      amount: overpaid,
+      eventKey: `overpaid:${reference}:${overpaid}`,
+      payload: { overpaid }
+    });
+    if (overpaidInserted) {
+      await sendAdminPaymentAlert(
+        `Overpayment credited (${reference})`,
+        `<p>Reference: ${reference}</p><p>Overpaid: ₦${overpaid}</p><p>Credit applied to user wallet.</p>`
+      );
+    }
+  }
+
+  if (nextStatus === 'success') {
+    await handleTransactionSuccess(tx);
+  }
+
+  return { status: nextStatus, paidSoFar, remainingAmount, overpaid };
+};
+
+function safeJsonParse<T = any>(value: any, fallback: T): T {
   if (value === undefined || value === null) return fallback;
   if (typeof value === 'object') return value as T;
   if (typeof value !== 'string' || !value.trim()) return fallback;
@@ -309,7 +477,7 @@ const safeJsonParse = <T = any>(value: any, fallback: T): T => {
   } catch {
     return fallback;
   }
-};
+}
 
 const normalizeAuthorNames = (authors: any): string[] => {
   const parsed = Array.isArray(authors) ? authors : safeJsonParse<any[]>(authors, []);
@@ -433,6 +601,7 @@ async function bootstrapDB() {
       ALTER TABLE resources ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_code TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_balance INTEGER DEFAULT 0;
       
       ALTER TABLE paper_references 
       ADD COLUMN IF NOT EXISTS ai_analysis TEXT,
@@ -445,7 +614,19 @@ async function bootstrapDB() {
       
       ALTER TABLE papers
       ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE;
+
+      CREATE TABLE IF NOT EXISTS payment_events (
+        id SERIAL PRIMARY KEY,
+        reference TEXT,
+        gateway TEXT,
+        event_type TEXT,
+        amount INTEGER DEFAULT 0,
+        event_key TEXT UNIQUE,
+        payload JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS payment_events_event_key_idx ON payment_events(event_key);`);
     console.log('--- DATABASE BOOTSTRAP SUCCESSFUL ---');
   } catch (err) {
     console.error('--- DATABASE BOOTSTRAP FAILED ---', err);
@@ -537,6 +718,7 @@ async function initDB() {
       tenant_id INTEGER,
       matric_number TEXT,
       level TEXT,
+      credit_balance INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS tenants (
@@ -664,6 +846,16 @@ async function initDB() {
       metadata JSONB DEFAULT '{}',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS payment_events (
+      id SERIAL PRIMARY KEY,
+      reference TEXT,
+      gateway TEXT,
+      event_type TEXT,
+      amount INTEGER DEFAULT 0,
+      event_key TEXT UNIQUE,
+      payload JSONB DEFAULT '{}',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS chat_messages (
       id SERIAL PRIMARY KEY,
@@ -1132,32 +1324,77 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
             'SELECT sc.entry_fee FROM student_categories sc JOIN users u ON u.category_id = sc.id WHERE u.id = $1',
             [req.user.id]
         );
-        const amount = result.rows[0]?.entry_fee || 0;
+        const amount = Number(result.rows[0]?.entry_fee || 0);
         const reference = `PORTAL-${Date.now()}-${req.user.id}`;
 
         // Call the appropriate payment gateway to get virtual bank account details
+        const creditResult = await applyUserCredit(req.user.id, amount);
+        const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'portal_entry');
         let bankAccounts: any[] = [];
-    let checkoutUrl: string | null = null;
-        if (gateway === 'kora') {
-            if (mode === 'checkout') {
-                checkoutUrl = await initializeKoraCheckout(req.user, amount, reference);
+        let checkoutUrl: string | null = null;
+        const chargeAmount = creditResult.chargeAmount;
+        if (chargeAmount > 0) {
+            if (gateway === 'kora') {
+                if (mode === 'checkout') {
+                    checkoutUrl = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+                      redirectUrl,
+                      notificationUrl: `${APP_URL}/api/payment/webhook/kora`
+                    });
+                } else {
+                    bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
+                }
             } else {
-                bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+                checkoutUrl = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
             }
-        } else {
-            checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
         }
 
         await pool.query(
             'INSERT INTO transactions (user_id, tenant_id, reference, amount, type, status, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-            [req.user.id, req.tenant_id, reference, amount, 'portal_entry', 'pending', JSON.stringify({ gateway })]
+            [
+              req.user.id,
+              req.tenant_id,
+              reference,
+              amount,
+              'portal_entry',
+              chargeAmount > 0 ? 'pending' : 'success',
+              JSON.stringify({
+                gateway,
+                credit_used: creditResult.creditUsed,
+                credit_applied: creditResult.creditApplied,
+                paid_so_far: creditResult.creditUsed,
+                remaining_amount: Math.max(amount - creditResult.creditUsed, 0)
+              })
+            ]
         );
+
+        if (creditResult.creditUsed > 0) {
+          await insertPaymentEvent({
+            reference,
+            gateway,
+            eventType: 'payment',
+            amount: creditResult.creditUsed,
+            eventKey: `credit:${reference}`,
+            payload: { source: 'wallet_credit', credit_used: creditResult.creditUsed }
+          });
+        }
+        if (chargeAmount === 0) {
+          await recomputeTransaction(reference, gateway);
+        }
 
         const expires_at_date = new Date();
         expires_at_date.setMinutes(expires_at_date.getMinutes() + 30);
         const expires_at = expires_at_date.toISOString();
 
-        res.json({ reference, amount, bankAccounts, checkout_url: checkoutUrl, expires_at });
+        res.json({
+          reference,
+          amount,
+          bankAccounts,
+          checkout_url: checkoutUrl,
+          expires_at,
+          credit_applied: creditResult.creditApplied,
+          credit_used: creditResult.creditUsed,
+          remaining_amount: Math.max(amount - creditResult.creditUsed, 0)
+        });
     } catch (err: any) {
         console.error('Portal entry payment init error:', err);
         res.status(500).json({ error: 'Payment initialization failed', details: err.message });
@@ -2136,12 +2373,14 @@ app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
     if (currentPaper.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
     if (currentPaper.rows[0].is_locked) return res.status(403).json({ error: 'Manuscript is locked for final archival and cannot be modified.' });
     
-    let metadata = JSON.parse(currentPaper.rows[0].metadata || '{}');
+    let metadata = safeJsonParse<any>(currentPaper.rows[0].metadata, {});
     if (title !== undefined) metadata.title = title;
     if (authors !== undefined) metadata.authors = authors;
     if (abstract !== undefined) metadata.abstract = abstract;
 
-    const authorNames = (metadata.authors || []).map((a: any) => typeof a === 'string' ? a : a.name);
+    const authorNames = Array.isArray(metadata.authors)
+      ? metadata.authors.map((a: any) => typeof a === 'string' ? a : a?.name).filter(Boolean)
+      : [];
 
     await pool.query(
       'UPDATE papers SET title = COALESCE($1, title), authors = $2, abstract = COALESCE($3, abstract), metadata = $4 WHERE id = $5 AND user_id = $6',
@@ -6092,29 +6331,70 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
   const reference = `GMIJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
+    const resolvedType = type || 'publication';
+    const requestedAmount = Number(amount || 0);
+    const creditResult = await applyUserCredit(req.user.id, requestedAmount);
+    const redirectUrl = buildPaymentReturnUrl(reference, gateway, resolvedType);
     let bankAccounts: any[] = [];
     let checkoutUrl: string | null = null;
-    if (gateway === 'kora') {
-      if (mode === 'checkout') {
-        checkoutUrl = await initializeKoraCheckout(req.user, amount, reference, {
-          redirectUrl: `${APP_URL}/?tab=upload&source=kora`,
-          notificationUrl: `${APP_URL}/api/payment/webhook/kora`
-        });
+    const chargeAmount = creditResult.chargeAmount;
+
+    if (chargeAmount > 0) {
+      if (gateway === 'kora') {
+        if (mode === 'checkout') {
+          checkoutUrl = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+            redirectUrl,
+            notificationUrl: `${APP_URL}/api/payment/webhook/kora`
+          });
+        } else {
+          bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
+        }
       } else {
-        bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+        checkoutUrl = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
       }
-    } else {
-      checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
     }
 
     await pool.query(
       'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
-      [req.user.id, req.tenant_id, reference, amount, 'pending', type || 'publication', JSON.stringify({ gateway, mode })]
+      [
+        req.user.id,
+        req.tenant_id,
+        reference,
+        requestedAmount,
+        chargeAmount > 0 ? 'pending' : 'success',
+        resolvedType,
+        JSON.stringify({
+          gateway,
+          mode,
+          credit_used: creditResult.creditUsed,
+          credit_applied: creditResult.creditApplied,
+          paid_so_far: creditResult.creditUsed,
+          remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0)
+        })
+      ]
     );
+
+    if (creditResult.creditUsed > 0) {
+      await insertPaymentEvent({
+        reference,
+        gateway,
+        eventType: 'payment',
+        amount: creditResult.creditUsed,
+        eventKey: `credit:${reference}`,
+        payload: { source: 'wallet_credit', credit_used: creditResult.creditUsed }
+      });
+    }
+
+    if (chargeAmount === 0) {
+      await recomputeTransaction(reference, gateway);
+    }
     
     res.json({
       reference,
-      amount,
+      amount: requestedAmount,
+      remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0),
+      credit_applied: creditResult.creditApplied,
+      credit_used: creditResult.creditUsed,
       checkout_url: checkoutUrl,
       bankAccounts,
       message: `Transfer ₦${Number(amount).toLocaleString()} to any of the bank accounts below to complete your payment.`
@@ -6133,16 +6413,25 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
   const reference = `ATT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
+    const requestedAmount = Number(amount || 0);
+    const creditResult = await applyUserCredit(req.user.id, requestedAmount);
+    const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'attendance_token');
     let bankAccounts: any[] = [];
     let checkoutUrl: string | null = null;
-    if (gateway === 'kora') {
-      if (mode === 'checkout') {
-        checkoutUrl = await initializeKoraCheckout(req.user, amount, reference);
+    const chargeAmount = creditResult.chargeAmount;
+    if (chargeAmount > 0) {
+      if (gateway === 'kora') {
+        if (mode === 'checkout') {
+          checkoutUrl = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+            redirectUrl,
+            notificationUrl: `${APP_URL}/api/payment/webhook/kora`
+          });
+        } else {
+          bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
+        }
       } else {
-        bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+        checkoutUrl = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
       }
-    } else {
-      checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
     }
     
     const attendance_date = new Date().toISOString().split('T')[0];
@@ -6154,16 +6443,161 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
 
     await pool.query(
       'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
-      [req.user.id, req.tenant_id, reference, amount, 'pending', 'attendance_token', metadata]
+      [
+        req.user.id,
+        req.tenant_id,
+        reference,
+        requestedAmount,
+        chargeAmount > 0 ? 'pending' : 'success',
+        'attendance_token',
+        { ...metadata, credit_used: creditResult.creditUsed, credit_applied: creditResult.creditApplied, paid_so_far: creditResult.creditUsed, remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0) }
+      ]
     );
+
+    if (creditResult.creditUsed > 0) {
+      await insertPaymentEvent({
+        reference,
+        gateway,
+        eventType: 'payment',
+        amount: creditResult.creditUsed,
+        eventKey: `credit:${reference}`,
+        payload: { source: 'wallet_credit', credit_used: creditResult.creditUsed }
+      });
+    }
+    if (chargeAmount === 0) {
+      await recomputeTransaction(reference, gateway);
+    }
     
-    res.json({ reference, amount, bankAccounts, checkout_url: checkoutUrl,
+    res.json({ reference, amount: requestedAmount, bankAccounts, checkout_url: checkoutUrl,
       expires_at,
+      credit_applied: creditResult.creditApplied,
+      credit_used: creditResult.creditUsed,
+      remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0),
       message: `Transfer ₦${Number(amount).toLocaleString()} to sign attendance for ${course_id}.`
     });
   } catch (err: any) {
     console.error('Attendance Payment initialization error:', err);
     res.status(500).json({ error: 'Attendance payment initialization failed', details: err.message });
+  }
+});
+
+// Remaining balance top-up (auto credit + new checkout)
+app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
+  try {
+    const { reference, gateway, mode = 'checkout' } = req.body;
+    if (!reference) return res.status(400).json({ error: 'reference is required' });
+
+    const parentRes = await pool.query(
+      'SELECT * FROM transactions WHERE reference = $1 AND user_id = $2',
+      [reference, req.user.id]
+    );
+    const parentTx = parentRes.rows[0];
+    if (!parentTx) return res.status(404).json({ error: 'Transaction not found' });
+
+    await recomputeTransaction(reference, parentTx.metadata?.gateway || gateway || 'paystack');
+    const meta = safeJsonParse(parentTx.metadata, {});
+    const paidSoFar = await sumPaymentEvents(reference);
+    const requiredAmount = Number(parentTx.amount || 0);
+    const remaining = Math.max(requiredAmount - paidSoFar, 0);
+
+    if (remaining <= 0) {
+      return res.json({
+        reference,
+        amount: 0,
+        remaining_amount: 0,
+        status: 'success',
+        message: 'Payment already completed.'
+      });
+    }
+
+    const creditResult = await applyUserCredit(req.user.id, remaining);
+    if (creditResult.creditUsed > 0) {
+      await insertPaymentEvent({
+        reference,
+        gateway: gateway || meta.gateway || 'paystack',
+        eventType: 'payment',
+        amount: creditResult.creditUsed,
+        eventKey: `credit-topup:${reference}:${creditResult.creditUsed}`,
+        payload: { source: 'wallet_credit', credit_used: creditResult.creditUsed }
+      });
+    }
+
+    const newRemaining = Math.max(remaining - creditResult.creditUsed, 0);
+    if (newRemaining === 0) {
+      await recomputeTransaction(reference, gateway || meta.gateway || 'paystack');
+      return res.json({
+        reference,
+        amount: 0,
+        remaining_amount: 0,
+        credit_applied: true,
+        credit_used: creditResult.creditUsed,
+        status: 'success',
+        message: 'Remaining balance covered by wallet credit.'
+      });
+    }
+
+    const topupRef = `TOPUP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const resolvedGateway = gateway || meta.gateway || 'paystack';
+    const redirectUrl = buildPaymentReturnUrl(topupRef, resolvedGateway, 'payment_topup');
+    let bankAccounts: any[] = [];
+    let checkoutUrl: string | null = null;
+
+    if (resolvedGateway === 'kora') {
+      if (mode === 'checkout') {
+        checkoutUrl = await initializeKoraCheckout(req.user, newRemaining, topupRef, {
+          redirectUrl,
+          notificationUrl: `${APP_URL}/api/payment/webhook/kora`
+        });
+      } else {
+        bankAccounts = await initializeKoraVirtualAccount(req.user, newRemaining, topupRef);
+      }
+    } else {
+      checkoutUrl = await initializePaystackCheckout(req.user, newRemaining, topupRef, { redirectUrl });
+    }
+
+    await pool.query(
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [
+        req.user.id,
+        parentTx.tenant_id,
+        topupRef,
+        newRemaining,
+        'pending',
+        'payment_topup',
+        JSON.stringify({
+          gateway: resolvedGateway,
+          topup_for: reference,
+          original_reference: reference,
+          original_amount: requiredAmount,
+          remaining_amount: newRemaining,
+          credit_used: creditResult.creditUsed
+        })
+      ]
+    );
+
+    try {
+      const parentMeta = safeJsonParse(parentTx.metadata, {});
+      const existingRefs = Array.isArray(parentMeta.topup_refs) ? parentMeta.topup_refs : [];
+      await pool.query(
+        'UPDATE transactions SET metadata = metadata || $1 WHERE id = $2',
+        [JSON.stringify({ topup_refs: [...existingRefs, topupRef] }), parentTx.id]
+      );
+    } catch (e) {
+      console.error('Failed to append topup ref:', e);
+    }
+
+    res.json({
+      reference: topupRef,
+      amount: newRemaining,
+      remaining_amount: newRemaining,
+      credit_used: creditResult.creditUsed,
+      checkout_url: checkoutUrl,
+      bankAccounts,
+      topup_for: reference
+    });
+  } catch (err: any) {
+    console.error('Topup payment init error:', err);
+    res.status(500).json({ error: 'Topup initialization failed', details: err.message });
   }
 });
 
@@ -6178,42 +6612,73 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
     const txn = result.rows[0];
     if (!txn) return res.status(404).json({ status: 'not_found', error: 'Transaction not found' });
 
-    const gateway = txn.metadata?.gateway || txn.metadata?.gateway?.toString?.();
+    const meta = safeJsonParse(txn.metadata, {});
+    const gateway = meta?.gateway || txn.metadata?.gateway || txn.metadata?.gateway?.toString?.();
+
     if (txn.status !== 'success') {
       if (gateway === 'kora' && process.env.KORA_SECRET_KEY) {
         try {
-        const verifyResult = await verifyKoraCharge(reference);
-        if (verifyResult.status === 'success') {
-          await pool.query(
-            'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
-            ['success', JSON.stringify({ kora_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]
-          );
-          txn.status = 'success';
-        } else if (verifyResult.status === 'failed') {
-          await pool.query(
-            'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
-            ['failed', JSON.stringify({ kora_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]
-          );
-          txn.status = 'failed';
-        }
-      } catch (verifyErr) {
-        console.error('Kora verify error:', verifyErr);
+          const verifyResult = await verifyKoraCharge(reference);
+          if (verifyResult.status === 'success') {
+            const paid = Number(verifyResult.amountPaid || verifyResult.amount || 0);
+            if (paid > 0) {
+              const eventKey = `verify:kora:${reference}:${paid}`;
+              await insertPaymentEvent({
+                reference,
+                gateway: 'kora',
+                eventType: 'payment',
+                amount: paid,
+                eventKey,
+                payload: verifyResult
+              });
+
+              if (meta?.topup_for) {
+                await insertPaymentEvent({
+                  reference: meta.topup_for,
+                  gateway: 'kora',
+                  eventType: 'payment',
+                  amount: paid,
+                  eventKey: `${eventKey}:parent`,
+                  payload: { ...verifyResult, child_reference: reference }
+                });
+              }
+            }
+          } else if (verifyResult.status === 'failed') {
+            await pool.query('UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+              ['failed', JSON.stringify({ kora_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]);
+          }
+        } catch (verifyErr) {
+          console.error('Kora verify error:', verifyErr);
         }
       } else if (gateway === 'paystack' && process.env.PAYSTACK_SECRET_KEY) {
         try {
           const verifyResult = await verifyPaystackCharge(reference);
           if (verifyResult.status === 'success') {
-            await pool.query(
-              'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
-              ['success', JSON.stringify({ paystack_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]
-            );
-            txn.status = 'success';
+            const paid = Number(verifyResult.amountPaid || verifyResult.amount || 0);
+            if (paid > 0) {
+              const eventKey = `verify:paystack:${reference}:${paid}`;
+              await insertPaymentEvent({
+                reference,
+                gateway: 'paystack',
+                eventType: 'payment',
+                amount: paid,
+                eventKey,
+                payload: verifyResult
+              });
+              if (meta?.topup_for) {
+                await insertPaymentEvent({
+                  reference: meta.topup_for,
+                  gateway: 'paystack',
+                  eventType: 'payment',
+                  amount: paid,
+                  eventKey: `${eventKey}:parent`,
+                  payload: { ...verifyResult, child_reference: reference }
+                });
+              }
+            }
           } else if (verifyResult.status === 'failed') {
-            await pool.query(
-              'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
-              ['failed', JSON.stringify({ paystack_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]
-            );
-            txn.status = 'failed';
+            await pool.query('UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+              ['failed', JSON.stringify({ paystack_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]);
           }
         } catch (verifyErr) {
           console.error('Paystack verify error:', verifyErr);
@@ -6221,7 +6686,21 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
       }
     }
 
-    res.json({ status: txn.status, amount: txn.amount, type: txn.type });
+    const parentRef = meta?.topup_for || reference;
+    const gatewayName = gateway || 'paystack';
+    await recomputeTransaction(reference, gatewayName);
+    if (parentRef !== reference) {
+      await recomputeTransaction(parentRef, gatewayName);
+    }
+
+    const latest = await pool.query('SELECT status, amount, metadata, type FROM transactions WHERE reference = $1', [parentRef]);
+    const latestTx = latest.rows[0];
+    const latestMeta = safeJsonParse(latestTx?.metadata, {});
+    const paidSoFar = Number(latestMeta?.paid_so_far || 0);
+    const remainingAmount = Number(latestMeta?.remaining_amount || 0);
+    const overpaid = Number(latestMeta?.overpaid || 0);
+
+    res.json({ status: latestTx?.status || txn.status, amount: latestTx?.amount || txn.amount, paid_so_far: paidSoFar, remaining_amount: remainingAmount, overpaid, type: latestTx?.type || txn.type });
   } catch (error) {
     console.error('Payment verify error:', error);
     res.status(500).json({ status: 'error', error: 'Verification failed' });
@@ -6844,16 +7323,25 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
   const reference = `MAT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
+    const requestedAmount = Number(amount || 0);
+    const creditResult = await applyUserCredit(req.user.id, requestedAmount);
+    const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'material_access');
     let bankAccounts: any[] = [];
     let checkoutUrl: string | null = null;
-    if (gateway === 'kora') {
-      if (mode === 'checkout') {
-        checkoutUrl = await initializeKoraCheckout(req.user, amount, reference);
+    const chargeAmount = creditResult.chargeAmount;
+    if (chargeAmount > 0) {
+      if (gateway === 'kora') {
+        if (mode === 'checkout') {
+          checkoutUrl = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+            redirectUrl,
+            notificationUrl: `${APP_URL}/api/payment/webhook/kora`
+          });
+        } else {
+          bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
+        }
       } else {
-        bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+        checkoutUrl = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
       }
-    } else {
-      checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
     }
     
     const resourceRes = await pool.query('SELECT tenant_id FROM resources WHERE id = $1', [resource_id]);
@@ -6861,10 +7349,35 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
 
     await pool.query(
       'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
-      [req.user.id, tenant_id, reference, amount, 'pending', 'material_access', { resource_id, gateway }]
+      [
+        req.user.id,
+        tenant_id,
+        reference,
+        requestedAmount,
+        chargeAmount > 0 ? 'pending' : 'success',
+        'material_access',
+        { resource_id, gateway, credit_used: creditResult.creditUsed, credit_applied: creditResult.creditApplied, paid_so_far: creditResult.creditUsed, remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0) }
+      ]
     );
+
+    if (creditResult.creditUsed > 0) {
+      await insertPaymentEvent({
+        reference,
+        gateway,
+        eventType: 'payment',
+        amount: creditResult.creditUsed,
+        eventKey: `credit:${reference}`,
+        payload: { source: 'wallet_credit', credit_used: creditResult.creditUsed }
+      });
+    }
+    if (chargeAmount === 0) {
+      await recomputeTransaction(reference, gateway);
+    }
     
-    res.json({ reference, amount, bankAccounts, checkout_url: checkoutUrl,
+    res.json({ reference, amount: requestedAmount, bankAccounts, checkout_url: checkoutUrl,
+      credit_applied: creditResult.creditApplied,
+      credit_used: creditResult.creditUsed,
+      remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0),
       message: `Transfer ₦${Number(amount).toLocaleString()} to access this material.`
     });
   } catch (err: any) {
@@ -6880,16 +7393,25 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
   const reference = `ASM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
+    const requestedAmount = Number(amount || 0);
+    const creditResult = await applyUserCredit(req.user.id, requestedAmount);
+    const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'assessment_access');
     let bankAccounts: any[] = [];
     let checkoutUrl: string | null = null;
-    if (gateway === 'kora') {
-      if (mode === 'checkout') {
-        checkoutUrl = await initializeKoraCheckout(req.user, amount, reference);
+    const chargeAmount = creditResult.chargeAmount;
+    if (chargeAmount > 0) {
+      if (gateway === 'kora') {
+        if (mode === 'checkout') {
+          checkoutUrl = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+            redirectUrl,
+            notificationUrl: `${APP_URL}/api/payment/webhook/kora`
+          });
+        } else {
+          bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
+        }
       } else {
-        bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
+        checkoutUrl = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
       }
-    } else {
-      checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
     }
     
     const examRes = await pool.query('SELECT tenant_id FROM exams WHERE id = $1', [exam_id]);
@@ -6897,10 +7419,35 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
 
     await pool.query(
       'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
-      [req.user.id, tenant_id, reference, amount, 'pending', 'assessment_access', { exam_id, gateway }]
+      [
+        req.user.id,
+        tenant_id,
+        reference,
+        requestedAmount,
+        chargeAmount > 0 ? 'pending' : 'success',
+        'assessment_access',
+        { exam_id, gateway, credit_used: creditResult.creditUsed, credit_applied: creditResult.creditApplied, paid_so_far: creditResult.creditUsed, remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0) }
+      ]
     );
+
+    if (creditResult.creditUsed > 0) {
+      await insertPaymentEvent({
+        reference,
+        gateway,
+        eventType: 'payment',
+        amount: creditResult.creditUsed,
+        eventKey: `credit:${reference}`,
+        payload: { source: 'wallet_credit', credit_used: creditResult.creditUsed }
+      });
+    }
+    if (chargeAmount === 0) {
+      await recomputeTransaction(reference, gateway);
+    }
     
-    res.json({ reference, amount, bankAccounts, checkout_url: checkoutUrl,
+    res.json({ reference, amount: requestedAmount, bankAccounts, checkout_url: checkoutUrl,
+      credit_applied: creditResult.creditApplied,
+      credit_used: creditResult.creditUsed,
+      remaining_amount: Math.max(requestedAmount - creditResult.creditUsed, 0),
       message: `Transfer ₦${Number(amount).toLocaleString()} to access this assessment.`
     });
   } catch (err: any) {

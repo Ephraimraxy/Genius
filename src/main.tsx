@@ -1,11 +1,14 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import PaymentReturn from './components/PaymentReturn.tsx';
 import './index.css';
+
+const isPaymentReturn = window.location.pathname === '/payment/return';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {isPaymentReturn ? <PaymentReturn /> : <App />}
   </StrictMode>,
 );
 

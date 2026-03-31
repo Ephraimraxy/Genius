@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, CreditCard, Loader2, CheckCircle2, ShieldUser, Copy, Clock, AlertCircle, ChevronRight, Zap } from 'lucide-react';
+import { openPaymentPopup } from './paymentPopup';
+import { subscribePaymentReturn } from './paymentChannel';
 
 interface GeniusPaymentModalProps {
   onClose: () => void;
@@ -28,6 +30,13 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
   const [timeLeft, setTimeLeft] = useState<string>('--:--');
   const [isExpired, setIsExpired] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const [popupBlocked, setPopupBlocked] = useState(false);
+  const [paidSoFar, setPaidSoFar] = useState<number | null>(null);
+  const [remainingAmount, setRemainingAmount] = useState<number | null>(null);
+  const [overpaidAmount, setOverpaidAmount] = useState<number | null>(null);
+  const [creditApplied, setCreditApplied] = useState(false);
+  const [creditUsed, setCreditUsed] = useState<number | null>(null);
+  const [isTopupLoading, setIsTopupLoading] = useState(false);
 
   // Fetch active gateways configuration on mount
   useEffect(() => {
@@ -88,10 +97,27 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
       if (response.ok) {
         setBankAccounts(data.bankAccounts || []);
         setCheckoutUrl(data.checkout_url || null);
-        if (data.checkout_url) window.open(data.checkout_url, '_blank');
+        setPaidSoFar(null);
+        setRemainingAmount(null);
+        setOverpaidAmount(null);
+        setPopupBlocked(false);
+        setCreditApplied(Boolean(data.credit_applied));
+        setCreditUsed(Number(data.credit_used || 0) || null);
+        if (data.checkout_url) openCheckoutPopup(data.checkout_url);
         setPaymentRef(data.reference);
         setPaymentAmount(Number(data.amount || amount || 0));
         setExpiresAt(data.expires_at);
+        if (data.remaining_amount !== undefined) {
+          setRemainingAmount(Number(data.remaining_amount));
+          if (Number(data.remaining_amount) > 0 && Number(data.credit_used || 0) > 0) {
+            setPaidSoFar(Number(data.credit_used));
+          }
+        }
+        if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
+          addToast('Wallet credit applied. Access unlocked.', 'success');
+          completeVerifiedPayment();
+          return;
+        }
       } else {
         addToast(data.error || 'Failed to initialize payment', 'error');
         onClose();
@@ -107,6 +133,56 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
   const handleGatewaySelect = (selectedGateway: Gateway) => {
     setGateway(selectedGateway);
     initializePayment(selectedGateway);
+  };
+
+  const openCheckoutPopup = (url: string) => {
+    const popup = openPaymentPopup(url, {
+      onBlocked: () => setPopupBlocked(true)
+    });
+    if (popup) {
+      setPopupBlocked(false);
+    }
+  };
+
+  const handlePayRemaining = async () => {
+    if (!paymentRef || !token || !gateway) return;
+    setIsTopupLoading(true);
+    try {
+      const res = await fetch('/api/payment/topup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ reference: paymentRef, gateway })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Top-up failed');
+
+      if (data.credit_used) {
+        setCreditUsed(Number(data.credit_used));
+      }
+      if (data.remaining_amount !== undefined) {
+        setRemainingAmount(Number(data.remaining_amount));
+      }
+
+      if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
+        addToast('Wallet credit applied. Access unlocked.', 'success');
+        completeVerifiedPayment();
+        return;
+      }
+
+      if (data.checkout_url) {
+        openCheckoutPopup(data.checkout_url);
+      }
+      if (data.bankAccounts) {
+        setBankAccounts(data.bankAccounts);
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Top-up failed. Please try again.', 'error');
+    } finally {
+      setIsTopupLoading(false);
+    }
   };
 
   // Countdown Timer Logic
@@ -161,17 +237,29 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         throw new Error(data.error || 'Unable to verify payment right now.');
       }
 
+      const paidSoFarValue = Number(data?.paid_so_far || 0);
+      const remainingValue = Number(data?.remaining_amount || Math.max(paymentAmount - paidSoFarValue, 0));
+      const overpaidValue = Number(data?.overpaid || 0);
+
       if (data.status === 'success' || data.status === 'consumed') {
+        if (paidSoFarValue > 0) setPaidSoFar(paidSoFarValue);
+        setRemainingAmount(0);
+        if (overpaidValue > 0) setOverpaidAmount(overpaidValue);
         completeVerifiedPayment();
         return;
       }
 
-      if (!silent) {
-        if (data.status === 'partially_paid') {
-          addToast('Underpayment detected. Please complete the exact transfer amount.', 'error');
-        } else {
-          addToast('Payment is still pending bank confirmation. Please check again shortly.', 'info');
+      if (data.status === 'partially_paid') {
+        setPaidSoFar(paidSoFarValue);
+        setRemainingAmount(remainingValue);
+        if (!silent) {
+          addToast(`Underpayment detected. Remaining ₦${remainingValue.toLocaleString()}.`, 'error');
         }
+        return;
+      }
+
+      if (!silent) {
+        addToast('Payment is still pending bank confirmation. Please check again shortly.', 'info');
       }
     } catch (err: any) {
       if (!silent) {
@@ -196,6 +284,15 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
 
     return () => window.clearInterval(interval);
   }, [paymentRef, token, isExpired, isConfirmed]);
+
+  useEffect(() => {
+    if (!paymentRef || !token || isConfirmed) return;
+    const unsubscribe = subscribePaymentReturn((message) => {
+      if (message.reference && message.reference !== paymentRef) return;
+      void verifyPaymentStatus(true);
+    });
+    return unsubscribe;
+  }, [paymentRef, token, isConfirmed]);
 
   return (
     <motion.div
@@ -379,13 +476,48 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
               {/* Bank Transfer Instructions */}
               <div className="mb-6">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Transfer exactly ₦{formattedAmount} to:</p>
+
+                {remainingAmount !== null && remainingAmount > 0 && (
+                  <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700 text-sm font-bold space-y-3">
+                    <div>
+                      Partial payment detected. Paid ₦{(paidSoFar || 0).toLocaleString()}. Remaining ₦{remainingAmount.toLocaleString()}.
+                    </div>
+                    <button
+                      onClick={handlePayRemaining}
+                      disabled={isTopupLoading}
+                      className="w-full bg-amber-600 text-white py-2.5 rounded-xl font-black text-[10px] uppercase tracking-[0.15em] hover:bg-amber-700 transition disabled:opacity-50"
+                    >
+                      {isTopupLoading ? 'Processing...' : 'Pay Remaining Balance'}
+                    </button>
+                  </div>
+                )}
+
+                {creditUsed !== null && creditUsed > 0 && (
+                  <div className="mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-2xl text-indigo-700 text-sm font-bold">
+                    Wallet credit applied: ₦{creditUsed.toLocaleString()}.
+                  </div>
+                )}
+
+                {overpaidAmount !== null && overpaidAmount > 0 && (
+                  <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm font-bold">
+                    Overpayment of ₦{overpaidAmount.toLocaleString()} recorded. Support will reconcile or credit this amount.
+                  </div>
+                )}
                 
                 {checkoutUrl ? (
                   <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 text-center">
                     <p className="text-sm font-bold text-slate-700 mb-4">A secure Paystack checkout window has been opened.</p>
-                    <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition">
+                    <button
+                      onClick={() => openCheckoutPopup(checkoutUrl)}
+                      className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition"
+                    >
                       Click here to complete payment
-                    </a>
+                    </button>
+                    {popupBlocked && (
+                      <div className="mt-3 text-[11px] text-slate-500">
+                        Popup blocked? <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="underline">Open in new tab</a>
+                      </div>
+                    )}
                   </div>
                 ) : <div className="space-y-3">
                   {bankAccounts.length === 0 ? (
@@ -426,6 +558,12 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                       setTimeLeft('--:--');
                       setIsExpired(false);
                       setIsConfirmed(false);
+                      setPaidSoFar(null);
+                      setRemainingAmount(null);
+                      setOverpaidAmount(null);
+                      setPopupBlocked(false);
+                      setCreditApplied(false);
+                      setCreditUsed(null);
                     }}
                     className="text-xs text-slate-400 hover:text-indigo-600 underline underline-offset-2 transition-colors"
                   >

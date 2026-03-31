@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User, Copy, Clock, PartyPopper, Zap } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
+import { openPaymentPopup } from './paymentPopup';
+import { subscribePaymentReturn } from './paymentChannel';
 
 import { ToastType } from './ToastSystem';
 
@@ -41,6 +43,13 @@ export default function SmartUpload({
   const [isVerifying, setIsVerifying] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string>('--:--');
+  const [popupBlocked, setPopupBlocked] = useState(false);
+  const [paidSoFar, setPaidSoFar] = useState<number | null>(null);
+  const [remainingAmount, setRemainingAmount] = useState<number | null>(null);
+  const [overpaidAmount, setOverpaidAmount] = useState<number | null>(null);
+  const [creditApplied, setCreditApplied] = useState(false);
+  const [creditUsed, setCreditUsed] = useState<number | null>(null);
+  const [isTopupLoading, setIsTopupLoading] = useState(false);
   const [showAgreement, setShowAgreement] = useState(false);
   const [agreedGuidelines, setAgreedGuidelines] = useState(false);
   const [agreedRefund, setAgreedRefund] = useState(false);
@@ -290,9 +299,32 @@ export default function SmartUpload({
         body: JSON.stringify({ amount: price, gateway: selectedGateway, mode: selectedGateway === 'kora' ? 'checkout' : 'virtual_account' })
       });
       const data = await res.json();
+      if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
+        setHasPaid(true);
+        setCreditApplied(true);
+        setCreditUsed(Number(data.credit_used || 0) || null);
+        setIsVerifying(false);
+        setBankAccounts([]);
+        setCheckoutUrl(null);
+        setPaymentRef(data.reference || null);
+        addToast('Wallet credit applied. You can now upload your manuscript.', 'success');
+        return;
+      }
       if (data.checkout_url) {
         setCheckoutUrl(data.checkout_url);
-        window.open(data.checkout_url, '_blank');
+        setPaidSoFar(null);
+        setRemainingAmount(null);
+        setOverpaidAmount(null);
+        setPopupBlocked(false);
+        setCreditApplied(Boolean(data.credit_applied));
+        setCreditUsed(Number(data.credit_used || 0) || null);
+        if (data.remaining_amount !== undefined) {
+          setRemainingAmount(Number(data.remaining_amount));
+          if (Number(data.remaining_amount) > 0 && Number(data.credit_used || 0) > 0) {
+            setPaidSoFar(Number(data.credit_used));
+          }
+        }
+        openCheckoutPopup(data.checkout_url);
         setPaymentRef(data.reference || ''); 
         setIsVerifying(true);
         setExpiresAt(new Date(Date.now() + 30 * 60000).toISOString());
@@ -304,9 +336,34 @@ export default function SmartUpload({
         setPaymentRef(data.reference);
         setIsVerifying(true);
         setExpiresAt(new Date(Date.now() + 30 * 60000).toISOString());
+        setCreditApplied(Boolean(data.credit_applied));
+        setCreditUsed(Number(data.credit_used || 0) || null);
+        if (data.remaining_amount !== undefined) {
+          setRemainingAmount(Number(data.remaining_amount));
+          if (Number(data.remaining_amount) > 0 && Number(data.credit_used || 0) > 0) {
+            setPaidSoFar(Number(data.credit_used));
+          }
+        }
         addToast('Virtual accounts created. Transfer the exact amount to proceed.', 'info');
       } else if (data.authorization_url) {
-        window.location.href = data.authorization_url;
+        setCheckoutUrl(data.authorization_url);
+        setPaidSoFar(null);
+        setRemainingAmount(null);
+        setOverpaidAmount(null);
+        setPopupBlocked(false);
+        setCreditApplied(Boolean(data.credit_applied));
+        setCreditUsed(Number(data.credit_used || 0) || null);
+        if (data.remaining_amount !== undefined) {
+          setRemainingAmount(Number(data.remaining_amount));
+          if (Number(data.remaining_amount) > 0 && Number(data.credit_used || 0) > 0) {
+            setPaidSoFar(Number(data.credit_used));
+          }
+        }
+        openCheckoutPopup(data.authorization_url);
+        setPaymentRef(data.reference || '');
+        setIsVerifying(true);
+        setExpiresAt(new Date(Date.now() + 30 * 60000).toISOString());
+        addToast('Secure checkout opened. Complete your payment to proceed.', 'info');
       } else {
         throw new Error(data.error || 'Payment gateway error. Please try again.');
       }
@@ -318,27 +375,95 @@ export default function SmartUpload({
     }
   };
 
+  const openCheckoutPopup = (url: string) => {
+    const popup = openPaymentPopup(url, { onBlocked: () => setPopupBlocked(true) });
+    if (popup) setPopupBlocked(false);
+  };
+
+  const handlePayRemaining = async () => {
+    if (!paymentRef) return;
+    setIsTopupLoading(true);
+    try {
+      const res = await fetch('/api/payment/topup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ reference: paymentRef, gateway: selectedGateway })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Top-up failed');
+
+      if (data.credit_used) setCreditUsed(Number(data.credit_used));
+      if (data.remaining_amount !== undefined) setRemainingAmount(Number(data.remaining_amount));
+
+      if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
+        setHasPaid(true);
+        addToast('Wallet credit applied. You can now upload your manuscript.', 'success');
+        return;
+      }
+
+      if (data.checkout_url) {
+        openCheckoutPopup(data.checkout_url);
+      }
+      if (data.bankAccounts) {
+        setBankAccounts(data.bankAccounts);
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Top-up failed. Please try again.', 'error');
+    } finally {
+      setIsTopupLoading(false);
+    }
+  };
+
+  const verifyPaymentOnce = async () => {
+    if (!paymentRef) return;
+    try {
+      const res = await fetch(`/api/payment/verify/${paymentRef}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await res.json();
+      const paidSoFarValue = Number(data?.paid_so_far || 0);
+      const remainingValue = Number(data?.remaining_amount || Math.max(price - paidSoFarValue, 0));
+      const overpaidValue = Number(data?.overpaid || 0);
+
+      if (data.status === 'success') {
+        setHasPaid(true);
+        setIsVerifying(false);
+        setBankAccounts([]);
+        setExpiresAt(null);
+        if (paidSoFarValue > 0) setPaidSoFar(paidSoFarValue);
+        setRemainingAmount(0);
+        if (overpaidValue > 0) setOverpaidAmount(overpaidValue);
+        addToast('Payment confirmed! You can now upload your manuscript.', 'success');
+      } else if (data.status === 'partially_paid') {
+        setPaidSoFar(paidSoFarValue);
+        setRemainingAmount(remainingValue);
+        addToast(`Partial payment detected. Remaining ₦${remainingValue.toLocaleString()}.`, 'error');
+      }
+    } catch {
+      // silent
+    }
+  };
+
 // Poll for payment confirmation after virtual accounts are shown
   useEffect(() => {
     if (!isVerifying || !paymentRef) return;
     const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/payment/verify/${paymentRef}`, {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        const data = await res.json();
-        if (data.status === 'success') {
-          setHasPaid(true);
-          setIsVerifying(false);
-          setBankAccounts([]);
-          setExpiresAt(null);
-          addToast('Payment confirmed! You can now upload your manuscript.', 'success');
-          clearInterval(interval);
-        }
-      } catch (e) { /* silent poll */ }
+      void verifyPaymentOnce();
     }, 8000);
     return () => clearInterval(interval);
   }, [isVerifying, paymentRef]);
+
+  useEffect(() => {
+    if (!paymentRef) return;
+    const unsubscribe = subscribePaymentReturn((message) => {
+      if (message.reference && message.reference !== paymentRef) return;
+      void verifyPaymentOnce();
+    });
+    return unsubscribe;
+  }, [paymentRef, price]);
 
   // Countdown Timer Effect
   useEffect(() => {
@@ -354,6 +479,12 @@ export default function SmartUpload({
         setBankAccounts([]);
         setPaymentRef(null);
         setExpiresAt(null);
+        setPaidSoFar(null);
+        setRemainingAmount(null);
+        setOverpaidAmount(null);
+        setPopupBlocked(false);
+        setCreditApplied(false);
+        setCreditUsed(null);
         setError('Virtual account expired. Please initialize checkout again.');
         setTimeLeft('00:00');
         return;
@@ -475,14 +606,49 @@ export default function SmartUpload({
               </div>
             )}
 
+            {remainingAmount !== null && remainingAmount > 0 && (
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700 text-sm font-bold max-w-md w-full space-y-3">
+                <div>
+                  Partial payment detected. Paid ₦{(paidSoFar || 0).toLocaleString()}. Remaining ₦{remainingAmount.toLocaleString()}.
+                </div>
+                <button
+                  onClick={handlePayRemaining}
+                  disabled={isTopupLoading}
+                  className="w-full bg-amber-600 text-white py-2.5 rounded-xl font-black text-[10px] uppercase tracking-[0.15em] hover:bg-amber-700 transition disabled:opacity-50"
+                >
+                  {isTopupLoading ? 'Processing...' : 'Pay Remaining Balance'}
+                </button>
+              </div>
+            )}
+
+            {creditUsed !== null && creditUsed > 0 && (
+              <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-2xl text-indigo-700 text-sm font-bold max-w-md w-full">
+                Wallet credit applied: ₦{creditUsed.toLocaleString()}.
+              </div>
+            )}
+
+            {overpaidAmount !== null && overpaidAmount > 0 && (
+              <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm font-bold max-w-md w-full">
+                Overpayment of ₦{overpaidAmount.toLocaleString()} recorded. Support will reconcile or credit this amount.
+              </div>
+            )}
+
             {checkoutUrl ? (
               <div className="w-full max-w-lg relative z-10 space-y-6">
                 <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center shadow-sm">
                   <h3 className="text-xl font-black text-indigo-900 mb-2">Checkout Details</h3>
                   <p className="text-sm font-medium text-indigo-700 mb-6">A secure Paystack payment window has been opened. Please complete your transaction.</p>
-                  <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/30">
+                  <button
+                    onClick={() => openCheckoutPopup(checkoutUrl)}
+                    className="inline-block px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/30"
+                  >
                     Open Payment Gateway
-                  </a>
+                  </button>
+                  {popupBlocked && (
+                    <div className="mt-3 text-[11px] text-slate-500">
+                      Popup blocked? <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="underline">Open in new tab</a>
+                    </div>
+                  )}
                 </div>
 
                 {isVerifying && (
