@@ -13,13 +13,14 @@ interface GeniusPaymentModalProps {
   type?: 'attendance' | 'material' | 'assessment' | 'audio' | 'portal_entry';
 }
 
-type Gateway = 'paymentpoint' | 'kora';
+type Gateway = 'paystack' | 'kora';
 
 export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseName, courseId, token, addToast, type = 'attendance' }: GeniusPaymentModalProps) {
-  const [gatewaysStatus, setGatewaysStatus] = useState<{ paymentpoint: boolean, kora: boolean } | null>(null);
+  const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean, kora: boolean } | null>(null);
   const [gateway, setGateway] = useState<Gateway | null>(null);
   const [loading, setLoading] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentAmount, setPaymentAmount] = useState<number>(Number(amount) || 0);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -36,15 +37,15 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         if (!data.error) {
            setGatewaysStatus(data);
            // Auto-select if only one is enabled
-           if (data.paymentpoint && !data.kora) handleGatewaySelect('paymentpoint');
-           else if (!data.paymentpoint && data.kora) handleGatewaySelect('kora');
+           if (data.paystack && !data.kora) handleGatewaySelect('paystack');
+           else if (!data.paystack && data.kora) handleGatewaySelect('kora');
         } else {
-           setGatewaysStatus({ paymentpoint: true, kora: true }); // Fallback
+           setGatewaysStatus({ paystack: true, kora: true }); // Fallback
         }
       })
       .catch((err) => {
         console.error('Failed to fetch gateway config:', err);
-        setGatewaysStatus({ paymentpoint: true, kora: true }); // Fallback
+        setGatewaysStatus({ paystack: true, kora: true }); // Fallback
       });
   }, []);
 
@@ -82,7 +83,9 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
       const data = await response.json();
 
       if (response.ok) {
-        setBankAccounts(data.bankAccounts);
+        setBankAccounts(data.bankAccounts || []);
+        setCheckoutUrl(data.checkout_url || null);
+        if (data.checkout_url) window.open(data.checkout_url, '_blank');
         setPaymentRef(data.reference);
         setPaymentAmount(Number(data.amount || amount || 0));
         setExpiresAt(data.expires_at);
@@ -253,7 +256,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                   <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
                   <p className="text-slate-500 font-bold animate-pulse text-sm">Checking available payment methods...</p>
                 </div>
-              ) : !gatewaysStatus.paymentpoint && !gatewaysStatus.kora ? (
+              ) : !gatewaysStatus.paystack && !gatewaysStatus.kora ? (
                 <div className="text-center py-8">
                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
                      <AlertCircle size={32} />
@@ -270,10 +273,10 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                   <p className="text-slate-500 text-sm font-medium mb-8">Select your preferred payment provider to continue.</p>
 
                   <div className="space-y-4">
-                    {/* PaymentPoint Option */}
-                    {gatewaysStatus.paymentpoint && (
+                    {/* Paystack Option */}
+                    {gatewaysStatus.paystack && (
                       <button
-                        onClick={() => handleGatewaySelect('paymentpoint')}
+                        onClick={() => handleGatewaySelect('paystack')}
                         className="w-full group flex items-center gap-5 p-5 rounded-2xl border-2 border-slate-100 hover:border-indigo-400 hover:bg-indigo-50/40 transition-all text-left"
                       >
                         <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0 group-hover:bg-indigo-600 transition-colors">
@@ -281,7 +284,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                         </div>
                         <div className="flex-1">
                           <p className="font-black text-slate-900 text-base">Standard Gateway</p>
-                          <p className="text-xs text-slate-500 font-medium mt-0.5">Secure bank transfer via PalmPay / OPay</p>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">Secure checkout via card, transfer or USSD</p>
                         </div>
                         <ChevronRight size={20} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
                       </button>
@@ -315,7 +318,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
             /* ── Loading ── */
             <div className="flex-1 flex flex-col items-center justify-center py-12">
               <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
-              <p className="text-slate-500 font-bold animate-pulse text-sm">Generating secure transaction via {gateway === 'kora' ? 'Kora' : 'PaymentPoint'}...</p>
+              <p className="text-slate-500 font-bold animate-pulse text-sm">Generating secure transaction via {gateway === 'kora' ? 'Kora' : 'Paystack'}...</p>
             </div>
           ) : isExpired ? (
             /* ── Expired ── */
@@ -342,7 +345,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                 <div>
                   <h3 className="text-2xl font-black text-slate-900">Payment Details</h3>
                   <p className="text-slate-500 text-sm font-medium">
-                    Via <span className="font-bold text-indigo-600">{gateway === 'kora' ? 'Kora' : 'PaymentPoint'}</span>
+                    Via <span className="font-bold text-indigo-600">{gateway === 'kora' ? 'Kora' : 'Paystack'}</span>
                     {' — '}Complete transfer to {type === 'attendance' ? "log today's attendance" : "gain instant access"}.
                   </p>
                 </div>
@@ -374,7 +377,14 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
               <div className="mb-6">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Transfer exactly ₦{formattedAmount} to:</p>
                 
-                <div className="space-y-3">
+                {checkoutUrl ? (
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 text-center">
+                    <p className="text-sm font-bold text-slate-700 mb-4">A secure Paystack checkout window has been opened.</p>
+                    <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition">
+                      Click here to complete payment
+                    </a>
+                  </div>
+                ) : <div className="space-y-3">
                   {bankAccounts.length === 0 ? (
                     <p className="text-sm text-amber-600 bg-amber-50 p-4 rounded-xl border border-amber-100">
                       Waiting for secure account generation...
@@ -396,16 +406,17 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                       </div>
                     ))
                   )}
-                </div>
+                </div>}
               </div>
 
               {/* Change Gateway Link */}
-              {gatewaysStatus && gatewaysStatus.paymentpoint && gatewaysStatus.kora && (
+              {gatewaysStatus && gatewaysStatus.paystack && gatewaysStatus.kora && (
                 <div className="mb-4 text-center">
                   <button
                     onClick={() => {
                       setGateway(null);
                       setBankAccounts([]);
+                      setCheckoutUrl(null);
                       setPaymentRef('');
                       setPaymentAmount(Number(amount) || 0);
                       setExpiresAt(null);
@@ -424,7 +435,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
               <div className="mt-auto">
                 <button
                   onClick={() => void verifyPaymentStatus(false)}
-                  disabled={isVerifying || isExpired || bankAccounts.length === 0 || isConfirmed}
+                  disabled={isVerifying || isExpired || (bankAccounts.length === 0 && !checkoutUrl) || isConfirmed}
                   className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] flex items-center justify-center gap-3 hover:bg-indigo-600 transition-all disabled:opacity-50"
                 >
                   {isVerifying ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}

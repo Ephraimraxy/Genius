@@ -1126,7 +1126,7 @@ app.post('/api/payment/pin-recovery/initialize', async (req, res) => {
 
 app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: any, res) => {
     try {
-        const { gateway = 'paymentpoint' } = req.body;
+        const { gateway = 'paystack' } = req.body;
 
         const result = await pool.query(
             'SELECT sc.entry_fee FROM student_categories sc JOIN users u ON u.category_id = sc.id WHERE u.id = $1',
@@ -1136,11 +1136,12 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
         const reference = `PORTAL-${Date.now()}-${req.user.id}`;
 
         // Call the appropriate payment gateway to get virtual bank account details
-        let bankAccounts: any[];
+        let bankAccounts: any[] = [];
+    let checkoutUrl: string | null = null;
         if (gateway === 'kora') {
             bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
         } else {
-            bankAccounts = await initializePaymentPointVirtualAccount(req.user);
+            checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
         }
 
         await pool.query(
@@ -1152,7 +1153,7 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
         expires_at_date.setMinutes(expires_at_date.getMinutes() + 30);
         const expires_at = expires_at_date.toISOString();
 
-        res.json({ reference, amount, bankAccounts, expires_at });
+        res.json({ reference, amount, bankAccounts, checkout_url: checkoutUrl, expires_at });
     } catch (err: any) {
         console.error('Portal entry payment init error:', err);
         res.status(500).json({ error: 'Payment initialization failed', details: err.message });
@@ -6015,45 +6016,75 @@ async function verifyKoraCharge(reference: string): Promise<{ status: string; am
   };
 }
 
-// Helper: Create a PaymentPoint virtual account and return bank account details
-async function initializePaymentPointVirtualAccount(user: any): Promise<any[]> {
-  const PAYMENTPOINT_API_KEY = process.env.PAYMENTPOINT_API_KEY;
-  const PAYMENTPOINT_SECRET_KEY = process.env.PAYMENTPOINT_SECRET_KEY;
-  const PAYMENTPOINT_BUSINESS_ID = process.env.PAYMENTPOINT_BUSINESS_ID;
+// Helper: Create a Paystack checkout session
+async function initializePaystackCheckout(user: any, amount: number, reference: string, options: {
+  redirectUrl?: string;
+  channels?: string[];
+} = {}): Promise<string> {
+  const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+  if (!PAYSTACK_SECRET_KEY) throw new Error('Paystack gateway is not configured.');
 
-  if (!PAYMENTPOINT_API_KEY || !PAYMENTPOINT_SECRET_KEY || !PAYMENTPOINT_BUSINESS_ID) {
-    throw new Error('PaymentPoint gateway is not configured.');
-  }
+  const payload: Record<string, any> = {
+    email: user.email,
+    amount: amount * 100, // Paystack uses kobo
+    reference: reference,
+    channels: options.channels || ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer']
+  };
 
-  const response = await fetch('https://api.paymentpoint.co/api/v1/createVirtualAccount', {
+  if (options.redirectUrl) payload.callback_url = options.redirectUrl;
+
+  const response = await fetch('https://api.paystack.co/transaction/initialize', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${PAYMENTPOINT_SECRET_KEY}`,
-      'api-key': PAYMENTPOINT_API_KEY,
+      'Authorization': "Bearer " + PAYSTACK_SECRET_KEY,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      email: user.email,
-      name: user.name || user.email.split('@')[0],
-      phoneNumber: (user.phone || '00000000000').replace(/\D/g, '').slice(-11).padStart(11, '0'),
-      bankCode: ['20946', '20897'],
-      businessId: PAYMENTPOINT_BUSINESS_ID
-    })
+    body: JSON.stringify(payload)
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`PaymentPoint failed (${response.status}): ${errorText}`);
+    throw new Error("Paystack failed (" + response.status + "): " + errorText);
   }
 
   const data = await response.json();
-  if (data.status !== 'success') throw new Error(data.message || 'Virtual account creation failed');
-  return data.bankAccounts || [];
+  if (!data.status) throw new Error(data.message || 'Paystack checkout initialization failed');
+  
+  const checkoutUrl = data.data?.authorization_url;
+  if (!checkoutUrl) throw new Error('Paystack did not return an authorization URL');
+  return checkoutUrl;
+}
+
+// Helper: Verify a Paystack charge by reference
+async function verifyPaystackCharge(reference: string): Promise<{ status: string; amount?: number; amountPaid?: number }> {
+  const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+  if (!PAYSTACK_SECRET_KEY) throw new Error('Paystack gateway is not configured.');
+
+  const response = await fetch("https://api.paystack.co/transaction/verify/" + reference, {
+    method: 'GET',
+    headers: {
+      'Authorization': "Bearer " + PAYSTACK_SECRET_KEY
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error("Paystack verify failed (" + response.status + "): " + errorText);
+  }
+
+  const data = await response.json();
+  if (!data.status) throw new Error(data.message || 'Paystack verify failed');
+
+  return {
+    status: String(data?.data?.status || '').toLowerCase(),
+    amount: Number(data?.data?.requested_amount || 0) / 100,
+    amountPaid: Number(data?.data?.amount || 0) / 100
+  };
 }
 
 // PaymentPoint / Kora — Publication Payment
 app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => {
-  const { amount, type, gateway = 'paymentpoint', mode = 'virtual_account' } = req.body;
+  const { amount, type, gateway = 'paystack', mode = 'virtual_account' } = req.body;
   const reference = `GMIJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
@@ -6069,7 +6100,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
         bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
       }
     } else {
-      bankAccounts = await initializePaymentPointVirtualAccount(req.user);
+      checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
     }
 
     await pool.query(
@@ -6092,17 +6123,18 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
 
 // Student Attendance — PaymentPoint / Kora
 app.post('/api/payment/attendance/initialize', authenticateToken, async (req: any, res) => {
-  const { course_id, amount, gateway = 'paymentpoint' } = req.body;
+  const { course_id, amount, gateway = 'paystack' } = req.body;
   if (!course_id || !amount) return res.status(400).json({ error: 'course_id and amount are required' });
 
   const reference = `ATT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    let bankAccounts: any[];
+    let bankAccounts: any[] = [];
+    let checkoutUrl: string | null = null;
     if (gateway === 'kora') {
       bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
     } else {
-      bankAccounts = await initializePaymentPointVirtualAccount(req.user);
+      checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
     }
     
     const attendance_date = new Date().toISOString().split('T')[0];
@@ -6117,10 +6149,7 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
       [req.user.id, req.tenant_id, reference, amount, 'pending', 'attendance_token', metadata]
     );
     
-    res.json({
-      reference,
-      amount,
-      bankAccounts,
+    res.json({ reference, amount, bankAccounts, checkout_url: checkoutUrl,
       expires_at,
       message: `Transfer ₦${Number(amount).toLocaleString()} to sign attendance for ${course_id}.`
     });
@@ -6160,6 +6189,26 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
         }
       } catch (verifyErr) {
         console.error('Kora verify error:', verifyErr);
+        }
+      } else if (gateway === 'paystack' && process.env.PAYSTACK_SECRET_KEY) {
+        try {
+          const verifyResult = await verifyPaystackCharge(reference);
+          if (verifyResult.status === 'success') {
+            await pool.query(
+              'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+              ['success', JSON.stringify({ paystack_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]
+            );
+            txn.status = 'success';
+          } else if (verifyResult.status === 'failed') {
+            await pool.query(
+              'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+              ['failed', JSON.stringify({ paystack_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]
+            );
+            txn.status = 'failed';
+          }
+        } catch (verifyErr) {
+          console.error('Paystack verify error:', verifyErr);
+        }
       }
     }
 
@@ -6780,17 +6829,18 @@ app.put('/api/exams/:id/settings', authenticateToken, checkSubscription, async (
 
 // Payment for Material Access — PaymentPoint / Kora
 app.post('/api/payment/material/initialize', authenticateToken, async (req: any, res) => {
-  const { resource_id, amount, gateway = 'paymentpoint' } = req.body;
+  const { resource_id, amount, gateway = 'paystack' } = req.body;
   if (!resource_id || !amount) return res.status(400).json({ error: 'resource_id and amount are required' });
 
   const reference = `MAT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    let bankAccounts: any[];
+    let bankAccounts: any[] = [];
+    let checkoutUrl: string | null = null;
     if (gateway === 'kora') {
       bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
     } else {
-      bankAccounts = await initializePaymentPointVirtualAccount(req.user);
+      checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
     }
     
     const resourceRes = await pool.query('SELECT tenant_id FROM resources WHERE id = $1', [resource_id]);
@@ -6801,10 +6851,7 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
       [req.user.id, tenant_id, reference, amount, 'pending', 'material_access', { resource_id, gateway }]
     );
     
-    res.json({
-      reference,
-      amount,
-      bankAccounts,
+    res.json({ reference, amount, bankAccounts, checkout_url: checkoutUrl,
       message: `Transfer ₦${Number(amount).toLocaleString()} to access this material.`
     });
   } catch (err: any) {
@@ -6814,17 +6861,18 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
 
 // Payment for Assessment Access — PaymentPoint / Kora
 app.post('/api/payment/assessment/initialize', authenticateToken, async (req: any, res) => {
-  const { exam_id, amount, gateway = 'paymentpoint' } = req.body;
+  const { exam_id, amount, gateway = 'paystack' } = req.body;
   if (!exam_id || !amount) return res.status(400).json({ error: 'exam_id and amount are required' });
 
   const reference = `ASM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
-    let bankAccounts: any[];
+    let bankAccounts: any[] = [];
+    let checkoutUrl: string | null = null;
     if (gateway === 'kora') {
       bankAccounts = await initializeKoraVirtualAccount(req.user, amount, reference);
     } else {
-      bankAccounts = await initializePaymentPointVirtualAccount(req.user);
+      checkoutUrl = await initializePaystackCheckout(req.user, amount, reference);
     }
     
     const examRes = await pool.query('SELECT tenant_id FROM exams WHERE id = $1', [exam_id]);
@@ -6835,10 +6883,7 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
       [req.user.id, tenant_id, reference, amount, 'pending', 'assessment_access', { exam_id, gateway }]
     );
     
-    res.json({
-      reference,
-      amount,
-      bankAccounts,
+    res.json({ reference, amount, bankAccounts, checkout_url: checkoutUrl,
       message: `Transfer ₦${Number(amount).toLocaleString()} to access this assessment.`
     });
   } catch (err: any) {

@@ -13,7 +13,7 @@ export default function AdminSettings() {
   const [loadingHealth, setLoadingHealth] = useState(true);
 
   // Gateways State
-  const [gateways, setGateways] = useState({ paymentpoint: true, kora: true });
+  const [gateways, setGateways] = useState({ paystack: true, kora: true });
   const [savingGateways, setSavingGateways] = useState(false);
 
   // Journal Settings State
@@ -143,7 +143,7 @@ export default function AdminSettings() {
     setSaving(false);
   };
 
-  const handleToggleGateway = async (key: 'paymentpoint' | 'kora') => {
+  const handleToggleGateway = async (key: 'paystack' | 'kora') => {
     setSavingGateways(true);
     const newGateways = { ...gateways, [key]: !gateways[key] };
     try {
@@ -518,22 +518,22 @@ export default function AdminSettings() {
             <p className="text-xs text-slate-500 mt-1">Control which gateways users see when initiating a transaction.</p>
           </div>
           <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* PaymentPoint Toggle */}
-            <div className={`p-6 rounded-2xl border-2 transition-all ${gateways.paymentpoint ? 'border-indigo-100 bg-indigo-50/30' : 'border-slate-100 bg-slate-50 opacity-70'}`}>
+            {/* Paystack Toggle */}
+            <div className={`p-6 rounded-2xl border-2 transition-all ${gateways.paystack ? 'border-indigo-100 bg-indigo-50/30' : 'border-slate-100 bg-slate-50 opacity-70'}`}>
               <div className="flex items-start justify-between mb-4">
                 <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600">
                   <CreditCard size={24} />
                 </div>
                 <button 
-                  onClick={() => handleToggleGateway('paymentpoint')}
+                  onClick={() => handleToggleGateway('paystack')}
                   disabled={savingGateways}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${gateways.paymentpoint ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${gateways.paystack ? 'bg-indigo-600' : 'bg-slate-300'}`}
                 >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${gateways.paymentpoint ? 'translate-x-6' : 'translate-x-1'}`} />
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${gateways.paystack ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
-              <h4 className="text-lg font-black text-slate-900 mb-1">PaymentPoint</h4>
-              <p className="text-xs font-medium text-slate-500">Enable PalmPay/OPay virtual account generation for users.</p>
+              <h4 className="text-lg font-black text-slate-900 mb-1">Paystack</h4>
+              <p className="text-xs font-medium text-slate-500">Enable card, bank transfer, and USSD payments.</p>
             </div>
 
             {/* Kora Toggle */}

@@ -43,8 +43,8 @@ export default function SmartUpload({
   const [showAgreement, setShowAgreement] = useState(false);
   const [agreedGuidelines, setAgreedGuidelines] = useState(false);
   const [agreedRefund, setAgreedRefund] = useState(false);
-  const [gatewaysStatus, setGatewaysStatus] = useState<{ paymentpoint: boolean; kora: boolean } | null>(null);
-  const [selectedGateway, setSelectedGateway] = useState<'paymentpoint' | 'kora' | null>(null);
+  const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean; kora: boolean } | null>(null);
+  const [selectedGateway, setSelectedGateway] = useState<'paystack' | 'kora' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const buildStructuralAudit = (validationResult: any) => {
@@ -85,14 +85,14 @@ export default function SmartUpload({
       .then(data => {
         if (!isMounted) return;
         const status = {
-          paymentpoint: data?.paymentpoint !== false,
+          paystack: data?.paystack !== false,
           kora: data?.kora !== false
         };
         setGatewaysStatus(status);
       })
       .catch(() => {
         if (!isMounted) return;
-        setGatewaysStatus({ paymentpoint: true, kora: true });
+        setGatewaysStatus({ paystack: true, kora: true });
       });
     return () => {
       isMounted = false;
@@ -269,7 +269,7 @@ export default function SmartUpload({
       setShowAgreement(true);
       return;
     }
-    if (gatewaysStatus && !gatewaysStatus.paymentpoint && !gatewaysStatus.kora) {
+    if (gatewaysStatus && !gatewaysStatus.paystack && !gatewaysStatus.kora) {
       setError('All payment gateways are currently disabled. Please contact support.');
       return;
     }
@@ -417,7 +417,7 @@ export default function SmartUpload({
 
             {gatewaysStatus && bankAccounts.length === 0 && (
               <div className="w-full max-w-md mb-10 relative z-10">
-                {!gatewaysStatus.paymentpoint && !gatewaysStatus.kora ? (
+                {!gatewaysStatus.paystack && !gatewaysStatus.kora ? (
                   <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-sm font-bold">
                     All payment gateways are currently disabled. Please contact support.
                   </div>
@@ -425,19 +425,19 @@ export default function SmartUpload({
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Payment Method</label>
                     <div className="grid gap-3">
-                      {gatewaysStatus.paymentpoint && (
+                      {gatewaysStatus.paystack && (
                         <button
                           type="button"
-                          onClick={() => setSelectedGateway('paymentpoint')}
+                          onClick={() => setSelectedGateway('paystack')}
                           disabled={isPaying}
                           className={`w-full text-left px-4 py-3 rounded-xl border text-sm font-bold transition-all ${
-                            selectedGateway === 'paymentpoint'
+                            selectedGateway === 'paystack'
                               ? 'border-[#800000] bg-[#800000]/5 text-[#800000]'
                               : 'border-slate-200 text-slate-700 hover:border-[#800000]/40'
                           }`}
                         >
-                          PaymentPoint
-                          <span className="block text-[11px] text-slate-400 font-medium mt-1">Bank transfer virtual account</span>
+                          Paystack
+                          <span className="block text-[11px] text-slate-400 font-medium mt-1">Card, bank transfer, USSD, and more</span>
                         </button>
                       )}
                       {gatewaysStatus.kora && (
@@ -517,7 +517,7 @@ export default function SmartUpload({
               selectedGateway && (
                 <button
                   onClick={handlePayment}
-                  disabled={isPaying || (!!gatewaysStatus && !gatewaysStatus.paymentpoint && !gatewaysStatus.kora)}
+                  disabled={isPaying || (!!gatewaysStatus && !gatewaysStatus.paystack && !gatewaysStatus.kora)}
                   className="px-12 py-5 premium-gradient text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl shadow-[#800000]/30 hover:scale-105 transition-all flex items-center gap-4 disabled:opacity-50 relative z-10"
                 >
                   {isPaying ? (

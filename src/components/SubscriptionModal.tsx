@@ -18,6 +18,7 @@ interface SubscriptionModalProps {
 export default function SubscriptionModal({ profile, onSuccess, addToast }: SubscriptionModalProps) {
   const [loading, setLoading] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentAmount, setPaymentAmount] = useState(0);
   const price = profile?.subscriptionPrice || 15000;
@@ -36,8 +37,10 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Payment failed to initialize.');
 
-      // Display the virtual account details for bank transfer
+      // Display checkout or virtual accounts
       setBankAccounts(data.bankAccounts || []);
+      setCheckoutUrl(data.checkout_url || null);
+      if (data.checkout_url) window.open(data.checkout_url, '_blank');
       setPaymentRef(data.reference);
       setPaymentAmount(data.amount || price);
       addToast('Virtual account generated. Transfer to activate.', 'info');
@@ -51,7 +54,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
 
   useEffect(() => {
     let pollInterval: any;
-    if (paymentRef && bankAccounts.length > 0) {
+    if (paymentRef && (bankAccounts.length > 0 || checkoutUrl)) {
       pollInterval = setInterval(async () => {
         try {
           const res = await fetch(`/api/payment/verify/${paymentRef}`, {
@@ -131,7 +134,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
 
         {/* Right Action Side */}
         <div className="w-full md:w-7/12 p-6 md:p-10 flex flex-col justify-center bg-white">
-          {bankAccounts.length === 0 ? (
+          {bankAccounts.length === 0 && !checkoutUrl ? (
             <>
               {/* Initial state — show pricing & activate button */}
               <div className="mb-4 md:mb-6 text-center md:text-left">
@@ -152,7 +155,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                   <span className="text-slate-400 text-sm md:text-base font-bold">/year</span>
                 </div>
                 <p className="text-[8px] md:text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
-                  Secure payment handled by <span className="text-indigo-600">PaymentPoint</span> PCI-DSS gateway.
+                  Secure payment handled by <span className="text-indigo-600">Paystack</span> PCI-DSS gateway.
                 </p>
               </div>
 
@@ -172,8 +175,18 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
             </>
           ) : (
             <>
-              {/* Bank transfer details — shown after API call succeeds */}
-              <div className="mb-6 text-center md:text-left">
+              {/* Checkout or Bank transfer details — shown after API call succeeds */}
+              {checkoutUrl ? (
+                <div className="mb-6 text-center md:text-left bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
+                  <h3 className="text-slate-900 text-xl font-black mb-2">Checkout Details</h3>
+                  <p className="text-sm text-slate-600 mb-4">A secure Paystack payment window has been opened. Please complete your transaction.</p>
+                  <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition">
+                      Open Payment Gateway
+                  </a>
+                </div>
+              ) : (
+              <>
+                <div className="mb-6 text-center md:text-left">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 mb-3">
                   <Building2 size={10} />
                   <span className="text-[10px] font-black uppercase tracking-widest">Bank Transfer</span>
@@ -201,6 +214,8 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                   </div>
                 ))}
               </div>
+              </>
+              )}
 
               <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 mb-4">
                 <p className="text-[10px] font-bold text-indigo-700 leading-relaxed">
