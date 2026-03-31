@@ -6171,8 +6171,9 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
     if (!txn) return res.status(404).json({ status: 'not_found', error: 'Transaction not found' });
 
     const gateway = txn.metadata?.gateway || txn.metadata?.gateway?.toString?.();
-    if (txn.status !== 'success' && gateway === 'kora' && process.env.KORA_SECRET_KEY) {
-      try {
+    if (txn.status !== 'success') {
+      if (gateway === 'kora' && process.env.KORA_SECRET_KEY) {
+        try {
         const verifyResult = await verifyKoraCharge(reference);
         if (verifyResult.status === 'success') {
           await pool.query(
