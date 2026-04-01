@@ -191,6 +191,15 @@ export default function SmartUpload({
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
           });
           const data = await res.json();
+          if (!res.ok) {
+            if (res.status === 404 || res.status === 401) {
+              addToast('Old payment reference is no longer valid. Please start a new payment.', 'info');
+              window.history.replaceState({}, document.title, window.location.pathname);
+              return;
+            }
+            addToast(data.error || 'Payment verification failed. Please contact support.', 'error');
+            return;
+          }
           if (data.status === 'success') {
             setHasPaid(true);
             addToast('Neural Registry Unlocked. Payment Verified!', 'success');

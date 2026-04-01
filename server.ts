@@ -1278,6 +1278,7 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
         params.push(tenantId);
     }
 
+    query += ' ORDER BY created_at DESC LIMIT 1';
     const result = await pool.query(query, params);
     if (result.rows.length === 0) return res.status(401).json({ error: 'Access Denied: You are not registered in this lecturer\'s workspace.' });
     
