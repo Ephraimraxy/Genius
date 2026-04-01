@@ -68,6 +68,7 @@ export default function Sidebar({
     { id: 'users', label: 'User Directory', icon: Users },
     { id: 'tokenStatus', label: 'Token Tracking', icon: CreditCard },
     { id: 'reviewQueue', label: 'Review Queue', icon: FileText },
+    { id: 'paymentEvents', label: 'Payment Events', icon: CreditCard, section: 'Finance' },
     { id: 'settings', label: 'System Settings', icon: Settings, section: 'Core' },
   ];
 

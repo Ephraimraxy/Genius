@@ -27,6 +27,7 @@ export default function SmartUpload({
   onNavigate?: (tab: string) => void,
   onQuickPublish?: () => void
 }) {
+  const MAX_AUTO_RETRY = 1;
   const [isUploading, setIsUploading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [metadata, setMetadata] = useState<any>(null);
@@ -57,6 +58,14 @@ export default function SmartUpload({
   const [creditApplied, setCreditApplied] = useState(false);
   const [creditUsed, setCreditUsed] = useState<number | null>(null);
   const [isTopupLoading, setIsTopupLoading] = useState(false);
+  const [inlineRef, setInlineRef] = useState<string | null>(null);
+  const [needsNewReference, setNeedsNewReference] = useState(false);
+  const [checkoutData, setCheckoutData] = useState<any>(null);
+  const [retryMode, setRetryMode] = useState<'init' | 'topup'>('init');
+  const [autoRetryCount, setAutoRetryCount] = useState(0);
+  const [isAutoRetrying, setIsAutoRetrying] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isPaymentCancelled, setIsPaymentCancelled] = useState(false);
   const [showAgreement, setShowAgreement] = useState(false);
   const [agreedGuidelines, setAgreedGuidelines] = useState(false);
   const [agreedRefund, setAgreedRefund] = useState(false);
@@ -115,6 +124,15 @@ export default function SmartUpload({
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    setInlineRef(null);
+    setNeedsNewReference(false);
+    setAutoRetryCount(0);
+    setIsAutoRetrying(false);
+    setIsPaymentCancelled(false);
+    setRetryMode('init');
+  }, [selectedGateway]);
 
   const handleUpdateMetadata = async () => {
     if (!paperId || !editedMetadata) return;
@@ -281,7 +299,7 @@ export default function SmartUpload({
     }
   };
 
-  const handlePayment = async () => {
+  const handlePayment = async (options: { isRetry?: boolean } = {}) => {
     if (!agreedGuidelines || !agreedRefund) {
       setShowAgreement(true);
       return;
@@ -295,6 +313,14 @@ export default function SmartUpload({
       return;
     }
     setIsPaying(true);
+    if (!options.isRetry) {
+      setAutoRetryCount(0);
+    }
+    setIsPaymentCancelled(false);
+    setRetryMode('init');
+    setInlineRef(null);
+    setNeedsNewReference(false);
+    setCheckoutData(null);
     setError(null);
     try {
       const res = await fetch('/api/payment/initialize', {
@@ -303,7 +329,7 @@ export default function SmartUpload({
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ amount: price, gateway: selectedGateway, mode: 'checkout' })
+        body: JSON.stringify({ amount: price, gateway: selectedGateway, mode: 'inline' })
       });
       const data = await res.json();
       if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
@@ -318,6 +344,7 @@ export default function SmartUpload({
         return;
       }
       if (data.checkout_url) {
+        setCheckoutData(data);
         setCheckoutUrl(data.checkout_url);
         setPaidSoFar(null);
         setRemainingAmount(null);
@@ -331,10 +358,11 @@ export default function SmartUpload({
             setPaidSoFar(Number(data.credit_used));
           }
         }
+        const checkoutUrl = data.checkout_url || data.authorization_url;
         if (data.publicKey && data.reference) {
-          openCheckoutPopup(data);
-        } else if (data.checkout_url) {
-          openCheckoutPopup(data.checkout_url);
+          openInlineCheckout(data);
+        } else if (checkoutUrl) {
+          openInlineCheckout(data);
         }
         setPaymentRef(data.reference || ''); 
         setIsVerifying(true);
@@ -343,6 +371,7 @@ export default function SmartUpload({
         return;
       }
       if (data.bankAccounts && data.bankAccounts.length > 0) {
+        setCheckoutData(data);
         setBankAccounts(data.bankAccounts);
         setPaymentRef(data.reference);
         setIsVerifying(true);
@@ -357,6 +386,7 @@ export default function SmartUpload({
         }
         addToast('Virtual accounts created. Transfer the exact amount to proceed.', 'info');
       } else if (data.authorization_url) {
+        setCheckoutData(data);
         setCheckoutUrl(data.authorization_url);
         setPaidSoFar(null);
         setRemainingAmount(null);
@@ -370,10 +400,11 @@ export default function SmartUpload({
             setPaidSoFar(Number(data.credit_used));
           }
         }
+        const checkoutUrl = data.checkout_url || data.authorization_url;
         if (data.publicKey && data.reference) {
-          openCheckoutPopup(data);
-        } else if (data.authorization_url) {
-          openCheckoutPopup(data.authorization_url);
+          openInlineCheckout(data);
+        } else if (checkoutUrl) {
+          openInlineCheckout(data);
         }
         setPaymentRef(data.reference || '');
         setIsVerifying(true);
@@ -390,67 +421,118 @@ export default function SmartUpload({
     }
   };
 
-  const handlePaystackSDK = (data: any) => {
-    if (!window.PaystackPop) {
-      addToast('Paystack SDK not loaded yet. Please wait or refresh.', 'error');
+  const openCheckoutPopup = (url?: string | null) => {
+    if (!url) return;
+    const popup = openPaymentPopup(url, {
+      onBlocked: () => setPopupBlocked(true)
+    });
+    if (!popup) setPopupBlocked(true);
+  };
+
+  const openInlineCheckout = (data: any) => {
+    const reference = data?.reference;
+    if (!reference) {
+      addToast('Missing payment reference. Please retry.', 'error');
       return;
     }
 
-    const handler = window.PaystackPop.setup({
-      key: data.publicKey,
-      email: data.email,
-      amount: Math.round(data.amount * 100), // in kobo
-      currency: data.currency || 'NGN',
-      ref: data.reference,
-      onClose: () => {
-        addToast('Payment window closed.', 'info');
-      },
-      callback: (response: any) => {
-        console.log('Paystack success response:', response);
-        verifyPaymentOnce();
-      }
-    });
-    handler.openIframe();
-  };
-
-  const handleKoraSDK = (data: any) => {
-    if (!window.Korapay) {
-      addToast('Kora SDK not loaded yet. Please wait or refresh.', 'error');
+    if (isPaymentCancelled || needsNewReference) {
+      setNeedsNewReference(true);
+      addToast('This checkout was cancelled. Generate a new reference to retry.', 'info');
       return;
     }
 
-    window.Korapay.initialize({
-      key: data.publicKey,
-      reference: data.reference,
-      amount: data.amount,
-      currency: data.currency || "NGN",
-      customer: {
-        email: data.email,
-        name: researcherName || ""
-      },
-      onClose: () => {
-        addToast('Payment window closed.', 'info');
-      },
-      onSuccess: (response: any) => {
-        console.log('Kora success response:', response);
-        verifyPaymentOnce();
-      }
-    });
-  };
-
-  const openCheckoutPopup = (data: any) => {
-    if (selectedGateway === 'paystack') {
-      handlePaystackSDK(data);
-    } else if (selectedGateway === 'kora') {
-      handleKoraSDK(data);
-    } else if (data.checkout_url) {
-      // Fallback
-      window.open(data.checkout_url, '_blank', 'width=600,height=700');
+    if (inlineRef && inlineRef === reference) {
+      setNeedsNewReference(true);
+      addToast('This checkout was already opened. Generate a new reference to retry.', 'info');
+      return;
     }
+
+    setInlineRef(reference);
+    setNeedsNewReference(false);
+
+    if (selectedGateway === 'paystack' && window.PaystackPop && data?.publicKey) {
+      const fallbackAmount = Number(data?.amount_naira ?? price ?? 0);
+      const amountKobo = Number(data?.amount_kobo ?? data?.amount ?? 0) || Math.round(fallbackAmount * 100);
+      const email = data?.email || data?.customer?.email || '';
+      const handler = window.PaystackPop.setup({
+        key: data.publicKey,
+        email,
+        amount: amountKobo,
+        currency: data.currency || 'NGN',
+        ref: reference,
+        onClose: () => {
+          if (isPaymentCancelled) return;
+          if (!isAutoRetrying && autoRetryCount < MAX_AUTO_RETRY) {
+            setIsAutoRetrying(true);
+            setAutoRetryCount((count) => count + 1);
+            addToast('Checkout closed. Reinitializing a fresh reference...', 'info');
+            if (retryMode === 'topup') {
+              void handlePayRemaining().finally(() => setIsAutoRetrying(false));
+            } else {
+              void handlePayment({ isRetry: true }).finally(() => setIsAutoRetrying(false));
+            }
+            return;
+          }
+          setNeedsNewReference(true);
+          addToast('Payment window closed. Generate a new checkout to retry.', 'info');
+        },
+        callback: () => {
+          verifyPaymentOnce();
+        }
+      });
+      handler.openIframe();
+      return;
+    }
+
+    if (selectedGateway === 'kora' && window.Korapay && data?.publicKey) {
+      const amountNaira = Number(data?.amount_naira ?? data?.amount ?? price ?? 0);
+      const email = data?.email || data?.customer?.email || '';
+      const name = data?.name || data?.customer?.name || '';
+      window.Korapay.initialize({
+        key: data.publicKey,
+        reference,
+        amount: amountNaira,
+        currency: data.currency || 'NGN',
+        customer: {
+          email,
+          name
+        },
+        onClose: () => {
+          if (isPaymentCancelled) return;
+          if (!isAutoRetrying && autoRetryCount < MAX_AUTO_RETRY) {
+            setIsAutoRetrying(true);
+            setAutoRetryCount((count) => count + 1);
+            addToast('Checkout closed. Reinitializing a fresh reference...', 'info');
+            if (retryMode === 'topup') {
+              void handlePayRemaining().finally(() => setIsAutoRetrying(false));
+            } else {
+              void handlePayment({ isRetry: true }).finally(() => setIsAutoRetrying(false));
+            }
+            return;
+          }
+          setNeedsNewReference(true);
+          addToast('Payment window closed. Generate a new checkout to retry.', 'info');
+        },
+        onSuccess: () => {
+          verifyPaymentOnce();
+        }
+      });
+      return;
+    }
+
+    const checkoutUrl = data?.checkout_url || data?.authorization_url;
+    if (checkoutUrl) {
+      openCheckoutPopup(checkoutUrl);
+      return;
+    }
+
+    addToast('Unable to open checkout. Please retry.', 'error');
   };
 
   const handlePayRemaining = async () => {
     if (!paymentRef) return;
+    setRetryMode('topup');
     setIsTopupLoading(true);
     try {
       const res = await fetch('/api/payment/topup', {
@@ -459,13 +541,14 @@ export default function SmartUpload({
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ reference: paymentRef, gateway: selectedGateway })
+        body: JSON.stringify({ reference: paymentRef, gateway: selectedGateway, mode: 'inline' })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Top-up failed');
 
       if (data.credit_used) setCreditUsed(Number(data.credit_used));
       if (data.remaining_amount !== undefined) setRemainingAmount(Number(data.remaining_amount));
+      setCheckoutData(data);
 
       if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
         setHasPaid(true);
@@ -474,9 +557,9 @@ export default function SmartUpload({
       }
 
       if (data.publicKey && data.reference) {
-        openCheckoutPopup(data);
-      } else if (data.checkout_url) {
-        openCheckoutPopup(data.checkout_url);
+        openInlineCheckout(data);
+      } else if (data.checkout_url || data.authorization_url) {
+        openInlineCheckout(data);
       }
       if (data.bankAccounts) {
         setBankAccounts(data.bankAccounts);
@@ -485,6 +568,31 @@ export default function SmartUpload({
       addToast(err.message || 'Top-up failed. Please try again.', 'error');
     } finally {
       setIsTopupLoading(false);
+    }
+  };
+
+  const handleCancelPayment = async () => {
+    if (!paymentRef) return;
+    setIsCancelling(true);
+    try {
+      const response = await fetch('/api/payment/abandon', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ reference: paymentRef, reason: 'user_cancel' })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to cancel payment');
+      setIsPaymentCancelled(true);
+      setNeedsNewReference(true);
+      setRetryMode('init');
+      addToast('Payment cancelled. Reference marked abandoned.', 'info');
+    } catch (err: any) {
+      addToast(err.message || 'Unable to cancel payment.', 'error');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -535,6 +643,10 @@ export default function SmartUpload({
     });
     return unsubscribe;
   }, [paymentRef, price]);
+
+  useEffect(() => {
+    if (paymentRef) setNeedsNewReference(false);
+  }, [paymentRef]);
 
   // Countdown Timer Effect
   useEffect(() => {
@@ -700,24 +812,50 @@ export default function SmartUpload({
 
             {overpaidAmount !== null && overpaidAmount > 0 && (
               <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm font-bold max-w-md w-full">
-                Overpayment of ₦{overpaidAmount.toLocaleString()} recorded. Support will reconcile or credit this amount.
+                Overpayment of ₦{overpaidAmount.toLocaleString()} detected. A refund will be initiated automatically.
               </div>
             )}
 
-            {checkoutUrl ? (
+            {(checkoutUrl || (checkoutData && checkoutData.publicKey)) ? (
               <div className="w-full max-w-lg relative z-10 space-y-6">
                 <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center shadow-sm">
                   <h3 className="text-xl font-black text-indigo-900 mb-2">Checkout Details</h3>
                   <p className="text-sm font-medium text-indigo-700 mb-6">A secure Paystack payment window has been opened. Please complete your transaction.</p>
                   <button
-                    onClick={() => openCheckoutPopup(checkoutUrl)}
+                    onClick={() => {
+                      if (checkoutData) {
+                        openInlineCheckout(checkoutData);
+                      } else {
+                        openCheckoutPopup(checkoutUrl);
+                      }
+                    }}
                     className="inline-block px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/30"
                   >
                     Open Payment Gateway
                   </button>
-                  {popupBlocked && (
+                  <div className="mt-3">
+                    <button
+                      onClick={handleCancelPayment}
+                      disabled={isCancelling || !paymentRef}
+                      className="text-[11px] font-bold text-slate-500 hover:text-rose-600 underline underline-offset-2 disabled:opacity-50"
+                    >
+                      {isCancelling ? 'Cancelling...' : 'Cancel payment'}
+                    </button>
+                  </div>
+                  {checkoutUrl && popupBlocked && (
                     <div className="mt-3 text-[11px] text-slate-500">
                       Popup blocked? <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="underline">Open in new tab</a>
+                    </div>
+                  )}
+                  {needsNewReference && (
+                    <div className="mt-3 text-[11px] text-amber-600 font-bold">
+                      This reference was already used.{' '}
+                      <button
+                        onClick={handlePayment}
+                        className="underline"
+                      >
+                        Generate a new checkout
+                      </button>
                     </div>
                   )}
                 </div>
@@ -764,6 +902,17 @@ export default function SmartUpload({
                       <p className="text-xs font-bold text-slate-500 mt-2">{acct.accountName || 'GMIJP Publication'}</p>
                     </div>
                   ))}
+                  {paymentRef && (
+                    <div className="text-center">
+                      <button
+                        onClick={handleCancelPayment}
+                        disabled={isCancelling}
+                        className="text-[11px] font-bold text-slate-500 hover:text-rose-600 underline underline-offset-2 disabled:opacity-50"
+                      >
+                        {isCancelling ? 'Cancelling...' : 'Cancel payment'}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {isVerifying && (

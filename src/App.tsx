@@ -35,11 +35,12 @@ import StudentMaterialView from './components/StudentMaterialView';
 import TokenStatusView from './components/TokenStatusView';
 import VideoLectures from './components/VideoLectures';
 import QuickPublishModal from './components/QuickPublishModal';
+import PaymentEventsAdmin from './components/PaymentEventsAdmin';
 
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff, Zap } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'apa_validation' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures';
+export type Tab = 'dashboard' | 'upload' | 'apa_validation' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures' | 'paymentEvents';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -70,7 +71,8 @@ const TAB_LABELS: Record<Tab, string> = {
   materials: 'Lecture Materials',
   lectureRecords: 'Manage Records',
   videoLectures: 'Video Lectures',
-  apa_validation: 'APA Rule Engine'
+  apa_validation: 'APA Rule Engine',
+  paymentEvents: 'Payment Events'
 };
 
 const SplashScreen = ({ onComplete, themeColor = '#800000', accentColor = '#ff4d4d' }: { onComplete: () => void, themeColor?: string, accentColor?: string }) => {
@@ -606,6 +608,7 @@ export default function App() {
       case 'reviewQueue': return <ReviewQueue initialStatusFilter="pending" profile={profile} />;
       case 'globalReviews': return <ReviewQueue initialStatusFilter="all" profile={profile} />;
       case 'settings': return <AdminSettings />;
+      case 'paymentEvents': return isAdmin ? <PaymentEventsAdmin /> : <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
       case 'profile': return <ProfileView profile={profile} addToast={addToast} onProfileUpdate={() => {
         fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } })
           .then(res => res.json())

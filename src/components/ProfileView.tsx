@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink, User, Save, X, Mail, Building, Shield, FileText, CheckCircle2, Loader2, Plus, Trash2 } from 'lucide-react';
+import { MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink, User, Save, X, Mail, Building, Shield, FileText, CheckCircle2, Loader2, Plus, Trash2, Wallet } from 'lucide-react';
 
 export default function ProfileView({ profile, addToast, onProfileUpdate }: { profile: any, addToast?: (msg: string, type?: string) => void, onProfileUpdate?: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -11,6 +11,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
   const publications = scholarProfile?.publications || [];
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const isLecturer = user?.role === 'tenant_admin';
+  const creditBalance = Number(user?.credit_balance || 0);
 
   const [editName, setEditName] = useState(user?.name || '');
   const [editAffiliation, setEditAffiliation] = useState(user?.affiliation || '');
@@ -242,6 +243,12 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Affiliation</p>
             <p className="text-sm font-bold text-slate-900">{user?.affiliation || 'Not set'}</p>
+          </div>
+          <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+              <Wallet size={12} className="text-emerald-500" /> Wallet Credit
+            </p>
+            <p className="text-sm font-bold text-emerald-600">₦{creditBalance.toLocaleString()}</p>
           </div>
         </div>
       </div>

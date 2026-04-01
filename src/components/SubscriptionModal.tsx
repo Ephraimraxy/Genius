@@ -27,6 +27,7 @@ interface SubscriptionModalProps {
 type Gateway = 'paystack' | 'kora';
 
 export default function SubscriptionModal({ profile, onSuccess, addToast }: SubscriptionModalProps) {
+  const MAX_AUTO_RETRY = 1;
   const [loading, setLoading] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
@@ -41,6 +42,14 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
   const [creditApplied, setCreditApplied] = useState(false);
   const [creditUsed, setCreditUsed] = useState<number | null>(null);
   const [isTopupLoading, setIsTopupLoading] = useState(false);
+  const [inlineRef, setInlineRef] = useState<string | null>(null);
+  const [needsNewReference, setNeedsNewReference] = useState(false);
+  const [checkoutData, setCheckoutData] = useState<any>(null);
+  const [retryMode, setRetryMode] = useState<'init' | 'topup'>('init');
+  const [autoRetryCount, setAutoRetryCount] = useState(0);
+  const [isAutoRetrying, setIsAutoRetrying] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isPaymentCancelled, setIsPaymentCancelled] = useState(false);
   const price = profile?.subscriptionPrice || 15000;
 
   useEffect(() => {
@@ -55,8 +64,25 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       .catch(() => setGatewaysStatus({ paystack: true, kora: true }));
   }, []);
 
-  const handleSubscribe = async () => {
+  useEffect(() => {
+    setInlineRef(null);
+    setNeedsNewReference(false);
+    setAutoRetryCount(0);
+    setIsAutoRetrying(false);
+    setIsPaymentCancelled(false);
+    setRetryMode('init');
+  }, [selectedGateway]);
+
+  const handleSubscribe = async (options: { isRetry?: boolean } = {}) => {
     setLoading(true);
+    if (!options.isRetry) {
+      setAutoRetryCount(0);
+    }
+    setIsPaymentCancelled(false);
+    setRetryMode('init');
+    setInlineRef(null);
+    setNeedsNewReference(false);
+    setCheckoutData(null);
     try {
       const res = await fetch('/api/payment/initialize', {
         method: 'POST',
@@ -64,12 +90,13 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ amount: price, type: 'subscription', gateway: selectedGateway, mode: 'checkout' })
+        body: JSON.stringify({ amount: price, type: 'subscription', gateway: selectedGateway, mode: 'inline' })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Payment failed to initialize.');
 
       // Display checkout or virtual accounts
+      setCheckoutData(data);
       setBankAccounts(data.bankAccounts || []);
       setCheckoutUrl(data.checkout_url || null);
       setPaidSoFar(null);
@@ -78,13 +105,15 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       setPopupBlocked(false);
       setCreditApplied(Boolean(data.credit_applied));
       setCreditUsed(Number(data.credit_used || 0) || null);
+      const checkoutUrl = data.checkout_url || data.authorization_url;
       if (data.publicKey && data.reference) {
-        openCheckoutPopup(data);
-      } else if (data.checkout_url) {
-        openCheckoutPopup(data.checkout_url);
+        openInlineCheckout(data);
+      } else if (checkoutUrl) {
+        openInlineCheckout(data);
       }
       setPaymentRef(data.reference);
-      setPaymentAmount(data.amount || price);
+      const displayAmount = Number(data.amount_naira ?? price ?? 0);
+      setPaymentAmount(displayAmount);
       if (data.remaining_amount !== undefined) {
         setRemainingAmount(Number(data.remaining_amount));
         if (Number(data.remaining_amount) > 0 && Number(data.credit_used || 0) > 0) {
@@ -109,67 +138,118 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
     }
   };
 
-  const handlePaystackSDK = (data: any) => {
-    if (!window.PaystackPop) {
-      addToast('Paystack SDK not loaded yet. Please wait or refresh.', 'error');
+  const openCheckoutPopup = (url?: string | null) => {
+    if (!url) return;
+    const popup = openPaymentPopup(url, {
+      onBlocked: () => setPopupBlocked(true)
+    });
+    if (!popup) setPopupBlocked(true);
+  };
+
+  const openInlineCheckout = (data: any) => {
+    const reference = data?.reference;
+    if (!reference) {
+      addToast('Missing payment reference. Please retry.', 'error');
       return;
     }
 
-    const handler = window.PaystackPop.setup({
-      key: data.publicKey,
-      email: data.email,
-      amount: Math.round(data.amount * 100), // in kobo
-      currency: data.currency || 'NGN',
-      ref: data.reference,
-      onClose: () => {
-        addToast('Payment window closed.', 'info');
-      },
-      callback: (response: any) => {
-        console.log('Paystack success response:', response);
-        checkPaymentStatusOnce();
-      }
-    });
-    handler.openIframe();
-  };
-
-  const handleKoraSDK = (data: any) => {
-    if (!window.Korapay) {
-      addToast('Kora SDK not loaded yet. Please wait or refresh.', 'error');
+    if (isPaymentCancelled || needsNewReference) {
+      setNeedsNewReference(true);
+      addToast('This checkout was cancelled. Generate a new reference to retry.', 'info');
       return;
     }
 
-    window.Korapay.initialize({
-      key: data.publicKey,
-      reference: data.reference,
-      amount: data.amount,
-      currency: data.currency || "NGN",
-      customer: {
-        email: data.email,
-        name: profile?.name || ""
-      },
-      onClose: () => {
-        addToast('Payment window closed.', 'info');
-      },
-      onSuccess: (response: any) => {
-        console.log('Kora success response:', response);
-        checkPaymentStatusOnce();
-      }
-    });
-  };
-
-  const openCheckoutPopup = (data: any) => {
-    if (selectedGateway === 'paystack') {
-      handlePaystackSDK(data);
-    } else if (selectedGateway === 'kora') {
-      handleKoraSDK(data);
-    } else if (data.checkout_url) {
-      // Fallback
-      window.open(data.checkout_url, '_blank', 'width=600,height=700');
+    if (inlineRef && inlineRef === reference) {
+      setNeedsNewReference(true);
+      addToast('This checkout was already opened. Generate a new reference to retry.', 'info');
+      return;
     }
+
+    setInlineRef(reference);
+    setNeedsNewReference(false);
+
+    if (selectedGateway === 'paystack' && window.PaystackPop && data?.publicKey) {
+      const fallbackAmount = Number(data?.amount_naira ?? price ?? 0);
+      const amountKobo = Number(data?.amount_kobo ?? data?.amount ?? 0) || Math.round(fallbackAmount * 100);
+      const email = data?.email || data?.customer?.email || '';
+      const handler = window.PaystackPop.setup({
+        key: data.publicKey,
+        email,
+        amount: amountKobo,
+        currency: data.currency || 'NGN',
+        ref: reference,
+        onClose: () => {
+          if (isPaymentCancelled) return;
+          if (!isAutoRetrying && autoRetryCount < MAX_AUTO_RETRY) {
+            setIsAutoRetrying(true);
+            setAutoRetryCount((count) => count + 1);
+            addToast('Checkout closed. Reinitializing a fresh reference...', 'info');
+            if (retryMode === 'topup') {
+              void handlePayRemaining().finally(() => setIsAutoRetrying(false));
+            } else {
+              void handleSubscribe({ isRetry: true }).finally(() => setIsAutoRetrying(false));
+            }
+            return;
+          }
+          setNeedsNewReference(true);
+          addToast('Payment window closed. Generate a new checkout to retry.', 'info');
+        },
+        callback: () => {
+          checkPaymentStatusOnce();
+        }
+      });
+      handler.openIframe();
+      return;
+    }
+
+    if (selectedGateway === 'kora' && window.Korapay && data?.publicKey) {
+      const amountNaira = Number(data?.amount_naira ?? data?.amount ?? price ?? 0);
+      const email = data?.email || data?.customer?.email || '';
+      const name = data?.name || data?.customer?.name || '';
+      window.Korapay.initialize({
+        key: data.publicKey,
+        reference,
+        amount: amountNaira,
+        currency: data.currency || 'NGN',
+        customer: {
+          email,
+          name
+        },
+        onClose: () => {
+          if (isPaymentCancelled) return;
+          if (!isAutoRetrying && autoRetryCount < MAX_AUTO_RETRY) {
+            setIsAutoRetrying(true);
+            setAutoRetryCount((count) => count + 1);
+            addToast('Checkout closed. Reinitializing a fresh reference...', 'info');
+            if (retryMode === 'topup') {
+              void handlePayRemaining().finally(() => setIsAutoRetrying(false));
+            } else {
+              void handleSubscribe({ isRetry: true }).finally(() => setIsAutoRetrying(false));
+            }
+            return;
+          }
+          setNeedsNewReference(true);
+          addToast('Payment window closed. Generate a new checkout to retry.', 'info');
+        },
+        onSuccess: () => {
+          checkPaymentStatusOnce();
+        }
+      });
+      return;
+    }
+
+    const checkoutUrl = data?.checkout_url || data?.authorization_url;
+    if (checkoutUrl) {
+      openCheckoutPopup(checkoutUrl);
+      return;
+    }
+
+    addToast('Unable to open checkout. Please retry.', 'error');
   };
 
   const handlePayRemaining = async () => {
     if (!paymentRef) return;
+    setRetryMode('topup');
     setIsTopupLoading(true);
     try {
       const res = await fetch('/api/payment/topup', {
@@ -178,13 +258,14 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ reference: paymentRef, gateway: selectedGateway })
+        body: JSON.stringify({ reference: paymentRef, gateway: selectedGateway, mode: 'inline' })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Top-up failed');
 
       if (data.credit_used) setCreditUsed(Number(data.credit_used));
       if (data.remaining_amount !== undefined) setRemainingAmount(Number(data.remaining_amount));
+      setCheckoutData(data);
 
       if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
         addToast('Wallet credit applied. Workspace activating...', 'success');
@@ -193,9 +274,9 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       }
 
       if (data.publicKey && data.reference) {
-        openCheckoutPopup(data);
-      } else if (data.checkout_url) {
-        openCheckoutPopup(data.checkout_url);
+        openInlineCheckout(data);
+      } else if (data.checkout_url || data.authorization_url) {
+        openInlineCheckout(data);
       }
       if (data.bankAccounts) {
         setBankAccounts(data.bankAccounts);
@@ -204,6 +285,31 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       addToast(err.message || 'Top-up failed. Please try again.', 'error');
     } finally {
       setIsTopupLoading(false);
+    }
+  };
+
+  const handleCancelPayment = async () => {
+    if (!paymentRef) return;
+    setIsCancelling(true);
+    try {
+      const response = await fetch('/api/payment/abandon', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ reference: paymentRef, reason: 'user_cancel' })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to cancel payment');
+      setIsPaymentCancelled(true);
+      setNeedsNewReference(true);
+      setRetryMode('init');
+      addToast('Payment cancelled. Reference marked abandoned.', 'info');
+    } catch (err: any) {
+      addToast(err.message || 'Unable to cancel payment.', 'error');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -237,7 +343,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
 
   useEffect(() => {
     let pollInterval: any;
-    if (paymentRef && (bankAccounts.length > 0 || checkoutUrl)) {
+    if (paymentRef && (bankAccounts.length > 0 || checkoutUrl || (checkoutData && checkoutData.publicKey))) {
       pollInterval = setInterval(() => {
         void checkPaymentStatusOnce();
       }, 10000); // Poll every 10 seconds
@@ -253,6 +359,10 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
     });
     return unsubscribe;
   }, [paymentRef, paymentAmount]);
+
+  useEffect(() => {
+    if (paymentRef) setNeedsNewReference(false);
+  }, [paymentRef]);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -425,23 +535,49 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
 
               {overpaidAmount !== null && overpaidAmount > 0 && (
                 <div className="mb-4 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-emerald-700 text-xs font-bold">
-                  Overpayment of ₦{overpaidAmount.toLocaleString()} recorded. Support will reconcile or credit this amount.
+                  Overpayment of ₦{overpaidAmount.toLocaleString()} detected. A refund will be initiated automatically.
                 </div>
               )}
 
-              {checkoutUrl ? (
+              {(checkoutUrl || (checkoutData && checkoutData.publicKey)) ? (
                 <div className="mb-6 text-center md:text-left bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
                   <h3 className="text-slate-900 text-xl font-black mb-2">Checkout Details</h3>
                   <p className="text-sm text-slate-600 mb-4">A secure Paystack payment window has been opened. Please complete your transaction.</p>
                   <button
-                    onClick={() => openCheckoutPopup(checkoutUrl)}
+                    onClick={() => {
+                      if (checkoutData) {
+                        openInlineCheckout(checkoutData);
+                      } else {
+                        openCheckoutPopup(checkoutUrl);
+                      }
+                    }}
                     className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition"
                   >
                     Open Payment Gateway
                   </button>
-                  {popupBlocked && (
+                  <div className="mt-3">
+                    <button
+                      onClick={handleCancelPayment}
+                      disabled={isCancelling || !paymentRef}
+                      className="text-[11px] font-bold text-slate-500 hover:text-rose-600 underline underline-offset-2 disabled:opacity-50"
+                    >
+                      {isCancelling ? 'Cancelling...' : 'Cancel payment'}
+                    </button>
+                  </div>
+                  {checkoutUrl && popupBlocked && (
                     <div className="mt-3 text-[11px] text-slate-500">
                       Popup blocked? <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="underline">Open in new tab</a>
+                    </div>
+                  )}
+                  {needsNewReference && (
+                    <div className="mt-3 text-[11px] text-amber-600 font-bold">
+                      This reference was already used.{' '}
+                      <button
+                        onClick={handleSubscribe}
+                        className="underline"
+                      >
+                        Generate a new checkout
+                      </button>
                     </div>
                   )}
                 </div>
@@ -474,6 +610,17 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                     <p className="text-xs font-bold text-slate-500">{acct.accountName}</p>
                   </div>
                 ))}
+                {paymentRef && (
+                  <div className="text-center">
+                    <button
+                      onClick={handleCancelPayment}
+                      disabled={isCancelling}
+                      className="text-[11px] font-bold text-slate-500 hover:text-rose-600 underline underline-offset-2 disabled:opacity-50"
+                    >
+                      {isCancelling ? 'Cancelling...' : 'Cancel payment'}
+                    </button>
+                  </div>
+                )}
               </div>
               </>
               )}

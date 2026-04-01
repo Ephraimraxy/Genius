@@ -401,6 +401,22 @@ const recomputeTransaction = async (reference: string, sourceGateway: string) =>
   const paidSoFar = await sumPaymentEvents(reference);
   const remainingAmount = Math.max(requiredAmount - paidSoFar, 0);
   const overpaid = Math.max(paidSoFar - requiredAmount, 0);
+  const wasAbandoned = tx.status === 'abandoned' || meta?.abandoned;
+
+  if (wasAbandoned && paidSoFar <= 0) {
+    const updateMeta: Record<string, any> = {
+      paid_so_far: paidSoFar,
+      remaining_amount: remainingAmount,
+      overpaid,
+      abandoned: true,
+      abandoned_at: meta?.abandoned_at || new Date().toISOString()
+    };
+    await pool.query(
+      'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+      ['abandoned', JSON.stringify(updateMeta), tx.id]
+    );
+    return { status: 'abandoned', paidSoFar, remainingAmount, overpaid };
+  }
 
   let nextStatus = tx.status;
   if (paidSoFar <= 0) {
@@ -439,12 +455,7 @@ const recomputeTransaction = async (reference: string, sourceGateway: string) =>
     }
   }
 
-  if (nextStatus === 'success' && overpaid > 0 && !isTopup && !meta?.credit_applied) {
-    await pool.query('UPDATE users SET credit_balance = credit_balance + $1 WHERE id = $2', [overpaid, tx.user_id]);
-    await pool.query(
-      'UPDATE transactions SET metadata = metadata || $1 WHERE id = $2',
-      [JSON.stringify({ credit_applied: true, credit_amount: overpaid }), tx.id]
-    );
+  if (nextStatus === 'success' && overpaid > 0 && !isTopup && !meta?.refund_requested) {
     const overpaidInserted = await insertPaymentEvent({
       reference,
       gateway: sourceGateway,
@@ -453,10 +464,61 @@ const recomputeTransaction = async (reference: string, sourceGateway: string) =>
       eventKey: `overpaid:${reference}:${overpaid}`,
       payload: { overpaid }
     });
-    if (overpaidInserted) {
+
+    try {
+      const refundResult = await requestGatewayRefund(sourceGateway, reference, overpaid);
+      await pool.query(
+        'UPDATE transactions SET metadata = metadata || $1 WHERE id = $2',
+        [JSON.stringify({
+          refund_requested: true,
+          refund_status: refundResult.status,
+          refund_reference: refundResult.refundReference,
+          refund_amount: overpaid,
+          refund_gateway: sourceGateway,
+          refund_requested_at: new Date().toISOString()
+        }), tx.id]
+      );
+
+      await insertPaymentEvent({
+        reference,
+        gateway: sourceGateway,
+        eventType: 'refund_requested',
+        amount: overpaid,
+        eventKey: `refund:${reference}:${overpaid}`,
+        payload: refundResult.payload
+      });
+
+      if (overpaidInserted) {
+        await sendAdminPaymentAlert(
+          `Overpayment refund initiated (${reference})`,
+          `<p>Reference: ${reference}</p><p>Overpaid: NGN${overpaid}</p><p>Refund request sent via ${sourceGateway}.</p>`
+        );
+      }
+    } catch (err: any) {
+      await pool.query(
+        'UPDATE transactions SET metadata = metadata || $1 WHERE id = $2',
+        [JSON.stringify({
+          refund_requested: true,
+          refund_status: 'failed',
+          refund_amount: overpaid,
+          refund_gateway: sourceGateway,
+          refund_error: err?.message || 'Refund request failed',
+          refund_requested_at: new Date().toISOString()
+        }), tx.id]
+      );
+
+      await insertPaymentEvent({
+        reference,
+        gateway: sourceGateway,
+        eventType: 'refund_failed',
+        amount: overpaid,
+        eventKey: `refund_failed:${reference}:${overpaid}`,
+        payload: { error: err?.message || 'Refund request failed' }
+      });
+
       await sendAdminPaymentAlert(
-        `Overpayment credited (${reference})`,
-        `<p>Reference: ${reference}</p><p>Overpaid: ₦${overpaid}</p><p>Credit applied to user wallet.</p>`
+        `Overpayment refund failed (${reference})`,
+        `<p>Reference: ${reference}</p><p>Overpaid: NGN${overpaid}</p><p>Refund request failed. Error: ${err?.message || 'Unknown error'}</p>`
       );
     }
   }
@@ -1343,7 +1405,9 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
         const chargeAmount = creditResult.chargeAmount;
         if (chargeAmount > 0) {
             if (gateway === 'kora') {
-                if (mode === 'checkout') {
+                if (mode === 'inline') {
+                    paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
+                } else if (mode === 'checkout') {
                     paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
                       redirectUrl,
                       notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -1352,7 +1416,11 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
                     bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
                 }
             } else {
-                paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+                if (mode === 'inline') {
+                    paymentResponse = buildPaystackInlinePayload(req.user, chargeAmount, reference);
+                } else {
+                    paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+                }
             }
         }
 
@@ -5319,7 +5387,7 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
     const userId = req.user.id;
 
     // Always fetch fresh user data from database (not stale JWT)
-    const userResult = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number, level FROM users WHERE id = $1', [userId]);
+    const userResult = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number, level, credit_balance FROM users WHERE id = $1', [userId]);
     let freshUser = userResult.rows[0];
     if (!freshUser) return res.status(404).json({ error: 'User not found' });
 
@@ -5838,6 +5906,70 @@ app.get('/article/:doi(*)', async (req, res) => {
 });
 
 // ─── ADMIN-ONLY ENDPOINTS ──────────────────────────────────────────
+app.get('/api/admin/payment-events', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const limitRaw = parseInt(String(req.query.limit || '50'), 10);
+    const offsetRaw = parseInt(String(req.query.offset || '0'), 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+    const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+    const q = String(req.query.q || '').trim();
+    const eventType = String(req.query.event_type || '').trim();
+    const gateway = String(req.query.gateway || '').trim();
+
+    const where: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (q) {
+      where.push(`(pe.reference ILIKE $${idx} OR u.email ILIKE $${idx} OR u.name ILIKE $${idx})`);
+      values.push(`%${q}%`);
+      idx += 1;
+    }
+    if (eventType) {
+      where.push(`pe.event_type = $${idx}`);
+      values.push(eventType);
+      idx += 1;
+    }
+    if (gateway) {
+      where.push(`pe.gateway = $${idx}`);
+      values.push(gateway);
+      idx += 1;
+    }
+
+    const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const query = `
+      SELECT 
+        pe.id,
+        pe.reference,
+        pe.gateway,
+        pe.event_type,
+        pe.amount,
+        pe.payload,
+        pe.created_at,
+        t.type AS transaction_type,
+        t.status AS transaction_status,
+        t.amount AS transaction_amount,
+        t.user_id,
+        u.name AS user_name,
+        u.email AS user_email
+      FROM payment_events pe
+      LEFT JOIN transactions t ON t.reference = pe.reference
+      LEFT JOIN users u ON u.id = t.user_id
+      ${whereClause}
+      ORDER BY pe.created_at DESC
+      LIMIT $${idx} OFFSET $${idx + 1}
+    `;
+
+    values.push(limit, offset);
+    const result = await pool.query(query, values);
+    res.json({ events: result.rows, limit, offset });
+  } catch (error) {
+    console.error('Payment events fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch payment events' });
+  }
+});
 app.get('/api/admin/users', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
@@ -6234,6 +6366,7 @@ async function initializeKoraCheckout(user: any, amount: number, reference: stri
   checkoutUrl: string; 
   publicKey: string; 
   amount: number; 
+  amount_naira?: number;
   currency: string; 
   reference: string; 
   customer: { email: string; name: string } 
@@ -6279,11 +6412,44 @@ async function initializeKoraCheckout(user: any, amount: number, reference: stri
     checkoutUrl,
     publicKey: KORA_PUBLIC_KEY,
     amount,
+    amount_naira: amount,
     currency: 'NGN',
     reference,
     customer: payload.customer
   };
 }
+
+const buildPaystackInlinePayload = (user: any, amount: number, reference: string) => {
+  const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || '';
+  return {
+    publicKey: PAYSTACK_PUBLIC_KEY,
+    email: user.email,
+    name: user.name || user.email?.split?.('@')?.[0] || '',
+    amount_kobo: Math.round(Number(amount || 0) * 100),
+    amount_naira: Number(amount || 0),
+    currency: 'NGN',
+    reference
+  };
+};
+
+const buildKoraInlinePayload = (user: any, amount: number, reference: string) => {
+  const KORA_PUBLIC_KEY = process.env.KORA_PUBLIC_KEY || '';
+  const email = user.email;
+  const name = user.name || user.email?.split?.('@')?.[0] || '';
+  return {
+    publicKey: KORA_PUBLIC_KEY,
+    amount: Number(amount || 0),
+    amount_naira: Number(amount || 0),
+    currency: 'NGN',
+    reference,
+    email,
+    name,
+    customer: {
+      email,
+      name
+    }
+  };
+};
 
 // Helper: Verify a Korapay charge by reference
 async function verifyKoraCharge(reference: string): Promise<{ status: string; amount?: number; amountPaid?: number }> {
@@ -6320,6 +6486,8 @@ async function initializePaystackCheckout(user: any, amount: number, reference: 
   checkoutUrl: string; 
   publicKey: string; 
   amount: number; 
+  amount_kobo?: number;
+  amount_naira?: number;
   email: string; 
   reference: string; 
 }> {
@@ -6360,6 +6528,8 @@ async function initializePaystackCheckout(user: any, amount: number, reference: 
     checkoutUrl,
     publicKey: PAYSTACK_PUBLIC_KEY,
     amount: payload.amount,
+    amount_kobo: payload.amount,
+    amount_naira: Number(amount || 0),
     email: user.email,
     reference
   };
@@ -6392,6 +6562,87 @@ async function verifyPaystackCharge(reference: string): Promise<{ status: string
   };
 }
 
+type RefundResult = {
+  status: string;
+  refundReference?: string;
+  payload: any;
+};
+
+async function requestPaystackRefund(reference: string, amount: number): Promise<RefundResult> {
+  const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+  if (!PAYSTACK_SECRET_KEY) throw new Error('Paystack gateway is not configured.');
+
+  const payload = {
+    transaction: reference,
+    amount: Math.max(1, Math.round(Number(amount || 0) * 100))
+  };
+
+  const response = await fetch('https://api.paystack.co/refund', {
+    method: 'POST',
+    headers: {
+      'Authorization': "Bearer " + PAYSTACK_SECRET_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error("Paystack refund failed (" + response.status + "): " + errorText);
+  }
+
+  const data = await response.json();
+  if (!data.status) throw new Error(data.message || 'Paystack refund request failed');
+
+  return {
+    status: String(data?.data?.status || 'requested').toLowerCase(),
+    refundReference: data?.data?.reference || data?.data?.refund_reference || data?.data?.id,
+    payload: data
+  };
+}
+
+async function requestKoraRefund(reference: string, amount: number): Promise<RefundResult> {
+  const KORA_SECRET_KEY = process.env.KORA_SECRET_KEY;
+  if (!KORA_SECRET_KEY) throw new Error('Kora gateway is not configured.');
+
+  const payload = {
+    reference,
+    amount: Math.max(1, Math.round(Number(amount || 0))),
+    currency: 'NGN',
+    reason: 'Overpayment refund'
+  };
+
+  const response = await fetch('https://api.korapay.com/merchant/api/v1/refunds', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${KORA_SECRET_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Kora refund failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (!data.status) throw new Error(data.message || 'Kora refund request failed');
+
+  return {
+    status: String(data?.data?.status || 'requested').toLowerCase(),
+    refundReference: data?.data?.reference || data?.data?.id,
+    payload: data
+  };
+}
+
+async function requestGatewayRefund(gateway: string, reference: string, amount: number): Promise<RefundResult> {
+  if (gateway === 'kora') {
+    return requestKoraRefund(reference, amount);
+  }
+  return requestPaystackRefund(reference, amount);
+}
+
 // PaymentPoint / Kora — Publication Payment
 app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => {
   const { amount, type, gateway = 'paystack', mode = 'virtual_account' } = req.body;
@@ -6408,7 +6659,9 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
 
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
-        if (mode === 'checkout') {
+        if (mode === 'inline') {
+          paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
+        } else if (mode === 'checkout') {
           paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -6417,7 +6670,11 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
           bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
         }
       } else {
-        paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        if (mode === 'inline') {
+          paymentResponse = buildPaystackInlinePayload(req.user, chargeAmount, reference);
+        } else {
+          paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        }
       }
     }
 
@@ -6489,7 +6746,9 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
     const chargeAmount = creditResult.chargeAmount;
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
-        if (mode === 'checkout') {
+        if (mode === 'inline') {
+          paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
+        } else if (mode === 'checkout') {
           paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -6498,7 +6757,11 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
           bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
         }
       } else {
-        paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        if (mode === 'inline') {
+          paymentResponse = buildPaystackInlinePayload(req.user, chargeAmount, reference);
+        } else {
+          paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        }
       }
     }
     
@@ -6613,7 +6876,9 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
     let paymentResponse: any = null;
 
     if (resolvedGateway === 'kora') {
-      if (mode === 'checkout') {
+      if (mode === 'inline') {
+        paymentResponse = buildKoraInlinePayload(req.user, newRemaining, topupRef);
+      } else if (mode === 'checkout') {
         paymentResponse = await initializeKoraCheckout(req.user, newRemaining, topupRef, {
           redirectUrl,
           notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -6622,7 +6887,11 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
         bankAccounts = await initializeKoraVirtualAccount(req.user, newRemaining, topupRef);
       }
     } else {
-      paymentResponse = await initializePaystackCheckout(req.user, newRemaining, topupRef, { redirectUrl });
+      if (mode === 'inline') {
+        paymentResponse = buildPaystackInlinePayload(req.user, newRemaining, topupRef);
+      } else {
+        paymentResponse = await initializePaystackCheckout(req.user, newRemaining, topupRef, { redirectUrl });
+      }
     }
 
 
@@ -6670,6 +6939,53 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
   } catch (err: any) {
     console.error('Topup payment init error:', err);
     res.status(500).json({ error: 'Topup initialization failed', details: err.message });
+  }
+});
+
+app.post('/api/payment/abandon', authenticateToken, async (req: any, res) => {
+  try {
+    const { reference, reason } = req.body || {};
+    if (!reference) {
+      return res.status(400).json({ error: 'Reference is required' });
+    }
+
+    const txRes = await pool.query(
+      'SELECT id, status, amount, metadata FROM transactions WHERE reference = $1 AND user_id = $2',
+      [reference, req.user.id]
+    );
+    const tx = txRes.rows[0];
+    if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+
+    if (tx.status === 'success') {
+      return res.status(409).json({ error: 'Completed payments cannot be cancelled' });
+    }
+
+    const meta = safeJsonParse<any>(tx.metadata, {});
+    const abandonedPayload = {
+      abandoned: true,
+      abandoned_at: new Date().toISOString(),
+      abandoned_reason: reason || 'user_cancel',
+      abandoned_by: req.user.id
+    };
+
+    await pool.query(
+      'UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
+      ['abandoned', JSON.stringify(abandonedPayload), tx.id]
+    );
+
+    await insertPaymentEvent({
+      reference,
+      gateway: meta?.gateway || 'unknown',
+      eventType: 'abandoned',
+      amount: 0,
+      eventKey: `abandoned:${reference}`,
+      payload: abandonedPayload
+    });
+
+    res.json({ status: 'abandoned', reference });
+  } catch (error) {
+    console.error('Payment abandon error:', error);
+    res.status(500).json({ error: 'Unable to cancel payment right now' });
   }
 });
 
@@ -7403,7 +7719,9 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
     const chargeAmount = creditResult.chargeAmount;
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
-        if (mode === 'checkout') {
+        if (mode === 'inline') {
+          paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
+        } else if (mode === 'checkout') {
           paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -7412,7 +7730,11 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
           bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
         }
       } else {
-        paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        if (mode === 'inline') {
+          paymentResponse = buildPaystackInlinePayload(req.user, chargeAmount, reference);
+        } else {
+          paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        }
       }
     }
     
@@ -7475,7 +7797,9 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
     const chargeAmount = creditResult.chargeAmount;
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
-        if (mode === 'checkout') {
+        if (mode === 'inline') {
+          paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
+        } else if (mode === 'checkout') {
           paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -7484,7 +7808,11 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
           bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
         }
       } else {
-        paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        if (mode === 'inline') {
+          paymentResponse = buildPaystackInlinePayload(req.user, chargeAmount, reference);
+        } else {
+          paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+        }
       }
     }
     
