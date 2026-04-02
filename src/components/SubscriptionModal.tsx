@@ -191,7 +191,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
           addToast('Payment window closed. Generate a new checkout to retry.', 'info');
         },
         callback: () => {
-          checkPaymentStatusOnce();
+          checkPaymentStatusOnce(false, reference);
         }
       });
       handler.openIframe();
@@ -228,7 +228,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
           addToast('Payment window closed. Generate a new checkout to retry.', 'info');
         },
         onSuccess: () => {
-          checkPaymentStatusOnce();
+          checkPaymentStatusOnce(false, reference);
         }
       });
       return;
@@ -262,6 +262,10 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       if (data.credit_used) setCreditUsed(Number(data.credit_used));
       if (data.remaining_amount !== undefined) setRemainingAmount(Number(data.remaining_amount));
       setCheckoutData(data);
+      // Update paymentRef to topup reference so polling and callbacks verify the correct transaction
+      if (data.reference && data.reference !== paymentRef) {
+        setPaymentRef(data.reference);
+      }
 
       if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
         addToast('Wallet credit applied. Workspace activating...', 'success');
@@ -309,10 +313,11 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
     }
   };
 
-  const checkPaymentStatusOnce = async () => {
-    if (!paymentRef) return;
+  const checkPaymentStatusOnce = async (silent = false, refOverride?: string) => {
+    const ref = refOverride || paymentRef;
+    if (!ref) return;
     try {
-      const res = await fetch(`/api/payment/verify/${paymentRef}`, {
+      const res = await fetch(`/api/payment/verify/${ref}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (!res.ok) return;
@@ -330,7 +335,9 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       } else if (data.status === 'partially_paid') {
         setPaidSoFar(paidSoFarValue);
         setRemainingAmount(remainingValue);
-        addToast(`Partial payment detected. Remaining ₦${remainingValue.toLocaleString()}.`, 'error');
+        if (!silent) {
+          addToast(`Partial payment detected. Remaining ₦${remainingValue.toLocaleString()}.`, 'error');
+        }
       }
     } catch (e) {
       console.error('Polling error:', e);
@@ -341,8 +348,8 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
     let pollInterval: any;
     if (paymentRef && (bankAccounts.length > 0 || checkoutUrl || (checkoutData && checkoutData.publicKey))) {
       pollInterval = setInterval(() => {
-        void checkPaymentStatusOnce();
-      }, 10000); // Poll every 10 seconds
+        void checkPaymentStatusOnce(true);
+      }, 10000); // Poll silently every 10 seconds — no toast spam
     }
     return () => clearInterval(pollInterval);
   }, [paymentRef, bankAccounts, checkoutUrl, paymentAmount]);
@@ -351,7 +358,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
     if (!paymentRef) return;
     const unsubscribe = subscribePaymentReturn((message) => {
       if (message.reference && message.reference !== paymentRef) return;
-      void checkPaymentStatusOnce();
+      void checkPaymentStatusOnce(false);
     });
     return unsubscribe;
   }, [paymentRef, paymentAmount]);

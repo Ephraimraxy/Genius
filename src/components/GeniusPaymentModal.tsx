@@ -225,7 +225,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
           addToast('Payment window closed. Generate a new checkout to retry.', 'info');
         },
         callback: () => {
-          void verifyPaymentStatus(true);
+          void verifyPaymentStatus(true, reference);
         }
       });
       handler.openIframe();
@@ -262,7 +262,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
           addToast('Payment window closed. Generate a new checkout to retry.', 'info');
         },
         onSuccess: () => {
-          void verifyPaymentStatus(true);
+          void verifyPaymentStatus(true, reference);
         }
       });
       return;
@@ -300,6 +300,10 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         setRemainingAmount(Number(data.remaining_amount));
       }
       setCheckoutData(data);
+      // Update paymentRef to topup reference so polling and callbacks verify the correct transaction
+      if (data.reference && data.reference !== paymentRef) {
+        setPaymentRef(data.reference);
+      }
 
       if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
         addToast('Wallet credit applied. Access unlocked.', 'success');
@@ -382,15 +386,16 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
     onSuccess();
   };
 
-  const verifyPaymentStatus = async (silent = false) => {
-    if (!paymentRef || !token || isConfirmed) return;
+  const verifyPaymentStatus = async (silent = false, refOverride?: string) => {
+    const ref = refOverride || paymentRef;
+    if (!ref || !token || isConfirmed) return;
 
     if (!silent) {
       setIsVerifying(true);
     }
 
     try {
-      const response = await fetch(`/api/payment/verify/${paymentRef}`, {
+      const response = await fetch(`/api/payment/verify/${ref}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();

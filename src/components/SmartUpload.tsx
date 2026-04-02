@@ -106,6 +106,20 @@ export default function SmartUpload({
 
   useEffect(() => {
     let isMounted = true;
+    // Check for existing unpaid/paid-but-not-uploaded publication credit on mount
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetch('/api/payment/credit', { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(res => res.json())
+        .then(data => {
+          if (!isMounted) return;
+          if (data?.hasCredit) {
+            setHasPaid(true);
+            if (data.reference) setPaymentRef(data.reference);
+          }
+        })
+        .catch(() => {/* silently ignore — user will see payment gate */});
+    }
     fetch('/api/payment/gateways')
       .then(res => res.json())
       .then(data => {
@@ -502,7 +516,7 @@ export default function SmartUpload({
           addToast('Payment window closed. Generate a new checkout to retry.', 'info');
         },
         callback: () => {
-          verifyPaymentOnce();
+          verifyPaymentOnce(false, reference);
         }
       });
       handler.openIframe();
@@ -539,7 +553,7 @@ export default function SmartUpload({
           addToast('Payment window closed. Generate a new checkout to retry.', 'info');
         },
         onSuccess: () => {
-          verifyPaymentOnce();
+          verifyPaymentOnce(false, reference);
         }
       });
       return;
@@ -573,6 +587,10 @@ export default function SmartUpload({
       if (data.credit_used) setCreditUsed(Number(data.credit_used));
       if (data.remaining_amount !== undefined) setRemainingAmount(Number(data.remaining_amount));
       setCheckoutData(data);
+      // Update paymentRef to topup reference so polling and callbacks verify the correct transaction
+      if (data.reference && data.reference !== paymentRef) {
+        setPaymentRef(data.reference);
+      }
 
       if (data.credit_applied && Number(data.remaining_amount || 0) === 0) {
         setHasPaid(true);
@@ -620,10 +638,11 @@ export default function SmartUpload({
     }
   };
 
-  const verifyPaymentOnce = async () => {
-    if (!paymentRef) return;
+  const verifyPaymentOnce = async (silent = false, refOverride?: string) => {
+    const ref = refOverride || paymentRef;
+    if (!ref) return;
     try {
-      const res = await fetch(`/api/payment/verify/${paymentRef}`, {
+      const res = await fetch(`/api/payment/verify/${ref}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       const data = await res.json();
@@ -643,18 +662,20 @@ export default function SmartUpload({
       } else if (data.status === 'partially_paid') {
         setPaidSoFar(paidSoFarValue);
         setRemainingAmount(remainingValue);
-        addToast(`Partial payment detected. Remaining ₦${remainingValue.toLocaleString()}.`, 'error');
+        if (!silent) {
+          addToast(`Partial payment detected. Remaining ₦${remainingValue.toLocaleString()}.`, 'error');
+        }
       }
     } catch {
       // silent
     }
   };
 
-// Poll for payment confirmation after virtual accounts are shown
+// Poll for payment confirmation silently — no toast spam on each interval
   useEffect(() => {
     if (!isVerifying || !paymentRef) return;
     const interval = setInterval(async () => {
-      void verifyPaymentOnce();
+      void verifyPaymentOnce(true);
     }, 8000);
     return () => clearInterval(interval);
   }, [isVerifying, paymentRef]);
@@ -663,7 +684,7 @@ export default function SmartUpload({
     if (!paymentRef) return;
     const unsubscribe = subscribePaymentReturn((message) => {
       if (message.reference && message.reference !== paymentRef) return;
-      void verifyPaymentOnce();
+      void verifyPaymentOnce(false);
     });
     return unsubscribe;
   }, [paymentRef, price]);
