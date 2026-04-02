@@ -193,7 +193,7 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
 
         {!result && !isValidating && !error && (
           <div className="bg-white p-16 rounded-[2.5rem] shadow-2xl border border-slate-100 text-center relative overflow-hidden group">
-            <div className="absolute inset-0 premium-gradient opacity-0 group-hover:opacity-[0.02] transition-opacity"></div>
+            <div className="absolute inset-0 premium-gradient opacity-0 group-hover:opacity-[0.02] transition-opacity pointer-events-none"></div>
             <button 
               onClick={() => runValidation(currentPhase)}
               className="px-10 py-5 bg-slate-900 border-b-4 border-black hover:bg-slate-800 text-white rounded-2xl font-black uppercase tracking-widest text-sm flex items-center gap-3 mx-auto transition-all active:translate-y-1"

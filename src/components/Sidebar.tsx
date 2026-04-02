@@ -26,7 +26,8 @@ import {
   GraduationCap,
   Database,
   Volume2,
-  Video
+  Video,
+  Zap
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -41,16 +42,37 @@ interface SidebarProps {
   activePaperId?: number | null;
 }
 
-export default function Sidebar({ 
-  activeTab, 
-  setActiveTab, 
-  isMobileMenuOpen, 
-  setIsMobileMenuOpen, 
-  isCollapsed, 
-  setIsCollapsed, 
+export default function Sidebar({
+  activeTab,
+  setActiveTab,
+  isMobileMenuOpen,
+  setIsMobileMenuOpen,
+  isCollapsed,
+  setIsCollapsed,
   profile,
   activePaperId
 }: SidebarProps) {
+  const [navVisibility, setNavVisibility] = React.useState<Record<string, boolean>>({
+    apa_validation: true, writing: true, formatting: true,
+    references: true, integrity: true, reviews: true, journals: true,
+  });
+
+  React.useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const fetchNavConfig = () => {
+      fetch('/api/admin/config/researcher-nav', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(data => { if (!data.error) setNavVisibility(data); })
+        .catch(() => {});
+    };
+    fetchNavConfig();
+    const interval = setInterval(fetchNavConfig, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
   if (!profile) return null; // Prevent flash of default items
 
   const userRole = profile?.user?.role;
@@ -91,13 +113,14 @@ export default function Sidebar({
   const researcherNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard, section: 'Research Hub' },
     { id: 'upload', label: 'Smart Upload', icon: FileUp, section: 'Manuscript Pipeline' },
-    { id: 'apa_validation', label: 'APA Gatekeeper', icon: ShieldCheck },
-    { id: 'writing', label: 'Writing Assistant', icon: PenTool },
-    { id: 'formatting', label: 'Formatting', icon: FileText },
-    { id: 'references', label: 'Reference Intel', icon: Library },
-    { id: 'integrity', label: 'Integrity Check', icon: ShieldCheck },
-    { id: 'reviews', label: 'Peer Review', icon: MessageSquare, section: 'Publishing' },
-    { id: 'journals', label: 'Journal Match', icon: BookMarked },
+    ...(activePaperId ? [{ id: 'quick_publish' as Tab, label: 'Quick Publish', icon: Zap }] : []),
+    ...(activePaperId && navVisibility.apa_validation !== false ? [{ id: 'apa_validation' as Tab, label: 'APA Gatekeeper', icon: ShieldCheck }] : []),
+    ...(navVisibility.writing !== false ? [{ id: 'writing' as Tab, label: 'Writing Assistant', icon: PenTool }] : []),
+    ...(navVisibility.formatting !== false ? [{ id: 'formatting' as Tab, label: 'Formatting', icon: FileText }] : []),
+    ...(navVisibility.references !== false ? [{ id: 'references' as Tab, label: 'Reference Intel', icon: Library }] : []),
+    ...(navVisibility.integrity !== false ? [{ id: 'integrity' as Tab, label: 'Integrity Check', icon: ShieldCheck }] : []),
+    ...(navVisibility.reviews !== false ? [{ id: 'reviews' as Tab, label: 'Peer Review', icon: MessageSquare, section: 'Publishing' as const }] : []),
+    ...(navVisibility.journals !== false ? [{ id: 'journals' as Tab, label: 'Journal Match', icon: BookMarked }] : []),
     { id: 'records', label: 'Pub. Records', icon: History },
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
   ];
@@ -312,20 +335,20 @@ export default function Sidebar({
               <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Pipeline Status</h4>
               <div className="flex gap-1">
                 {[1, 2, 3, 4, 5, 6].map((s) => (
-                  <div key={s} className={`w-1.5 h-1.5 rounded-full ${s <= (['upload', 'apa_validation', 'writing', 'formatting', 'references', 'integrity'].indexOf(activeTab as string) + 1) ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]' : 'bg-slate-700'}`} />
+                  <div key={s} className={`w-1.5 h-1.5 rounded-full ${s <= (['upload', 'quick_publish', 'writing', 'formatting', 'references', 'integrity'].indexOf(activeTab as string) + 1) ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]' : 'bg-slate-700'}`} />
                 ))}
               </div>
             </div>
             <div className="space-y-3">
                {[
                  { id: 'upload', label: 'Smart Upload' },
-                 { id: 'apa_validation', label: 'APA Gatekeeper' },
+                 { id: 'quick_publish', label: 'Quick Publish' },
                  { id: 'writing', label: 'AI Writing Hub' },
                  { id: 'formatting', label: 'Format Architect' },
                  { id: 'references', label: 'Reference Intel' },
                  { id: 'integrity', label: 'Integrity Check' }
                ].map((step, idx) => {
-                 const stepQueue = ['upload', 'apa_validation', 'writing', 'formatting', 'references', 'integrity'];
+                 const stepQueue = ['upload', 'quick_publish', 'writing', 'formatting', 'references', 'integrity'];
                  const stepIdx = stepQueue.indexOf(step.id);
                  const currentIdx = stepQueue.indexOf(activeTab as string);
                  const isCompleted = stepIdx < currentIdx;

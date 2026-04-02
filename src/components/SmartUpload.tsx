@@ -14,18 +14,16 @@ declare global {
 
 import { ToastType } from './ToastSystem';
 
-export default function SmartUpload({ 
-  onUploadComplete, 
+export default function SmartUpload({
+  onUploadComplete,
   addToast,
   profile,
   onNavigate,
-  onQuickPublish
-}: { 
+}: {
   onUploadComplete: (id: number) => void,
   addToast: (message: string, type?: ToastType) => void,
   profile?: any,
   onNavigate?: (tab: string) => void,
-  onQuickPublish?: () => void
 }) {
   const MAX_AUTO_RETRY = 1;
   const [isUploading, setIsUploading] = useState(false);
@@ -293,7 +291,7 @@ export default function SmartUpload({
       
       if (onNavigate) {
         setTimeout(() => {
-          onNavigate('apa_validation');
+          onNavigate('quick_publish');
         }, 4000);
       }
 
@@ -1066,17 +1064,6 @@ export default function SmartUpload({
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row items-center gap-3">
-                {onQuickPublish && (
-                  <button
-                    onClick={() => {
-                      onQuickPublish();
-                    }}
-                    className="shrink-0 px-8 py-4 bg-[#800000] hover:bg-red-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-[#800000]/20 hover:scale-105 transition-all flex items-center gap-3"
-                  >
-                    <Zap size={18} fill="white" />
-                    Instant Quick Publish
-                  </button>
-                )}
                 {onNavigate && (
                   <button
                     onClick={async () => {
@@ -1089,14 +1076,14 @@ export default function SmartUpload({
                           },
                           body: JSON.stringify({ status: 'writing_assistant' })
                         });
-                        onNavigate('apa_validation');
+                        onNavigate('quick_publish');
                       } catch (e) {
                         console.error('Failed to move to APA validation', e);
                       }
                     }}
                     className="shrink-0 px-8 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-600/30 hover:scale-105 transition-all flex items-center gap-3"
                   >
-                    Send to APA Rule Engine
+                    Proceed to Quick Publish
                     <ArrowRight size={18} />
                   </button>
                 )}

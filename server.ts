@@ -1406,9 +1406,7 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
         const chargeAmount = creditResult.chargeAmount;
         if (chargeAmount > 0) {
             if (gateway === 'kora') {
-                if (mode === 'inline') {
-                    paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
-                } else if (mode === 'checkout') {
+                if (mode === 'inline' || mode === 'checkout') {
                     paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
                       redirectUrl,
                       notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -6314,6 +6312,74 @@ app.post('/api/admin/config/gateways', authenticateToken, async (req: any, res) 
   }
 });
 
+// ─── JOURNAL LIVE STATS ──────────────────────────────────────────────
+
+app.get('/api/admin/config/journal-stats', authenticateToken, async (req: any, res) => {
+  try {
+    const config = await getJournalConfig();
+    const vol = config.currentVolume.toString();
+    const iss = config.currentIssue.toString();
+    const maxPapers = config.maxManuscriptsPerIssue || 10;
+    const maxIssues = config.maxIssuesPerVolume || 3;
+
+    const [issueCount, volumeIssues, totalPublished] = await Promise.all([
+      pool.query("SELECT COUNT(*) FROM papers WHERE status='published' AND volume=$1 AND issue=$2", [vol, iss]),
+      pool.query("SELECT DISTINCT issue FROM papers WHERE status='published' AND volume=$1", [vol]),
+      pool.query("SELECT COUNT(*) FROM papers WHERE status='published'"),
+    ]);
+
+    const papersInIssue = parseInt(issueCount.rows[0].count);
+    const issuesInVolume = volumeIssues.rows.length || 1;
+
+    res.json({
+      currentVolume: config.currentVolume,
+      currentIssue: config.currentIssue,
+      papersInCurrentIssue: papersInIssue,
+      maxManuscriptsPerIssue: maxPapers,
+      remainingInIssue: Math.max(0, maxPapers - papersInIssue),
+      issuesInCurrentVolume: issuesInVolume,
+      maxIssuesPerVolume: maxIssues,
+      remainingIssues: Math.max(0, maxIssues - issuesInVolume),
+      totalPublished: parseInt(totalPublished.rows[0].count),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── RESEARCHER NAV CONFIG ──────────────────────────────────────────
+
+app.get('/api/admin/config/researcher-nav', authenticateToken, async (req: any, res) => {
+  try {
+    const result = await pool.query("SELECT value FROM settings WHERE key = 'researcher_nav_config'");
+    const defaults = { apa_validation: true, writing: true, formatting: true, references: true, integrity: true, reviews: true, journals: true };
+    if (!result.rows.length) return res.json(defaults);
+    try {
+      return res.json({ ...defaults, ...JSON.parse(result.rows[0].value) });
+    } catch {
+      return res.json(defaults);
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch nav config' });
+  }
+});
+
+app.post('/api/admin/config/researcher-nav', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const allowed = ['apa_validation', 'writing', 'formatting', 'references', 'integrity', 'reviews', 'journals'];
+    const config: any = {};
+    allowed.forEach(k => { if (typeof req.body[k] === 'boolean') config[k] = req.body[k]; });
+    await pool.query(
+      "INSERT INTO settings (key, value) VALUES ('researcher_nav_config', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+      [JSON.stringify(config)]
+    );
+    res.json({ success: true, config });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update nav config' });
+  }
+});
+
 // ─── SHARED PAYMENT HELPERS ─────────────────────────────────────────
 
 // Helper: Create a Kora (Korapay) bank transfer charge and return virtual account details
@@ -6660,9 +6726,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
 
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
-        if (mode === 'inline') {
-          paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
-        } else if (mode === 'checkout') {
+        if (mode === 'inline' || mode === 'checkout') {
           paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -6747,9 +6811,7 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
     const chargeAmount = creditResult.chargeAmount;
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
-        if (mode === 'inline') {
-          paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
-        } else if (mode === 'checkout') {
+        if (mode === 'inline' || mode === 'checkout') {
           paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -6877,9 +6939,7 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
     let paymentResponse: any = null;
 
     if (resolvedGateway === 'kora') {
-      if (mode === 'inline') {
-        paymentResponse = buildKoraInlinePayload(req.user, newRemaining, topupRef);
-      } else if (mode === 'checkout') {
+      if (mode === 'inline' || mode === 'checkout') {
         paymentResponse = await initializeKoraCheckout(req.user, newRemaining, topupRef, {
           redirectUrl,
           notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -7720,9 +7780,7 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
     const chargeAmount = creditResult.chargeAmount;
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
-        if (mode === 'inline') {
-          paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
-        } else if (mode === 'checkout') {
+        if (mode === 'inline' || mode === 'checkout') {
           paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`
@@ -7798,9 +7856,7 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
     const chargeAmount = creditResult.chargeAmount;
     if (chargeAmount > 0) {
       if (gateway === 'kora') {
-        if (mode === 'inline') {
-          paymentResponse = buildKoraInlinePayload(req.user, chargeAmount, reference);
-        } else if (mode === 'checkout') {
+        if (mode === 'inline' || mode === 'checkout') {
           paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
             redirectUrl,
             notificationUrl: `${APP_URL}/api/payment/webhook/kora`

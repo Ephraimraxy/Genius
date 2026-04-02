@@ -16,6 +16,22 @@ export default function AdminSettings() {
   const [gateways, setGateways] = useState({ paystack: true, kora: true });
   const [savingGateways, setSavingGateways] = useState(false);
 
+  // Researcher Nav Visibility State
+  const NAV_ITEMS = [
+    { key: 'apa_validation', label: 'APA Gatekeeper', desc: 'APA 7th compliance validator' },
+    { key: 'writing', label: 'Writing Assistant', desc: 'AI prose enhancement tool' },
+    { key: 'formatting', label: 'Formatting', desc: 'Document layout engine' },
+    { key: 'references', label: 'Reference Intel', desc: 'Citation and bibliography manager' },
+    { key: 'integrity', label: 'Integrity Check', desc: 'Plagiarism and structure scanner' },
+    { key: 'reviews', label: 'Peer Review', desc: 'Simulated reviewer evaluation' },
+    { key: 'journals', label: 'Journal Match', desc: 'Journal recommendation engine' },
+  ] as const;
+  const [navVisibility, setNavVisibility] = useState<Record<string, boolean>>({
+    apa_validation: true, writing: true, formatting: true, references: true,
+    integrity: true, reviews: true, journals: true,
+  });
+  const [savingNav, setSavingNav] = useState(false);
+
   // Journal Settings State
   const [journalVolume, setJournalVolume] = useState<string>('1');
   const [journalIssue, setJournalIssue] = useState<string>('1');
@@ -37,6 +53,15 @@ export default function AdminSettings() {
   const [journalSecretary, setJournalSecretary] = useState<string>('Dr. Danjuma Namo');
   const [savingJournal, setSavingJournal] = useState(false);
   const [savedJournal, setSavedJournal] = useState(false);
+  const [journalStats, setJournalStats] = useState<{
+    papersInCurrentIssue: number;
+    maxManuscriptsPerIssue: number;
+    remainingInIssue: number;
+    issuesInCurrentVolume: number;
+    maxIssuesPerVolume: number;
+    remainingIssues: number;
+    totalPublished: number;
+  } | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -92,6 +117,22 @@ export default function AdminSettings() {
         });
         setJournalSecretary(data.journal_secretary || 'Dr. Danjuma Namo');
       })
+      .catch(console.error);
+
+    // Fetch journal live stats
+    fetch('/api/admin/config/journal-stats', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => { if (!data.error) setJournalStats(data); })
+      .catch(console.error);
+
+    // Fetch researcher nav visibility
+    fetch('/api/admin/config/researcher-nav', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => { if (!data.error) setNavVisibility(data); })
       .catch(console.error);
 
     // Fetch system health
@@ -160,6 +201,23 @@ export default function AdminSettings() {
       console.error('Failed to update gateways', err);
     }
     setSavingGateways(false);
+  };
+
+  const handleToggleNav = async (key: string) => {
+    setSavingNav(true);
+    const updated = { ...navVisibility, [key]: !navVisibility[key] };
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/admin/config/researcher-nav', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+      if (res.ok) setNavVisibility(updated);
+    } catch (err) {
+      console.error('Failed to update nav config', err);
+    }
+    setSavingNav(false);
   };
 
   const handleSaveJournal = async () => {
@@ -240,6 +298,47 @@ export default function AdminSettings() {
             <p className="text-xs text-slate-500 mt-1">These values are automatically applied to every newly published manuscript.</p>
           </div>
           <div className="p-8">
+
+            {/* Live Stats Banner */}
+            {journalStats && (
+              <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Issue fill */}
+                <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-2xl">
+                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Current Issue Fill</p>
+                  <div className="flex items-end justify-between mb-2">
+                    <span className="text-2xl font-black text-indigo-900">{journalStats.papersInCurrentIssue}<span className="text-sm font-bold text-indigo-400">/{journalStats.maxManuscriptsPerIssue}</span></span>
+                    <span className="text-xs font-black text-indigo-500">{journalStats.remainingInIssue} slots left</span>
+                  </div>
+                  <div className="h-2 bg-indigo-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (journalStats.papersInCurrentIssue / journalStats.maxManuscriptsPerIssue) * 100)}%` }} />
+                  </div>
+                  <p className="text-[9px] text-indigo-400 mt-2 font-medium">Vol {journalStats.currentVolume} · Issue {journalStats.currentIssue}</p>
+                </div>
+                {/* Volume fill */}
+                <div className="p-5 bg-violet-50 border border-violet-100 rounded-2xl">
+                  <p className="text-[10px] font-black text-violet-400 uppercase tracking-widest mb-1">Volume Progress</p>
+                  <div className="flex items-end justify-between mb-2">
+                    <span className="text-2xl font-black text-violet-900">{journalStats.issuesInCurrentVolume}<span className="text-sm font-bold text-violet-400">/{journalStats.maxIssuesPerVolume} issues</span></span>
+                    <span className="text-xs font-black text-violet-500">{journalStats.remainingIssues} more to next vol</span>
+                  </div>
+                  <div className="h-2 bg-violet-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-violet-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (journalStats.issuesInCurrentVolume / journalStats.maxIssuesPerVolume) * 100)}%` }} />
+                  </div>
+                  <p className="text-[9px] text-violet-400 mt-2 font-medium">Volume {journalStats.currentVolume} — auto-increments when full</p>
+                </div>
+                {/* Total published */}
+                <div className="p-5 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                  <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Total Published</p>
+                  <span className="text-3xl font-black text-emerald-900">{journalStats.totalPublished}</span>
+                  <p className="text-[9px] text-emerald-500 mt-1 font-medium">manuscripts across all volumes</p>
+                  <div className="mt-3 flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest">Live count</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               {/* Volume */}
               <div>
@@ -253,7 +352,9 @@ export default function AdminSettings() {
                   className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-2xl font-black text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all text-center"
                   placeholder="1"
                 />
-                <p className="text-[9px] text-slate-400 mt-2 text-center font-bold uppercase tracking-wider">Increment yearly</p>
+                <p className="text-[9px] text-slate-400 mt-2 text-center font-bold uppercase tracking-wider">
+                  {journalStats ? `${journalStats.issuesInCurrentVolume}/${journalStats.maxIssuesPerVolume} issues used this volume` : 'Increment yearly'}
+                </p>
               </div>
               {/* Issue */}
               <div>
@@ -267,7 +368,9 @@ export default function AdminSettings() {
                   className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-2xl font-black text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all text-center"
                   placeholder="1"
                 />
-                <p className="text-[9px] text-slate-400 mt-2 text-center font-bold uppercase tracking-wider">Increment per batch</p>
+                <p className="text-[9px] text-slate-400 mt-2 text-center font-bold uppercase tracking-wider">
+                  {journalStats ? `${journalStats.papersInCurrentIssue}/${journalStats.maxManuscriptsPerIssue} papers — ${journalStats.remainingInIssue} remaining` : 'Increment per batch'}
+                </p>
               </div>
               {/* ISSN */}
               <div>
@@ -296,7 +399,9 @@ export default function AdminSettings() {
                   className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all"
                   placeholder="10"
                 />
-                <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Current: 10 per issue</p>
+                <p className="text-[9px] text-slate-400 mt-2 font-medium italic">
+                  {journalStats ? `${journalStats.papersInCurrentIssue} published · ${journalStats.remainingInIssue} slots remain in Issue ${journalStats.currentIssue}` : `Current: ${maxManuscripts} per issue`}
+                </p>
               </div>
               {/* Issues per Volume */}
               <div>
@@ -308,7 +413,9 @@ export default function AdminSettings() {
                   className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all"
                   placeholder="3"
                 />
-                <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Current: 3 issues per "Chapter"</p>
+                <p className="text-[9px] text-slate-400 mt-2 font-medium italic">
+                  {journalStats ? `Issue ${journalStats.currentIssue} of ${journalStats.maxIssuesPerVolume} · ${journalStats.remainingIssues} more issue${journalStats.remainingIssues !== 1 ? 's' : ''} to next volume` : `Current: ${maxIssues} issues per volume`}
+                </p>
               </div>
               {/* Page Limit */}
               <div>
@@ -320,7 +427,7 @@ export default function AdminSettings() {
                   className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-bold text-slate-800 focus:ring-2 focus:ring-[#800000]/20 outline-none transition-all"
                   placeholder="20"
                 />
-                <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Limit for automated check</p>
+                <p className="text-[9px] text-slate-400 mt-2 font-medium italic">Hard gate enforced at upload — currently {maxPages} pages max</p>
               </div>
               <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-white rounded-2xl border border-slate-100 p-4">
@@ -553,6 +660,79 @@ export default function AdminSettings() {
               <h4 className="text-lg font-black text-slate-900 mb-1">Kora (Korapay)</h4>
               <p className="text-xs font-medium text-slate-500">Enable Kora dynamic bank transfer generation for users.</p>
             </div>
+          </div>
+        </div>
+
+        {/* Researcher Navigation Visibility */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
+                <Layers size={20} className="text-violet-600" /> Researcher Navigation Visibility
+              </h3>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">Toggle to hide or reveal pipeline steps for all researchers — updates live instantly.</p>
+            </div>
+            <div className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${
+              Object.values(navVisibility).every(v => !v)
+                ? 'bg-amber-50 text-amber-600 border-amber-200'
+                : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+            }`}>
+              {Object.values(navVisibility).filter(Boolean).length} / {NAV_ITEMS.length} Visible
+            </div>
+          </div>
+          <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {NAV_ITEMS.map(item => {
+              const isVisible = navVisibility[item.key] !== false;
+              return (
+                <div
+                  key={item.key}
+                  className={`p-5 rounded-2xl border-2 transition-all ${isVisible ? 'border-violet-100 bg-violet-50/30' : 'border-slate-100 bg-slate-50 opacity-60'}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-black text-slate-900 text-sm">{item.label}</p>
+                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">{item.desc}</p>
+                    </div>
+                    <button
+                      onClick={() => handleToggleNav(item.key)}
+                      disabled={savingNav}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${isVisible ? 'bg-violet-600' : 'bg-slate-300'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow ${isVisible ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="px-8 pb-6 flex items-center gap-2">
+            <button
+              onClick={() => {
+                const allOn: Record<string, boolean> = {};
+                NAV_ITEMS.forEach(i => { allOn[i.key] = true; });
+                Object.keys(allOn).forEach(k => { if (navVisibility[k] !== allOn[k]) handleToggleNav(k); });
+                setNavVisibility(allOn);
+              }}
+              disabled={savingNav}
+              className="px-4 py-2 text-xs font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-xl transition-all disabled:opacity-50"
+            >
+              Show All
+            </button>
+            <button
+              onClick={() => {
+                const allOff: Record<string, boolean> = {};
+                NAV_ITEMS.forEach(i => { allOff[i.key] = false; });
+                fetch('/api/admin/config/researcher-nav', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify(allOff),
+                }).then(r => r.ok && setNavVisibility(allOff));
+              }}
+              disabled={savingNav}
+              className="px-4 py-2 text-xs font-black uppercase tracking-widest bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl transition-all disabled:opacity-50"
+            >
+              Hide All
+            </button>
           </div>
         </div>
 

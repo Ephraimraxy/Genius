@@ -16,7 +16,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
 
   const handlePaperClick = (id: number) => {
     setActivePaperId(id);
-    onNavigate('formatting');
+    onNavigate('quick_publish');
   };
 
 
@@ -333,28 +333,30 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-end sm:self-center">
-                {paper.status === 'ready' ? (
-                  <button
-                    onClick={() => {
+              {paper.status !== 'published' && (
+                <div className="flex items-center gap-2 self-end sm:self-center">
+                  {paper.status === 'ready' ? (
+                    <button
+                      onClick={() => {
                         setActivePaperId(paper.id);
                         onNavigate('transactions');
-                    }}
-                    className="flex items-center gap-2 premium-gradient text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-[#800000]/20 hover:scale-105"
-                  >
-                    Pay & Distribute
-                    <ArrowRight size={18} />
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handlePaperClick(paper.id)}
-                    className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-slate-200 group"
-                  >
-                    Continue
-                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                  </button>
-                )}
-              </div>
+                      }}
+                      className="flex items-center gap-2 premium-gradient text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-[#800000]/20 hover:scale-105"
+                    >
+                      Pay & Distribute
+                      <ArrowRight size={18} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handlePaperClick(paper.id)}
+                      className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-slate-200 group"
+                    >
+                      Continue
+                      <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  )}
+                </div>
+              )}
             </motion.div>
           ))}
         </div>
