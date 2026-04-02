@@ -61,6 +61,19 @@ export default function AdminSettings() {
     maxIssuesPerVolume: number;
     remainingIssues: number;
     totalPublished: number;
+    totalPagesInIssue: number;
+    nextStartPage: number;
+    papers: Array<{
+      serial: number;
+      id: number;
+      title: string;
+      startPage: number;
+      endPage: number;
+      pageCount: number;
+      publishedAt: string;
+    }>;
+    currentVolume: string;
+    currentIssue: string;
   } | null>(null);
 
   useEffect(() => {
@@ -301,41 +314,87 @@ export default function AdminSettings() {
 
             {/* Live Stats Banner */}
             {journalStats && (
-              <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Issue fill */}
-                <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-2xl">
-                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Current Issue Fill</p>
-                  <div className="flex items-end justify-between mb-2">
-                    <span className="text-2xl font-black text-indigo-900">{journalStats.papersInCurrentIssue}<span className="text-sm font-bold text-indigo-400">/{journalStats.maxManuscriptsPerIssue}</span></span>
-                    <span className="text-xs font-black text-indigo-500">{journalStats.remainingInIssue} slots left</span>
+              <div className="mb-8 space-y-6">
+                {/* Top 3 stat cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Issue fill */}
+                  <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-2xl">
+                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Current Issue Fill</p>
+                    <div className="flex items-end justify-between mb-2">
+                      <span className="text-2xl font-black text-indigo-900">{journalStats.papersInCurrentIssue}<span className="text-sm font-bold text-indigo-400">/{journalStats.maxManuscriptsPerIssue}</span></span>
+                      <span className="text-xs font-black text-indigo-500">{journalStats.remainingInIssue} slots left</span>
+                    </div>
+                    <div className="h-2 bg-indigo-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (journalStats.papersInCurrentIssue / journalStats.maxManuscriptsPerIssue) * 100)}%` }} />
+                    </div>
+                    <p className="text-[9px] text-indigo-400 mt-2 font-medium">Vol {journalStats.currentVolume} · Issue {journalStats.currentIssue} · {journalStats.totalPagesInIssue} pages so far</p>
                   </div>
-                  <div className="h-2 bg-indigo-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (journalStats.papersInCurrentIssue / journalStats.maxManuscriptsPerIssue) * 100)}%` }} />
+                  {/* Volume fill */}
+                  <div className="p-5 bg-violet-50 border border-violet-100 rounded-2xl">
+                    <p className="text-[10px] font-black text-violet-400 uppercase tracking-widest mb-1">Volume Progress</p>
+                    <div className="flex items-end justify-between mb-2">
+                      <span className="text-2xl font-black text-violet-900">{journalStats.issuesInCurrentVolume}<span className="text-sm font-bold text-violet-400">/{journalStats.maxIssuesPerVolume} issues</span></span>
+                      <span className="text-xs font-black text-violet-500">{journalStats.remainingIssues} more to next vol</span>
+                    </div>
+                    <div className="h-2 bg-violet-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-violet-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (journalStats.issuesInCurrentVolume / journalStats.maxIssuesPerVolume) * 100)}%` }} />
+                    </div>
+                    <p className="text-[9px] text-violet-400 mt-2 font-medium">Volume {journalStats.currentVolume} — auto-increments when full</p>
                   </div>
-                  <p className="text-[9px] text-indigo-400 mt-2 font-medium">Vol {journalStats.currentVolume} · Issue {journalStats.currentIssue}</p>
+                  {/* Total published */}
+                  <div className="p-5 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                    <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Total Published</p>
+                    <span className="text-3xl font-black text-emerald-900">{journalStats.totalPublished}</span>
+                    <p className="text-[9px] text-emerald-500 mt-1 font-medium">manuscripts across all volumes</p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest">Next paper starts p.{journalStats.nextStartPage}</span>
+                    </div>
+                  </div>
                 </div>
-                {/* Volume fill */}
-                <div className="p-5 bg-violet-50 border border-violet-100 rounded-2xl">
-                  <p className="text-[10px] font-black text-violet-400 uppercase tracking-widest mb-1">Volume Progress</p>
-                  <div className="flex items-end justify-between mb-2">
-                    <span className="text-2xl font-black text-violet-900">{journalStats.issuesInCurrentVolume}<span className="text-sm font-bold text-violet-400">/{journalStats.maxIssuesPerVolume} issues</span></span>
-                    <span className="text-xs font-black text-violet-500">{journalStats.remainingIssues} more to next vol</span>
+
+                {/* Per-paper page range breakdown */}
+                {journalStats.papers.length > 0 && (
+                  <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                    <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Page Range Breakdown — Vol {journalStats.currentVolume}, Issue {journalStats.currentIssue}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{journalStats.totalPagesInIssue} total pages</p>
+                    </div>
+                    <div className="divide-y divide-slate-50">
+                      {journalStats.papers.map(p => (
+                        <div key={p.id} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition-colors">
+                          <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-black flex items-center justify-center shrink-0">{p.serial}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-800 truncate">{p.title || `Paper #${p.id}`}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">{new Date(p.publishedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} · {p.pageCount} page{p.pageCount !== 1 ? 's' : ''}</p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <span className="px-3 py-1 bg-indigo-50 border border-indigo-100 rounded-lg text-xs font-black text-indigo-700 font-mono">
+                              {p.pageCount > 0 ? `pp. ${p.startPage}–${p.endPage}` : 'pp. —'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      {/* Next slot indicator */}
+                      {journalStats.remainingInIssue > 0 && (
+                        <div className="flex items-center gap-4 px-5 py-3 bg-slate-50/50 border-t border-dashed border-slate-200">
+                          <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-400 text-[10px] font-black flex items-center justify-center shrink-0">{journalStats.papersInCurrentIssue + 1}</span>
+                          <div className="flex-1">
+                            <p className="text-xs font-bold text-slate-400 italic">Next manuscript — starts at page {journalStats.nextStartPage}</p>
+                          </div>
+                          <span className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-black text-slate-400 font-mono">p. {journalStats.nextStartPage}+</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="h-2 bg-violet-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-violet-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (journalStats.issuesInCurrentVolume / journalStats.maxIssuesPerVolume) * 100)}%` }} />
+                )}
+
+                {journalStats.papers.length === 0 && (
+                  <div className="py-6 text-center border border-dashed border-slate-200 rounded-2xl">
+                    <p className="text-xs font-bold text-slate-400">No papers published yet in Vol {journalStats.currentVolume}, Issue {journalStats.currentIssue}</p>
+                    <p className="text-[10px] text-slate-300 mt-1">First paper will start at page 1</p>
                   </div>
-                  <p className="text-[9px] text-violet-400 mt-2 font-medium">Volume {journalStats.currentVolume} — auto-increments when full</p>
-                </div>
-                {/* Total published */}
-                <div className="p-5 bg-emerald-50 border border-emerald-100 rounded-2xl">
-                  <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Total Published</p>
-                  <span className="text-3xl font-black text-emerald-900">{journalStats.totalPublished}</span>
-                  <p className="text-[9px] text-emerald-500 mt-1 font-medium">manuscripts across all volumes</p>
-                  <div className="mt-3 flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest">Live count</span>
-                  </div>
-                </div>
+                )}
               </div>
             )}
 

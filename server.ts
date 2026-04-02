@@ -6358,14 +6358,38 @@ app.get('/api/admin/config/journal-stats', authenticateToken, async (req: any, r
     const maxPapers = config.maxManuscriptsPerIssue || 10;
     const maxIssues = config.maxIssuesPerVolume || 3;
 
-    const [issueCount, volumeIssues, totalPublished] = await Promise.all([
-      pool.query("SELECT COUNT(*) FROM papers WHERE status='published' AND volume=$1 AND issue=$2", [vol, iss]),
+    const [issuePapers, volumeIssues, totalPublished] = await Promise.all([
+      pool.query(
+        "SELECT id, title, metadata, published_at FROM papers WHERE status='published' AND volume=$1 AND issue=$2 ORDER BY published_at ASC",
+        [vol, iss]
+      ),
       pool.query("SELECT DISTINCT issue FROM papers WHERE status='published' AND volume=$1", [vol]),
       pool.query("SELECT COUNT(*) FROM papers WHERE status='published'"),
     ]);
 
-    const papersInIssue = parseInt(issueCount.rows[0].count);
+    const papersInIssue = issuePapers.rows.length;
     const issuesInVolume = volumeIssues.rows.length || 1;
+
+    // Build per-paper page range list
+    const paperList = issuePapers.rows.map((row: any, idx: number) => {
+      const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
+      const startPage: number = meta.startPageNumber || 1;
+      const pageCount: number = meta.pageCount || meta.sourcePageCount || 0;
+      const endPage = pageCount > 0 ? startPage + pageCount - 1 : startPage;
+      return {
+        serial: idx + 1,
+        id: row.id,
+        title: row.title,
+        startPage,
+        endPage,
+        pageCount,
+        publishedAt: row.published_at,
+      };
+    });
+
+    // Cumulative page total for current issue
+    const totalPagesInIssue = paperList.reduce((sum: number, p: any) => sum + p.pageCount, 0);
+    const nextStartPage = totalPagesInIssue + 1;
 
     res.json({
       currentVolume: config.currentVolume,
@@ -6377,6 +6401,9 @@ app.get('/api/admin/config/journal-stats', authenticateToken, async (req: any, r
       maxIssuesPerVolume: maxIssues,
       remainingIssues: Math.max(0, maxIssues - issuesInVolume),
       totalPublished: parseInt(totalPublished.rows[0].count),
+      totalPagesInIssue,
+      nextStartPage,
+      papers: paperList,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
