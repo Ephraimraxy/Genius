@@ -699,27 +699,53 @@ async function bootstrapDB() {
 bootstrapDB();
 
 async function sendPaymentSuccessEmail(to: string, name: string, ref: string) {
+  if (!RESEND_API_KEY) {
+    console.warn('RESEND_API_KEY not set — skipping payment success email.');
+    return;
+  }
   const htmlBody = `
-    <div style="font-family: serif; padding: 20px; color: #1a202c;">
-      <h2 style="color: #800000;">Payment Successful</h2>
-      <p>Dear ${name},</p>
-      <p>Your payment (Ref: ${ref}) has been received successfully. Your publication credit is now active.</p>
-      <p>Please find the <strong>Journal Preliminary Pages</strong> attached below for your review.</p>
-      <p>You may now proceed to upload your manuscript via the dashboard.</p>
+    <div style="font-family: Georgia, serif; max-width: 620px; margin: 0 auto; color: #1a202c; line-height: 1.7;">
+      <div style="border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+        <div style="padding: 24px 32px; background: linear-gradient(135deg, #fff7ed 0%, #ffffff 70%); border-bottom: 3px solid #800000;">
+          <h2 style="margin: 0; color: #800000; font-size: 22px;">Payment Received</h2>
+          <p style="margin: 6px 0 0; color: #64748b; font-size: 13px;">${JOURNAL_NAME}</p>
+        </div>
+        <div style="padding: 28px 32px;">
+          <p>Dear <strong>${name}</strong>,</p>
+          <p>Your payment has been received and verified successfully.</p>
+          <table style="width:100%; border-collapse:collapse; margin: 16px 0; background:#f8fafc; border-radius:8px; overflow:hidden;">
+            <tr><td style="padding:10px 16px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase; letter-spacing:.05em;">Reference</td><td style="padding:10px 16px; font-family:monospace; color:#1a202c;">${ref}</td></tr>
+            <tr style="background:#f1f5f9;"><td style="padding:10px 16px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase; letter-spacing:.05em;">Status</td><td style="padding:10px 16px; color:#16a34a; font-weight:bold;">Confirmed</td></tr>
+          </table>
+          <p>Your publication credit is now active. You may proceed to upload your manuscript via the dashboard.</p>
+          <p>The <strong>Journal Preliminary Pages</strong> are attached for your reference — please review the journal's scope, formatting expectations, and submission standards before upload.</p>
+          <p style="color:#64748b; font-size:13px; margin-top:24px;">This is an automated message. Please do not reply directly to this email.</p>
+        </div>
+      </div>
     </div>
   `;
   try {
-    const attachments = [];
+    const attachments: { filename: string; content: string }[] = [];
     const preliminaryPath = path.join(process.cwd(), 'tools', 'Journal Preliminary.pdf');
     if (fs.existsSync(preliminaryPath)) {
-      attachments.push({ filename: 'Journal_Preliminary.pdf', content: fs.readFileSync(preliminaryPath).toString('base64') });
+      attachments.push({
+        filename: 'Journal_Preliminary_Pages.pdf',
+        content: fs.readFileSync(preliminaryPath).toString('base64'),
+      });
+    } else {
+      console.warn('[Payment Email] Journal Preliminary.pdf not found at:', preliminaryPath);
     }
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: `GMIJP <${RESEND_FROM_EMAIL}>`, to: [to], subject: `Payment Received — Ref: ${ref}`, html: htmlBody, attachments })
+    await sendResendEmail({
+      to,
+      subject: `Payment Confirmed — Ref: ${ref}`,
+      html: htmlBody,
+      attachments,
+      fromName: JOURNAL_SHORT_NAME,
     });
-  } catch (err) { console.error('Payment success email error:', err); }
+    console.log(`✅ Payment success email sent to ${to} (ref: ${ref})`);
+  } catch (err) {
+    console.error('Payment success email error:', err);
+  }
 }
 
 async function sendSubmissionReceivedEmail(to: string, researcherName: string, manuscriptTitle: string, manuscriptId: number, sourcePageCount: number) {
@@ -733,35 +759,32 @@ async function sendSubmissionReceivedEmail(to: string, researcherName: string, m
     <div style="font-family: Georgia, serif; max-width: 640px; margin: 0 auto; color: #1a202c; line-height: 1.7;">
       <div style="border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden;">
         <div style="padding: 28px 32px; background: linear-gradient(135deg, #fff7ed 0%, #ffffff 70%); border-bottom: 3px solid #800000;">
-          <h1 style="margin: 0; color: #800000; font-size: 24px;">Submission Received</h1>
+          <h1 style="margin: 0; color: #800000; font-size: 24px;">Manuscript Received</h1>
           <p style="margin: 8px 0 0; color: #475569; font-size: 14px;">${JOURNAL_NAME}</p>
         </div>
         <div style="padding: 32px;">
-          <p>Dear ${researcherName},</p>
-          <p>Your manuscript titled <strong>${manuscriptTitle}</strong> has been received into the editorial workflow.</p>
-          <p><strong>Submission Ref:</strong> ${submissionRef}<br/>
-          <strong>Detected Source Length:</strong> ${sourcePageCount} page${sourcePageCount === 1 ? '' : 's'}</p>
-          <p>The manuscript will now proceed through editorial screening, structural validation, refinement, reference checks, and final production review before publication.</p>
-          <p style="margin-bottom: 0;">This acknowledgement is not an acceptance letter and does not confirm publication.</p>
+          <p>Dear <strong>${researcherName}</strong>,</p>
+          <p>Your manuscript has been successfully ingested into the editorial system and is now being processed.</p>
+          <table style="width:100%; border-collapse:collapse; margin: 16px 0; background:#f8fafc; border-radius:8px; overflow:hidden;">
+            <tr><td style="padding:10px 16px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase;">Submission Ref</td><td style="padding:10px 16px; font-family:monospace; color:#1a202c; font-weight:bold;">${submissionRef}</td></tr>
+            <tr style="background:#f1f5f9;"><td style="padding:10px 16px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase;">Manuscript</td><td style="padding:10px 16px; color:#1a202c;">${manuscriptTitle}</td></tr>
+            <tr><td style="padding:10px 16px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase;">Pages Detected</td><td style="padding:10px 16px; color:#1a202c;">${sourcePageCount} page${sourcePageCount === 1 ? '' : 's'}</td></tr>
+          </table>
+          <p>Your formal <strong>Acceptance Letter</strong> with the journal preliminary pages will follow in a separate email shortly.</p>
+          <p style="color:#64748b; font-size:13px; margin-top:24px;">This is an automated message. Please do not reply directly to this email.</p>
         </div>
       </div>
     </div>
   `;
 
   try {
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        from: `GMIJP <${RESEND_FROM_EMAIL}>`,
-        to: [to],
-        subject: `Submission Received - ${manuscriptTitle.substring(0, 80)}`,
-        html: htmlBody
-      })
+    await sendResendEmail({
+      to,
+      subject: `Manuscript Received — ${manuscriptTitle.substring(0, 70)}`,
+      html: htmlBody,
+      fromName: JOURNAL_SHORT_NAME,
     });
+    console.log(`✅ Submission receipt email sent to ${to} for paper #${manuscriptId}`);
   } catch (error) {
     console.error('Submission receipt email error:', error);
   }
@@ -2433,12 +2456,24 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       [newPaperId, JSON.stringify({ consumed: true, paper_id: newPaperId, consumed_at: new Date().toISOString() }), txId]
     );
 
-    // 2️⃣ Acceptance Letter is now handled by Payment Webhook or this route 
-    // Moving to follow-up: sendAcceptanceEmail is now triggered here for the specific paper
-    await sendSubmissionReceivedEmail(req.user.email, req.body.researcherName || 'Researcher', metadata.title || 'Untitled', newPaperId, sourcePageCount);
+    // Stage 1 email: submission receipt (no attachment)
+    await sendSubmissionReceivedEmail(req.user.email, req.body.researcherName || req.user.name || 'Researcher', metadata.title || 'Untitled', newPaperId, sourcePageCount);
 
+    // Stage 2 email: acceptance letter + preliminary PDF — sent 12 seconds later so it arrives as a distinct second email
+    setTimeout(async () => {
+      try {
+        await sendAcceptanceEmail(
+          req.user.email,
+          req.body.researcherName || req.user.name || 'Researcher',
+          metadata.title || 'Untitled',
+          newPaperId
+        );
+      } catch (err) {
+        console.error('[Upload] Acceptance email failed (non-blocking):', err);
+      }
+    }, 12000);
 
-    res.json({ 
+    res.json({
       id: newPaperId,
       title: metadata.title,
       authors: metadata.authors,
@@ -4980,12 +5015,26 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
   const nsukLogo = `${appUrl}/university-logo.jpg`;
 
   const htmlBody = `
-    <div style="font-family: serif; padding: 20px; color: #1a202c;">
-      <h2 style="color: #800000;">Manuscript Accepted in Principle</h2>
-      <p>Dear ${researcherName},</p>
-      <p>Your manuscript "<strong>${manuscriptTitle}</strong>" has been accepted in principle for publication.</p>
-      <p><strong>Please see the attached PDF documents</strong> for your official Acceptance Letter and Preliminary Pages which contain full details.</p>
-      <p>Next Steps: Final formatting and DOI minting.</p>
+    <div style="font-family: Georgia, serif; max-width: 640px; margin: 0 auto; color: #1a202c; line-height: 1.7;">
+      <div style="border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden;">
+        <div style="padding: 28px 32px; background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 70%); border-bottom: 3px solid #800000;">
+          <h1 style="margin: 0; color: #800000; font-size: 24px;">Acceptance Letter</h1>
+          <p style="margin: 8px 0 0; color: #475569; font-size: 14px;">${JOURNAL_NAME}</p>
+        </div>
+        <div style="padding: 32px;">
+          <p>Dear <strong>${researcherName}</strong>,</p>
+          <p>We are pleased to inform you that your manuscript has been accepted for publication in the <strong>${JOURNAL_NAME}</strong>.</p>
+          <table style="width:100%; border-collapse:collapse; margin: 16px 0; background:#f8fafc; border-radius:8px; overflow:hidden;">
+            <tr><td style="padding:10px 16px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase;">Reference</td><td style="padding:10px 16px; font-family:monospace; color:#1a202c; font-weight:bold;">${refNumber}</td></tr>
+            <tr style="background:#f1f5f9;"><td style="padding:10px 16px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase;">Manuscript</td><td style="padding:10px 16px; color:#1a202c;">${manuscriptTitle}</td></tr>
+            <tr><td style="padding:10px 16px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase;">Date</td><td style="padding:10px 16px; color:#1a202c;">${currentDate}</td></tr>
+            <tr style="background:#f1f5f9;"><td style="padding:10px 16px; font-size:12px; color:#64748b; font-weight:bold; text-transform:uppercase;">Status</td><td style="padding:10px 16px; color:#16a34a; font-weight:bold;">Accepted</td></tr>
+          </table>
+          <p>Your <strong>official Acceptance Letter PDF</strong> is attached to this email. The Journal Preliminary Pages are also attached for your reference.</p>
+          <p>Your manuscript will now proceed through final formatting, DOI registration, and production. You will receive your published PDF and certificate upon completion.</p>
+          <p style="color:#64748b; font-size:13px; margin-top:24px;">This is an automated message from the editorial system. Please do not reply directly to this email.</p>
+        </div>
+      </div>
     </div>
   `;
 
@@ -5017,29 +5066,16 @@ async function sendAcceptanceEmail(to: string, researcherName: string, manuscrip
     ];
     if (secondAttachment) attachments.push(secondAttachment);
 
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        from: `GMIJP <${RESEND_FROM_EMAIL}>`,
-        to: [to],
-        subject: `Acceptance Letter \u2014 ${manuscriptTitle.substring(0, 80)}`,
-        html: htmlBody,
-        attachments
-      })
+    await sendResendEmail({
+      to,
+      subject: `Acceptance Letter — ${manuscriptTitle.substring(0, 80)}`,
+      html: htmlBody,
+      attachments,
+      fromName: JOURNAL_SHORT_NAME,
     });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Resend email failed:', response.status, errText);
-    } else {
-      console.log(`\u2705 Acceptance email + PDF sent to ${to} for paper #${manuscriptId}`);
-    }
+    console.log(`✅ Acceptance email + PDF sent to ${to} for paper #${manuscriptId}`);
   } catch (error) {
-    console.error('Resend email network error:', error);
+    console.error('Acceptance email error:', error);
   }
 }
 
