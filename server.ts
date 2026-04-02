@@ -1389,7 +1389,7 @@ app.post('/api/payment/pin-recovery/initialize', async (req, res) => {
 
 app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: any, res) => {
     try {
-        const { gateway = 'paystack', mode = 'checkout' } = req.body;
+        const { gateway = 'paystack', mode = 'inline' } = req.body;
 
         const result = await pool.query(
             'SELECT sc.entry_fee FROM student_categories sc JOIN users u ON u.category_id = sc.id WHERE u.id = $1',
@@ -6646,7 +6646,7 @@ async function requestGatewayRefund(gateway: string, reference: string, amount: 
 
 // PaymentPoint / Kora — Publication Payment
 app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => {
-  const { amount, type, gateway = 'paystack', mode = 'virtual_account' } = req.body;
+  const { amount, type, gateway = 'paystack', mode = 'inline' } = req.body;
   const reference = `GMIJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   
   try {
@@ -6733,7 +6733,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
 
 // Student Attendance — PaymentPoint / Kora
 app.post('/api/payment/attendance/initialize', authenticateToken, async (req: any, res) => {
-  const { course_id, amount, gateway = 'paystack', mode = 'checkout' } = req.body;
+  const { course_id, amount, gateway = 'paystack', mode = 'inline' } = req.body;
   if (!course_id || !amount) return res.status(400).json({ error: 'course_id and amount are required' });
 
   const reference = `ATT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -7706,7 +7706,7 @@ app.put('/api/exams/:id/settings', authenticateToken, checkSubscription, async (
 
 // Payment for Material Access — PaymentPoint / Kora
 app.post('/api/payment/material/initialize', authenticateToken, async (req: any, res) => {
-  const { resource_id, amount, gateway = 'paystack', mode = 'checkout' } = req.body;
+  const { resource_id, amount, gateway = 'paystack', mode = 'inline' } = req.body;
   if (!resource_id || !amount) return res.status(400).json({ error: 'resource_id and amount are required' });
 
   const reference = `MAT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -7784,7 +7784,7 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
 
 // Payment for Assessment Access — PaymentPoint / Kora
 app.post('/api/payment/assessment/initialize', authenticateToken, async (req: any, res) => {
-  const { exam_id, amount, gateway = 'paystack', mode = 'checkout' } = req.body;
+  const { exam_id, amount, gateway = 'paystack', mode = 'inline' } = req.body;
   if (!exam_id || !amount) return res.status(400).json({ error: 'exam_id and amount are required' });
 
   const reference = `ASM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;

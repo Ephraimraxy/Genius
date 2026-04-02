@@ -125,11 +125,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
         setTimeout(onSuccess, 1500);
         return;
       }
-      if (data.checkout_url) {
-        addToast('Secure checkout opened. Please complete payment to activate.', 'info');
-      } else {
-        addToast('Virtual account generated. Transfer to activate.', 'info');
-      }
+      addToast('Secure payment window opened. Complete your payment to activate.', 'info');
       
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -422,7 +418,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
 
         {/* Right Action Side */}
         <div className="w-full md:w-7/12 p-6 md:p-10 flex flex-col justify-center bg-white">
-          {bankAccounts.length === 0 && !checkoutUrl ? (
+          {bankAccounts.length === 0 && !checkoutUrl && !checkoutData ? (
             <>
               {/* Initial state — show pricing & activate button */}
               <div className="mb-4 md:mb-6 text-center md:text-left">
@@ -581,49 +577,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
                     </div>
                   )}
                 </div>
-              ) : (
-              <>
-                <div className="mb-6 text-center md:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 mb-3">
-                  <Building2 size={10} />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Bank Transfer</span>
-                </div>
-                <h3 className="text-slate-900 text-xl md:text-2xl font-black tracking-tight mb-1">Transfer to Activate</h3>
-                <p className="text-slate-500 text-xs font-medium">
-                  Send exactly <span className="font-black text-slate-900">₦{paymentAmount.toLocaleString()}</span> to the below account.
-                </p>
-              </div>
-
-              <div className="space-y-3 mb-6">
-                {bankAccounts.map((acct, i) => (
-                  <div key={i} className="bg-slate-50 rounded-2xl p-5 border border-slate-100 hover:border-indigo-600/20 transition-all group">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{acct.bankName}</span>
-                      <button 
-                        onClick={() => copyToClipboard(acct.accountNumber, 'Account number')}
-                        className="text-slate-400 hover:text-indigo-600 transition-colors"
-                      >
-                        <Copy size={14} />
-                      </button>
-                    </div>
-                    <p className="text-2xl font-black text-slate-900 tracking-wider mb-1">{acct.accountNumber}</p>
-                    <p className="text-xs font-bold text-slate-500">{acct.accountName}</p>
-                  </div>
-                ))}
-                {paymentRef && (
-                  <div className="text-center">
-                    <button
-                      onClick={handleCancelPayment}
-                      disabled={isCancelling}
-                      className="text-[11px] font-bold text-slate-500 hover:text-rose-600 underline underline-offset-2 disabled:opacity-50"
-                    >
-                      {isCancelling ? 'Cancelling...' : 'Cancel payment'}
-                    </button>
-                  </div>
-                )}
-              </div>
-              </>
-              )}
+              ) : null}
 
               <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 mb-4">
                 <p className="text-[10px] font-bold text-indigo-700 leading-relaxed">

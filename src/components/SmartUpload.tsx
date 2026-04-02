@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User, Copy, Clock, PartyPopper, Zap } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, ArrowRight, Eye, Plus, Save, Pencil, User, Copy, Clock, PartyPopper, Zap, CreditCard } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
@@ -394,6 +394,21 @@ export default function SmartUpload({
           }
         }
         addToast('Virtual accounts created. Transfer the exact amount to proceed.', 'info');
+      } else if (data.publicKey && data.reference) {
+        setCheckoutData(data);
+        setPaymentRef(data.reference);
+        setIsVerifying(true);
+        setExpiresAt(new Date(Date.now() + 30 * 60000).toISOString());
+        setCreditApplied(Boolean(data.credit_applied));
+        setCreditUsed(Number(data.credit_used || 0) || null);
+        if (data.remaining_amount !== undefined) {
+          setRemainingAmount(Number(data.remaining_amount));
+          if (Number(data.remaining_amount) > 0 && Number(data.credit_used || 0) > 0) {
+            setPaidSoFar(Number(data.credit_used));
+          }
+        }
+        openInlineCheckout(data);
+        addToast('Secure checkout opened. Complete your payment to proceed.', 'info');
       } else if (data.authorization_url) {
         setCheckoutData(data);
         setCheckoutUrl(data.authorization_url);
@@ -744,7 +759,7 @@ export default function SmartUpload({
                </div>
             </div>
 
-            {gatewaysStatus && bankAccounts.length === 0 && (
+            {gatewaysStatus && bankAccounts.length === 0 && !checkoutData && (
               <div className="w-full max-w-md mb-10 relative z-10">
                 {!gatewaysStatus.paystack && !gatewaysStatus.kora ? (
                   <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-sm font-bold">
@@ -943,7 +958,7 @@ export default function SmartUpload({
                   ) : (
                     <>
                       <span className="text-xl font-bold">₦</span>
-                      {selectedGateway === 'kora' ? 'Open Kora Checkout' : 'Generate Transfer Account'}
+                      {selectedGateway === 'kora' ? 'Open Kora Checkout' : 'Open Paystack Checkout'}
                     </>
                   )}
                 </button>

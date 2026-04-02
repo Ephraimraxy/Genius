@@ -575,7 +575,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                   </div>
 
                   <p className="text-center text-[10px] text-slate-400 font-medium mt-8">
-                    Both gateways are secure. Select either to generate your payment account.
+                    Both gateways are secure. Select either to open a secure payment window.
                   </p>
                 </>
               )}
@@ -612,7 +612,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                   <h3 className="text-2xl font-black text-slate-900">Payment Details</h3>
                   <p className="text-slate-500 text-sm font-medium">
                     Via <span className="font-bold text-indigo-600">{gateway === 'kora' ? 'Kora' : 'Paystack'}</span>
-                    {' — '}Complete transfer to {type === 'attendance' ? "log today's attendance" : "gain instant access"}.
+                    {' — '}Complete payment to {type === 'attendance' ? "log today's attendance" : "gain instant access"}.
                   </p>
                 </div>
                 {/* Live Countdown Timer */}
@@ -641,7 +641,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
 
               {/* Bank Transfer Instructions */}
               <div className="mb-6">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Transfer exactly ₦{formattedAmount} to:</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Complete your payment of ₦{formattedAmount}:</p>
 
                 {remainingAmount !== null && remainingAmount > 0 && (
                   <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700 text-sm font-bold space-y-3">
@@ -714,7 +714,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                 ) : <div className="space-y-3">
                   {bankAccounts.length === 0 ? (
                     <p className="text-sm text-amber-600 bg-amber-50 p-4 rounded-xl border border-amber-100">
-                      Waiting for secure account generation...
+                      Initializing secure payment window...
                     </p>
                   ) : (
                     bankAccounts.map((acct, i) => (
@@ -786,7 +786,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
               <div className="mt-auto">
                 <button
                   onClick={() => void verifyPaymentStatus(false)}
-                  disabled={isVerifying || isExpired || (bankAccounts.length === 0 && !checkoutUrl) || isConfirmed}
+                  disabled={isVerifying || isExpired || (bankAccounts.length === 0 && !checkoutUrl && !(checkoutData && checkoutData.publicKey)) || isConfirmed}
                   className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] flex items-center justify-center gap-3 hover:bg-indigo-600 transition-all disabled:opacity-50"
                 >
                   {isVerifying ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
