@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertCircle, Clock, Save, ShieldAlert, CheckCircle2, ChevronRight, ChevronLeft, Volume2, Maximize2, Video } from 'lucide-react';
 import { ToastType } from './ToastSystem';
+import { friendlyError } from '../utils/friendlyError';
 
 interface ActiveExamSessionProps {
     examId: number;
@@ -72,7 +73,7 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
                     addToast("Failed to load exam questions.", "error");
                 }
             } catch (err: any) {
-                addToast(err.message || "Network error loading exam.", "error");
+                addToast(friendlyError(err, 'load'), "error");
             }
             questionStartTime.current = Date.now();
         };

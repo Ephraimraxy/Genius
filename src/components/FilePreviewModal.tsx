@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import * as docx from 'docx-preview';
 import * as XLSX from 'xlsx';
+import { friendlyError } from '../utils/friendlyError';
 import Papa from 'papaparse';
 
 interface FilePreviewModalProps {
@@ -107,7 +108,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
               setLoading(false);
             },
             error: (err) => {
-              setError(`CSV Parsing Error: ${err.message}`);
+              setError(friendlyError(err, 'load'));
               setLoading(false);
             }
           });
@@ -116,7 +117,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
           setLoading(false);
         }
       } catch (err: any) {
-        setError(`Failed to load preview: ${err.message}`);
+        setError(friendlyError(err, 'load'));
         setLoading(false);
       }
     };

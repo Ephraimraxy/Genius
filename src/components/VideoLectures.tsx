@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ToastType } from './ToastSystem';
+import { friendlyError } from '../utils/friendlyError';
 
 interface VideoItem {
     guid: string;
@@ -129,7 +130,7 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
             setVideoFile(null);
             fetchVideos();
         } catch (err: any) {
-            addToast(`Upload failed: ${err.message}`, 'error');
+            addToast(friendlyError(err, 'upload'), 'error');
         }
         setIsUploading(false);
     };

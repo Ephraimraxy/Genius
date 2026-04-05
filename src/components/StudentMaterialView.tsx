@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BookOpen, FileText, Download, Lock, CheckCircle, Search, Filter, ShoppingCart, Loader2 } from 'lucide-react';
 import { ToastType } from './ToastSystem';
+import { friendlyError } from '../utils/friendlyError';
 import GeniusPaymentModal from './GeniusPaymentModal'; 
 
 interface Material {
@@ -82,7 +83,7 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
             window.URL.revokeObjectURL(url);
             addToast('Download started', 'success');
         } catch (err: any) {
-            addToast(err.message || 'Download failed', 'error');
+            addToast(friendlyError(err, 'download'), 'error');
         }
     };
 

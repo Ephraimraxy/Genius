@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, CreditCard, ArrowRight, Loader2, Lock, Gift, Star, CheckCircle2, Copy, Building2 } from 'lucide-react';
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
+import { friendlyError } from '../utils/friendlyError';
 
 declare global {
   interface Window {
@@ -128,7 +129,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       addToast('Secure payment window opened. Complete your payment to activate.', 'info');
       
     } catch (err: any) {
-      addToast(err.message, 'error');
+      addToast(friendlyError(err, 'payment'), 'error');
     } finally {
       setLoading(false);
     }
@@ -282,7 +283,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
         setBankAccounts(data.bankAccounts);
       }
     } catch (err: any) {
-      addToast(err.message || 'Top-up failed. Please try again.', 'error');
+      addToast(friendlyError(err, 'payment'), 'error');
     } finally {
       setIsTopupLoading(false);
     }
@@ -307,7 +308,7 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
       setRetryMode('init');
       addToast('Payment cancelled. Reference marked abandoned.', 'info');
     } catch (err: any) {
-      addToast(err.message || 'Unable to cancel payment.', 'error');
+      addToast(friendlyError(err, 'payment'), 'error');
     } finally {
       setIsCancelling(false);
     }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink, User, Save, X, Mail, Building, Shield, FileText, CheckCircle2, Loader2, Plus, Trash2, Wallet } from 'lucide-react';
+import { friendlyError } from '../utils/friendlyError';
 
 export default function ProfileView({ profile, addToast, onProfileUpdate }: { profile: any, addToast?: (msg: string, type?: string) => void, onProfileUpdate?: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -59,7 +60,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
         throw new Error(data.error || 'Update failed');
       }
     } catch (err: any) {
-      addToast?.(err.message || 'Failed to update profile', 'error');
+      addToast?.(friendlyError(err, 'save'), 'error');
     } finally {
       setIsSaving(false);
     }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FileText, CheckCircle, AlertTriangle, XCircle, RefreshCw, MessageSquare, Sparkles, Brain, Cpu, ArrowRight, Loader2 } from 'lucide-react';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
+import { friendlyError } from '../utils/friendlyError';
 
 interface Review {
   id: number;
@@ -80,7 +81,7 @@ export default function PeerReviewSimulation({ activePaperId, setActivePaperId, 
       const newReview = await res.json();
       setReviews(prev => [...prev, newReview]);
     } catch (err: any) {
-      setError(err.message || 'An error occurred during neural simulation.');
+      setError(friendlyError(err, 'generic'));
     } finally {
       setIsSimulating(false);
     }

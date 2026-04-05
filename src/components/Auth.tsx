@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, ShieldCheck, ArrowLeft, KeyRound, CheckCircle, MessageSquare, Send, Phone, Eye, EyeOff } from 'lucide-react';
 
 import { ToastType } from './ToastSystem';
+import { friendlyError } from '../utils/friendlyError';
 
 interface AuthProps {
     onAuthSuccess: (token: string, user: any) => void;
@@ -82,8 +83,8 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
             addToast(isLogin ? `Welcome back, ${data.user.name}!` : 'Account created successfully!', 'success');
             onAuthSuccess(data.token, data.user);
         } catch (err: any) {
-            setError(err.message);
-            addToast(err.message, 'error');
+            setError(friendlyError(err, 'auth'));
+            addToast(friendlyError(err, 'auth'), 'error');
         } finally {
             setLoading(false);
         }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Lock, ArrowRight, Loader2, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { friendlyError } from '../utils/friendlyError';
 
 interface PINSetupProps {
   onBackToLanding: () => void;
@@ -54,8 +55,8 @@ export default function PINSetup({ onBackToLanding, addToast }: PINSetupProps) {
       setStep('success');
       addToast('Your Secure PIN is now active.', 'success');
     } catch (err: any) {
-      setError(err.message);
-      addToast(err.message, 'error');
+      setError(friendlyError(err, 'auth'));
+      addToast(friendlyError(err, 'auth'), 'error');
     } finally {
       setLoading(false);
     }

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, Key, Loader2, ShieldCheck, ArrowRight, UserCircle, GraduationCap, Eye, EyeOff } from 'lucide-react';
 
 import { ToastType } from './ToastSystem';
+import { friendlyError } from '../utils/friendlyError';
 
 // Ultra-Flexible Regex for Matriculation/Registration Number
 // Supports alpha-numeric IDs with or without slashes or hyphens (e.g. PHD25EAP00047, NSUK/SCI/21/105)
@@ -83,8 +84,8 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             onAuthSuccess(data.token, data.user);
 
         } catch (err: any) {
-            setError(err.message || 'Authentication failed');
-            addToast(err.message || 'Authentication failed', 'error');
+            setError(friendlyError(err, 'auth'));
+            addToast(friendlyError(err, 'auth'), 'error');
         } finally {
             setLoading(false);
         }
@@ -117,7 +118,7 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             setIsRecovering(true);
             
         } catch (err: any) {
-            addToast(err.message, 'error');
+            addToast(friendlyError(err, 'auth'), 'error');
         } finally {
             setLoading(false);
         }

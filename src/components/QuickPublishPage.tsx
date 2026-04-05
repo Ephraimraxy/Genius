@@ -9,6 +9,7 @@ import {
 import { ToastType } from './ToastSystem';
 import FilePreviewModal from './FilePreviewModal';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
+import { friendlyError } from '../utils/friendlyError';
 
 interface QuickPublishPageProps {
   activePaperId: number | null;
@@ -195,7 +196,7 @@ export default function QuickPublishPage({
           return { success: false, error: 'Unknown phase' };
       }
     } catch (err: any) {
-      return { success: false, error: err.message || 'Phase encountered an unexpected error' };
+      return { success: false, error: friendlyError(err, 'generic') };
     }
   };
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { RefreshCcw, Search, ShieldAlert, CreditCard, Filter } from 'lucide-react';
+import { friendlyError } from '../utils/friendlyError';
 
 type PaymentEvent = {
   id: number;
@@ -54,7 +55,7 @@ export default function PaymentEventsAdmin() {
       if (!res.ok) throw new Error(data?.error || 'Failed to load payment events');
       setEvents(Array.isArray(data?.events) ? data.events : []);
     } catch (err: any) {
-      setError(err?.message || 'Failed to load payment events');
+      setError(friendlyError(err, 'load'));
     } finally {
       setLoading(false);
     }

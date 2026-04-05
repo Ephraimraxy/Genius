@@ -1,7 +1,7 @@
 // Polyfill for DOMMatrix which is required by some dependencies like pdf-parse in Node environments
 if (typeof global.DOMMatrix === 'undefined') {
   (global as any).DOMMatrix = class DOMMatrix {
-    constructor() {}
+    constructor() { }
   };
 }
 
@@ -977,10 +977,10 @@ async function initDB() {
       FOREIGN KEY(tenant_id) REFERENCES tenants(id)
     );
   `);
-  
+
   try { await pool.query('ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_name_key'); } catch (e) { }
 
-  
+
   try { await pool.query('ALTER TABLE papers ADD COLUMN doi TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN user_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE profiles ADD COLUMN user_id INTEGER'); } catch (e) { }
@@ -1004,24 +1004,24 @@ async function initDB() {
   try { await pool.query('ALTER TABLE transactions ADD COLUMN metadata JSONB DEFAULT \'{}\''); } catch (e) { }
   try { await pool.query('ALTER TABLE transactions ADD COLUMN paper_id INTEGER REFERENCES papers(id)'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS workspace_id VARCHAR(4) UNIQUE'); } catch (e) { }
-  
+
   // Migration for existing tenants
   try {
     const tenantsRes = await pool.query('SELECT id FROM tenants WHERE workspace_id IS NULL');
     for (const t of tenantsRes.rows) {
-        let workspace_id = '';
-        while (true) {
-            const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            const randomLetters = letters[Math.floor(Math.random() * 26)] + letters[Math.floor(Math.random() * 26)];
-            const digits = Math.floor(Math.random() * 90 + 10);
-            workspace_id = randomLetters + digits;
-            const check = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspace_id]);
-            if (check.rows.length === 0) break;
-        }
-        await pool.query('UPDATE tenants SET workspace_id = $1 WHERE id = $2', [workspace_id, t.id]);
+      let workspace_id = '';
+      while (true) {
+        const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const randomLetters = letters[Math.floor(Math.random() * 26)] + letters[Math.floor(Math.random() * 26)];
+        const digits = Math.floor(Math.random() * 90 + 10);
+        workspace_id = randomLetters + digits;
+        const check = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspace_id]);
+        if (check.rows.length === 0) break;
+      }
+      await pool.query('UPDATE tenants SET workspace_id = $1 WHERE id = $2', [workspace_id, t.id]);
     }
   } catch (e) { console.error('Migration error:', e); }
-  
+
   try { await pool.query('ALTER TABLE papers ADD COLUMN volume TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN issue TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN file_blob BYTEA'); } catch (e) { }
@@ -1030,26 +1030,26 @@ async function initDB() {
   try { await pool.query('ALTER TABLE papers ADD COLUMN final_pdf BYTEA'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN final_pdf_filename TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN certificate_id TEXT'); } catch (e) { }
-  
+
   try { await pool.query('ALTER TABLE exams ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE exams ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE exams ADD COLUMN is_paid BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE resources ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE resources ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE resources ADD COLUMN is_paid BOOLEAN DEFAULT FALSE'); } catch (e) { }
-  
+
   // Migration: Global Student Uniqueness (Matric + Role)
   try {
     // If we want a global student PIN, matric_number + role must be unique
     await pool.query('ALTER TABLE users ADD CONSTRAINT users_matric_role_key UNIQUE (matric_number, role)');
   } catch (e) { }
-  
+
   // Migration: Drop global email uniqueness and add role-scoped uniqueness
   try {
     await pool.query('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key');
     await pool.query('ALTER TABLE users ADD CONSTRAINT users_email_role_key UNIQUE (email, role)');
   } catch (e) { }
-  
+
   // Set default pricing if not exists
   await pool.query(`
     INSERT INTO settings (key, value)
@@ -1088,15 +1088,15 @@ console.log('-------------------------');
 app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ 
-      status: 'ok', 
+    res.json({
+      status: 'ok',
       database: 'connected',
       timestamp: new Date().toISOString()
     });
   } catch (error: any) {
-    res.status(503).json({ 
-      status: 'error', 
-      database: 'disconnected', 
+    res.status(503).json({
+      status: 'error',
+      database: 'disconnected',
       error: error.message,
       hint: 'Check DATABASE_URL or database service status'
     });
@@ -1126,20 +1126,20 @@ const checkSubscription = async (req: any, res: any, next: any) => {
   if (req.user.role === 'tenant_admin') {
     const result = await pool.query('SELECT is_subscribed, subscription_expiry FROM tenants WHERE id = $1', [req.tenant_id]);
     const tenant = result.rows[0];
-    
+
     if (!tenant?.is_subscribed) {
-      return res.status(402).json({ 
-        error: 'Subscription required', 
-        message: 'Your lecturer account requires an active subscription. Please complete payment to access your workspace.' 
+      return res.status(402).json({
+        error: 'Subscription required',
+        message: 'Your lecturer account requires an active subscription. Please complete payment to access your workspace.'
       });
     }
 
     if (tenant.subscription_expiry && new Date() > new Date(tenant.subscription_expiry)) {
       // Automatic downgrade if expired
       await pool.query('UPDATE tenants SET is_subscribed = FALSE WHERE id = $1', [req.tenant_id]);
-      return res.status(402).json({ 
-        error: 'Subscription expired', 
-        message: 'Your 12-month subscription has expired. Please renew to continue accessing your workspace.' 
+      return res.status(402).json({
+        error: 'Subscription expired',
+        message: 'Your 12-month subscription has expired. Please renew to continue accessing your workspace.'
       });
     }
   }
@@ -1244,12 +1244,12 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
     // 1. Create Tenant (plus generate unique 4-char Workspace ID)
     let workspace_id = '';
     while (true) {
-        const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        const randomLetters = letters[Math.floor(Math.random() * 26)] + letters[Math.floor(Math.random() * 26)];
-        const digits = Math.floor(Math.random() * 90 + 10); // 10-99
-        workspace_id = randomLetters + digits;
-        const check = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspace_id]);
-        if (check.rows.length === 0) break;
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const randomLetters = letters[Math.floor(Math.random() * 26)] + letters[Math.floor(Math.random() * 26)];
+      const digits = Math.floor(Math.random() * 90 + 10); // 10-99
+      workspace_id = randomLetters + digits;
+      const check = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspace_id]);
+      if (check.rows.length === 0) break;
     }
 
     const tenantResult = await pool.query(
@@ -1275,12 +1275,12 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
 
 // Public: Get all active academic workspaces (lecturers)
 app.get('/api/auth/workspaces', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT id, name, workspace_id FROM tenants ORDER BY name ASC');
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to fetch workspaces' });
-    }
+  try {
+    const result = await pool.query('SELECT id, name, workspace_id FROM tenants ORDER BY name ASC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch workspaces' });
+  }
 });
 
 // Student Login (Matric Number + PIN + Optional Tenant ID/Context)
@@ -1298,14 +1298,14 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     let query = 'SELECT * FROM users WHERE matric_number = $1 AND role = \'student\'';
     let params = [matricNumber];
     if (tenantId) {
-        query += ' AND tenant_id = $2';
-        params.push(tenantId);
+      query += ' AND tenant_id = $2';
+      params.push(tenantId);
     }
 
     query += ' ORDER BY created_at DESC LIMIT 1';
     const result = await pool.query(query, params);
     if (result.rows.length === 0) return res.status(401).json({ error: 'Access Denied: You are not registered in this lecturer\'s workspace.' });
-    
+
     const user = result.rows[0];
 
     // 2. Validate PIN (which is stored in the password field for students)
@@ -1315,43 +1315,43 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
 
     // 3. Generate Token
     const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: 'student', tenant_id: user.tenant_id, category_id: user.category_id }, JWT_SECRET, { expiresIn: '7d' });
-    
+
     // 4. Resolve Category and Check for Entry Fee requirement (Source of Truth: students_roster)
     let accessBlocked = false;
     let entryFee = 0;
-    
+
     // Always fetch the category from the roster for this specifics workspace
     const rosterRes = await pool.query('SELECT category_id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, tenantId]);
     const rosterCategory = rosterRes.rows[0]?.category_id;
 
     if (rosterCategory) {
-        const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [rosterCategory]);
-        const category = catRes.rows[0];
-        if (category?.is_paid_entry) {
-            // Check if paid
-            const payRes = await pool.query(
-                "SELECT id FROM transactions WHERE user_id = $1 AND type = 'portal_entry' AND status = 'success'",
-                [user.id]
-            );
-            if (payRes.rows.length === 0) {
-                accessBlocked = true;
-                entryFee = category.entry_fee;
-            }
+      const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [rosterCategory]);
+      const category = catRes.rows[0];
+      if (category?.is_paid_entry) {
+        // Check if paid
+        const payRes = await pool.query(
+          "SELECT id FROM transactions WHERE user_id = $1 AND type = 'portal_entry' AND status = 'success'",
+          [user.id]
+        );
+        if (payRes.rows.length === 0) {
+          accessBlocked = true;
+          entryFee = category.entry_fee;
         }
+      }
     }
-    res.json({ 
-        token, 
-        user: { 
-            id: user.id, 
-            email: user.email, 
-            name: user.name, 
-            role: 'student', 
-            tenant_id: user.tenant_id, 
-            matricNumber: user.matric_number, // Aliased for frontend
-            matric_number: user.matric_number,
-            accessBlocked,
-            entryFee
-        } 
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: 'student',
+        tenant_id: user.tenant_id,
+        matricNumber: user.matric_number, // Aliased for frontend
+        matric_number: user.matric_number,
+        accessBlocked,
+        entryFee
+      }
     });
   } catch (error: any) {
     console.error('Student login error:', error);
@@ -1361,152 +1361,152 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
 
 // Student: Recover PIN
 app.post('/api/auth/student/recover-pin', async (req, res) => {
-    try {
-        const { matricNumber, workspaceId } = req.body;
-        if (!matricNumber || !workspaceId) return res.status(400).json({ error: 'Matric number and Workspace ID required' });
+  try {
+    const { matricNumber, workspaceId } = req.body;
+    if (!matricNumber || !workspaceId) return res.status(400).json({ error: 'Matric number and Workspace ID required' });
 
-        // Resolve tenantId
-        const tResult = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspaceId.toUpperCase()]);
-        if (tResult.rows.length === 0) return res.status(404).json({ error: 'Invalid Workspace ID' });
-        const tenantId = tResult.rows[0].id;
+    // Resolve tenantId
+    const tResult = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspaceId.toUpperCase()]);
+    if (tResult.rows.length === 0) return res.status(404).json({ error: 'Invalid Workspace ID' });
+    const tenantId = tResult.rows[0].id;
 
-        const result = await pool.query('SELECT id, name, email, tenant_id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = \'student\'', [matricNumber, tenantId]);
-        if (result.rows.length === 0) return res.status(404).json({ error: 'No student found with these credentials in this workspace' });
+    const result = await pool.query('SELECT id, name, email, tenant_id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = \'student\'', [matricNumber, tenantId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'No student found with these credentials in this workspace' });
 
-        const priceRes = await pool.query("SELECT value FROM settings WHERE key = 'pin_recovery_price'");
-        const price = parseInt(priceRes.rows[0]?.value || '1000');
+    const priceRes = await pool.query("SELECT value FROM settings WHERE key = 'pin_recovery_price'");
+    const price = parseInt(priceRes.rows[0]?.value || '1000');
 
-        res.json({ student: result.rows[0], price });
-    } catch (err) {
-        res.status(500).json({ error: 'Recovery check failed' });
-    }
+    res.json({ student: result.rows[0], price });
+  } catch (err) {
+    res.status(500).json({ error: 'Recovery check failed' });
+  }
 });
 
 app.post('/api/payment/pin-recovery/initialize', async (req, res) => {
-    try {
-        const { userId, matricNumber } = req.body;
-        const priceRes = await pool.query("SELECT value FROM settings WHERE key = 'pin_recovery_price'");
-        const amount = parseInt(priceRes.rows[0]?.value || '1000');
-        const reference = `PIN-REC-${Date.now()}-${userId}`;
+  try {
+    const { userId, matricNumber } = req.body;
+    const priceRes = await pool.query("SELECT value FROM settings WHERE key = 'pin_recovery_price'");
+    const amount = parseInt(priceRes.rows[0]?.value || '1000');
+    const reference = `PIN-REC-${Date.now()}-${userId}`;
 
-        const userRes = await pool.query('SELECT tenant_id FROM users WHERE id = $1', [userId]);
-        const tenant_id = userRes.rows[0]?.tenant_id;
+    const userRes = await pool.query('SELECT tenant_id FROM users WHERE id = $1', [userId]);
+    const tenant_id = userRes.rows[0]?.tenant_id;
 
-        await pool.query(
-            'INSERT INTO transactions (user_id, tenant_id, reference, amount, type, status) VALUES ($1, $2, $3, $4, $5, $6)',
-            [userId, tenant_id, reference, amount, 'pin_recovery', 'pending']
-        );
+    await pool.query(
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, type, status) VALUES ($1, $2, $3, $4, $5, $6)',
+      [userId, tenant_id, reference, amount, 'pin_recovery', 'pending']
+    );
 
-        const redirectUrl = buildPaymentReturnUrl(reference, 'paystack', 'pin_recovery');
-        const paymentResponse = await initializePaystackCheckout({ id: userId }, amount, reference, { redirectUrl });
+    const redirectUrl = buildPaymentReturnUrl(reference, 'paystack', 'pin_recovery');
+    const paymentResponse = await initializePaystackCheckout({ id: userId }, amount, reference, { redirectUrl });
 
-        res.json({ 
-          reference, 
-          amount,
-          checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
-          ...(typeof paymentResponse === 'object' ? paymentResponse : {})
-        });
-    } catch (err) {
-        res.status(500).json({ error: 'Payment initialization failed' });
-    }
+    res.json({
+      reference,
+      amount,
+      checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+      ...(typeof paymentResponse === 'object' ? paymentResponse : {})
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Payment initialization failed' });
+  }
 });
 
 app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: any, res) => {
-    try {
-        const { gateway = 'paystack', mode = 'inline' } = req.body;
+  try {
+    const { gateway = 'paystack', mode = 'inline' } = req.body;
 
-        const result = await pool.query(
-            'SELECT sc.entry_fee FROM student_categories sc JOIN users u ON u.category_id = sc.id WHERE u.id = $1',
-            [req.user.id]
-        );
-        const amount = Number(result.rows[0]?.entry_fee || 0);
-        const reference = `PORTAL-${Date.now()}-${req.user.id}`;
+    const result = await pool.query(
+      'SELECT sc.entry_fee FROM student_categories sc JOIN users u ON u.category_id = sc.id WHERE u.id = $1',
+      [req.user.id]
+    );
+    const amount = Number(result.rows[0]?.entry_fee || 0);
+    const reference = `PORTAL-${Date.now()}-${req.user.id}`;
 
-        // Call the appropriate payment gateway to get virtual bank account details
-        const creditResult = await applyUserCredit(req.user.id, amount);
-        const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'portal_entry');
-        let bankAccounts: any[] = [];
-        let paymentResponse: any = null;
-        const chargeAmount = creditResult.chargeAmount;
-        if (chargeAmount > 0) {
-            if (gateway === 'kora') {
-                if (mode === 'inline' || mode === 'checkout') {
-                    paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
-                      redirectUrl,
-                      notificationUrl: `${APP_URL}/api/payment/webhook/kora`
-                    });
-                } else {
-                    bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
-                }
-            } else {
-                if (mode === 'inline') {
-                    paymentResponse = buildPaystackInlinePayload(req.user, chargeAmount, reference);
-                } else {
-                    paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
-                }
-            }
-        }
-
-        await pool.query(
-            'INSERT INTO transactions (user_id, tenant_id, reference, amount, type, status, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-            [
-              req.user.id,
-              req.tenant_id,
-              reference,
-              amount,
-              'portal_entry',
-              chargeAmount > 0 ? 'pending' : 'success',
-              JSON.stringify({
-                gateway,
-                credit_used: creditResult.creditUsed,
-                credit_applied: creditResult.creditApplied,
-                paid_so_far: creditResult.creditUsed,
-                remaining_amount: Math.max(amount - creditResult.creditUsed, 0)
-              })
-            ]
-        );
-
-        if (creditResult.creditUsed > 0) {
-          await insertPaymentEvent({
-            reference,
-            gateway,
-            eventType: 'payment',
-            amount: creditResult.creditUsed,
-            eventKey: `credit:${reference}`,
-            payload: { source: 'wallet_credit', credit_used: creditResult.creditUsed }
+    // Call the appropriate payment gateway to get virtual bank account details
+    const creditResult = await applyUserCredit(req.user.id, amount);
+    const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'portal_entry');
+    let bankAccounts: any[] = [];
+    let paymentResponse: any = null;
+    const chargeAmount = creditResult.chargeAmount;
+    if (chargeAmount > 0) {
+      if (gateway === 'kora') {
+        if (mode === 'inline' || mode === 'checkout') {
+          paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+            redirectUrl,
+            notificationUrl: `${APP_URL}/api/payment/webhook/kora`
           });
+        } else {
+          bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
         }
-        if (chargeAmount === 0) {
-          await recomputeTransaction(reference, gateway);
+      } else {
+        if (mode === 'inline') {
+          paymentResponse = buildPaystackInlinePayload(req.user, chargeAmount, reference);
+        } else {
+          paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
         }
-
-        const expires_at_date = new Date();
-        expires_at_date.setMinutes(expires_at_date.getMinutes() + 30);
-        const expires_at = expires_at_date.toISOString();
-
-        res.json({
-          reference,
-          amount,
-          bankAccounts,
-          checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
-          ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
-          expires_at,
-          credit_applied: creditResult.creditApplied,
-          credit_used: creditResult.creditUsed,
-          remaining_amount: Math.max(amount - creditResult.creditUsed, 0)
-        });
-    } catch (err: any) {
-        console.error('Portal entry payment init error:', err);
-        res.status(500).json({ error: 'Payment initialization failed', details: err.message });
+      }
     }
+
+    await pool.query(
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, type, status, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [
+        req.user.id,
+        req.tenant_id,
+        reference,
+        amount,
+        'portal_entry',
+        chargeAmount > 0 ? 'pending' : 'success',
+        JSON.stringify({
+          gateway,
+          credit_used: creditResult.creditUsed,
+          credit_applied: creditResult.creditApplied,
+          paid_so_far: creditResult.creditUsed,
+          remaining_amount: Math.max(amount - creditResult.creditUsed, 0)
+        })
+      ]
+    );
+
+    if (creditResult.creditUsed > 0) {
+      await insertPaymentEvent({
+        reference,
+        gateway,
+        eventType: 'payment',
+        amount: creditResult.creditUsed,
+        eventKey: `credit:${reference}`,
+        payload: { source: 'wallet_credit', credit_used: creditResult.creditUsed }
+      });
+    }
+    if (chargeAmount === 0) {
+      await recomputeTransaction(reference, gateway);
+    }
+
+    const expires_at_date = new Date();
+    expires_at_date.setMinutes(expires_at_date.getMinutes() + 30);
+    const expires_at = expires_at_date.toISOString();
+
+    res.json({
+      reference,
+      amount,
+      bankAccounts,
+      checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+      ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
+      expires_at,
+      credit_applied: creditResult.creditApplied,
+      credit_used: creditResult.creditUsed,
+      remaining_amount: Math.max(amount - creditResult.creditUsed, 0)
+    });
+  } catch (err: any) {
+    console.error('Portal entry payment init error:', err);
+    res.status(500).json({ error: 'Payment initialization failed', details: err.message });
+  }
 });
 
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const data = loginSchema.parse(req.body);
-    const { role: requestedRole } = req.body; 
+    const { role: requestedRole } = req.body;
     const email = data.email.toLowerCase().trim();
-    
+
     // Find user with disambiguation for role if provided
     let query = 'SELECT * FROM users WHERE email = $1';
     let params = [email];
@@ -1514,32 +1514,32 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       let mappedRole = requestedRole;
       if (requestedRole === 'researcher') mappedRole = 'user';
       if (requestedRole === 'lecturer') mappedRole = 'tenant_admin';
-      
+
       // Admin Priority/Restriction: Admins can ONLY login via the researcher/research portal
       if (requestedRole === 'lecturer' && email === 'burstbrainconcept@gmail.com') {
-          return res.status(403).json({ error: 'Admin access is restricted to the Publication portal only.' });
+        return res.status(403).json({ error: 'Admin access is restricted to the Publication portal only.' });
       }
 
       if (requestedRole === 'researcher') {
-          // Allow any admin/super_admin to login through the researcher portal
-          query += " AND (role = 'super_admin' OR role = 'admin' OR role = 'user')";
+        // Allow any admin/super_admin to login through the researcher portal
+        query += " AND (role = 'super_admin' OR role = 'admin' OR role = 'user')";
       } else {
-          query += ' AND role = $2';
-          params.push(mappedRole);
+        query += ' AND role = $2';
+        params.push(mappedRole);
       }
     } else {
       // If no role requested, we still want to avoid accidental cross-portal login for admin
       if (email === 'burstbrainconcept@gmail.com') {
-          query += " AND (role = 'super_admin' OR role = 'admin')";
+        query += " AND (role = 'super_admin' OR role = 'admin')";
       }
     }
-    
+
     const result = await pool.query(query, params);
-    
+
     if (result.rows.length === 0) {
       return res.status(400).json({ error: `No account found for this email in the ${requestedRole || 'selected'} portal.` });
     }
-    
+
     // If multiple roles exist and no role was requested, we might pick the wrong one.
     // But since the frontend will now pass the role, this should be fine.
     let user = result.rows[0];
@@ -1652,7 +1652,7 @@ app.post('/api/admin/users/:id/reset-password', authenticateToken, async (req: a
 
     const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
     const result = await pool.query(
-      'UPDATE users SET password = $1 WHERE id = $2 RETURNING id, email, name, role', 
+      'UPDATE users SET password = $1 WHERE id = $2 RETURNING id, email, name, role',
       [hashedPassword, parseInt(id)]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -1783,12 +1783,12 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
       const first = $(el).find('persName > forename').text().trim();
       const last = $(el).find('persName > surname').text().trim();
       const email = $(el).find('email').text().trim();
-      
+
       const authorAffiliations: string[] = [];
       $(el).find('affiliation > orgName').each((idx, affEl) => {
         authorAffiliations.push($(affEl).text().trim());
       });
-      
+
       if (first || last) {
         authors.push({
           name: `${first} ${last}`.trim(),
@@ -1855,7 +1855,7 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
  */
 async function generateHighFidelityPaperPDF(id: number | string, overrides: Record<string, any> = {}): Promise<Buffer> {
   const paperResult = await pool.query(
-    'SELECT id, title, formatted_content, volume, issue, issn, doi, status, published_at, created_at FROM papers WHERE id = $1', 
+    'SELECT id, title, formatted_content, volume, issue, issn, doi, status, published_at, created_at FROM papers WHERE id = $1',
     [id]
   );
   const paper = paperResult.rows[0];
@@ -1961,7 +1961,7 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     try {
       const { execSync } = require('child_process');
       activePath = execSync('which chromium || which google-chrome', { encoding: 'utf-8' }).trim();
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const browser = await puppeteer.launch({
@@ -2023,7 +2023,7 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
   const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
   const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
   const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
-  
+
   let page = pdfDoc.addPage([595.27, 841.89]); // A4
   const { width, height } = page.getSize();
   const margin = 72; // 1 inch
@@ -2046,7 +2046,7 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     let curY = height - 20;
     const headerFont = font;
     const headerSize = 8;
-    
+
     // 1. Draw Logos if available
     if (logoGenius) {
       p.drawImage(logoGenius, { x: 40, y: curY - 35, width: 35, height: 35 });
@@ -2057,21 +2057,21 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
 
     // 2. Center Text (Journal Name + Metadata)
     const journalTitle = JOURNAL_NAME.toUpperCase();
-    p.drawText(journalTitle, { 
-      x: width / 2 - fontBold.widthOfTextAtSize(journalTitle, 9) / 2, 
-      y: curY - 10, 
-      size: 9, 
-      font: fontBold, 
-      color: maroon 
+    p.drawText(journalTitle, {
+      x: width / 2 - fontBold.widthOfTextAtSize(journalTitle, 9) / 2,
+      y: curY - 10,
+      size: 9,
+      font: fontBold,
+      color: maroon
     });
 
     const metaLine = `ISSN: ${branding.issn || '2971-7760'} | Volume ${branding.vol}, Issue ${branding.issue}`;
-    p.drawText(metaLine, { 
-      x: width / 2 - font.widthOfTextAtSize(metaLine, 7) / 2, 
-      y: curY - 22, 
-      size: 7, 
-      font: fontItalic, 
-      color: gray 
+    p.drawText(metaLine, {
+      x: width / 2 - font.widthOfTextAtSize(metaLine, 7) / 2,
+      y: curY - 22,
+      size: 7,
+      font: fontItalic,
+      color: gray
     });
 
     if (branding.doi) {
@@ -2085,13 +2085,13 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     }
 
     curY -= 42;
-    p.drawLine({ 
-      start: { x: 40, y: curY }, 
-      end: { x: width - 40, y: curY }, 
-      thickness: 1, 
-      color: rgb(0.9, 0.9, 0.9) 
+    p.drawLine({
+      start: { x: 40, y: curY },
+      end: { x: width - 40, y: curY },
+      thickness: 1,
+      color: rgb(0.9, 0.9, 0.9)
     });
-    
+
     return height - 90; // Reset Y for body content
   };
 
@@ -2136,20 +2136,20 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
         textWidth += textFont.widthOfTextAtSize('?', fontSize);
       }
     });
-    
+
     // Safety check just in case all words are exactly the max width
     if (textWidth >= maxW) {
-       targetPage.drawText(sanitizedLine, { x: xPos, y: yPos, size: fontSize, font: textFont });
-       return;
+      targetPage.drawText(sanitizedLine, { x: xPos, y: yPos, size: fontSize, font: textFont });
+      return;
     }
-    
+
     const spaceToFill = maxW - textWidth;
     const spaceWidth = spaceToFill / (words.length - 1);
-    
+
     let currentX = xPos;
     for (let i = 0; i < words.length; i++) {
-        targetPage.drawText(words[i], { x: currentX, y: yPos, size: fontSize, font: textFont });
-        currentX += textFont.widthOfTextAtSize(words[i], fontSize) + spaceWidth;
+      targetPage.drawText(words[i], { x: currentX, y: yPos, size: fontSize, font: textFont });
+      currentX += textFont.widthOfTextAtSize(words[i], fontSize) + spaceWidth;
     }
   };
 
@@ -2184,16 +2184,16 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
   checkNewPage(100);
   page.drawText('Abstract', { x: width / 2 - fontBold.widthOfTextAtSize('Abstract', 11) / 2, y, size: 11, font: fontBold });
   y -= 16;
-  
+
   // Abstract Body (Combined from AST parts)
   const absText = ast.abstract ? [
-    ast.abstract.background, 
-    ast.abstract.method, 
-    ast.abstract.results, 
-    ast.abstract.conclusion, 
+    ast.abstract.background,
+    ast.abstract.method,
+    ast.abstract.results,
+    ast.abstract.conclusion,
     ast.abstract.recommendation
   ].filter(Boolean).join(' ') : 'No abstract provided.';
-  
+
   const absLines = wrapText(absText, 10, fontItalic, width - 2 * margin);
   for (let i = 0; i < absLines.length; i++) {
     checkNewPage(12);
@@ -2217,7 +2217,7 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     for (const key of Object.keys(ast.sections)) {
       const content = ast.sections[key];
       if (!content) continue;
-      
+
       y -= 25;
       checkNewPage(40);
       const sectionTitle = key.charAt(0).toUpperCase() + key.slice(1);
@@ -2244,10 +2244,10 @@ async function generateFinalManuscriptPDF(ast: any, branding: any) {
     const rText = typeof ref === 'string' ? ref : (ref.raw || ref.text || JSON.stringify(ref));
     const lines = wrapText(rText, 10, font, width - 2 * margin - 20); // Hanging indent simulation
     for (let i = 0; i < lines.length; i++) {
-        checkNewPage(12);
-        const indentX = margin + (i > 0 ? 20 : 0);
-        drawJustifiedText(page, lines[i], font, 9, indentX, y, width - margin - indentX, i === lines.length - 1);
-        y -= 12;
+      checkNewPage(12);
+      const indentX = margin + (i > 0 ? 20 : 0);
+      drawJustifiedText(page, lines[i], font, 9, indentX, y, width - margin - indentX, i === lines.length - 1);
+      y -= 12;
     }
     y -= 4;
   }
@@ -2268,7 +2268,7 @@ async function validateDOI(doi: string) {
     const res = await fetch(`https://doi.org/${doi}`, { method: "HEAD" });
     // ACCEPT 404/403: doi.org takes time to update. If Zenodo says it's published, we trust it.
     // We only return false on actual NETWORK errors to the resolver itself.
-    return true; 
+    return true;
   } catch (err) {
     console.warn(`DOI Resolver Connectivity Issue for ${doi}:`, err);
     return false;
@@ -2277,7 +2277,7 @@ async function validateDOI(doi: string) {
 
 async function prereserveDOI(zenodoToken: string) {
   const isProduction = process.env.NODE_ENV === 'production' && process.env.ZENODO_USE_PRODUCTION === 'true';
-  const ZENODO_URL = isProduction 
+  const ZENODO_URL = isProduction
     ? 'https://zenodo.org/api/deposit/depositions'
     : 'https://sandbox.zenodo.org/api/deposit/depositions';
   const headers = { 'Authorization': `Bearer ${zenodoToken}`, 'Content-Type': 'application/json' };
@@ -2289,7 +2289,7 @@ async function prereserveDOI(zenodoToken: string) {
 
 async function finalizeZenodoPublish(depositionId: number, zenodoToken: string, paper: any, pdfBuffer: Buffer, bucketUrl: string) {
   const isProduction = process.env.NODE_ENV === 'production' && process.env.ZENODO_USE_PRODUCTION === 'true';
-  const ZENODO_URL = isProduction 
+  const ZENODO_URL = isProduction
     ? 'https://zenodo.org/api/deposit/depositions'
     : 'https://sandbox.zenodo.org/api/deposit/depositions';
   const headers = { 'Authorization': `Bearer ${zenodoToken}` };
@@ -2350,7 +2350,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       "SELECT id FROM transactions WHERE user_id = $1 AND type = 'publication' AND status = 'success' AND paper_id IS NULL AND (metadata->>'consumed')::boolean IS NOT TRUE LIMIT 1",
       [userId]
     );
-    
+
     if (creditCheck.rows.length === 0) {
       return res.status(402).json({ error: 'No publication credit found. Please complete payment first.' });
     }
@@ -2358,6 +2358,18 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
     let textContent = '';
     let metadata: any = null;
     const uploadedAt = new Date().toISOString();
+
+    // Detect old .doc format (Word 97-2003) before anything else
+    const originalName = (req.file.originalname || '').toLowerCase();
+    if (
+      req.file.mimetype === 'application/msword' ||
+      req.file.mimetype === 'application/vnd.ms-word' ||
+      originalName.endsWith('.doc')
+    ) {
+      return res.status(400).json({
+        error: 'Your file is in the old Word 97-2003 format (.doc). Please re-save it as a Word Document (.docx): in Microsoft Word go to File → Save As → change "Save as type" to "Word Document (*.docx)" — then upload the new file.'
+      });
+    }
 
     if (req.file.mimetype === 'application/pdf') {
       metadata = await parseWithGrobid(req.file.buffer);
@@ -2375,7 +2387,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       }
       textContent = result.value;
     } else {
-      return res.status(400).json({ error: 'Unsupported file type. Please upload PDF or DOCX.' });
+      return res.status(400).json({ error: 'Unsupported file type. Please upload a PDF or DOCX file.' });
     }
 
     if (!metadata || !metadata.title) {
@@ -2385,11 +2397,11 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
           model: 'gpt-4o',
           response_format: { type: 'json_object' },
           messages: [
-            { 
-              role: 'system', 
+            {
+              role: 'system',
               content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (array of objects), abstract (string), keywords (string[]). ' +
-                       'Each author object MUST include: name (string), department (string), faculty (string), institution (string), email (string), phone (string). ' +
-                       'Examine the paper header carefully for "By", "Department", "Faculty", "Email", "Phone" or similar labels to extract these details accurately.'
+                'Each author object MUST include: name (string), department (string), faculty (string), institution (string), email (string), phone (string). ' +
+                'Examine the paper header carefully for "By", "Department", "Faculty", "Email", "Phone" or similar labels to extract these details accurately.'
             },
             { role: 'user', content: `Extract metadata from this academic paper text:\n\n${textContent.substring(0, 15000)}` }
           ]
@@ -2398,9 +2410,9 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       } catch (aiError: any) {
         console.error('OpenAI Metadata Extraction Failed:', aiError.message);
         if (aiError.status === 429) {
-          return res.status(429).json({ 
-            error: 'AI Services Busy', 
-            details: 'The AI engine is currently at capacity. Please try again in 1 minute, or manually enter metadata in the next step.' 
+          return res.status(429).json({
+            error: 'AI Services Busy',
+            details: 'The AI engine is currently at capacity. Please try again in 1 minute, or manually enter metadata in the next step.'
           });
         }
         metadata = { title: req.file.originalname.replace(/\.[^/.]+$/, ""), authors: ['Author'], abstract: 'Abstract pending...' };
@@ -2499,11 +2511,11 @@ app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const { title, authors, abstract } = req.body;
-    
+
     const currentPaper = await pool.query('SELECT metadata, is_locked FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     if (currentPaper.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
     if (currentPaper.rows[0].is_locked) return res.status(403).json({ error: 'Manuscript is locked for final archival and cannot be modified.' });
-    
+
     let metadata = safeJsonParse<any>(currentPaper.rows[0].metadata, {});
     if (title !== undefined) metadata.title = title;
     if (authors !== undefined) metadata.authors = authors;
@@ -2574,7 +2586,7 @@ app.put('/api/papers/:id/status', authenticateToken, async (req: any, res) => {
     if (!PUBLICATION_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
-    
+
     // Automatically lock paper if it moves to final stages
     const isLocked = (status === 'accepted' || status === 'published');
 
@@ -2593,19 +2605,19 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
     const { id } = idParamSchema.parse(req.params);
     const result = await pool.query('SELECT file_blob, title, metadata FROM papers WHERE id = $1', [id]);
     const paper = result.rows[0];
-    
+
     if (!paper || !paper.file_blob) {
       return res.status(404).json({ error: 'File data not found on server' });
     }
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const ext = metadata.mimetype === 'application/pdf' ? 'pdf' : 'docx';
-    
+
     // Sanitize filename to prevent header injection or invalid characters
     const safeTitle = (paper.title || 'manuscript').replace(/[^a-zA-Z0-9\s-_]/g, '').substring(0, 100);
-    
+
     const mimetype = metadata.mimetype || (ext === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    
+
     res.setHeader('Content-Type', mimetype);
     res.setHeader('Content-Disposition', `inline; filename="${safeTitle}.${ext}"`);
     res.send(paper.file_blob);
@@ -2631,7 +2643,7 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
       filename: paper.final_pdf_filename || `${buildSafeFilename(paper.title || 'article', '_Published.pdf')}`
     };
   }
-  
+
   // HIGHEST PRIORITY: Use High-Fidelity Formatted HTML (Matches Formatting Preview 1:1)
   if (paper.formatted_content) {
     try {
@@ -2801,14 +2813,14 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
       }
 
       // Justify if not the last line of a paragraph segment
-      const isLastLine = i === lines.length - 1 || lines[i+1] === '';
+      const isLastLine = i === lines.length - 1 || lines[i + 1] === '';
       const words = line.trim().split(/\s+/);
-      
+
       if (!isLastLine && words.length > 1) {
         const totalWordWidth = words.reduce((acc, w) => acc + usedFont.widthOfTextAtSize(w, size), 0);
         const totalGapWidth = (contentW - indent) - totalWordWidth;
         const gapSize = totalGapWidth / (words.length - 1);
-        
+
         let currentX = MARGIN + indent;
         for (const word of words) {
           currentPage.drawText(word, { x: currentX, y, size, font: usedFont, color });
@@ -3275,7 +3287,7 @@ app.post('/api/manuscript/validate-apa/:id', authenticateToken, async (req: any,
       } else if (paper.metadata) {
         keywords = paper.metadata.keywords?.join(', ') || '';
       }
-    } catch(e) {}
+    } catch (e) { }
 
     const manuscriptText = `
 Title: ${paper.title || ''}
@@ -3287,52 +3299,52 @@ ${(paper.content || '').substring(0, 40000)}
     `.trim();
 
     const { phase = 0 } = req.body || {};
-    
+
     // Phase-specific rules and prompts
     const phaseRules: Record<number, { name: string, prompt: string }> = {
-      0: { 
-        name: "Structure Check", 
-        prompt: "Verify the presence of mandatory sections: Introduction, Methods, Results, Discussion, and Conclusion. List any missing sections." 
+      0: {
+        name: "Structure Check",
+        prompt: "Verify the presence of mandatory sections: Introduction, Methods, Results, Discussion, and Conclusion. List any missing sections."
       },
-      1: { 
-        name: "Abstract Validation", 
-        prompt: "Check the Abstract. It must not exceed 250 words and must cover: Background, Method, Results, Conclusion, and Recommendation." 
+      1: {
+        name: "Abstract Validation",
+        prompt: "Check the Abstract. It must not exceed 250 words and must cover: Background, Method, Results, Conclusion, and Recommendation."
       },
-      2: { 
-        name: "Keywords Policy", 
-        prompt: "Check the Keywords. They must be preceded by the label 'Keywords:' (italicized usually, but check text here) and contain 3-5 comma-separated terms." 
+      2: {
+        name: "Keywords Policy",
+        prompt: "Check the Keywords. They must be preceded by the label 'Keywords:' (italicized usually, but check text here) and contain 3-5 comma-separated terms."
       },
-      3: { 
-        name: "Introduction & Gap", 
-        prompt: "Analyze the Introduction. Ensure it clearly states the research problem, the gap in existing literature, and the specific objective of this study." 
+      3: {
+        name: "Introduction & Gap",
+        prompt: "Analyze the Introduction. Ensure it clearly states the research problem, the gap in existing literature, and the specific objective of this study."
       },
-      4: { 
-        name: "Methods (Recipe)", 
-        prompt: "Analyze the Methods section. It must provide enough detail for replication (design, participants, instruments, and procedure)." 
+      4: {
+        name: "Methods (Recipe)",
+        prompt: "Analyze the Methods section. It must provide enough detail for replication (design, participants, instruments, and procedure)."
       },
-      5: { 
-        name: "Results (Data)", 
-        prompt: "Analyze the Results section. Check for pure data reporting and adherence to APA statistical formatting (e.g., M and SD in italics)." 
+      5: {
+        name: "Results (Data)",
+        prompt: "Analyze the Results section. Check for pure data reporting and adherence to APA statistical formatting (e.g., M and SD in italics)."
       },
-      6: { 
-        name: "Discussion", 
-        prompt: "Analyze the Discussion. It must interpret the results, compare them with previous studies, and mention study limitations." 
+      6: {
+        name: "Discussion",
+        prompt: "Analyze the Discussion. It must interpret the results, compare them with previous studies, and mention study limitations."
       },
-      7: { 
-        name: "Conclusion", 
-        prompt: "Analyze the Conclusion. It should be a final wrap-up of main findings and practical implications or recommendations." 
+      7: {
+        name: "Conclusion",
+        prompt: "Analyze the Conclusion. It should be a final wrap-up of main findings and practical implications or recommendations."
       },
-      8: { 
-        name: "Citations Consistency", 
-        prompt: "Analyze in-text citations throughout the manuscript. Ensure they follow (Author, Year) format and are consistent with the text (e.g., et al. for 3+ authors)." 
+      8: {
+        name: "Citations Consistency",
+        prompt: "Analyze in-text citations throughout the manuscript. Ensure they follow (Author, Year) format and are consistent with the text (e.g., et al. for 3+ authors)."
       },
-      9: { 
-        name: "References (APA 7th)", 
-        prompt: "Analyze the References list. Verify strict adherence to APA 7th Edition formatting for every entry." 
+      9: {
+        name: "References (APA 7th)",
+        prompt: "Analyze the References list. Verify strict adherence to APA 7th Edition formatting for every entry."
       },
-      10: { 
-        name: "Final Meta-Review", 
-        prompt: "Perform a final comprehensive check of the whole manuscript for overall APA 7th Edition compliance." 
+      10: {
+        name: "Final Meta-Review",
+        prompt: "Perform a final comprehensive check of the whole manuscript for overall APA 7th Edition compliance."
       }
     };
 
@@ -3395,9 +3407,9 @@ ${manuscriptText}
       aiResult.finalDecision = 'FAIL';
     }
 
-    res.json({ 
-      success: true, 
-      validation: aiResult 
+    res.json({
+      success: true,
+      validation: aiResult
     });
 
   } catch (error: any) {
@@ -3442,8 +3454,8 @@ app.post('/api/manuscript/check-similarity/:id', authenticateToken, async (req: 
 app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const { fixes } = req.body; 
-    
+    const { fixes } = req.body;
+
     const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
@@ -3467,13 +3479,13 @@ app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res
 
     // Robust target matching for AI fixes
     for (const fix of fixes) {
-       const target = fix.target?.toLowerCase();
-       if (target === 'title') updatedTitle = fix.content;
-       else if (target === 'abstract') updatedAbstract = fix.content;
-       else {
-         // Default for phase-based fixes (Introduction, Methods, etc.) or 'content'/'sections'
-         updatedContent = fix.content;
-       }
+      const target = fix.target?.toLowerCase();
+      if (target === 'title') updatedTitle = fix.content;
+      else if (target === 'abstract') updatedAbstract = fix.content;
+      else {
+        // Default for phase-based fixes (Introduction, Methods, etc.) or 'content'/'sections'
+        updatedContent = fix.content;
+      }
     }
 
     // Invalidate stale AST and formatted_content to force re-sync
@@ -3492,7 +3504,7 @@ app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res
 });
 
 async function performStructuralRewrite(paper: any) {
-    const prompt = `
+  const prompt = `
 You are a master academic formatter and parser.
 Parse the following manuscript into a strict JSON Abstract Syntax Tree (AST).
 Extract all metadata, the abstract, and break the body into sections and blocks (paragraphs, citations).
@@ -3501,67 +3513,67 @@ If a mandatory section is missing (e.g. Methods), do NOT invent it, just leave i
 Ensure the output adheres exactly to the JSON schema provided.
     `.trim();
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'AcademicAST',
-          strict: true,
-          schema: {
-            type: 'object',
-            properties: {
-              title: { type: 'string' },
-              authors: { type: 'array', items: { type: 'string' } },
-              abstract: {
-                type: 'object',
-                properties: {
-                  background: { type: 'string' },
-                  method: { type: 'string' },
-                  results: { type: 'string' },
-                  conclusion: { type: 'string' },
-                  recommendation: { type: 'string' }
-                },
-                required: ['background', 'method', 'results', 'conclusion', 'recommendation'],
-                additionalProperties: false
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'AcademicAST',
+        strict: true,
+        schema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            authors: { type: 'array', items: { type: 'string' } },
+            abstract: {
+              type: 'object',
+              properties: {
+                background: { type: 'string' },
+                method: { type: 'string' },
+                results: { type: 'string' },
+                conclusion: { type: 'string' },
+                recommendation: { type: 'string' }
               },
-              keywords: { type: 'array', items: { type: 'string' } },
-              sections: {
-                type: 'object',
-                properties: {
-                  introduction: { type: 'array', items: { type: 'string' } },
-                  methods: { type: 'array', items: { type: 'string' } },
-                  results: { type: 'array', items: { type: 'string' } },
-                  discussion: { type: 'array', items: { type: 'string' } },
-                  conclusion: { type: 'array', items: { type: 'string' } }
-                },
-                required: ['introduction', 'methods', 'results', 'discussion', 'conclusion'],
-                additionalProperties: false
-              },
-              references: { type: 'array', items: { type: 'string' } }
+              required: ['background', 'method', 'results', 'conclusion', 'recommendation'],
+              additionalProperties: false
             },
-            required: ['title', 'authors', 'abstract', 'keywords', 'sections', 'references'],
-            additionalProperties: false
-          }
+            keywords: { type: 'array', items: { type: 'string' } },
+            sections: {
+              type: 'object',
+              properties: {
+                introduction: { type: 'array', items: { type: 'string' } },
+                methods: { type: 'array', items: { type: 'string' } },
+                results: { type: 'array', items: { type: 'string' } },
+                discussion: { type: 'array', items: { type: 'string' } },
+                conclusion: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['introduction', 'methods', 'results', 'discussion', 'conclusion'],
+              additionalProperties: false
+            },
+            references: { type: 'array', items: { type: 'string' } }
+          },
+          required: ['title', 'authors', 'abstract', 'keywords', 'sections', 'references'],
+          additionalProperties: false
         }
-      },
-      messages: [
-        { role: 'system', content: prompt },
-        { role: 'user', content: `Title: ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nContent:\n${(paper.content||'').substring(0, 50000)}` }
-      ]
-    });
+      }
+    },
+    messages: [
+      { role: 'system', content: prompt },
+      { role: 'user', content: `Title: ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nContent:\n${(paper.content || '').substring(0, 50000)}` }
+    ]
+  });
 
-    const astJson = response.choices[0]?.message?.content;
-    if (!astJson) throw new Error("Failed to parse AST");
+  const astJson = response.choices[0]?.message?.content;
+  if (!astJson) throw new Error("Failed to parse AST");
 
-    const ast = JSON.parse(astJson);
-    
-    // Save AST to db in metadata
-    let currentMetadata = typeof paper.metadata === 'string' ? JSON.parse(paper.metadata || '{}') : (paper.metadata || {});
-    currentMetadata.ast = ast;
-    
-    await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [currentMetadata, paper.id]);
-    return ast;
+  const ast = JSON.parse(astJson);
+
+  // Save AST to db in metadata
+  let currentMetadata = typeof paper.metadata === 'string' ? JSON.parse(paper.metadata || '{}') : (paper.metadata || {});
+  currentMetadata.ast = ast;
+
+  await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [currentMetadata, paper.id]);
+  return ast;
 }
 
 app.post('/api/manuscript/structural-rewrite/:id', authenticateToken, async (req: any, res) => {
@@ -3617,16 +3629,16 @@ app.post('/api/enhance/:id/commit', authenticateToken, async (req: any, res) => 
   try {
     const { id } = idParamSchema.parse(req.params);
     const { original, improved } = req.body;
-    
+
     const result = await pool.query('SELECT content FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     // Simple string replacement for the commit
     const newContent = paper.content.replace(original, improved);
-    
+
     await pool.query('UPDATE papers SET content = $1 WHERE id = $2 AND user_id = $3', [newContent, id, req.user.id]);
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Enhance commit error:', error);
@@ -3643,7 +3655,7 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
-    
+
     // Check if we already have validated references in the DB to avoid re-running expensive AI
     const refsResult = await pool.query('SELECT * FROM paper_references WHERE paper_id = $1', [paperId]);
     const existingRefs = refsResult.rows;
@@ -3655,12 +3667,12 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
       let strong = 0;
       const formattedRefs = existingRefs.map(r => {
         let aiData: any = {};
-        try { aiData = JSON.parse(r.ai_analysis || '{}'); } catch(e){}
+        try { aiData = JSON.parse(r.ai_analysis || '{}'); } catch (e) { }
         const score = aiData.score || 0;
         totalScore += score;
         if (score >= 80) strong++;
         else if (score < 60) weak++;
-        
+
         return {
           id: r.id,
           reference: r.original_text,
@@ -3678,13 +3690,13 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
           aiRewrite: aiData.aiRewrite || ''
         };
       });
-      
-      return res.json({ 
+
+      return res.json({
         references: formattedRefs,
         summary: {
-           averageScore: existingRefs.length > 0 ? Math.round(totalScore / existingRefs.length) : 0,
-           weakReferences: weak,
-           strongReferences: strong
+          averageScore: existingRefs.length > 0 ? Math.round(totalScore / existingRefs.length) : 0,
+          weakReferences: weak,
+          strongReferences: strong
         }
       });
     }
@@ -3693,7 +3705,7 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
     // Support either the new AST references or the old metadata.references
     let rawReferences = metadata.ast?.references || metadata.references || [];
     if (!Array.isArray(rawReferences)) rawReferences = [];
-    
+
     // NEW: Deep Harvest Fallback if no references detected initially
     if (rawReferences.length === 0 && paper.content) {
       const harvestPrompt = `
@@ -3721,7 +3733,7 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
 
     // Process up to 20 for AI batching to avoid massive prompt sizes
     const refsToProcess = rawReferences.slice(0, 20).map(r => typeof r === 'string' ? r : r.raw || r.text || JSON.stringify(r));
-    
+
     if (refsToProcess.length === 0) {
       return res.json({ references: [], summary: { averageScore: 0, weakReferences: 0, strongReferences: 0 } });
     }
@@ -3825,14 +3837,14 @@ Respond with a strict JSON array.
       };
 
       const dbRes = await pool.query(insertRefQuery, [
-        paperId, 
-        resItem.reference, 
-        p.title, 
-        p.authors.join(', '), 
-        p.doi, 
-        p.year, 
-        p.journal, 
-        status, 
+        paperId,
+        resItem.reference,
+        p.title,
+        p.authors.join(', '),
+        p.doi,
+        p.year,
+        p.journal,
+        status,
         JSON.stringify(aiData)
       ]);
 
@@ -3848,8 +3860,8 @@ Respond with a strict JSON array.
       });
     }
 
-    res.json({ 
-      references: validatedRefs, 
+    res.json({
+      references: validatedRefs,
       summary: {
         averageScore: aiResults.length > 0 ? Math.round(totalScore / aiResults.length) : 0,
         weakReferences: weak,
@@ -3868,7 +3880,7 @@ app.post('/api/references/fix/:id', authenticateToken, async (req: any, res) => 
   try {
     const { id: refId } = idParamSchema.parse(req.params); // This is the paper_references ID
     const { aiRewrite } = req.body;
-    
+
     if (!aiRewrite) return res.status(400).json({ error: 'Missing aiRewrite content' });
 
     // Update the original_text and reset its score/status to perfect since it's now AI-corrected
@@ -3880,7 +3892,7 @@ app.post('/api/references/fix/:id', authenticateToken, async (req: any, res) => 
     });
 
     await pool.query(
-      "UPDATE paper_references SET original_text = $1, status = 'strong', ai_analysis = $2 WHERE id = $3", 
+      "UPDATE paper_references SET original_text = $1, status = 'strong', ai_analysis = $2 WHERE id = $3",
       [aiRewrite, perfectAnalysis, refId]
     );
 
@@ -3896,10 +3908,10 @@ app.post('/api/references/fix/:id', authenticateToken, async (req: any, res) => 
           metadata.ast.references = metadata.ast.references.map((r: string) => r === currentText ? aiRewrite : r);
           // Also handle cases where r might be an object
           metadata.ast.references = metadata.ast.references.map((r: any) => {
-             const rStr = typeof r === 'string' ? r : (r.raw || r.text || JSON.stringify(r));
-             return rStr === currentText ? aiRewrite : r;
+            const rStr = typeof r === 'string' ? r : (r.raw || r.text || JSON.stringify(r));
+            return rStr === currentText ? aiRewrite : r;
           });
-          
+
           await pool.query('UPDATE papers SET metadata = $1, formatted_content = NULL WHERE id = $2', [JSON.stringify(metadata), paper_id]);
         }
       }
@@ -3922,8 +3934,8 @@ app.post('/api/recommend-journals/:id', authenticateToken, async (req: any, res)
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const ast = metadata.ast || {};
     const extractedKeywords = metadata.keywords || ast.keywords;
-    const keywords = (Array.isArray(extractedKeywords) && extractedKeywords.length > 0 ? extractedKeywords.join('+') : null) 
-      || paper.title?.replace(/\s+/g, '+') 
+    const keywords = (Array.isArray(extractedKeywords) && extractedKeywords.length > 0 ? extractedKeywords.join('+') : null)
+      || paper.title?.replace(/\s+/g, '+')
       || 'science';
 
     // Query Crossref real journal API
@@ -3969,9 +3981,9 @@ app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, 
       model: 'gpt-4o',
       response_format: { type: 'json_object' },
       messages: [
-        { 
-          role: 'system', 
-          content: 'You are an academic discovery expert. Extract 5-8 high-impact, specific scientific keywords from the paper title and abstract provided. These keywords will be used to search for matching journals in the Crossref registry. Return JSON with key "keywords" as an array of strings.' 
+        {
+          role: 'system',
+          content: 'You are an academic discovery expert. Extract 5-8 high-impact, specific scientific keywords from the paper title and abstract provided. These keywords will be used to search for matching journals in the Crossref registry. Return JSON with key "keywords" as an array of strings.'
         },
         { role: 'user', content: `Title: ${paper.title}\nAbstract: ${paper.abstract}` }
       ]
@@ -3997,7 +4009,7 @@ app.post('/api/format/:id/save', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const { formattedHtml } = z.object({ formattedHtml: z.string() }).parse(req.body);
-    
+
     // Update the database with the finalized HTML structure from Format Architect
     // IMPORTANT: Clear the AST to ensure the final publication engine uses this formatted HTML
     await pool.query(
@@ -4043,7 +4055,7 @@ app.post('/api/format/:id/email', authenticateToken, async (req: any, res) => {
     }
 
     const pdfBuffer = await generateHighFidelityPaperPDF(id);
-    
+
     await sendResendEmail({
       fromName: 'Genius Publishing',
       to: req.user.email,
@@ -4223,7 +4235,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
 
     // High-fidelity structural extraction for the AI
     let sourceContent = paper.content;
-    
+
     // DELIBERATE OMISSION: We no longer try to extract the original file_blob here.
     // The pipeline must respect the intermediate corrections (e.g. from APA Gatekeeper)
     // which are saved securely to paper.content. Re-extracting file_blob overrides them.
@@ -4234,8 +4246,8 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
       model: 'gpt-4o',
       max_tokens: 16384,
       messages: [
-        { 
-          role: 'system', 
+        {
+          role: 'system',
           content: `You are an expert academic paper formatter. Format the given paper content into professional, production-ready HTML according to the ${style.toUpperCase()} style.
           
           STYLE GUIDELINES TO FOLLOW:
@@ -4272,7 +4284,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
       [formattedHtml, nextStatus, JSON.stringify({ ...metadata, pageWindow, targetPageCount }), id, req.user.id]
     );
 
-    res.json({ 
+    res.json({
       formattedHtml,
       branding,
       pageWindow,
@@ -4288,11 +4300,11 @@ app.get('/api/papers/:id/acceptance-letter', authenticateToken, async (req: any,
     const { id } = idParamSchema.parse(req.params);
     const result = await pool.query('SELECT p.*, u.name as researcher_name FROM papers p JOIN users u ON p.user_id = u.id WHERE p.id = $1', [id]);
     const paper = result.rows[0];
-    
+
     if (!paper) {
       return res.status(404).json({ error: 'Paper not found' });
     }
-    
+
     // Admins can view any, normal users can only view their own
     if (req.user.role !== 'admin' && req.user.role !== 'super_admin' && paper.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Unauthorized' });
@@ -4304,9 +4316,9 @@ app.get('/api/papers/:id/acceptance-letter', authenticateToken, async (req: any,
 
     const titleStr = paper.title || 'Untitled';
     const nameStr = paper.researcher_name || 'Researcher';
-    
+
     const pdfBuffer = await generateAcceptanceLetterPDF(nameStr, titleStr, paper.id);
-    
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="Acceptance_Letter_${paper.id}.pdf"`);
     res.send(pdfBuffer);
@@ -4607,26 +4619,26 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   const title2 = 'INTERNATIONAL JOURNAL PUBLICATION';
   const uniNameText = PARTNER_INSTITUTION_NAME;
 
-  page.drawText(title1, { 
-    x: width / 2 - fontBold.widthOfTextAtSize(title1, 14) / 2, 
-    y: y - 15, 
-    size: 14, 
-    font: fontBold, 
-    color: maroon 
+  page.drawText(title1, {
+    x: width / 2 - fontBold.widthOfTextAtSize(title1, 14) / 2,
+    y: y - 15,
+    size: 14,
+    font: fontBold,
+    color: maroon
   });
-  page.drawText(title2, { 
-    x: width / 2 - fontBold.widthOfTextAtSize(title2, 14) / 2, 
-    y: y - 35, 
-    size: 14, 
-    font: fontBold, 
-    color: maroon 
+  page.drawText(title2, {
+    x: width / 2 - fontBold.widthOfTextAtSize(title2, 14) / 2,
+    y: y - 35,
+    size: 14,
+    font: fontBold,
+    color: maroon
   });
-  page.drawText(uniNameText, { 
-    x: width / 2 - font.widthOfTextAtSize(uniNameText, 10) / 2, 
-    y: y - 52, 
-    size: 10, 
-    font: font, 
-    color: gray 
+  page.drawText(uniNameText, {
+    x: width / 2 - font.widthOfTextAtSize(uniNameText, 10) / 2,
+    y: y - 52,
+    size: 10,
+    font: font,
+    color: gray
   });
 
   y -= 65;
@@ -4697,22 +4709,22 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   // Sign-off
   page.drawLine({ start: { x: margin, y: y + 8 }, end: { x: width - margin, y: y + 8 }, thickness: 0.5, color: rgb(0.9, 0.9, 0.9) });
   page.drawText('Best regards,', { x: margin, y, size: 10, font, color: black });
-  
+
   // Dynamic settings for Signature & Secretary
   let sigImgBase64 = '';
   let secretaryNameSetting = 'Dr. Danjuma Namo';
   try {
-      const settingsRes = await pool.query('SELECT key, value FROM settings WHERE key IN ($1, $2)', ['journal_signature', 'journal_secretary']);
-      settingsRes.rows.forEach(r => {
-          if (r.key === 'journal_signature') sigImgBase64 = r.value;
-          if (r.key === 'journal_secretary') secretaryNameSetting = r.value;
-      });
+    const settingsRes = await pool.query('SELECT key, value FROM settings WHERE key IN ($1, $2)', ['journal_signature', 'journal_secretary']);
+    settingsRes.rows.forEach(r => {
+      if (r.key === 'journal_signature') sigImgBase64 = r.value;
+      if (r.key === 'journal_secretary') secretaryNameSetting = r.value;
+    });
   } catch (err) {
-      console.error('Settings fetch error for PDF:', err);
+    console.error('Settings fetch error for PDF:', err);
   }
 
   y -= 45; // Base spacing for signature
-  
+
   if (sigImgBase64 && sigImgBase64.startsWith('data:image')) {
     try {
       const base64Data = sigImgBase64.split(',')[1];
@@ -4723,7 +4735,7 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
       } else {
         sigImg = await pdfDoc.embedJpg(sigImgBytes);
       }
-      
+
       const sigDims = sigImg.scaleToFit(140, 50);
       page.drawImage(sigImg, {
         x: margin,
@@ -4784,7 +4796,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
       if (logoRight) {
         p.drawImage(logoRight, { x: width - margin - 50, y: curY - 50, width: 50, height: 50 });
       }
-    } catch (e) {}
+    } catch (e) { }
 
     const titleStack = ['GENIUS MULTIDISCIPLINARY', 'INTERNATIONAL JOURNAL'];
     p.drawText(titleStack[0], { x: margin + 60, y: curY - 15, size: 10, font: fontBold, color: maroon });
@@ -4792,21 +4804,21 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
 
     const meta = `ISSN: ${branding.issn} | Vol ${branding.volume}, No ${branding.issue} | ${branding.date}`;
     p.drawText(meta, { x: width / 2 - font.widthOfTextAtSize(meta, 8) / 2, y: curY - 45, size: 8, font, color: gray });
-    
+
     curY -= 65;
     p.drawLine({ start: { x: margin, y: curY }, end: { x: width - margin, y: curY }, thickness: 1.5, color: maroon });
-    
+
     // Page Number
     const pageNum = `Page ${pageIndex + 1}`;
     p.drawText(pageNum, { x: width / 2 - font.widthOfTextAtSize(pageNum, 8) / 2, y: 30, size: 8, font, color: gray });
-    
+
     return curY - 30;
   };
 
   y = await drawHeader(page, true);
 
   const $ = cheerio.load(formattedHtml);
-  
+
   // Custom text wrapper
   const wrapText = (text: string, size: number, f: any, maxW: number) => {
     const words = text.split(' ');
@@ -4829,7 +4841,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
 
   // Process HTML elements
   const elements = $('h1, h2, h3, p, li, b, strong, em, i, table');
-  
+
   for (let i = 0; i < elements.length; i++) {
     const el = $(elements[i]);
     const tagName = el.prop('tagName').toLowerCase();
@@ -4862,7 +4874,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
         const colCount = rows[0].length;
         const cellPadding = 5;
         const tableFontSize = 8;
-        
+
         // 1. Calculate natural column widths
         const naturalWidths = new Array(colCount).fill(0);
         rows.forEach(row => {
@@ -4887,7 +4899,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
           const row = rows[rIdx];
           const isHeader = rIdx === 0;
           const currentFont = isHeader ? fontBold : font;
-          
+
           // Calculate row height based on wrapped text in all cells
           let maxLines = 1;
           const cellLines = row.map((cell, cIdx) => {
@@ -4895,7 +4907,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
             maxLines = Math.max(maxLines, lines.length);
             return lines;
           });
-          
+
           const rowHeight = (maxLines * (tableFontSize + 2)) + (cellPadding * 2);
 
           // Check Page Overflow
@@ -4908,7 +4920,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
           let curX = margin;
           cellLines.forEach((lines, cIdx) => {
             const cellWidth = colWidths[cIdx];
-            
+
             // Draw Cell Background (Optional for Header)
             if (isHeader) {
               page.drawRectangle({
@@ -4943,7 +4955,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
 
             curX += cellWidth;
           });
-          
+
           y -= rowHeight;
         }
       }
@@ -4952,7 +4964,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
     }
 
     const lines = wrapText(text, fontSize, currentFont, maxWidth);
-    
+
     for (const line of lines) {
       if (y < 80) {
         pageIndex++;
@@ -4960,7 +4972,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
         y = height - 50;
         y = await drawHeader(page, false);
       }
-      
+
       const xPos = tagName === 'h1' ? width / 2 - currentFont.widthOfTextAtSize(line, fontSize) / 2 : margin;
       page.drawText(line, { x: xPos, y, size: fontSize, font: currentFont, color });
       y -= (fontSize + 6);
@@ -4976,7 +4988,7 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
 app.get('/api/papers/:id/formatted-download', async (req, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    
+
     // Fetch paper content
     const result = await pool.query('SELECT * FROM papers WHERE id = $1', [id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
@@ -4986,7 +4998,7 @@ app.get('/api/papers/:id/formatted-download', async (req, res) => {
     const vol = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_volume']);
     const issue = await pool.query('SELECT value FROM settings WHERE key = $1', ['current_issue']);
     const issn = await pool.query('SELECT value FROM settings WHERE key = $1', ['journal_issn']);
-    
+
     const branding = {
       volume: vol.rows[0]?.value || '1',
       issue: issue.rows[0]?.value || '1',
@@ -5173,15 +5185,15 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     const pageWindow = metadata.pageWindow || buildPageWindow(sourcePageCount);
 
     let ast = metadata.ast;
-    
+
     // AUTONOMOUS FALLBACK: If AST is missing, generate it on-the-fly
     if (!ast) {
-        console.log(`Autonomous Fix: Generating missing AST for paper ${paperId}...`);
-        try {
-          ast = await performStructuralRewrite(paper);
-        } catch (e: any) {
-          return res.status(400).json({ error: `Structural Rewrite failed: ${e.message}. Please fix the manuscript manually.` });
-        }
+      console.log(`Autonomous Fix: Generating missing AST for paper ${paperId}...`);
+      try {
+        ast = await performStructuralRewrite(paper);
+      } catch (e: any) {
+        return res.status(400).json({ error: `Structural Rewrite failed: ${e.message}. Please fix the manuscript manually.` });
+      }
     }
     if (!metadata.ast && ast) {
       metadata.ast = ast;
@@ -5210,11 +5222,11 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
 
     // 2. PRERESERVE DOI (Mandatory Verification)
     const { depositionId, doi: prereservedDoi, bucketUrl } = await prereserveDOI(zenodoToken);
-    
+
     // 3. SECURE PUBLISHING FLOW:
     // First, verify the DOI string integrity (prefix and format)
     if (!prereservedDoi || !prereservedDoi.startsWith('10.')) {
-        throw new Error("Invalid DOI prereserved from registry.");
+      throw new Error("Invalid DOI prereserved from registry.");
     }
 
     let finalDoi = '';
@@ -5273,20 +5285,20 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       }
     } catch (e: any) {
       console.error('Zenodo/DOI Critical Failure:', e.message);
-      
+
       // If we already have a DOI from prereserve, we should save it anyway to avoid "lost" DOIs
       const recoveryDoi = prereservedDoi;
       if (recoveryDoi) {
-         await pool.query("UPDATE papers SET status = 'doi_validation_failed', doi = $1 WHERE id = $2", [recoveryDoi, paperId]);
+        await pool.query("UPDATE papers SET status = 'doi_validation_failed', doi = $1 WHERE id = $2", [recoveryDoi, paperId]);
       } else {
-         await pool.query("UPDATE papers SET status = 'doi_validation_failed' WHERE id = $1", [paperId]);
+        await pool.query("UPDATE papers SET status = 'doi_validation_failed' WHERE id = $1", [paperId]);
       }
-      
+
       const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [userId]);
       if (userRes.rows[0]) {
         await sendDoiFailureEmail(userRes.rows[0].email, userRes.rows[0].name, ast.title || paper.title, e.message);
       }
-      
+
       scheduleDoiRetry(paperId);
       return res.status(400).json({
         error: `DOI Registration Issue: ${e.message}`,
@@ -5444,14 +5456,14 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
 
     let tenant = null;
     if (freshUser.tenant_id) {
-        const tenantResult = await pool.query('SELECT * FROM tenants WHERE id = $1', [freshUser.tenant_id]);
-        tenant = tenantResult.rows[0];
+      const tenantResult = await pool.query('SELECT * FROM tenants WHERE id = $1', [freshUser.tenant_id]);
+      tenant = tenantResult.rows[0];
     }
 
     // Fetch subscription price for UI
     const pricingResult = await pool.query('SELECT value FROM settings WHERE key = \'lecturer_subscription_price\'');
     const subscriptionPrice = parseInt(pricingResult.rows[0]?.value || '15000');
-    
+
     const safeParse = (str: string | null | undefined, fallback: any) => {
       try {
         if (!str || str === '[object Object]') return fallback;
@@ -5467,44 +5479,44 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
     let entryFee = 0;
 
     if (freshUser.role === 'student' && freshUser.tenant_id) {
-        // Resolve current matric number and category from roster (Source of Truth for Workspace)
-        const rosterRes = await pool.query(
-          'SELECT matric_number, category_id FROM students_roster WHERE email = $1 AND tenant_id = $2', 
-          [freshUser.email, freshUser.tenant_id]
-        );
-        
-        let currentMatric = freshUser.matric_number;
-        let currentCatId = freshUser.category_id;
+      // Resolve current matric number and category from roster (Source of Truth for Workspace)
+      const rosterRes = await pool.query(
+        'SELECT matric_number, category_id FROM students_roster WHERE email = $1 AND tenant_id = $2',
+        [freshUser.email, freshUser.tenant_id]
+      );
 
-        if (rosterRes.rows.length > 0) {
-            currentMatric = rosterRes.rows[0].matric_number;
-            currentCatId = rosterRes.rows[0].category_id;
-            
-            // Ensure user record is synced with roster
-            if (freshUser.matric_number !== currentMatric || freshUser.category_id !== currentCatId) {
-                await pool.query('UPDATE users SET matric_number = $1, category_id = $2 WHERE id = $3', [currentMatric, currentCatId, userId]);
-                freshUser.matric_number = currentMatric;
-                freshUser.category_id = currentCatId;
-            }
-        }
-        
-        // Alias for frontend compatibility
-        freshUser.matricNumber = currentMatric;
+      let currentMatric = freshUser.matric_number;
+      let currentCatId = freshUser.category_id;
 
-        // Enforce Payment Gate using the roster-resolved category
-        if (currentCatId) {
-            const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [currentCatId]);
-            if (catRes.rows[0]?.is_paid_entry) {
-                const payRes = await pool.query(
-                    "SELECT id FROM transactions WHERE user_id = $1 AND type = 'portal_entry' AND status = 'success'",
-                    [userId]
-                );
-                if (payRes.rows.length === 0) {
-                    accessBlocked = true;
-                    entryFee = catRes.rows[0].entry_fee;
-                }
-            }
+      if (rosterRes.rows.length > 0) {
+        currentMatric = rosterRes.rows[0].matric_number;
+        currentCatId = rosterRes.rows[0].category_id;
+
+        // Ensure user record is synced with roster
+        if (freshUser.matric_number !== currentMatric || freshUser.category_id !== currentCatId) {
+          await pool.query('UPDATE users SET matric_number = $1, category_id = $2 WHERE id = $3', [currentMatric, currentCatId, userId]);
+          freshUser.matric_number = currentMatric;
+          freshUser.category_id = currentCatId;
         }
+      }
+
+      // Alias for frontend compatibility
+      freshUser.matricNumber = currentMatric;
+
+      // Enforce Payment Gate using the roster-resolved category
+      if (currentCatId) {
+        const catRes = await pool.query('SELECT is_paid_entry, entry_fee FROM student_categories WHERE id = $1', [currentCatId]);
+        if (catRes.rows[0]?.is_paid_entry) {
+          const payRes = await pool.query(
+            "SELECT id FROM transactions WHERE user_id = $1 AND type = 'portal_entry' AND status = 'success'",
+            [userId]
+          );
+          if (payRes.rows.length === 0) {
+            accessBlocked = true;
+            entryFee = catRes.rows[0].entry_fee;
+          }
+        }
+      }
     }
 
     if (profile) {
@@ -5514,12 +5526,12 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
       const papersResult = await pool.query('SELECT id, title, status, doi, created_at FROM papers WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
       const papers = papersResult.rows;
 
-      const responseData: any = { 
-          user: { ...freshUser, accessBlocked, entryFee }, 
-          profile, 
-          papers, 
-          tenant, 
-          subscriptionPrice 
+      const responseData: any = {
+        user: { ...freshUser, accessBlocked, entryFee },
+        profile,
+        papers,
+        tenant,
+        subscriptionPrice
       };
 
       // If super_admin, include global platform stats
@@ -5599,10 +5611,10 @@ app.put('/api/profile', authenticateToken, async (req: any, res) => {
         let metrics: any = { citations: 0, hIndex: 0, i10Index: 0 };
         try {
           if (metricsStr && metricsStr !== '[object Object]') {
-             metrics = typeof metricsStr === 'object' ? metricsStr : JSON.parse(metricsStr);
+            metrics = typeof metricsStr === 'object' ? metricsStr : JSON.parse(metricsStr);
           }
-        } catch (e) {}
-        
+        } catch (e) { }
+
         metrics.interests = interests;
         await pool.query('UPDATE profiles SET metrics = $1 WHERE user_id = $2', [JSON.stringify(metrics), userId]);
       }
@@ -5612,7 +5624,7 @@ app.put('/api/profile', authenticateToken, async (req: any, res) => {
     const updatedUserRes = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number FROM users WHERE id = $1', [userId]);
     const updatedUser = updatedUserRes.rows[0];
     if (updatedUser) {
-        updatedUser.matricNumber = updatedUser.matric_number;
+      updatedUser.matricNumber = updatedUser.matric_number;
     }
     res.json({ success: true, user: updatedUser });
   } catch (error) {
@@ -5750,9 +5762,11 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: 'You are an academic citation integrity checker. Return JSON with key "mismatches" containing an array of objects with: issue (string), details (string).' },
-          { role: 'user', content: `Analyze the following academic paper metadata and identify any citation mismatches (e.g., references in text not in bibliography, or vice versa).
+          {
+            role: 'user', content: `Analyze the following academic paper metadata and identify any citation mismatches (e.g., references in text not in bibliography, or vice versa).
         Sections: ${JSON.stringify(metadata.sections)}
-        References: ${JSON.stringify(metadata.references)}` }
+        References: ${JSON.stringify(metadata.references)}`
+          }
         ]
       });
       const parsed = JSON.parse(response.choices[0]?.message?.content || '{"mismatches":[]}');
@@ -6047,17 +6061,17 @@ app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
 
     if (name) { updates.push(`name = $${paramIdx++}`); values.push(name); }
     if (email) { updates.push(`email = $${paramIdx++}`); values.push(email); }
-    if (role && ['admin', 'super_admin', 'user'].includes(role)) { 
+    if (role && ['admin', 'super_admin', 'user'].includes(role)) {
       const userRes = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
       const currentRole = userRes.rows[0]?.role;
-      
+
       // Restriction: Only users from the Research portal (role='user') can be made admins
       if ((role === 'admin' || role === 'super_admin') && currentRole !== 'user' && currentRole !== 'admin' && currentRole !== 'super_admin') {
-          return res.status(400).json({ error: "Only Research portal users can be assigned Admin roles." });
+        return res.status(400).json({ error: "Only Research portal users can be assigned Admin roles." });
       }
 
       if (id === req.user.id && role === 'user') return res.status(400).json({ error: "Cannot demote yourself" });
-      updates.push(`role = $${paramIdx++}`); values.push(role); 
+      updates.push(`role = $${paramIdx++}`); values.push(role);
     }
     if (affiliation !== undefined) { updates.push(`affiliation = $${paramIdx++}`); values.push(affiliation); }
 
@@ -6065,7 +6079,7 @@ app.put('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
       values.push(id);
       await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIdx}`, values);
     }
-    
+
     const updated = await pool.query('SELECT id, name, email, role, affiliation, created_at FROM users WHERE id = $1', [id]);
     res.json({ success: true, user: updated.rows[0] });
   } catch (error) {
@@ -6084,7 +6098,7 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
     await pool.query('DELETE FROM transactions WHERE user_id = $1', [id]);
     await pool.query('DELETE FROM reviews WHERE user_id = $1', [id]);
     await pool.query('DELETE FROM profiles WHERE user_id = $1', [id]);
-    
+
     // Delete refs before papers
     const papers = await pool.query('SELECT id FROM papers WHERE user_id = $1', [id]);
     for (const p of papers.rows) {
@@ -6092,18 +6106,18 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
       await pool.query('DELETE FROM reviews WHERE paper_id = $1', [p.id]);
     }
     await pool.query('DELETE FROM papers WHERE user_id = $1', [id]);
-    
+
     // Delete associated tenant if user is a lecturer (tenant_admin)
     const userResult = await pool.query('SELECT role, tenant_id FROM users WHERE id = $1', [id]);
     const user = userResult.rows[0];
     if (user && user.role === 'tenant_admin' && user.tenant_id) {
-       // Clear students roster and resources for this tenant first
-       await pool.query('DELETE FROM students_roster WHERE tenant_id = $1', [user.tenant_id]);
-       await pool.query('DELETE FROM resources WHERE tenant_id = $1', [user.tenant_id]);
-       await pool.query('DELETE FROM exams WHERE tenant_id = $1', [user.tenant_id]);
-       await pool.query('UPDATE users SET category_id = NULL WHERE tenant_id = $1', [user.tenant_id]);
-       await pool.query('DELETE FROM student_categories WHERE tenant_id = $1', [user.tenant_id]);
-       await pool.query('DELETE FROM tenants WHERE id = $1', [user.tenant_id]);
+      // Clear students roster and resources for this tenant first
+      await pool.query('DELETE FROM students_roster WHERE tenant_id = $1', [user.tenant_id]);
+      await pool.query('DELETE FROM resources WHERE tenant_id = $1', [user.tenant_id]);
+      await pool.query('DELETE FROM exams WHERE tenant_id = $1', [user.tenant_id]);
+      await pool.query('UPDATE users SET category_id = NULL WHERE tenant_id = $1', [user.tenant_id]);
+      await pool.query('DELETE FROM student_categories WHERE tenant_id = $1', [user.tenant_id]);
+      await pool.query('DELETE FROM tenants WHERE id = $1', [user.tenant_id]);
     }
 
     // Finally delete user
@@ -6124,7 +6138,7 @@ app.put('/api/admin/users/:id/role', authenticateToken, async (req: any, res) =>
     const userRes = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
     const currentRole = userRes.rows[0]?.role;
     if ((role === 'admin' || role === 'super_admin') && currentRole !== 'user' && currentRole !== 'admin' && currentRole !== 'super_admin') {
-        return res.status(400).json({ error: "Only Research portal users can be assigned Admin roles." });
+      return res.status(400).json({ error: "Only Research portal users can be assigned Admin roles." });
     }
 
     if (id === req.user.id) return res.status(400).json({ error: 'Cannot change your own role' });
@@ -6221,7 +6235,7 @@ app.put('/api/admin/papers/:id/status', authenticateToken, async (req: any, res)
 app.get('/api/admin/config/pricing', authenticateToken, async (req: any, res) => {
   const pubPriceResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['publication_price']);
   const subPriceResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['lecturer_subscription_price']);
-  res.json({ 
+  res.json({
     publication_price: parseInt(pubPriceResult.rows[0]?.value || '5000', 10),
     subscription_price: parseInt(subPriceResult.rows[0]?.value || '15000', 10)
   });
@@ -6231,7 +6245,7 @@ app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res) =
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
   const { key, value } = req.body; // key: 'publication_price' or 'lecturer_subscription_price'
   if (!['publication_price', 'lecturer_subscription_price'].includes(key)) return res.status(400).json({ error: 'Invalid setting key' });
-  
+
   await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value.toString()]);
   res.json({ success: true, key, value });
 });
@@ -6242,10 +6256,10 @@ app.get('/api/admin/config/journal', authenticateToken, async (req: any, res) =>
   try {
     const keys = ['current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue', 'max_issues_per_volume', 'max_pages_per_manuscript', 'journal_signature', 'journal_secretary', 'doi_auto_retry_enabled', 'doi_auto_retry_interval_minutes'];
     const results = await pool.query('SELECT key, value FROM settings WHERE key = ANY($1)', [keys]);
-    
+
     const settings: any = {};
     results.rows.forEach(row => {
-        settings[row.key] = row.value;
+      settings[row.key] = row.value;
     });
 
     res.json({
@@ -6267,8 +6281,8 @@ app.get('/api/admin/config/journal', authenticateToken, async (req: any, res) =>
 
 app.post('/api/admin/config/journal', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
-  const { 
-    current_volume, current_issue, journal_issn, 
+  const {
+    current_volume, current_issue, journal_issn,
     max_manuscripts_per_issue, max_issues_per_volume, max_pages_per_manuscript,
     journal_signature, journal_secretary,
     doi_auto_retry_enabled, doi_auto_retry_interval_minutes
@@ -6285,7 +6299,7 @@ app.post('/api/admin/config/journal', authenticateToken, async (req: any, res) =
     if (journal_secretary !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['journal_secretary', journal_secretary]));
     if (doi_auto_retry_enabled !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['doi_auto_retry_enabled', doi_auto_retry_enabled ? 'true' : 'false']));
     if (doi_auto_retry_interval_minutes !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['doi_auto_retry_interval_minutes', doi_auto_retry_interval_minutes.toString()]));
-    
+
     await Promise.all(queries);
     res.json({ success: true });
   } catch (error: any) {
@@ -6499,14 +6513,14 @@ async function initializeKoraCheckout(user: any, amount: number, reference: stri
   redirectUrl?: string;
   notificationUrl?: string;
   channels?: string[];
-} = {}): Promise<{ 
-  checkoutUrl: string; 
-  publicKey: string; 
-  amount: number; 
+} = {}): Promise<{
+  checkoutUrl: string;
+  publicKey: string;
+  amount: number;
   amount_naira?: number;
-  currency: string; 
-  reference: string; 
-  customer: { email: string; name: string } 
+  currency: string;
+  reference: string;
+  customer: { email: string; name: string }
 }> {
   const KORA_SECRET_KEY = process.env.KORA_SECRET_KEY;
   const KORA_PUBLIC_KEY = process.env.KORA_PUBLIC_KEY || ''; // Should be in env
@@ -6544,7 +6558,7 @@ async function initializeKoraCheckout(user: any, amount: number, reference: stri
   if (!data.status) throw new Error(data.message || 'Kora checkout initialization failed');
   const checkoutUrl = data.data?.checkout_url;
   if (!checkoutUrl) throw new Error('Kora did not return a checkout URL');
-  
+
   return {
     checkoutUrl,
     publicKey: KORA_PUBLIC_KEY,
@@ -6619,14 +6633,14 @@ async function verifyKoraCharge(reference: string): Promise<{ status: string; am
 async function initializePaystackCheckout(user: any, amount: number, reference: string, options: {
   redirectUrl?: string;
   channels?: string[];
-} = {}): Promise<{ 
-  checkoutUrl: string; 
-  publicKey: string; 
-  amount: number; 
+} = {}): Promise<{
+  checkoutUrl: string;
+  publicKey: string;
+  amount: number;
   amount_kobo?: number;
   amount_naira?: number;
-  email: string; 
-  reference: string; 
+  email: string;
+  reference: string;
 }> {
   const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
   const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || ''; // Should be in env
@@ -6657,10 +6671,10 @@ async function initializePaystackCheckout(user: any, amount: number, reference: 
 
   const data = await response.json();
   if (!data.status) throw new Error(data.message || 'Paystack checkout initialization failed');
-  
+
   const checkoutUrl = data.data?.authorization_url;
   if (!checkoutUrl) throw new Error('Paystack did not return an authorization URL');
-  
+
   return {
     checkoutUrl,
     publicKey: PAYSTACK_PUBLIC_KEY,
@@ -6784,7 +6798,7 @@ async function requestGatewayRefund(gateway: string, reference: string, amount: 
 app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => {
   const { amount, type, gateway = 'paystack', mode = 'inline' } = req.body;
   const reference = `GMIJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  
+
   try {
     const resolvedType = type || 'publication';
     const requestedAmount = Number(amount || 0);
@@ -6814,7 +6828,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     }
 
     await pool.query(
-      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [
         req.user.id,
         req.tenant_id,
@@ -6847,7 +6861,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     if (chargeAmount === 0) {
       await recomputeTransaction(reference, gateway);
     }
-    
+
     res.json({
       reference,
       amount: requestedAmount,
@@ -6871,7 +6885,7 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
   if (!course_id || !amount) return res.status(400).json({ error: 'course_id and amount are required' });
 
   const reference = `ATT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  
+
   try {
     const requestedAmount = Number(amount || 0);
     const creditResult = await applyUserCredit(req.user.id, requestedAmount);
@@ -6897,7 +6911,7 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
         }
       }
     }
-    
+
     const attendance_date = new Date().toISOString().split('T')[0];
     const expires_at_date = new Date();
     expires_at_date.setMinutes(expires_at_date.getMinutes() + 30);
@@ -6906,7 +6920,7 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
     const metadata = { course_id, attendance_date, expires_at, gateway };
 
     await pool.query(
-      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [
         req.user.id,
         req.tenant_id,
@@ -6931,8 +6945,9 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
     if (chargeAmount === 0) {
       await recomputeTransaction(reference, gateway);
     }
-    
-    res.json({ reference, amount: requestedAmount, bankAccounts, 
+
+    res.json({
+      reference, amount: requestedAmount, bankAccounts,
       checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
       ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
       expires_at,
@@ -7256,16 +7271,16 @@ app.get('/api/payment/credit', authenticateToken, async (req: any, res) => {
 app.get('/api/transactions', authenticateToken, async (req: any, res) => {
   let query, params;
   if (req.user.role === 'super_admin') {
-     query = 'SELECT t.*, u.email as user_email, tn.name as tenant_name FROM transactions t JOIN users u ON t.user_id = u.id LEFT JOIN tenants tn ON t.tenant_id = tn.id ORDER BY t.created_at DESC';
-     params = [];
+    query = 'SELECT t.*, u.email as user_email, tn.name as tenant_name FROM transactions t JOIN users u ON t.user_id = u.id LEFT JOIN tenants tn ON t.tenant_id = tn.id ORDER BY t.created_at DESC';
+    params = [];
   } else if (req.user.role === 'tenant_admin') {
-     query = 'SELECT * FROM transactions WHERE tenant_id = $1 ORDER BY created_at DESC';
-     params = [req.tenant_id];
+    query = 'SELECT * FROM transactions WHERE tenant_id = $1 ORDER BY created_at DESC';
+    params = [req.tenant_id];
   } else {
-     query = 'SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC';
-     params = [req.user.id];
+    query = 'SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC';
+    params = [req.user.id];
   }
-  
+
   const result = await pool.query(query, params);
   res.json(result.rows);
 });
@@ -7290,7 +7305,7 @@ app.get('/api/publications', authenticateToken, async (req: any, res) => {
 // Direct Admin-User Chat System
 app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
   const userId = req.user.role === 'admin' ? (req.query.userId || req.user.id) : req.user.id;
-  
+
   // If fetching a thread, mark those messages as read for the recipient
   if (req.user.role === 'admin' && req.query.userId) {
     await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND sender_role = \'user\'', [req.query.userId]);
@@ -7310,7 +7325,7 @@ app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
 
 app.get('/api/chat/inbox', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
-  
+
   // Get latest message per user thread to build the inbox view, counting unread messages from users
   const result = await pool.query(`
     WITH LatestMessages AS (
@@ -7340,7 +7355,7 @@ app.get('/api/chat/inbox', authenticateToken, async (req: any, res) => {
     JOIN users u ON lm.user_id = u.id
     LEFT JOIN UnreadCounts uc ON lm.user_id = uc.user_id
   `);
-  
+
   // Sort overall inbox by most recent message
   const inbox = result.rows.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
   res.json(inbox);
@@ -7350,7 +7365,7 @@ app.get('/api/chat/notifications', authenticateToken, async (req: any, res) => {
   const isUser = req.user.role === 'user';
   const isLecturer = req.user.role === 'tenant_admin';
   const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
-  
+
   if (isUser || isLecturer) {
     const result = await pool.query(`
       SELECT cm.content, cm.created_at, u.name as sender_name, u.id as sender_id
@@ -7394,13 +7409,13 @@ app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
   const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
   const userId = isAdmin ? targetUserId : req.user.id;
   const senderRole = req.user.role;
-  
+
   if (!userId) return res.status(400).json({ error: 'Target user ID required for admin replies' });
 
   // Save the message directly to the targeted user's thread
   await pool.query('INSERT INTO chat_messages (user_id, sender_role, content, tenant_id) VALUES ($1, $2, $3, $4)',
     [userId, senderRole, content, req.tenant_id || null]);
-    
+
   res.json({ success: true });
 });
 
@@ -7414,10 +7429,10 @@ app.post('/api/webhooks/bunny', async (req: any, res: any) => {
   try {
     const { VideoGuid, Status, LibraryId } = req.body;
     console.log(`[Bunny Stream Webhook] Video ${VideoGuid} in Library ${LibraryId} changed to status: ${Status}`);
-    
+
     // In a full production app with a dedicated videos table, we'd do:
     // await pool.query('UPDATE videos SET status = $1 WHERE guid = $2', [Status, VideoGuid]);
-    
+
     res.json({ success: true, message: 'Webhook received' });
   } catch (err: any) {
     console.error('Bunny Webhook Error:', err);
@@ -7458,15 +7473,15 @@ app.post('/api/videos/create', authenticateToken, checkSubscription, async (req:
     const { title } = req.body;
     const bunnyRes = await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'AccessKey': BUNNY_STREAM_API_KEY,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ title })
     });
     const data = await bunnyRes.json();
-    res.json({ 
-      videoId: data.guid, 
+    res.json({
+      videoId: data.guid,
       uploadUrl: `/api/videos/${data.guid}/upload`,
       cdnHost: BUNNY_CDN_HOST
     });
@@ -7525,7 +7540,7 @@ app.put('/api/videos/:guid/settings', authenticateToken, checkSubscription, asyn
     ];
     await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos/${req.params.guid}`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'AccessKey': BUNNY_STREAM_API_KEY,
         'Content-Type': 'application/json'
       },
@@ -7541,13 +7556,13 @@ app.put('/api/videos/:guid/settings', authenticateToken, checkSubscription, asyn
 // ─── RESOURCE HUB ENDPOINTS ─────────────────────────────────────────
 // Get basic tenant info for current researcher/lecturer
 app.get('/api/tenant/info', authenticateToken, async (req: any, res) => {
-    try {
-        const result = await pool.query('SELECT id, name, workspace_id FROM tenants WHERE id = $1', [req.tenant_id]);
-        if (result.rows.length === 0) return res.status(404).json({ error: 'Tenant not found' });
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to fetch tenant info' });
-    }
+  try {
+    const result = await pool.query('SELECT id, name, workspace_id FROM tenants WHERE id = $1', [req.tenant_id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Tenant not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch tenant info' });
+  }
 });
 
 app.get('/api/resources', authenticateToken, checkSubscription, async (req: any, res: any) => {
@@ -7593,7 +7608,7 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
     if (type === 'roster') {
       try {
         const students = typeof content === 'string' ? JSON.parse(content) : content;
-        
+
         // Build CSV string
         const csvRows = ['Name,Matriculation Number,Email']; // Header
         students.forEach((s: any) => {
@@ -7604,7 +7619,7 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${name.endsWith('.csv') ? name : name + '.csv'}"`);
         return res.send(csvString);
-        
+
       } catch (e) {
         return res.status(500).json({ error: 'Failed to parse roster content format' });
       }
@@ -7614,11 +7629,11 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
     // Send as generic attachment based on how it was stored
     res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
     if (typeof content === 'string') {
-        res.setHeader('Content-Type', 'text/plain');
-        return res.send(content);
+      res.setHeader('Content-Type', 'text/plain');
+      return res.send(content);
     } else {
-        res.setHeader('Content-Type', 'application/json');
-        return res.send(JSON.stringify(content, null, 2));
+      res.setHeader('Content-Type', 'application/json');
+      return res.send(JSON.stringify(content, null, 2));
     }
 
   } catch (err: any) {
@@ -7646,25 +7661,25 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
     // 1. Handle Category (Find or Create)
     let final_category_id = categoryId;
     if (categoryName && !final_category_id) {
-        const catCheck = await pool.query('SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
-        if (catCheck.rows.length > 0) {
-            final_category_id = catCheck.rows[0].id;
-        } else {
-            const catRes = await pool.query(
-                'INSERT INTO student_categories (tenant_id, name, is_paid_entry, entry_fee) VALUES ($1, $2, $3, $4) RETURNING id',
-                [req.tenant_id, categoryName.trim(), !!isPaidEntry, parseInt(entryFee) || 0]
-            );
-            final_category_id = catRes.rows[0].id;
-        }
+      const catCheck = await pool.query('SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
+      if (catCheck.rows.length > 0) {
+        final_category_id = catCheck.rows[0].id;
+      } else {
+        const catRes = await pool.query(
+          'INSERT INTO student_categories (tenant_id, name, is_paid_entry, entry_fee) VALUES ($1, $2, $3, $4) RETURNING id',
+          [req.tenant_id, categoryName.trim(), !!isPaidEntry, parseInt(entryFee) || 0]
+        );
+        final_category_id = catRes.rows[0].id;
+      }
     } else if (final_category_id) {
-        // Price Lock: Update only if current fee is 0
-        await pool.query(
-            `UPDATE student_categories 
+      // Price Lock: Update only if current fee is 0
+      await pool.query(
+        `UPDATE student_categories 
              SET is_paid_entry = CASE WHEN entry_fee = 0 THEN $1 ELSE is_paid_entry END,
                  entry_fee = CASE WHEN entry_fee = 0 THEN $2 ELSE entry_fee END
              WHERE id = $3 AND tenant_id = $4`,
-            [!!isPaidEntry, parseInt(entryFee) || 0, final_category_id, req.tenant_id]
-        );
+        [!!isPaidEntry, parseInt(entryFee) || 0, final_category_id, req.tenant_id]
+      );
     }
 
     // 2. Resolve Workspace Info for Email
@@ -7674,83 +7689,83 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
 
     // 3. Process Roster Students
     if (type === 'roster') {
-        const students = Array.isArray(content) ? content : [];
-        if (students.length === 0) return res.status(400).json({ error: 'Empty roster' });
-        
-        // Deep Sanitize the entire students array to prevent PG errors on JSON storage later
-        const sanitizedStudents = students.map((s: any) => {
-            const clean = (val: any) => typeof val === 'string' ? val.replace(/\0/g, '').trim() : val;
-            // Support various frontend property names
-            const email = clean(s.email || s.studentEmail || s.emailAddress || s.Email);
-            const name = clean(s.name || s.studentName || s.fullName || s.Name);
-            const matric = clean(s.matricNumber || s.regNumber || s.matricNo || s.matric);
-            const course = clean(s.course || s.department || s.program);
-            
-            return {
-                ...s,
-                name,
-                email,
-                matricNumber: matric,
-                course
-            };
-        });
+      const students = Array.isArray(content) ? content : [];
+      if (students.length === 0) return res.status(400).json({ error: 'Empty roster' });
 
-        for (const s of sanitizedStudents) {
-            const matricNumber = s.matricNumber;
-            const email = s.email;
-            const studentName = s.name || matricNumber;
-            
-            if (!matricNumber || !email) continue;
+      // Deep Sanitize the entire students array to prevent PG errors on JSON storage later
+      const sanitizedStudents = students.map((s: any) => {
+        const clean = (val: any) => typeof val === 'string' ? val.replace(/\0/g, '').trim() : val;
+        // Support various frontend property names
+        const email = clean(s.email || s.studentEmail || s.emailAddress || s.Email);
+        const name = clean(s.name || s.studentName || s.fullName || s.Name);
+        const matric = clean(s.matricNumber || s.regNumber || s.matricNo || s.matric);
+        const course = clean(s.course || s.department || s.program);
 
-            // Basic email validation to prevent email delivery issues
-            if (!email.includes('@') || email.length < 5) {
-                console.warn(`Skipping invalid email: ${email}`);
-                continue;
-            }
-            
-            if (!matricNumber || !email) continue;
+        return {
+          ...s,
+          name,
+          email,
+          matricNumber: matric,
+          course
+        };
+      });
 
-            const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
-            if (existing.rows.length === 0) {
-                // Resolve Global Student User & PIN
-                let hashedPin = '';
-                let autoPin = '';
+      for (const s of sanitizedStudents) {
+        const matricNumber = s.matricNumber;
+        const email = s.email;
+        const studentName = s.name || matricNumber;
 
-                const globalUserCheck = await pool.query('SELECT password, pin_code FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matricNumber]);
-                
-                if (globalUserCheck.rows.length > 0) {
-                    hashedPin = globalUserCheck.rows[0].password;
-                    autoPin = globalUserCheck.rows[0].pin_code || '****';
-                } else {
-                    autoPin = String(Math.floor(1000 + Math.random() * 9000));
-                    hashedPin = await bcrypt.hash(autoPin, 10);
-                }
-                
-                await pool.query(
-                    'INSERT INTO students_roster (tenant_id, matric_number, name, email, pin_hash, category_id) VALUES ($1, $2, $3, $4, $5, $6)',
-                    [req.tenant_id, matricNumber, studentName, email, hashedPin, final_category_id]
-                );
+        if (!matricNumber || !email) continue;
 
-                // Create or Link User account
-                const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
-                if (userCheck.rows.length === 0) {
-                    await pool.query(
-                        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-                        [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, autoPin]
-                    );
-                } else {
-                    await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, autoPin, final_category_id]);
-                }
+        // Basic email validation to prevent email delivery issues
+        if (!email.includes('@') || email.length < 5) {
+          console.warn(`Skipping invalid email: ${email}`);
+          continue;
+        }
 
-                // Send Email with auto-generated PIN
-                try {
-                    const feeInt = parseInt(entryFee as string) || 0;
-                    
-                    await sendResendEmail({
-                        fromName: 'Genius Academic Portal',
-                        to: email,
-                        subject: `[Genius] Welcome ${studentName} - Your Access Credentials`,
-                        html: `
+        if (!matricNumber || !email) continue;
+
+        const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+        if (existing.rows.length === 0) {
+          // Resolve Global Student User & PIN
+          let hashedPin = '';
+          let autoPin = '';
+
+          const globalUserCheck = await pool.query('SELECT password, pin_code FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matricNumber]);
+
+          if (globalUserCheck.rows.length > 0) {
+            hashedPin = globalUserCheck.rows[0].password;
+            autoPin = globalUserCheck.rows[0].pin_code || '****';
+          } else {
+            autoPin = String(Math.floor(1000 + Math.random() * 9000));
+            hashedPin = await bcrypt.hash(autoPin, 10);
+          }
+
+          await pool.query(
+            'INSERT INTO students_roster (tenant_id, matric_number, name, email, pin_hash, category_id) VALUES ($1, $2, $3, $4, $5, $6)',
+            [req.tenant_id, matricNumber, studentName, email, hashedPin, final_category_id]
+          );
+
+          // Create or Link User account
+          const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+          if (userCheck.rows.length === 0) {
+            await pool.query(
+              'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+              [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, autoPin]
+            );
+          } else {
+            await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, autoPin, final_category_id]);
+          }
+
+          // Send Email with auto-generated PIN
+          try {
+            const feeInt = parseInt(entryFee as string) || 0;
+
+            await sendResendEmail({
+              fromName: 'Genius Academic Portal',
+              to: email,
+              subject: `[Genius] Welcome ${studentName} - Your Access Credentials`,
+              html: `
 <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: 0 auto; line-height: 1.5;">
   <h2 style="color: #1a237e; margin-top: 0;">Welcome to Genius Academy</h2>
   <p>Hi <b>${studentName}</b>,</p>
@@ -7774,10 +7789,10 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
   </div>
 </div>
                         `
-                    });
-                } catch (emailErr) { console.error('Batch email failed for', email, emailErr); }
-            }
+            });
+          } catch (emailErr) { console.error('Batch email failed for', email, emailErr); }
         }
+      }
     }
 
     // 4. Save the Resource Record (using potentially sanitized content)
@@ -7785,9 +7800,9 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
     const result = await pool.query(
       'INSERT INTO resources (tenant_id, type, name, content, status, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
       [req.tenant_id, type, name, JSON.stringify(Array.isArray(content) ? (type === 'roster' ? rawStudents.map((s: any) => ({
-          name: typeof s.name === 'string' ? s.name.replace(/\0/g, '') : s.name,
-          email: typeof s.email === 'string' ? s.email.replace(/\0/g, '') : s.email,
-          matricNumber: typeof s.matricNumber === 'string' ? s.matricNumber.replace(/\0/g, '') : s.matricNumber
+        name: typeof s.name === 'string' ? s.name.replace(/\0/g, '') : s.name,
+        email: typeof s.email === 'string' ? s.email.replace(/\0/g, '') : s.email,
+        matricNumber: typeof s.matricNumber === 'string' ? s.matricNumber.replace(/\0/g, '') : s.matricNumber
       })) : content) : content), 'ready', final_category_id]
     );
 
@@ -7845,7 +7860,7 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
   if (!resource_id || !amount) return res.status(400).json({ error: 'resource_id and amount are required' });
 
   const reference = `MAT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  
+
   try {
     const requestedAmount = Number(amount || 0);
     const creditResult = await applyUserCredit(req.user.id, requestedAmount);
@@ -7871,12 +7886,12 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
         }
       }
     }
-    
+
     const resourceRes = await pool.query('SELECT tenant_id FROM resources WHERE id = $1', [resource_id]);
     const tenant_id = resourceRes.rows[0]?.tenant_id;
 
     await pool.query(
-      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [
         req.user.id,
         tenant_id,
@@ -7901,8 +7916,9 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
     if (chargeAmount === 0) {
       await recomputeTransaction(reference, gateway);
     }
-    
-    res.json({ reference, amount: requestedAmount, bankAccounts, 
+
+    res.json({
+      reference, amount: requestedAmount, bankAccounts,
       checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
       ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
       credit_applied: creditResult.creditApplied,
@@ -7921,7 +7937,7 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
   if (!exam_id || !amount) return res.status(400).json({ error: 'exam_id and amount are required' });
 
   const reference = `ASM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  
+
   try {
     const requestedAmount = Number(amount || 0);
     const creditResult = await applyUserCredit(req.user.id, requestedAmount);
@@ -7947,12 +7963,12 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
         }
       }
     }
-    
+
     const examRes = await pool.query('SELECT tenant_id FROM exams WHERE id = $1', [exam_id]);
     const tenant_id = examRes.rows[0]?.tenant_id;
 
     await pool.query(
-      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [
         req.user.id,
         tenant_id,
@@ -7977,8 +7993,9 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
     if (chargeAmount === 0) {
       await recomputeTransaction(reference, gateway);
     }
-    
-    res.json({ reference, amount: requestedAmount, bankAccounts, 
+
+    res.json({
+      reference, amount: requestedAmount, bankAccounts,
       checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
       ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
       credit_applied: creditResult.creditApplied,
@@ -8014,22 +8031,22 @@ app.get('/api/courses/categories', authenticateToken, checkSubscription, async (
 });
 
 app.put('/api/courses/categories/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
-    if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
-    try {
-        const { id } = req.params;
-        const { is_paid_entry, entry_fee } = req.body;
-        // Price Lock Enforcement: Only update if current entry_fee is 0
-        await pool.query(
-            `UPDATE student_categories 
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const { is_paid_entry, entry_fee } = req.body;
+    // Price Lock Enforcement: Only update if current entry_fee is 0
+    await pool.query(
+      `UPDATE student_categories 
              SET is_paid_entry = CASE WHEN entry_fee = 0 THEN $1 ELSE is_paid_entry END,
                  entry_fee = CASE WHEN entry_fee = 0 THEN $2 ELSE entry_fee END 
              WHERE id = $3 AND tenant_id = $4`,
-            [is_paid_entry, entry_fee, id, req.tenant_id]
-        );
-        res.json({ success: true, message: 'Settings updated (Price lock applied if non-zero)' });
-    } catch (err) {
-        res.status(500).json({ error: 'Update failed' });
-    }
+      [is_paid_entry, entry_fee, id, req.tenant_id]
+    );
+    res.json({ success: true, message: 'Settings updated (Price lock applied if non-zero)' });
+  } catch (err) {
+    res.status(500).json({ error: 'Update failed' });
+  }
 });
 
 // Lecturer: Add student to roster with auto-generated PIN
@@ -8056,7 +8073,7 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     let autoPin = '';
 
     const globalUserCheck = await pool.query('SELECT password, pin_code FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matricNumber]);
-    
+
     if (globalUserCheck.rows.length > 0) {
       hashedPin = globalUserCheck.rows[0].password;
       autoPin = globalUserCheck.rows[0].pin_code || '****'; // Use existing if available
@@ -8187,7 +8204,7 @@ app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, asyn
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = req.params;
-    
+
     // 1. Get student info first to handle user account cleanup
     const studentRes = await pool.query('SELECT matric_number FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
     if (studentRes.rows.length === 0) return res.status(404).json({ error: 'Student not found in your roster' });
@@ -8195,10 +8212,10 @@ app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, asyn
 
     // 2. Delete from users (tenant-scoped)
     await pool.query('DELETE FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = \'student\'', [matric, req.tenant_id]);
-    
+
     // 3. Delete from roster
     await pool.query('DELETE FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
-    
+
     res.json({ success: true, message: 'Student removed from workspace successfully' });
   } catch (err: any) {
     res.status(500).json({ error: 'Deletion failed' });
@@ -8251,7 +8268,7 @@ app.post('/api/exams/:id/questions', authenticateToken, checkSubscription, async
   try {
     const { id } = req.params;
     const { text, options, correct_answer, type, formula, points } = req.body;
-    
+
     // Verify exam belongs to tenant
     const examCheck = await pool.query('SELECT id FROM exams WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
     if (examCheck.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
@@ -8285,13 +8302,13 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
     const totalExams = results.rows ? results.rows.length : 0;
     const totalScore = (results.rows || []).reduce((sum: number, r: any) => sum + (r.score || 0), 0);
     const avgScore = totalExams > 0 ? totalScore / totalExams : 0;
-    
+
     // CGPA Calculation (Simplified: mapping 0-100 to 0-4.0)
     const cgpa = (avgScore / 100 * 4).toFixed(2);
-    
+
     // Total Credits (Sum of points from exams)
     const totalCredits = (results.rows || []).reduce((sum: number, r: any) => sum + (r.max_points || 0), 0);
-    
+
     // Global Rank (Relative to other students in the same tenant)
     const rankResult = await pool.query(
       `SELECT user_id, AVG(score) as avg_score 
@@ -8411,7 +8428,7 @@ app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
     if (examResult.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
 
     const questionsResult = await pool.query('SELECT id, text, options, type, formula, points FROM questions WHERE exam_id = $1', [id]);
-    
+
     res.json({
       exam: examResult.rows[0],
       questions: questionsResult.rows
@@ -8553,7 +8570,7 @@ async function startServer() {
       }
       next();
     });
-    
+
     app.use(express.static('dist'));
     app.get('*', (req, res) => {
       res.sendFile('dist/index.html', { root: '.' });

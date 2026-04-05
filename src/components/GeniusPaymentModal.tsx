@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, CreditCard, Loader2, CheckCircle2, ShieldUser, Copy, Clock, AlertCircle, ChevronRight, Zap } from 'lucide-react';
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
+import { friendlyError } from '../utils/friendlyError';
 
 declare global {
   interface Window {
@@ -156,7 +157,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         onClose();
       }
     } catch (err: any) {
-      addToast(err.message || 'Payment server offline.', 'error');
+      addToast(friendlyError(err, 'payment'), 'error');
       onClose();
     } finally {
       setLoading(false);
@@ -320,7 +321,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         setBankAccounts(data.bankAccounts);
       }
     } catch (err: any) {
-      addToast(err.message || 'Top-up failed. Please try again.', 'error');
+      addToast(friendlyError(err, 'payment'), 'error');
     } finally {
       setIsTopupLoading(false);
     }
@@ -345,7 +346,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
       setRetryMode('init');
       addToast('Payment cancelled. Reference marked abandoned.', 'info');
     } catch (err: any) {
-      addToast(err.message || 'Unable to cancel payment.', 'error');
+      addToast(friendlyError(err, 'payment'), 'error');
     } finally {
       setIsCancelling(false);
     }
@@ -430,7 +431,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
       }
     } catch (err: any) {
       if (!silent) {
-        addToast(err.message || 'Unable to verify payment right now.', 'error');
+        addToast(friendlyError(err, 'payment'), 'error');
       }
     } finally {
       if (!silent) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BookMarked, ExternalLink, Star, TrendingUp, ShieldCheck, CheckCircle, Loader2, AlertCircle, ArrowRight, Sparkles, Send, Globe, Zap } from 'lucide-react';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
+import { friendlyError } from '../utils/friendlyError';
 
 export default function JournalRecommendations({ activePaperId, setActivePaperId, onNavigate }: { activePaperId: number | null, setActivePaperId: (id: number | null) => void, onNavigate?: (tab: string) => void }) {
   const [journals, setJournals] = useState<any[]>([]);
@@ -67,7 +68,7 @@ on the Genius Global Network.`;
       const e = new CustomEvent('toast', { detail: { message: 'Manuscript successfully broadcast to Global Genius Network!', type: 'success' } });
       window.dispatchEvent(e);
     } catch (err: any) {
-      const e = new CustomEvent('toast', { detail: { message: err.message, type: 'error' } });
+      const e = new CustomEvent('toast', { detail: { message: friendlyError(err, 'generic'), type: 'error' } });
       window.dispatchEvent(e);
     } finally {
       setIsPublishing(false);
@@ -101,7 +102,7 @@ on the Genius Global Network.`;
       const e = new CustomEvent('toast', { detail: { message: 'Keywords optimized! Matching engine refreshed.', type: 'success' } });
       window.dispatchEvent(e);
     } catch (err: any) {
-      const e = new CustomEvent('toast', { detail: { message: err.message, type: 'error' } });
+      const e = new CustomEvent('toast', { detail: { message: friendlyError(err, 'generic'), type: 'error' } });
       window.dispatchEvent(e);
     } finally {
       setIsRefiningKeywords(false);

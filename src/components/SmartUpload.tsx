@@ -4,6 +4,7 @@ import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, Arro
 import FilePreviewModal from './FilePreviewModal';
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
+import { friendlyError } from '../utils/friendlyError';
 
 declare global {
   interface Window {
@@ -168,7 +169,7 @@ export default function SmartUpload({
       setIsEditing(false);
       addToast('Manuscript details synchronized!', 'success');
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err, 'save'));
     } finally {
       setIsSaving(false);
     }
@@ -313,7 +314,7 @@ export default function SmartUpload({
         addToast('Manuscript ingestion and audit complete!', 'success');
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err, 'upload'));
     } finally {
       setIsUploading(false);
       setIsValidating(false);
@@ -450,8 +451,8 @@ export default function SmartUpload({
         throw new Error(data.error || 'Payment gateway error. Please try again.');
       }
     } catch (err: any) {
-      setError(err.message);
-      addToast(err.message || 'Payment initialization failed', 'error');
+      setError(friendlyError(err, 'payment'));
+      addToast(friendlyError(err, 'payment'), 'error');
     } finally {
       setIsPaying(false);
     }
@@ -605,7 +606,7 @@ export default function SmartUpload({
         setBankAccounts(data.bankAccounts);
       }
     } catch (err: any) {
-      addToast(err.message || 'Top-up failed. Please try again.', 'error');
+      addToast(friendlyError(err, 'payment'), 'error');
     } finally {
       setIsTopupLoading(false);
     }
@@ -630,7 +631,7 @@ export default function SmartUpload({
       setRetryMode('init');
       addToast('Payment cancelled. Reference marked abandoned.', 'info');
     } catch (err: any) {
-      addToast(err.message || 'Unable to cancel payment.', 'error');
+      addToast(friendlyError(err, 'payment'), 'error');
     } finally {
       setIsCancelling(false);
     }

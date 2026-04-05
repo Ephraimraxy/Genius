@@ -6,6 +6,7 @@ import html2pdf from 'html2pdf.js';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
 
 import { ToastType } from './ToastSystem';
+import { friendlyError } from '../utils/friendlyError';
 
 export default function FormattingEngine({ 
   activePaperId, 
@@ -132,7 +133,7 @@ export default function FormattingEngine({
       setFormattedHtml(data.formattedHtml);
       setBranding(data.branding);
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err, 'generic'));
     } finally {
       setIsFormatting(false);
     }
@@ -151,7 +152,7 @@ export default function FormattingEngine({
       if (!res.ok) throw new Error('Email delivery failed');
       addToast("Manuscript sent to your portal email address.", "success");
     } catch (err: any) {
-      addToast(err.message, "error");
+      addToast(friendlyError(err, 'generic'), "error");
     } finally {
       setIsEmailing(false);
     }

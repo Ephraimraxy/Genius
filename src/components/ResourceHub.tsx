@@ -19,6 +19,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import FilePreviewModal from './FilePreviewModal';
 import { ToastType } from './ToastSystem';
+import { friendlyError } from '../utils/friendlyError';
 
 interface Resource {
     id: number;
@@ -160,7 +161,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 fetchResources();
                 setFileHandle(null);
             } catch (err: any) {
-                addToast(`Audio upload failed: ${err.message}`, 'error');
+                addToast(friendlyError(err, 'upload'), 'error');
             }
             setIsUploading(false);
             return;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, CheckCircle2, AlertTriangle, ArrowRight, Loader2, Sparkles, BookOpen, RefreshCw, XCircle } from 'lucide-react';
 import WaitingDraftsQueue from './WaitingDraftsQueue';
+import { friendlyError } from '../utils/friendlyError';
 
 interface Issue {
   type: string;
@@ -83,7 +84,7 @@ export default function APAValidator({ activePaperId, setActivePaperId, onNaviga
       setResult(data.validation);
     } catch (err: any) {
       console.error('Validation Error:', err);
-      setError(err.message || 'An unexpected error occurred during analysis');
+      setError(friendlyError(err, 'load'));
     } finally {
       setIsValidating(false);
     }

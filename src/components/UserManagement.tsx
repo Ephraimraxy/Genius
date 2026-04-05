@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Users, Search, ShieldCheck, UserCheck, UserX, Mail, Building2, Calendar, ChevronDown, Filter, RefreshCw, Edit2, Trash2, X, MessageSquare, Save, KeyRound, Lock, CheckCircle, GraduationCap, Eye, EyeOff } from 'lucide-react';
+import { friendlyError } from '../utils/friendlyError';
 
 interface User {
   id: number;
@@ -79,7 +80,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
       setEditingUser(null);
       if (addToast) addToast('User updated successfully', 'success');
     } catch (err: any) {
-      if (addToast) addToast(err.message, 'error');
+      if (addToast) addToast(friendlyError(err, 'generic'), 'error');
     } finally {
       setIsSaving(false);
     }
@@ -106,7 +107,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
       setUsers(prev => prev.filter(u => u.id !== id));
       if (addToast) addToast('User deleted successfully', 'success');
     } catch (err: any) {
-      if (addToast) addToast(err.message, 'error');
+      if (addToast) addToast(friendlyError(err, 'generic'), 'error');
     } finally {
       setIsDeleting(null);
     }
@@ -131,7 +132,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
       setResetPassword('');
       if (addToast) addToast(`Password reset for ${editingUser.email}`, 'success');
     } catch (err: any) {
-      if (addToast) addToast(err.message, 'error');
+      if (addToast) addToast(friendlyError(err, 'generic'), 'error');
     } finally {
       setIsResettingPw(false);
     }
