@@ -15,7 +15,8 @@ import multer from 'multer';
 // @ts-ignore
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+const _pdfParseModule = require('pdf-parse');
+const pdfParse: (buffer: Buffer) => Promise<any> = typeof _pdfParseModule === 'function' ? _pdfParseModule : (_pdfParseModule.default || _pdfParseModule);
 import mammoth from 'mammoth';
 import cors from 'cors';
 import OpenAI from 'openai';
@@ -2365,7 +2366,13 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       if (!metadata) metadata = {};
       metadata.sourcePageCount = data.numpages;
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      let result;
+      try {
+        result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      } catch (docxErr: any) {
+        console.error('DOCX parse error:', docxErr?.message);
+        return res.status(400).json({ error: 'The uploaded DOCX file appears to be corrupted or is not a valid Word document. Please re-save the file in Word and try again.' });
+      }
       textContent = result.value;
     } else {
       return res.status(400).json({ error: 'Unsupported file type. Please upload PDF or DOCX.' });
@@ -7192,8 +7199,13 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
             await pool.query('UPDATE transactions SET status = $1, metadata = metadata || $2 WHERE id = $3',
               ['failed', JSON.stringify({ paystack_status: verifyResult.status, verified_at: new Date().toISOString() }), txn.id]);
           }
-        } catch (verifyErr) {
-          console.error('Paystack verify error:', verifyErr);
+        } catch (verifyErr: any) {
+          // Silently ignore "transaction not found" — occurs when polling fires before
+          // the user completes payment on Paystack's side (reference not yet created there).
+          const msg = String(verifyErr?.message || '');
+          if (!msg.includes('Transaction reference not found')) {
+            console.error('Paystack verify error:', verifyErr);
+          }
         }
       }
     }
