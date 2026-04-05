@@ -70,6 +70,10 @@ export default function SmartUpload({
   const [agreedRefund, setAgreedRefund] = useState(false);
   const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean; kora: boolean } | null>(null);
   const [selectedGateway, setSelectedGateway] = useState<'paystack' | 'kora' | null>(null);
+  const [isDocFile, setIsDocFile] = useState(false);
+  const [isConverting, setIsConverting] = useState(false);
+  const [convertedFile, setConvertedFile] = useState<File | null>(null);
+  const [showConvertApproval, setShowConvertApproval] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const buildStructuralAudit = (validationResult: any) => {
@@ -251,8 +255,59 @@ export default function SmartUpload({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Detect old .doc format before attempting upload
+    const isOldDoc = file.name.toLowerCase().endsWith('.doc') || file.type === 'application/msword';
+    if (isOldDoc) {
+      setPendingFile(file);
+      setIsDocFile(true);
+      setConvertedFile(null);
+      setShowConvertApproval(false);
+      setError(null);
+      return;
+    }
+
     setResearcherName(profile?.name || '');
     setPendingFile(file);
+    setIsConfirmingDetails(true);
+  };
+
+  const handleDocConvert = async () => {
+    if (!pendingFile) return;
+    setIsConverting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', pendingFile);
+      const res = await fetch('/api/convert/doc-to-docx', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Conversion failed');
+      }
+      const blob = await res.blob();
+      const outName = pendingFile.name.replace(/\.doc$/i, '.docx');
+      const converted = new File([blob], outName, {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      setConvertedFile(converted);
+      setShowConvertApproval(true);
+      addToast('Document converted successfully! Please review and approve to proceed.', 'success');
+    } catch (err: any) {
+      addToast(friendlyError(err, 'upload'), 'error');
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const handleProceedWithConverted = () => {
+    if (!convertedFile) return;
+    setShowConvertApproval(false);
+    setIsDocFile(false);
+    setError(null);
+    setResearcherName(profile?.name || '');
+    setPendingFile(convertedFile);
     setIsConfirmingDetails(true);
   };
 
@@ -826,7 +881,62 @@ export default function SmartUpload({
               </div>
             )}
 
-            {error && (
+            {isDocFile && (
+              <div className="mb-8 relative z-10 max-w-md w-full">
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-800">Old Word format detected (.doc)</p>
+                      <p className="text-xs text-amber-700 mt-1">
+                        Your file is in Word 97-2003 format. Please re-save it as a <strong>Word Document (.docx)</strong>:
+                        in Microsoft Word go to <strong>File → Save As</strong> → change &quot;Save as type&quot; to <strong>Word Document (*.docx)</strong> — then upload the new file.
+                      </p>
+                    </div>
+                  </div>
+                  {!showConvertApproval ? (
+                    <button
+                      onClick={handleDocConvert}
+                      disabled={isConverting}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-colors"
+                    >
+                      {isConverting ? (
+                        <><Loader2 size={15} className="animate-spin" /> Converting your document…</>
+                      ) : (
+                        <><Zap size={15} /> Or let us auto-convert it for you</>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-xl space-y-3">
+                      <div className="flex items-center gap-2 text-green-700">
+                        <CheckCircle2 size={16} />
+                        <p className="text-sm font-bold">Conversion complete!</p>
+                      </div>
+                      <p className="text-xs text-green-700">
+                        Your document was converted to <strong>.docx</strong>. Note: complex formatting (images, tables) may differ slightly.
+                        Do you approve proceeding with the converted file?
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleProceedWithConverted}
+                          className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg transition-colors"
+                        >
+                          Yes, proceed with converted file
+                        </button>
+                        <button
+                          onClick={() => { setIsDocFile(false); setShowConvertApproval(false); setConvertedFile(null); setPendingFile(null); }}
+                          className="flex-1 py-2 px-3 bg-white border border-green-300 text-green-700 text-xs font-bold rounded-lg hover:bg-green-50 transition-colors"
+                        >
+                          No, I'll convert manually
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {!isDocFile && error && (
               <div className="mb-8 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 relative z-10 max-w-md w-full">
                 <AlertCircle size={18} className="text-rose-500 shrink-0" />
                 <p className="text-sm font-bold text-rose-700">{error}</p>
@@ -1029,7 +1139,7 @@ export default function SmartUpload({
                   Browse Workstation
                   <ArrowRight size={20} className="group-hover/btn:translate-x-1 transition-transform" />
                 </button>
-                {error && (
+                {!isDocFile && error && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}

@@ -2337,6 +2337,54 @@ const idParamSchema = z.object({
   id: z.string().regex(/^\d+$/).transform(Number)
 });
 
+// Auto-convert .doc → .docx
+app.post('/api/convert/doc-to-docx', authenticateToken, upload.single('file'), async (req: any, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file provided.' });
+
+    // Extract text content using mammoth
+    let textContent = '';
+    try {
+      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      textContent = result.value || '';
+    } catch (e) {
+      return res.status(422).json({
+        error: 'Auto-conversion could not read this file. Please open it in Microsoft Word and use File → Save As → Word Document (.docx) to convert it manually.'
+      });
+    }
+
+    if (!textContent || textContent.trim().length < 20) {
+      return res.status(422).json({
+        error: 'Auto-conversion could not extract readable content from this file. Please open it in Microsoft Word and save it manually as .docx.'
+      });
+    }
+
+    // Build a proper .docx from the extracted text using the docx package
+    const docxLib = require('docx');
+    const { Document, Paragraph, TextRun, Packer } = docxLib;
+
+    const lines = textContent.split('\n');
+    const children = lines.map((line: string) =>
+      new Paragraph({ children: [new TextRun({ text: line, size: 24, font: 'Times New Roman' })] })
+    );
+
+    const doc = new Document({
+      styles: { default: { document: { run: { size: 24, font: 'Times New Roman' } } } },
+      sections: [{ properties: {}, children }]
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    const outName = (req.file.originalname || 'manuscript').replace(/\.doc$/i, '.docx');
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${outName}"`);
+    res.send(buffer);
+  } catch (err: any) {
+    console.error('Doc-to-docx conversion error:', err?.message);
+    res.status(500).json({ error: 'Conversion failed. Please save the file manually as .docx in Microsoft Word.' });
+  }
+});
+
 // API Routes
 app.post('/api/upload', authenticateToken, upload.single('file'), async (req: any, res) => {
   try {
