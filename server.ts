@@ -1930,6 +1930,8 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     }
   );
 
+  const startPage = Number(branding.startPageNumber || 1);
+
   const fullHtml = `
     <!DOCTYPE html>
     <html lang="en">
@@ -1939,6 +1941,24 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
         @page {
           margin: 35mm 15mm 25mm 15mm;
           size: A4;
+        }
+        /* CSS counter for correct journal page numbering (continuation across issues) */
+        body { counter-reset: journal-page ${startPage - 1}; }
+        .journal-page-number {
+          position: fixed;
+          bottom: 8mm;
+          right: 0;
+          left: 0;
+          text-align: right;
+          padding-right: 15mm;
+          font-family: sans-serif;
+          font-size: 9px;
+          color: #94a3b8;
+          font-weight: normal;
+        }
+        .journal-page-number::before {
+          counter-increment: journal-page;
+          content: "Page " counter(journal-page);
         }
         /* Apply justify directly to body so Puppeteer PDF engine
            inherits it on every page — not just the first */
@@ -2045,6 +2065,7 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
       </style>
     </head>
     <body>
+      <div class="journal-page-number"></div>
       <div class="academic-content">
         ${scrubbedContent}
       </div>
@@ -2121,9 +2142,8 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     `;
 
     const footerTemplate = `
-      <div style="width: 100%; font-family: sans-serif; font-size: 9px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 5px; margin: 0 45px; display: flex; justify-content: space-between;">
+      <div style="width: 100%; font-family: sans-serif; font-size: 9px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 5px; margin: 0 45px;">
         <div style="text-transform: uppercase; font-weight: bold; letter-spacing: 0.1em;">Genius Multidisciplinary International Journal</div>
-        <div>Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>
       </div>
     `;
 
@@ -2927,11 +2947,14 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
   // apply to every download — including papers published before the fixes were deployed.
   // Only fall back to final_pdf if there is no formatted_content at all.
 
+  // Recover the saved startPageNumber so on-demand downloads show the same page numbers as the published version
+  const savedStartPage = Number(metadata.startPageNumber || 1);
+
   // HIGHEST PRIORITY: Use High-Fidelity Formatted HTML (Matches Formatting Preview 1:1)
   if (paper.formatted_content) {
     try {
       console.log(`[PUBLISH] Generating High-Fidelity PDF for Paper ${paperId}...`);
-      const buffer = await generateHighFidelityPaperPDF(paperId);
+      const buffer = await generateHighFidelityPaperPDF(paperId, { startPageNumber: savedStartPage });
       return { buffer, filename: `${(paper.title || 'article').replace(/[^a-z0-9]/gi, '_')}_Final.pdf` };
     } catch (e) {
       console.warn(`[PUBLISH] High-Fidelity pass failed for ${paperId}, falling back to AST/Standard.`, e);
@@ -2943,7 +2966,8 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
     const branding = {
       issn: paper.issn || '2971-7760',
       vol: paper.volume || '1',
-      issue: paper.issue || '1'
+      issue: paper.issue || '1',
+      startPageNumber: savedStartPage
     };
     const buffer = await generateFinalManuscriptPDF(metadata.ast, branding);
     return { buffer: Buffer.from(buffer), filename: `${(paper.title || 'article').replace(/[^a-z0-9]/gi, '_')}.pdf` };
@@ -4319,11 +4343,13 @@ app.post('/api/format/:id/save', authenticateToken, async (req: any, res) => {
 app.get('/api/format/:id/pdf', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const paperResult = await pool.query('SELECT title FROM papers WHERE id = $1', [id]);
+    const paperResult = await pool.query('SELECT title, metadata FROM papers WHERE id = $1', [id]);
     const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const pdfBuffer = await generateHighFidelityPaperPDF(id);
+    const meta = safeJsonParse<any>(paper.metadata, {});
+    const savedStartPage = Number(meta.startPageNumber || 1);
+    const pdfBuffer = await generateHighFidelityPaperPDF(id, { startPageNumber: savedStartPage });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}_Final.pdf"`);
@@ -4711,14 +4737,18 @@ const finalizePublicationFromRetry = async (paperId: number) => {
   const zenodoToken = process.env.ZENODO_ACCESS_TOKEN;
   if (!zenodoToken) throw new Error('Zenodo Access Token missing.');
 
+  // Lock this paper row for the duration of publishing to prevent duplicate startPageNumber from concurrent submissions
+  await pool.query('SELECT id FROM papers WHERE id = $1 FOR UPDATE', [paperId]);
+
   const previousPapers = await pool.query(
-    "SELECT metadata FROM papers WHERE status = 'published' AND volume = $1 AND issue = $2",
-    [vol.toString(), iss.toString()]
+    "SELECT metadata FROM papers WHERE status = 'published' AND volume = $1 AND issue = $2 AND id != $3",
+    [vol.toString(), iss.toString(), paperId]
   );
   let startPageNumber = 1;
   previousPapers.rows.forEach(r => {
-    const m = typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata;
-    startPageNumber += (m.pageCount || 0);
+    const m = typeof r.metadata === 'string' ? JSON.parse(r.metadata) : (r.metadata || {});
+    const pc = parseInt(m.pageCount || m.sourcePageCount || '0', 10);
+    if (pc > 0) startPageNumber += pc;
   });
 
   const { depositionId, doi: prereservedDoi, bucketUrl } = await prereserveDOI(zenodoToken);
@@ -9028,8 +9058,23 @@ async function startServer() {
       next();
     });
 
-    app.use(express.static('dist'));
+    // Hashed assets (JS/CSS) can be cached forever — filename changes on every build
+    app.use('/assets', express.static('dist/assets', {
+      maxAge: '1y',
+      immutable: true,
+    }));
+
+    // index.html must never be cached — it references the latest hashed asset filenames
+    app.use(express.static('dist', {
+      setHeaders(res, filePath) {
+        if (filePath.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+      }
+    }));
+
     app.get('*', (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile('dist/index.html', { root: '.' });
     });
   }
