@@ -1890,7 +1890,7 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     institution: resolvedInstitution
   });
 
-  const scrubbedContent = paper.formatted_content
+  let scrubbedContent = paper.formatted_content
     .replace(/<div class="header-sheet"[\s\S]*?<\/div>/g, '') // Strip legacy headers if they use the old class
     .replace(/<div class="sheet-header-full"[\s\S]*?<div class="header-accent-bar"><\/div>\s*<\/div>/g, '') // Strip AI-injected recurring branding (Puppeteer native header handles this)
     .replace(/<div class="paper-sheet"[^>]*>/g, '')           // Strip sheet wrappers
@@ -1900,6 +1900,35 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     // ASSET INJECTION: Swap relative paths for high-fidelity Base64 for the PDF engine
     .replace(/src="\/journal-logo\.png"/g, `src="${journalLogoBase64}"`)
     .replace(/src="\/Nasarawa-State-University\.jpg"/g, `src="${nsukLogoBase64}"`);
+
+  // ENFORCE TIGHT REFERENCES on every PDF generation (catches old stored content + AI that ignored the prompt)
+  // Works on named reference containers
+  scrubbedContent = scrubbedContent.replace(
+    /(<(?:div|section|ol|ul)[^>]*class="[^"]*(?:references?|bibliograph)[^"]*"[^>]*>)([\s\S]*?)(<\/(?:div|section|ol|ul)>)/gi,
+    (_m: string, open: string, inner: string, close: string) => {
+      let fixed = inner
+        .replace(/<li([^>]*)>/gi, '<p class="reference"$1>')
+        .replace(/<\/li>/gi, '</p>')
+        .replace(/<p([^>]*)>\s*<\/p>/gi, '');
+      fixed = fixed.replace(/<p(?![^>]*class="reference")([^>]*)>/gi, '<p class="reference"$1>');
+      fixed = fixed.replace(
+        /<p(?:[^>]*class="reference"[^>]*)>/gi,
+        '<p class="reference" style="margin:0 0 3px 0;padding-left:2em;text-indent:-2em;line-height:1.35;text-align:left;">'
+      );
+      return open + fixed + close;
+    }
+  );
+  // Also catch plain <p> tags that follow a References heading directly (AI that used no wrapper class)
+  scrubbedContent = scrubbedContent.replace(
+    /(<h[23][^>]*>[^<]*(?:references?|bibliography|works cited)[^<]*<\/h[23]>)([\s\S]*?)(?=<h[1-3]|$)/gi,
+    (_m: string, heading: string, body: string) => {
+      const tightBody = body.replace(
+        /<p([^>]*)>/gi,
+        '<p$1 style="margin:0 0 3px 0;padding-left:2em;text-indent:-2em;line-height:1.35;text-align:left;">'
+      );
+      return heading + tightBody;
+    }
+  );
 
   const fullHtml = `
     <!DOCTYPE html>
@@ -2036,14 +2065,31 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
   if (!activePath) {
     try {
       const { execSync } = require('child_process');
-      activePath = execSync('which chromium || which google-chrome', { encoding: 'utf-8' }).trim();
+      activePath = execSync('which chromium || which chromium-browser || which google-chrome-stable || which google-chrome', { encoding: 'utf-8' }).trim();
     } catch (e) { }
   }
+
+  if (!activePath) {
+    throw new Error('Chromium not found. Ensure nixpacks.toml includes chromium in nixPkgs and PUPPETEER_EXECUTABLE_PATH is set.');
+  }
+
+  console.log(`[Puppeteer] Launching Chromium at: ${activePath}`);
 
   const browser = await puppeteer.launch({
     executablePath: activePath,
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-extensions',
+      '--single-process',
+      '--no-zygote',
+      '--font-render-hinting=none',
+      '--force-color-profile=srgb',
+    ]
   });
 
   try {
@@ -2462,6 +2508,99 @@ app.post('/api/convert/doc-to-docx', authenticateToken, upload.single('file'), a
   }
 });
 
+// Auto-convert .doc → PDF
+app.post('/api/convert/doc-to-pdf', authenticateToken, upload.single('file'), async (req: any, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file provided.' });
+
+    // Extract text using mammoth
+    let textContent = '';
+    try {
+      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      textContent = result.value || '';
+    } catch (e) {
+      return res.status(422).json({
+        error: 'Auto-conversion could not read this file. Please open it in Microsoft Word and save it as PDF manually (File → Save As → PDF).'
+      });
+    }
+
+    if (!textContent || textContent.trim().length < 20) {
+      return res.status(422).json({
+        error: 'Auto-conversion could not extract readable content from this file. Please save it manually as PDF from Microsoft Word.'
+      });
+    }
+
+    // Build PDF using pdf-lib
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+    const pageWidth = 595.28;  // A4
+    const pageHeight = 841.89;
+    const marginX = 72;
+    const marginY = 72;
+    const lineHeight = 16;
+    const fontSize = 11;
+    const maxWidth = pageWidth - marginX * 2;
+
+    let page = pdfDoc.addPage([pageWidth, pageHeight]);
+    let y = pageHeight - marginY;
+
+    const wrapText = (text: string, maxW: number, fnt: any, size: number): string[] => {
+      const words = text.split(' ');
+      const lines: string[] = [];
+      let current = '';
+      for (const word of words) {
+        const test = current ? `${current} ${word}` : word;
+        if (fnt.widthOfTextAtSize(test, size) <= maxW) {
+          current = test;
+        } else {
+          if (current) lines.push(current);
+          current = word;
+        }
+      }
+      if (current) lines.push(current);
+      return lines;
+    };
+
+    const drawLine = (text: string, fnt: any, size: number, bold = false) => {
+      const wrapped = wrapLine(text, maxWidth, fnt, size);
+      for (const l of wrapped) {
+        if (y < marginY + lineHeight) {
+          page = pdfDoc.addPage([pageWidth, pageHeight]);
+          y = pageHeight - marginY;
+        }
+        page.drawText(l, { x: marginX, y, font: bold ? fontBold : fnt, size, color: rgb(0, 0, 0) });
+        y -= lineHeight;
+      }
+    };
+
+    const wrapLine = (text: string, maxW: number, fnt: any, size: number): string[] => {
+      if (!text.trim()) return [''];
+      return wrapText(text, maxW, fnt, size);
+    };
+
+    const rawLines = textContent.split('\n');
+    for (const rawLine of rawLines) {
+      const trimmed = rawLine.trim();
+      // Simple heuristic: short ALL-CAPS or title-case lines are headings
+      const isHeading = trimmed.length > 0 && trimmed.length < 80 &&
+        (trimmed === trimmed.toUpperCase() || /^[A-Z][^a-z]{0,3}[A-Z]/.test(trimmed));
+      drawLine(trimmed, font, isHeading ? 12 : fontSize, isHeading);
+      if (isHeading) y -= 4; // small gap after heading
+    }
+
+    const pdfBytes = await pdfDoc.save();
+    const outName = (req.file.originalname || 'manuscript').replace(/\.doc$/i, '.pdf');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${outName}"`);
+    res.send(Buffer.from(pdfBytes));
+  } catch (err: any) {
+    console.error('Doc-to-pdf conversion error:', err?.message);
+    res.status(500).json({ error: 'Conversion to PDF failed. Please save the file manually as PDF from Microsoft Word.' });
+  }
+});
+
 // API Routes
 app.post('/api/upload', authenticateToken, upload.single('file'), async (req: any, res) => {
   try {
@@ -2573,6 +2712,27 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
         }
       ]
     };
+
+    // Duplicate manuscript detection: reject if a paper with the same/similar title already exists in the system
+    const submittedTitle = (metadata.title || '').trim();
+    if (submittedTitle.length > 10) {
+      const existingTitles = await pool.query(
+        "SELECT id, title, user_id FROM papers WHERE status != 'rejected' ORDER BY created_at DESC LIMIT 500"
+      );
+      for (const row of existingTitles.rows) {
+        const similarity = stringSimilarity.compareTwoStrings(
+          submittedTitle.toLowerCase(),
+          (row.title || '').toLowerCase()
+        );
+        if (similarity >= 0.85) {
+          const isSameUser = row.user_id === userId;
+          return res.status(409).json({
+            error: `This manuscript appears to have already been submitted${isSameUser ? ' by you' : ' by another researcher'}. Duplicate submissions are not permitted. If you believe this is an error, please contact the editorial office.`,
+            duplicate: { id: row.id, title: row.title, similarity: Math.round(similarity * 100) }
+          });
+        }
+      }
+    }
 
     // Ensure authors column remains a string array (names only) for compatibility,
     // while full objects are preserved in the metadata JSONB
@@ -2762,12 +2922,10 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
 
   const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
 
-  if (paper.final_pdf) {
-    return {
-      buffer: Buffer.from(paper.final_pdf),
-      filename: paper.final_pdf_filename || `${buildSafeFilename(paper.title || 'article', '_Published.pdf')}`
-    };
-  }
+  // NOTE: final_pdf (stored binary) is intentionally skipped when formatted_content exists.
+  // Always regenerate from formatted_content so that layout fixes (justification, references)
+  // apply to every download — including papers published before the fixes were deployed.
+  // Only fall back to final_pdf if there is no formatted_content at all.
 
   // HIGHEST PRIORITY: Use High-Fidelity Formatted HTML (Matches Formatting Preview 1:1)
   if (paper.formatted_content) {
@@ -2789,6 +2947,14 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
     };
     const buffer = await generateFinalManuscriptPDF(metadata.ast, branding);
     return { buffer: Buffer.from(buffer), filename: `${(paper.title || 'article').replace(/[^a-z0-9]/gi, '_')}.pdf` };
+  }
+
+  // Last resort: serve the stored final_pdf binary (only reached if no formatted_content and no AST)
+  if (paper.final_pdf) {
+    return {
+      buffer: Buffer.from(paper.final_pdf),
+      filename: paper.final_pdf_filename || `${buildSafeFilename(paper.title || 'article', '_Published.pdf')}`
+    };
   }
 
   const issn = paper.issn || '2971-7760';
@@ -6422,6 +6588,34 @@ app.put('/api/admin/papers/:id/status', authenticateToken, async (req: any, res)
   }
 });
 
+// Permanently delete a paper and all its associated data (super_admin only)
+app.delete('/api/admin/papers/:id', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Only super admins can permanently delete publications.' });
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const paperCheck = await pool.query('SELECT id, title FROM papers WHERE id = $1', [id]);
+    if (!paperCheck.rows[0]) return res.status(404).json({ error: 'Publication not found.' });
+
+    // Cascade delete in correct order to avoid FK violations
+    await pool.query('DELETE FROM paper_references WHERE paper_id = $1', [id]);
+    await pool.query('DELETE FROM reviews WHERE paper_id = $1', [id]);
+    await pool.query('DELETE FROM chat_messages WHERE paper_id = $1', [id]);
+    // Free up any unused transaction credit linked to this paper
+    await pool.query(
+      "UPDATE transactions SET paper_id = NULL, metadata = metadata - 'consumed' WHERE paper_id = $1 AND status != 'success'",
+      [id]
+    );
+    await pool.query('DELETE FROM transactions WHERE paper_id = $1', [id]);
+    await pool.query('DELETE FROM papers WHERE id = $1', [id]);
+
+    console.log(`[Admin] Paper #${id} ("${paperCheck.rows[0].title}") permanently deleted by user #${req.user.id}`);
+    res.json({ success: true, deleted: id });
+  } catch (error) {
+    console.error('Delete paper error:', error);
+    res.status(500).json({ error: 'Failed to delete publication.' });
+  }
+});
+
 // Settings & Dynamic Pricing
 app.get('/api/admin/config/pricing', authenticateToken, async (req: any, res) => {
   const pubPriceResult = await pool.query('SELECT value FROM settings WHERE key = $1', ['publication_price']);
@@ -6652,6 +6846,78 @@ app.post('/api/admin/config/researcher-nav', authenticateToken, async (req: any,
     res.json({ success: true, config });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update nav config' });
+  }
+});
+
+// ─── REPUBLISH CONFIG ────────────────────────────────────────────────
+
+app.get('/api/settings/republish-config', authenticateToken, async (_req: any, res) => {
+  try {
+    const result = await pool.query("SELECT value FROM settings WHERE key = 'republish_config'");
+    const defaults = { enabled: false, paid: false, amount: 0 };
+    if (!result.rows.length) return res.json(defaults);
+    res.json({ ...defaults, ...JSON.parse(result.rows[0].value) });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch republish config' });
+  }
+});
+
+app.post('/api/admin/config/republish', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { enabled, paid, amount } = req.body;
+    const config = {
+      enabled: Boolean(enabled),
+      paid: Boolean(paid),
+      amount: paid ? Math.max(0, Number(amount) || 0) : 0
+    };
+    await pool.query(
+      "INSERT INTO settings (key, value) VALUES ('republish_config', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+      [JSON.stringify(config)]
+    );
+    res.json({ success: true, config });
+  } catch {
+    res.status(500).json({ error: 'Failed to save republish config' });
+  }
+});
+
+// Researcher triggers a republish on their already-published paper
+app.post('/api/papers/:id/republish', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+
+    // Verify paper belongs to user and is published
+    const paperRes = await pool.query('SELECT id, status, user_id FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const paper = paperRes.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    if (paper.status !== 'published') return res.status(409).json({ error: 'Only fully published papers can be republished' });
+
+    // Load republish config
+    const cfgRes = await pool.query("SELECT value FROM settings WHERE key = 'republish_config'");
+    const cfg = cfgRes.rows.length ? JSON.parse(cfgRes.rows[0].value) : { enabled: false, paid: false, amount: 0 };
+    if (!cfg.enabled) return res.status(403).json({ error: 'Republishing is not currently enabled by the administrator' });
+
+    if (cfg.paid && cfg.amount > 0) {
+      // Verify a successful payment was made for this republish reference
+      const { paymentReference } = req.body;
+      if (!paymentReference) return res.status(402).json({ error: 'Payment reference required', amount: cfg.amount });
+      const txRes = await pool.query(
+        "SELECT id, status FROM transactions WHERE reference = $1 AND user_id = $2 AND status = 'completed'",
+        [paymentReference, req.user.id]
+      );
+      if (!txRes.rows.length) return res.status(402).json({ error: 'Payment not confirmed. Please complete payment before republishing.', amount: cfg.amount });
+    }
+
+    // Reset paper back to accepted so it re-enters the publish pipeline
+    await pool.query(
+      "UPDATE papers SET status = 'accepted', formatted_content = NULL, final_pdf = NULL, doi = NULL WHERE id = $1",
+      [id]
+    );
+
+    res.json({ success: true, message: 'Your manuscript has been queued for republication. It will go through formatting and publication again.' });
+  } catch (err: any) {
+    console.error('Republish error:', err?.message);
+    res.status(500).json({ error: 'Republish failed. Please try again.' });
   }
 });
 

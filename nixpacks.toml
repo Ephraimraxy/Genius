@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_22", "chromium"]
+nixPkgs = ["nodejs_22", "chromium", "chromium-browser", "nss", "nspr", "atk", "at-spi2-atk", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "libxkbcommon", "mesa", "expat", "glib", "dbus", "pango", "cairo", "freetype", "fontconfig", "gtk3", "cups", "alsa-lib"]
 
 [phases.install]
 cmds = ["npm install"]
@@ -8,4 +8,4 @@ cmds = ["npm install"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "export PUPPETEER_EXECUTABLE_PATH=$(which chromium) && npm run start"
+cmd = "export PUPPETEER_EXECUTABLE_PATH=$(which chromium || which chromium-browser || which google-chrome-stable || which google-chrome) && echo \"[Chromium] Using: $PUPPETEER_EXECUTABLE_PATH\" && npm run start"

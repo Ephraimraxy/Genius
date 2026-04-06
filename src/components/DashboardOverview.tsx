@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, TrendingUp, Users, ShieldCheck, Eye, User, ToggleLeft, ToggleRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, TrendingUp, Users, ShieldCheck, Eye, User, ToggleLeft, ToggleRight, RefreshCw, Loader2, X } from 'lucide-react';
 import { Tab } from '../App';
+import { friendlyError } from '../utils/friendlyError';
 
-export default function DashboardOverview({ onNavigate, profile, setActivePaperId }: { 
-  onNavigate: (tab: Tab) => void, 
-  profile: any, 
+export default function DashboardOverview({ onNavigate, profile, setActivePaperId }: {
+  onNavigate: (tab: Tab) => void,
+  profile: any,
   setActivePaperId: (id: number) => void,
 }) {
   const papers = profile?.papers || [];
@@ -13,6 +14,45 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   const isAdmin = role === 'super_admin' || role === 'admin';
   const isLecturer = role === 'tenant_admin';
   const adminStats = profile?.adminStats;
+
+  // Republish state
+  const [republishConfig, setRepublishConfig] = useState<{ enabled: boolean; paid: boolean; amount: number } | null>(null);
+  const [republishingId, setRepublishingId] = useState<number | null>(null);
+  const [republishModal, setRepublishModal] = useState<{ paperId: number; title: string } | null>(null);
+  const [republishError, setRepublishError] = useState<string | null>(null);
+  const [republishSuccess, setRepublishSuccess] = useState<number | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    fetch('/api/settings/republish-config', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => { if (!d.error) setRepublishConfig(d); })
+      .catch(() => {});
+  }, []);
+
+  const handleRepublish = async (paperId: number, paymentReference?: string) => {
+    setRepublishingId(paperId);
+    setRepublishError(null);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/papers/${paperId}/republish`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentReference }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Republish failed');
+      setRepublishModal(null);
+      setRepublishSuccess(paperId);
+      setTimeout(() => setRepublishSuccess(null), 4000);
+    } catch (err: any) {
+      setRepublishError(friendlyError(err, 'generic'));
+    } finally {
+      setRepublishingId(null);
+    }
+  };
 
   const handlePaperClick = (id: number) => {
     setActivePaperId(id);
@@ -357,10 +397,120 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                   )}
                 </div>
               )}
+
+              {/* Republish button — published papers only, when admin has enabled it */}
+              {paper.status === 'published' && republishConfig?.enabled && (
+                <div className="flex flex-col items-end gap-1 self-end sm:self-center">
+                  {republishSuccess === paper.id ? (
+                    <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
+                      <CheckCircle size={14} /> Queued for republication!
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setRepublishModal({ paperId: paper.id, title: paper.title })}
+                      disabled={republishingId === paper.id}
+                      className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                      {republishingId === paper.id
+                        ? <><Loader2 size={15} className="animate-spin" /> Processing…</>
+                        : <><RefreshCw size={15} /> Republish</>}
+                    </button>
+                  )}
+                  {republishConfig.paid && republishConfig.amount > 0 && (
+                    <span className="text-[10px] text-slate-400 font-medium">Fee: ₦{republishConfig.amount.toLocaleString()}</span>
+                  )}
+                </div>
+              )}
             </motion.div>
           ))}
         </div>
       </div>
+
+      {/* Republish Confirmation Modal */}
+      <AnimatePresence>
+        {republishModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+          >
+            <motion.div
+              initial={{ scale: 0.93, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.93, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full space-y-5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-indigo-100 flex items-center justify-center shrink-0">
+                    <RefreshCw size={20} className="text-indigo-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 text-lg">Republish Manuscript</h3>
+                    <p className="text-xs text-slate-400 font-medium mt-0.5">This will re-enter the publication pipeline</p>
+                  </div>
+                </div>
+                <button onClick={() => { setRepublishModal(null); setRepublishError(null); }} className="p-2 rounded-xl hover:bg-slate-100">
+                  <X size={18} className="text-slate-400" />
+                </button>
+              </div>
+
+              <p className="text-sm text-slate-600 leading-relaxed">
+                You are about to republish <strong className="text-slate-800">"{republishModal.title}"</strong>.
+                The manuscript will go through formatting and publication again with the latest journal settings.
+              </p>
+
+              {republishConfig?.paid && republishConfig.amount > 0 && (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-800 font-medium space-y-1">
+                  <p className="font-black">Payment Required</p>
+                  <p>A fee of <strong>₦{republishConfig.amount.toLocaleString()}</strong> is required to republish.</p>
+                  <p className="text-xs text-amber-600 mt-1">You will be redirected to complete payment. Return here after payment to confirm.</p>
+                </div>
+              )}
+
+              {republishError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-sm text-rose-700 font-medium flex items-center gap-2">
+                  <AlertCircle size={15} className="shrink-0" />
+                  {republishError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => { setRepublishModal(null); setRepublishError(null); }}
+                  className="flex-1 py-3 px-4 rounded-2xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                {republishConfig?.paid && republishConfig.amount > 0 ? (
+                  <button
+                    onClick={() => {
+                      setRepublishModal(null);
+                      setActivePaperId(republishModal.paperId);
+                      onNavigate('transactions');
+                    }}
+                    className="flex-1 py-3 px-4 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    Pay & Republish
+                    <ArrowRight size={15} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleRepublish(republishModal.paperId)}
+                    disabled={republishingId === republishModal.paperId}
+                    className="flex-1 py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    {republishingId === republishModal.paperId
+                      ? <><Loader2 size={15} className="animate-spin" /> Processing…</>
+                      : <><RefreshCw size={15} /> Confirm Republish</>}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

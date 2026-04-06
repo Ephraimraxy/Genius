@@ -32,6 +32,11 @@ export default function AdminSettings() {
   });
   const [savingNav, setSavingNav] = useState(false);
 
+  // Republish Control State
+  const [republishConfig, setRepublishConfig] = useState({ enabled: false, paid: false, amount: 0 });
+  const [republishAmount, setRepublishAmount] = useState<string>('0');
+  const [savingRepublish, setSavingRepublish] = useState(false);
+
   // Journal Settings State
   const [journalVolume, setJournalVolume] = useState<string>('1');
   const [journalIssue, setJournalIssue] = useState<string>('1');
@@ -148,6 +153,19 @@ export default function AdminSettings() {
       .then(data => { if (!data.error) setNavVisibility(data); })
       .catch(console.error);
 
+    // Fetch republish config
+    fetch('/api/settings/republish-config', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.error) {
+          setRepublishConfig(data);
+          setRepublishAmount(String(data.amount || 0));
+        }
+      })
+      .catch(console.error);
+
     // Fetch system health
     fetchHealth();
   }, []);
@@ -231,6 +249,24 @@ export default function AdminSettings() {
       console.error('Failed to update nav config', err);
     }
     setSavingNav(false);
+  };
+
+  const handleSaveRepublish = async (patch: Partial<typeof republishConfig>) => {
+    setSavingRepublish(true);
+    const updated = { ...republishConfig, ...patch, amount: Number(republishAmount) };
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/admin/config/republish', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+      const data = await res.json();
+      if (data.config) setRepublishConfig(data.config);
+    } catch (err) {
+      console.error('Failed to save republish config', err);
+    }
+    setSavingRepublish(false);
   };
 
   const handleSaveJournal = async () => {
@@ -792,6 +828,94 @@ export default function AdminSettings() {
             >
               Hide All
             </button>
+          </div>
+        </div>
+
+        {/* Republish Control */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
+            <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
+              <RefreshCw size={20} className="text-rose-600" /> Republish Control
+            </h3>
+            <p className="text-xs text-slate-400 font-medium mt-0.5">
+              Control whether researchers can republish completed manuscripts. Appears only on fully published papers.
+            </p>
+          </div>
+          <div className="p-8 space-y-6">
+            {/* Enable / Disable toggle */}
+            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div>
+                <p className="font-bold text-slate-800 text-sm">Enable Republish Button</p>
+                <p className="text-xs text-slate-400 mt-0.5">When ON, a "Republish" button appears on every researcher's published paper card.</p>
+              </div>
+              <button
+                onClick={() => handleSaveRepublish({ enabled: !republishConfig.enabled })}
+                disabled={savingRepublish}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${republishConfig.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${republishConfig.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {/* Paid / Free toggle — only visible when enabled */}
+            {republishConfig.enabled && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                  <div>
+                    <p className="font-bold text-amber-800 text-sm">Charge for Republishing</p>
+                    <p className="text-xs text-amber-600 mt-0.5">If ON, researchers must pay the amount below before republishing is processed.</p>
+                  </div>
+                  <button
+                    onClick={() => handleSaveRepublish({ paid: !republishConfig.paid })}
+                    disabled={savingRepublish}
+                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${republishConfig.paid ? 'bg-amber-500' : 'bg-slate-300'}`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${republishConfig.paid ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+
+                {/* Amount input — only when paid */}
+                {republishConfig.paid && (
+                  <div className="p-4 bg-rose-50 rounded-2xl border border-rose-100 space-y-3">
+                    <p className="font-bold text-rose-800 text-sm">Republish Fee (₦)</p>
+                    <p className="text-xs text-rose-500">Set the amount researchers must pay to republish. Applied to all researchers.</p>
+                    <div className="flex gap-3 items-center">
+                      <input
+                        type="number"
+                        min="0"
+                        value={republishAmount}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRepublishAmount(e.target.value)}
+                        className="flex-1 px-4 py-2.5 border border-rose-200 rounded-xl text-sm font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-rose-400"
+                        placeholder="e.g. 5000"
+                      />
+                      <button
+                        onClick={() => handleSaveRepublish({})}
+                        disabled={savingRepublish}
+                        className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-colors"
+                      >
+                        {savingRepublish ? 'Saving…' : 'Save Amount'}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-rose-600 font-medium">
+                      <CheckCircle size={13} />
+                      Current fee: <strong>₦{republishConfig.amount.toLocaleString()}</strong>
+                    </div>
+                  </div>
+                )}
+
+                {!republishConfig.paid && (
+                  <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-700 font-medium">
+                    <CheckCircle size={14} /> Republishing is currently <strong>FREE</strong> for all researchers.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!republishConfig.enabled && (
+              <div className="flex items-center gap-2 p-3 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-500 font-medium">
+                <AlertCircle size={14} /> Republish button is hidden from all researcher dashboards.
+              </div>
+            )}
           </div>
         </div>
 

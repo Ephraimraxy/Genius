@@ -72,6 +72,7 @@ export default function SmartUpload({
   const [selectedGateway, setSelectedGateway] = useState<'paystack' | 'kora' | null>(null);
   const [isDocFile, setIsDocFile] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
+  const [convertingTo, setConvertingTo] = useState<'docx' | 'pdf' | null>(null);
   const [convertedFile, setConvertedFile] = useState<File | null>(null);
   const [showConvertApproval, setShowConvertApproval] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -271,13 +272,15 @@ export default function SmartUpload({
     setIsConfirmingDetails(true);
   };
 
-  const handleDocConvert = async () => {
+  const handleDocConvert = async (format: 'docx' | 'pdf') => {
     if (!pendingFile) return;
     setIsConverting(true);
+    setConvertingTo(format);
     try {
       const formData = new FormData();
       formData.append('file', pendingFile);
-      const res = await fetch('/api/convert/doc-to-docx', {
+      const endpoint = format === 'pdf' ? '/api/convert/doc-to-pdf' : '/api/convert/doc-to-docx';
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
         body: formData,
@@ -287,17 +290,18 @@ export default function SmartUpload({
         throw new Error(errData.error || 'Conversion failed');
       }
       const blob = await res.blob();
-      const outName = pendingFile.name.replace(/\.doc$/i, '.docx');
-      const converted = new File([blob], outName, {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
+      const ext = format === 'pdf' ? '.pdf' : '.docx';
+      const mime = format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const outName = pendingFile.name.replace(/\.doc$/i, ext);
+      const converted = new File([blob], outName, { type: mime });
       setConvertedFile(converted);
       setShowConvertApproval(true);
-      addToast('Document converted successfully! Please review and approve to proceed.', 'success');
+      addToast(`Converted to ${format.toUpperCase()} successfully! Review and approve to proceed.`, 'success');
     } catch (err: any) {
       addToast(friendlyError(err, 'upload'), 'error');
     } finally {
       setIsConverting(false);
+      setConvertingTo(null);
     }
   };
 
@@ -895,17 +899,29 @@ export default function SmartUpload({
                     </div>
                   </div>
                   {!showConvertApproval ? (
-                    <button
-                      onClick={handleDocConvert}
-                      disabled={isConverting}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-colors"
-                    >
-                      {isConverting ? (
-                        <><Loader2 size={15} className="animate-spin" /> Converting your document…</>
-                      ) : (
-                        <><Zap size={15} /> Or let us auto-convert it for you</>
-                      )}
-                    </button>
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-amber-700">Or let us auto-convert it for you — choose format:</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleDocConvert('docx')}
+                          disabled={isConverting}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-bold rounded-xl transition-colors"
+                        >
+                          {isConverting && convertingTo === 'docx'
+                            ? <><Loader2 size={13} className="animate-spin" /> Converting…</>
+                            : <><Zap size={13} /> Convert to .docx</>}
+                        </button>
+                        <button
+                          onClick={() => handleDocConvert('pdf')}
+                          disabled={isConverting}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-xs font-bold rounded-xl transition-colors"
+                        >
+                          {isConverting && convertingTo === 'pdf'
+                            ? <><Loader2 size={13} className="animate-spin" /> Converting…</>
+                            : <><Zap size={13} /> Convert to .pdf</>}
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <div className="p-3 bg-green-50 border border-green-200 rounded-xl space-y-3">
                       <div className="flex items-center gap-2 text-green-700">
@@ -913,8 +929,7 @@ export default function SmartUpload({
                         <p className="text-sm font-bold">Conversion complete!</p>
                       </div>
                       <p className="text-xs text-green-700">
-                        Your document was converted to <strong>.docx</strong>. Note: complex formatting (images, tables) may differ slightly.
-                        Do you approve proceeding with the converted file?
+                        Your document was converted to <strong>{convertedFile?.name.split('.').pop()?.toUpperCase()}</strong> ({convertedFile?.name}). Note: complex formatting like images and tables may differ slightly. Do you approve proceeding with this file?
                       </p>
                       <div className="flex gap-2">
                         <button

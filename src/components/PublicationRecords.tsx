@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  History, 
-  Search, 
-  Filter, 
+import {
+  History,
+  Search,
+  Filter,
   ChevronLeft,
   Eye,
-  FileText, 
+  FileText,
   FileBadge,
-  ShieldCheck
+  ShieldCheck,
+  Trash2,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
 
@@ -35,6 +38,11 @@ export default function PublicationRecords({ profile }: { profile: any }) {
   const [previewPub, setPreviewPub] = useState<Publication | null>(null);
   const [acceptancePub, setAcceptancePub] = useState<Publication | null>(null);
   const [certificatePub, setCertificatePub] = useState<Publication | null>(null);
+  const [deletingPub, setDeletingPub] = useState<Publication | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const isSuperAdmin = profile?.user?.role === 'super_admin';
   const isAdmin = profile?.user?.role === 'super_admin' || profile?.user?.role === 'admin';
 
   useEffect(() => {
@@ -56,6 +64,27 @@ export default function PublicationRecords({ profile }: { profile: any }) {
       console.error('Failed to fetch publications');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingPub) return;
+    setIsDeleting(true);
+    setDeleteError('');
+    try {
+      const res = await fetch(`/api/admin/papers/${deletingPub.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      setPublications(prev => prev.filter(p => p.id !== deletingPub.id));
+      setDeletingPub(null);
+      setDeleteConfirmText('');
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete publication.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -214,6 +243,72 @@ export default function PublicationRecords({ profile }: { profile: any }) {
 
   return (
     <div className="space-y-8 pb-12">
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deletingPub && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl"
+            >
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="text-red-600" size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Permanently Delete Publication</h3>
+                  <p className="text-xs font-bold text-slate-400">This action cannot be undone</p>
+                </div>
+              </div>
+
+              <div className="bg-red-50 border border-red-100 rounded-2xl p-4 mb-6">
+                <p className="text-sm font-bold text-red-800 leading-snug">"{deletingPub.title}"</p>
+                <p className="text-[10px] font-bold text-red-500 mt-1">ID #{deletingPub.id} · {deletingPub.status.toUpperCase()}</p>
+              </div>
+
+              <p className="text-sm text-slate-600 mb-2 font-medium">
+                This will permanently remove the manuscript, all reviews, transactions, and associated data from the system. The researcher will be able to re-submit.
+              </p>
+              <p className="text-sm font-black text-slate-800 mb-3">Type <span className="text-red-600 font-mono">DELETE</span> to confirm:</p>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value)}
+                placeholder="DELETE"
+                className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 mb-4 font-mono"
+              />
+
+              {deleteError && (
+                <p className="text-xs text-red-600 font-bold mb-4">{deleteError}</p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setDeletingPub(null); setDeleteConfirmText(''); setDeleteError(''); }}
+                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl transition-colors text-sm"
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleteConfirmText !== 'DELETE' || isDeleting}
+                  className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white font-black rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? <><Loader2 size={16} className="animate-spin" /> Deleting...</> : <><Trash2 size={16} /> Delete Forever</>}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Header & Search */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -291,7 +386,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 </>
               ) : filteredPubs.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 8 : 7} className="px-8 py-20 text-center">
+                  <td colSpan={isAdmin ? 9 : 8} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <FileText className="text-slate-200" size={48} />
                       <p className="text-sm font-bold text-slate-400">No records found matching your filter.</p>
@@ -411,11 +506,20 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                         )}
 
                         {pub.status === 'published' && (
-                          <button 
+                          <button
                             onClick={() => setCertificatePub(pub)}
                             className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
                             title="View Publication Certificate">
                             <ShieldCheck size={18} />
+                          </button>
+                        )}
+
+                        {isSuperAdmin && (
+                          <button
+                            onClick={() => { setDeletingPub(pub); setDeleteConfirmText(''); setDeleteError(''); }}
+                            className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                            title="Permanently Delete Publication">
+                            <Trash2 size={18} />
                           </button>
                         )}
                       </div>
