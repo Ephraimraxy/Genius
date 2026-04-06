@@ -2932,6 +2932,38 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
 });
 
 // ===== SHARED PDF GENERATION HELPERS =====
+/**
+ * After any deletion or publication, re-walk all published papers in a volume/issue
+ * (ordered by their original publication time) and assign sequential startPageNumber
+ * values so that gaps left by deleted papers are filled by subsequent papers.
+ *
+ * Because on-demand downloads read metadata.startPageNumber, no PDF regeneration
+ * is needed — updating metadata is sufficient to change all future downloads.
+ */
+async function resequenceIssuePages(volume: string, issue: string): Promise<void> {
+  const papers = await pool.query(
+    `SELECT id, metadata FROM papers
+     WHERE status = 'published' AND volume = $1 AND issue = $2
+     ORDER BY published_at ASC NULLS LAST, id ASC`,
+    [volume, issue]
+  );
+
+  let runningPage = 1;
+  for (const row of papers.rows) {
+    const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
+    const pageCount = parseInt(meta.pageCount || meta.sourcePageCount || '0', 10);
+
+    if (meta.startPageNumber !== runningPage) {
+      meta.startPageNumber = runningPage;
+      await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [JSON.stringify(meta), row.id]);
+    }
+
+    if (pageCount > 0) runningPage += pageCount;
+  }
+
+  console.log(`[Pages] Resequenced Vol.${volume} Iss.${issue}: ${papers.rows.length} papers, next page = ${runningPage}`);
+}
+
 async function generatePublishedArticlePDF(paperId: number | string): Promise<{ buffer: Buffer; filename: string }> {
   const result = await pool.query(
     'SELECT id, title, authors, abstract, content, formatted_content, metadata, doi, volume, issue, issn, published_at, created_at, final_pdf, final_pdf_filename FROM papers WHERE id = $1',
@@ -4882,6 +4914,15 @@ const finalizePublicationFromRetry = async (paperId: number) => {
     }
   }
 
+  // Resequence page numbers for the whole issue now that this paper is part of it.
+  // This is a no-op for the first paper (it stays at 1) but ensures any prior
+  // deletions are fully healed before the next paper's startPageNumber is stamped.
+  try {
+    await resequenceIssuePages(vol.toString(), iss.toString());
+  } catch (seqErr) {
+    console.error('[Pages] Resequence after publish failed (non-blocking):', seqErr);
+  }
+
   const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [paper.user_id]);
   const user = userRes.rows[0];
   if (user) {
@@ -6623,8 +6664,10 @@ app.delete('/api/admin/papers/:id', authenticateToken, async (req: any, res) => 
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Only super admins can permanently delete publications.' });
   try {
     const { id } = idParamSchema.parse(req.params);
-    const paperCheck = await pool.query('SELECT id, title FROM papers WHERE id = $1', [id]);
+    const paperCheck = await pool.query('SELECT id, title, volume, issue, status FROM papers WHERE id = $1', [id]);
     if (!paperCheck.rows[0]) return res.status(404).json({ error: 'Publication not found.' });
+
+    const { title, volume, issue, status } = paperCheck.rows[0];
 
     // Cascade delete in correct order to avoid FK violations
     await pool.query('DELETE FROM paper_references WHERE paper_id = $1', [id]);
@@ -6638,7 +6681,18 @@ app.delete('/api/admin/papers/:id', authenticateToken, async (req: any, res) => 
     await pool.query('DELETE FROM transactions WHERE paper_id = $1', [id]);
     await pool.query('DELETE FROM papers WHERE id = $1', [id]);
 
-    console.log(`[Admin] Paper #${id} ("${paperCheck.rows[0].title}") permanently deleted by user #${req.user.id}`);
+    console.log(`[Admin] Paper #${id} ("${title}") permanently deleted by user #${req.user.id}`);
+
+    // If a published paper was deleted, resequence the remaining papers in that issue
+    // so subsequent papers fill the gap rather than leaving orphaned page numbers
+    if (status === 'published' && volume && issue) {
+      try {
+        await resequenceIssuePages(String(volume), String(issue));
+      } catch (seqErr) {
+        console.error('[Pages] Resequence after delete failed (non-blocking):', seqErr);
+      }
+    }
+
     res.json({ success: true, deleted: id });
   } catch (error) {
     console.error('Delete paper error:', error);
