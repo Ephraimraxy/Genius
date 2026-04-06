@@ -632,7 +632,8 @@ const buildPaperBranding = (paper: any, config: any, overrides: Record<string, a
     issn: String(overrides.issn || paper?.issn || config.journalIssn || '2971-7760'),
     doi: String(overrides.doi || paper?.doi || 'DOI Pending'),
     date: overrides.date || new Date(publicationDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
-    startPageNumber: overrides.startPageNumber || 1
+    startPageNumber: overrides.startPageNumber || 1,
+    institution: overrides.institution || null
   };
 };
 
@@ -1855,7 +1856,7 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
  */
 async function generateHighFidelityPaperPDF(id: number | string, overrides: Record<string, any> = {}): Promise<Buffer> {
   const paperResult = await pool.query(
-    'SELECT id, title, formatted_content, volume, issue, issn, doi, status, published_at, created_at FROM papers WHERE id = $1',
+    'SELECT id, title, formatted_content, volume, issue, issn, doi, status, published_at, created_at, metadata, user_id FROM papers WHERE id = $1',
     [id]
   );
   const paper = paperResult.rows[0];
@@ -1867,9 +1868,26 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
   const fallbackDoi = (paper.doi && paper.doi !== 'Pending')
     ? paper.doi
     : (paper.status === 'published' ? `10.5555/genius.${id}` : 'Verification Pending');
+
+  // Extract primary author affiliation from paper metadata
+  const paperMeta = safeJsonParse<any>(paper.metadata, {});
+  const metaAuthorsList: any[] = Array.isArray(paperMeta.authors) ? paperMeta.authors : [];
+  const primaryAuthor = metaAuthorsList[0] || {};
+  const primaryInstitution = primaryAuthor.institution || primaryAuthor.affiliations?.[0] || null;
+
+  // If paper metadata has no institution, fall back to user's dashboard affiliation
+  let resolvedInstitution = primaryInstitution;
+  if (!resolvedInstitution && paper.user_id) {
+    try {
+      const uRes = await pool.query('SELECT affiliation FROM users WHERE id = $1', [paper.user_id]);
+      resolvedInstitution = uRes.rows[0]?.affiliation || null;
+    } catch (_) {}
+  }
+
   const branding = buildPaperBranding(paper, journalConfig, {
     ...overrides,
-    doi: overrides.doi || fallbackDoi
+    doi: overrides.doi || fallbackDoi,
+    institution: resolvedInstitution
   });
 
   const scrubbedContent = paper.formatted_content
@@ -1885,36 +1903,50 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
 
   const fullHtml = `
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
       <meta charset="UTF-8">
       <style>
-        @page { 
-          margin: 35mm 15mm 25mm 15mm; 
+        @page {
+          margin: 35mm 15mm 25mm 15mm;
           size: A4;
         }
-        body { 
-          font-family: serif; 
-          background: white; 
-          margin: 0; 
-          padding: 0; 
-          -webkit-print-color-adjust: exact; 
-          print-color-adjust: exact; 
-          font-size: 10.5pt; 
-          color: #1e293b; 
+        /* Apply justify directly to body so Puppeteer PDF engine
+           inherits it on every page — not just the first */
+        body {
+          font-family: serif;
+          background: white;
+          margin: 0;
+          padding: 0;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+          font-size: 10.5pt;
+          color: #1e293b;
+          text-align: justify !important;
+          hyphens: auto;
+          -webkit-hyphens: auto;
+          word-break: normal;
+          overflow-wrap: break-word;
         }
         * { box-sizing: border-box; }
-        
+
+        /* Force justify on every text-bearing element so page breaks don't reset it */
+        p, li, td, blockquote, .academic-content, div:not([class*="header"]):not([class*="footer"]) {
+          text-align: justify !important;
+          hyphens: auto;
+          -webkit-hyphens: auto;
+        }
+        /* Last line of each paragraph stays left-aligned (not stretched) */
+        p { text-align-last: left !important; }
+
         .academic-content {
           font-family: serif;
           font-size: 10.5pt;
           line-height: 1.4;
-          text-align: justify;
           color: #1e293b;
           padding: 0 5mm;
         }
         .academic-content p {
-          text-align: justify;
           margin-bottom: 0.8em;
           orphans: 3;
           widows: 3;
@@ -1926,17 +1958,61 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
           font-weight: 600 !important;
           line-height: 1.2;
           text-align: left !important;
+          text-align-last: left !important;
+          hyphens: none;
           page-break-after: avoid;
         }
         .academic-content h1 { font-size: 1.6em; margin-bottom: 0.8em; border-bottom: 1.5px solid #f1f5f9; padding-bottom: 0.5em; }
         .academic-content h2 { font-size: 1.3em; border-left: 3.5px solid #800000; padding-left: 12px; }
         .academic-content h3 { font-size: 1.15em; font-style: italic; color: #475569; }
-        
+
         table { width: 100%; border-collapse: collapse; margin: 1.5em 0; }
-        th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
+        th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left !important; }
         th { background: #f8fafc; font-weight: bold; color: #475569; }
-        
+
         img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; border-radius: 4px; }
+
+        /* ===== REFERENCES SECTION =====
+           Compact, single-spaced, hanging-indent APA style.
+           The AI wraps each reference in <p class="reference"> or places
+           them in a <div class="references"> / <section class="references">.
+           These rules enforce tight formatting regardless of which tag is used. */
+        .references p,
+        .reference,
+        section.references p,
+        div.references p,
+        ol.references li,
+        ul.references li {
+          margin-top: 0 !important;
+          margin-bottom: 3px !important;
+          padding-left: 2em !important;
+          text-indent: -2em !important;
+          line-height: 1.35 !important;
+          text-align: left !important;
+          text-align-last: left !important;
+          hyphens: none;
+          page-break-inside: avoid;
+        }
+        /* Catch AI-generated reference lists that use plain <p> inside a references heading */
+        h2 + p, h2 + div > p,
+        h3 + p, h3 + div > p {
+          /* Only applied when directly after a heading — references usually follow h2/h3 */
+        }
+        /* If AI uses a <ol> or <ul> for references, strip bullet/number decoration */
+        ol.references, ul.references {
+          list-style: none !important;
+          padding-left: 0 !important;
+          margin: 0 !important;
+        }
+        /* Tighten spacing inside the references section no matter how it is wrapped */
+        [class*="reference"] p,
+        [id*="reference"] p,
+        [class*="bibliograph"] p,
+        [id*="bibliograph"] p {
+          margin-top: 0 !important;
+          margin-bottom: 3px !important;
+          line-height: 1.35 !important;
+        }
       </style>
     </head>
     <body>
@@ -1986,6 +2062,7 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
         <div style="text-align: center; flex: 1;">
            <div style="color: #64748b; font-weight: 700; font-size: 7px; text-transform: uppercase;">ISSN: ${branding.issn} | VOL ${branding.volume}, ISS ${branding.issue} | ${branding.date}</div>
            <div style="color: #4f46e5; font-size: 6px; font-family: monospace; font-weight: 700;">${branding.doi}</div>
+           ${branding.institution ? `<div style="color: #64748b; font-size: 5.5px; font-weight: 600; text-transform: uppercase; margin-top: 1px;">${branding.institution}</div>` : ''}
         </div>
         <div style="display: flex; align-items: center; gap: 5px; text-align: right;">
            <div style="line-height: 1;">
@@ -4275,6 +4352,20 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     const pageWindow = metadata.pageWindow || buildPageWindow(resolveSourcePageCount(metadata, paper.content));
     const targetPageCount = pageWindow.target;
 
+    // Fetch user profile affiliation to enrich author metadata
+    const userProfileRes = await pool.query('SELECT name, affiliation FROM users WHERE id = $1', [req.user.id]);
+    const userProfile = userProfileRes.rows[0] || {};
+
+    // Merge user dashboard affiliation into paper metadata authors (fills gaps from extraction)
+    const metaAuthors: any[] = Array.isArray(metadata.authors) ? metadata.authors : [];
+    if (metaAuthors.length > 0 && userProfile.affiliation) {
+      metaAuthors.forEach((a: any) => {
+        if (!a.institution || a.institution.trim() === '') a.institution = userProfile.affiliation;
+      });
+    }
+    // Save enriched affiliation back so it's persistent
+    metadata.authors = metaAuthors;
+
     // Fetch branding metadata for the formatter
     const journalConfig = await getJournalConfig();
     const branding = buildPaperBranding(paper, journalConfig, { doi: paper.doi || '10.GMIJ/PENDING' });
@@ -4315,15 +4406,67 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           11. COPYEDITING: Fix spelling and grammatical errors, remove completely all unwanted symbols/characters, eliminate weird text indentations, and strip out unnecessary extra spaces. The text must read flawlessly as a professionally copyedited scientific manuscript.
           12. ENFORCEMENT: If you see "Genius Multidisciplinary International Journal" or "ISSN" at the top of the source, STRIP IT.
           13. FONTS: Use standard serif fonts for the main body.
-          14. PAGE DISCIPLINE: The source manuscript is approximately ${targetPageCount} pages. Keep the formatted result very close to that length. Avoid compressing the paper to an unrealistically short output and avoid inflating it with unnecessary spacing or repeated headings.`
+          14. PAGE DISCIPLINE: The source manuscript is approximately ${targetPageCount} pages. Keep the formatted result very close to that length. Avoid compressing the paper to an unrealistically short output and avoid inflating it with unnecessary spacing or repeated headings.
+          15. REFERENCES FORMATTING (NON-NEGOTIABLE): The References section MUST be formatted as a compact, single-spaced list. Each reference entry is ONE paragraph tag: <p class="reference">...</p>. Rules:
+              a. NO blank lines or extra margin between individual reference entries. They flow one immediately after another.
+              b. Use a hanging indent: padding-left:2em; text-indent:-2em; on each <p class="reference">.
+              c. line-height must be 1.35 on all reference entries — never 1.5, never 2.
+              d. margin-bottom on each entry must be 3px maximum — never 0.8em or 1em.
+              e. Do NOT use <ol> or <ul> for references. Use <div class="references"> containing <p class="reference"> for each entry.
+              f. Do NOT add extra spacing, gaps, or visual separators between reference entries.
+              g. URLs in references must stay on the same line as the reference text and must NOT be separated into their own paragraph.
+              h. The heading "References" should use <h2> with normal heading styling above the list.
+          EXAMPLE of correct reference output:
+          <div class="references">
+            <p class="reference">Ajayi, O. (2022). <em>Human trafficking and modern slavery.</em> Lagos: Academic Press.</p>
+            <p class="reference">Bello, A. (2024). <em>Economic hardship and human trafficking in Nigeria.</em> Lagos: University Press.</p>
+          </div>`
         },
-        { role: 'user', content: `Manuscript Title (TOPIC): ${paper.title}\nAuthors: ${paper.authors}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}` }
+        {
+          role: 'user',
+          content: (() => {
+            // Build a rich author block including affiliation for the AI
+            let authorBlock = paper.authors || '';
+            if (metaAuthors.length > 0) {
+              authorBlock = metaAuthors.map((a: any) => {
+                const parts = [a.name];
+                if (a.department) parts.push(a.department);
+                if (a.faculty) parts.push(a.faculty);
+                if (a.institution) parts.push(a.institution);
+                if (a.email) parts.push(a.email);
+                return parts.filter(Boolean).join(', ');
+              }).join('\n');
+            } else if (userProfile.affiliation) {
+              authorBlock = `${paper.authors || userProfile.name} — ${userProfile.affiliation}`;
+            }
+            return `Manuscript Title (TOPIC): ${paper.title}\nAuthors (with affiliations):\n${authorBlock}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}`;
+          })()
+        }
       ]
     });
 
     // Strip any lingering markdown backticks if the AI failed to follow instruction 1
     let formattedHtml = response.choices[0]?.message?.content || '';
     formattedHtml = formattedHtml.replace(/^```html\n?/, '').replace(/\n?```$/, '');
+
+    // POST-PROCESS: Enforce compact references regardless of what the AI produced.
+    // Find the references section and tighten every <p> inside it.
+    formattedHtml = formattedHtml.replace(
+      /(<(?:div|section|ol|ul)[^>]*class="[^"]*(?:references?|bibliograph)[^"]*"[^>]*>)([\s\S]*?)(<\/(?:div|section|ol|ul)>)/gi,
+      (_match: string, open: string, inner: string, close: string) => {
+        // Normalise <li> → <p class="reference"> for list-based outputs
+        let fixed = inner.replace(/<li([^>]*)>/gi, '<p class="reference"$1>').replace(/<\/li>/gi, '</p>');
+        // Remove blank paragraphs and excessive gaps between entries
+        fixed = fixed.replace(/<p([^>]*)>\s*<\/p>/gi, '');
+        // Ensure every <p> in references has the tight inline style
+        fixed = fixed.replace(/<p(?![^>]*class="reference")([^>]*)>/gi, '<p class="reference"$1>');
+        fixed = fixed.replace(
+          /<p class="reference"([^>]*)>/gi,
+          '<p class="reference" style="margin-top:0;margin-bottom:3px;padding-left:2em;text-indent:-2em;line-height:1.35;text-align:left;"$1>'
+        );
+        return open + fixed + close;
+      }
+    );
 
     // PERSISTENCE: Save the formatted content to the database so it can be used for PDF/Email generation
     const nextStatus = ['published', 'accepted', 'ready'].includes(paper.status) ? paper.status : 'formatting';
