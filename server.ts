@@ -1942,37 +1942,8 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
           margin: 35mm 15mm 25mm 15mm;
           size: A4;
         }
-        /* CSS counter for correct journal page numbering (continuation across issues).
-           The counter starts one below target so the first ::before increment hits startPage. */
-        body { counter-reset: journal-page ${startPage - 1}; }
-
-        /* Single footer bar — journal name left, page number right — sits in the
-           bottom margin so it never overlaps body content regardless of page length */
-        .pdf-footer-bar {
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: 20mm;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 15mm;
-          font-family: sans-serif;
-          font-size: 8.5px;
-          color: #94a3b8;
-          border-top: 0.75px solid #e2e8f0;
-        }
-        .pdf-footer-bar .footer-journal-name {
-          text-transform: uppercase;
-          font-weight: 700;
-          letter-spacing: 0.08em;
-        }
-        .pdf-footer-bar .footer-page-num::before {
-          counter-increment: journal-page;
-          content: "Page " counter(journal-page);
-          font-weight: 600;
-        }
+        /* Page numbers are stamped per-page by pdf-lib post-processing after
+           Puppeteer renders, so no CSS counter tricks are needed here. */
         /* Apply justify directly to body so Puppeteer PDF engine
            inherits it on every page — not just the first */
         body {
@@ -2078,10 +2049,6 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
       </style>
     </head>
     <body>
-      <div class="pdf-footer-bar">
-        <span class="footer-journal-name">Genius Multidisciplinary International Journal</span>
-        <span class="footer-page-num"></span>
-      </div>
       <div class="academic-content">
         ${scrubbedContent}
       </div>
@@ -2157,9 +2124,13 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
       </div>
     `;
 
-    // Footer is now rendered via position:fixed inside the HTML body (pdf-footer-bar)
-    // so the Puppeteer footer slot must be a non-empty but invisible placeholder
-    const footerTemplate = `<span style="display:none"></span>`;
+    // Footer: journal name on the left. Page numbers are stamped on the right
+    // by pdf-lib post-processing below so they can carry the correct startPage offset.
+    const footerTemplate = `
+      <div style="width:100%;font-family:sans-serif;font-size:8.5px;color:#94a3b8;border-top:0.75px solid #e2e8f0;padding-top:4px;margin:0 45px;">
+        <span style="text-transform:uppercase;font-weight:700;letter-spacing:0.08em;">Genius Multidisciplinary International Journal</span>
+      </div>
+    `;
 
     const pdfUint8 = await page.pdf({
       format: 'A4',
@@ -2169,7 +2140,31 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
       footerTemplate,
       margin: { top: '35mm', bottom: '25mm', left: '15mm', right: '15mm' }
     });
-    return Buffer.from(pdfUint8);
+
+    // Stamp the correct page numbers (with startPage offset) at the right side of the
+    // footer line using pdf-lib. Puppeteer's <span class="pageNumber"> always starts at 1
+    // and cannot be offset, so we handle it here instead.
+    const postDoc = await PDFDocument.load(pdfUint8);
+    const postFont = await postDoc.embedFont(StandardFonts.Helvetica);
+    const pageGray = rgb(0.58, 0.58, 0.58);
+    const MM_TO_PT = 2.8346;
+    const rightMargin = 15 * MM_TO_PT; // 15mm — matches page margin
+    const footerY = 13; // points from page bottom — aligns with Puppeteer footer text baseline
+
+    postDoc.getPages().forEach((pg, idx) => {
+      const { width } = pg.getSize();
+      const label = `Page ${startPage + idx}`;
+      const labelWidth = postFont.widthOfTextAtSize(label, 8.5);
+      pg.drawText(label, {
+        x: width - rightMargin - labelWidth,
+        y: footerY,
+        size: 8.5,
+        font: postFont,
+        color: pageGray,
+      });
+    });
+
+    return Buffer.from(await postDoc.save());
   } finally {
     await browser.close();
   }
