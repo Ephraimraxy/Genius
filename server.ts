@@ -1725,15 +1725,20 @@ app.get('/api/admin/lecturer-material-stats', authenticateToken, async (req: any
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const result = await pool.query(`
-      SELECT 
-        u.id, 
-        u.name, 
+      SELECT
+        u.id,
+        u.name,
         u.email,
         u.tenant_id,
         (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'material') as material_count,
         (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'material' AND is_available = true) as active_materials,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'audio') as audio_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'test') as test_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'assignment') as assignment_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'exam') as exam_count,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'material_access') as material_revenue,
-        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'assessment_access') as assessment_revenue
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'assessment_access') as assessment_revenue,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'portal_entry') as access_fee_revenue
       FROM users u
       WHERE u.role = 'tenant_admin'
       ORDER BY material_count DESC
