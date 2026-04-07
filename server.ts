@@ -6995,7 +6995,7 @@ app.post('/api/papers/:id/republish', authenticateToken, async (req: any, res) =
       const { paymentReference } = req.body;
       if (!paymentReference) return res.status(402).json({ error: 'Payment reference required', amount: cfg.amount });
       const txRes = await pool.query(
-        "SELECT id, status FROM transactions WHERE reference = $1 AND user_id = $2 AND status = 'completed'",
+        "SELECT id, status FROM transactions WHERE reference = $1 AND user_id = $2 AND status = 'success'",
         [paymentReference, req.user.id]
       );
       if (!txRes.rows.length) return res.status(402).json({ error: 'Payment not confirmed. Please complete payment before republishing.', amount: cfg.amount });

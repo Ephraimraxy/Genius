@@ -20,12 +20,13 @@ interface GeniusPaymentModalProps {
   courseId: string;
   token: string | null;
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
-  type?: 'attendance' | 'material' | 'assessment' | 'audio' | 'portal_entry';
+  type?: 'attendance' | 'material' | 'assessment' | 'audio' | 'portal_entry' | 'republish';
+  onPaymentReference?: (ref: string) => void; // Called with the reference just before onSuccess for republish
 }
 
 type Gateway = 'paystack' | 'kora';
 
-export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseName, courseId, token, addToast, type = 'attendance' }: GeniusPaymentModalProps) {
+export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseName, courseId, token, addToast, type = 'attendance', onPaymentReference }: GeniusPaymentModalProps) {
   const MAX_AUTO_RETRY = 1;
   const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean, kora: boolean } | null>(null);
   const [gateway, setGateway] = useState<Gateway | null>(null);
@@ -103,6 +104,9 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
       } else if (type === 'portal_entry') {
         endpoint = '/api/payment/portal-entry/initialize';
         body = { amount, gateway: selectedGateway, mode: 'inline' };
+      } else if (type === 'republish') {
+        endpoint = '/api/payment/initialize';
+        body = { amount, type: 'republish', gateway: selectedGateway, mode: 'inline' };
       } else {
         // Attendance
         body = { amount, course_id: courseId, gateway: selectedGateway, mode: 'inline' };
@@ -380,10 +384,13 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
     addToast('Account number copied!', 'success');
   };
 
-  const completeVerifiedPayment = () => {
+  const completeVerifiedPayment = (ref?: string) => {
     if (isConfirmed) return;
     setIsConfirmed(true);
-    addToast('Payment confirmed. Access unlocked.', 'success');
+    if (onPaymentReference && (ref || paymentRef)) {
+      onPaymentReference(ref || paymentRef);
+    }
+    addToast('Payment confirmed.', 'success');
     onSuccess();
   };
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, TrendingUp, Users, ShieldCheck, Eye, User, ToggleLeft, ToggleRight, RefreshCw, Loader2, X } from 'lucide-react';
+import GeniusPaymentModal from './GeniusPaymentModal';
 import { Tab } from '../App';
 import { friendlyError } from '../utils/friendlyError';
 
@@ -21,6 +22,8 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   const [republishModal, setRepublishModal] = useState<{ paperId: number; title: string } | null>(null);
   const [republishError, setRepublishError] = useState<string | null>(null);
   const [republishSuccess, setRepublishSuccess] = useState<number | null>(null);
+  const [showRepublishPayment, setShowRepublishPayment] = useState(false);
+  const [pendingRepublishRef, setPendingRepublishRef] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -465,7 +468,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-800 font-medium space-y-1">
                   <p className="font-black">Payment Required</p>
                   <p>A fee of <strong>₦{republishConfig.amount.toLocaleString()}</strong> is required to republish.</p>
-                  <p className="text-xs text-amber-600 mt-1">You will be redirected to complete payment. Return here after payment to confirm.</p>
+                  <p className="text-xs text-amber-600 mt-1">Choose your preferred payment method in the next step. Republishing starts automatically after payment.</p>
                 </div>
               )}
 
@@ -479,29 +482,28 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => { setRepublishModal(null); setRepublishError(null); }}
-                  className="flex-1 py-3 px-4 rounded-2xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors"
+                  disabled={republishingId === republishModal?.paperId}
+                  className="flex-1 py-3 px-4 rounded-2xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 {republishConfig?.paid && republishConfig.amount > 0 ? (
                   <button
-                    onClick={() => {
-                      setRepublishModal(null);
-                      setActivePaperId(republishModal.paperId);
-                      onNavigate('transactions');
-                    }}
-                    className="flex-1 py-3 px-4 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                    onClick={() => setShowRepublishPayment(true)}
+                    disabled={republishingId === republishModal?.paperId}
+                    className="flex-1 py-3 px-4 rounded-2xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
                   >
-                    Pay & Republish
-                    <ArrowRight size={15} />
+                    {republishingId === republishModal?.paperId
+                      ? <><Loader2 size={15} className="animate-spin" /> Republishing…</>
+                      : <>Pay ₦{republishConfig.amount.toLocaleString()} & Republish <ArrowRight size={14} /></>}
                   </button>
                 ) : (
                   <button
-                    onClick={() => handleRepublish(republishModal.paperId)}
-                    disabled={republishingId === republishModal.paperId}
+                    onClick={() => handleRepublish(republishModal!.paperId)}
+                    disabled={republishingId === republishModal?.paperId}
                     className="flex-1 py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
                   >
-                    {republishingId === republishModal.paperId
+                    {republishingId === republishModal?.paperId
                       ? <><Loader2 size={15} className="animate-spin" /> Processing…</>
                       : <><RefreshCw size={15} /> Confirm Republish</>}
                   </button>
@@ -511,6 +513,29 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* GeniusPaymentModal for paid republish — supports both Paystack and Kora */}
+      {showRepublishPayment && republishModal && republishConfig && (
+        <GeniusPaymentModal
+          amount={republishConfig.amount}
+          courseName={`Republish: ${republishModal.title}`}
+          courseId={String(republishModal.paperId)}
+          token={localStorage.getItem('token')}
+          type="republish"
+          addToast={(msg, type) => {
+            if (type === 'error') setRepublishError(msg);
+          }}
+          onPaymentReference={(ref) => setPendingRepublishRef(ref)}
+          onSuccess={() => {
+            setShowRepublishPayment(false);
+            handleRepublish(republishModal.paperId, pendingRepublishRef || undefined);
+          }}
+          onClose={() => {
+            setShowRepublishPayment(false);
+            setPendingRepublishRef(null);
+          }}
+        />
+      )}
     </motion.div>
   );
 }
