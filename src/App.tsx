@@ -601,6 +601,7 @@ export default function App() {
       case 'integrity': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <IntegrityChecks activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
       case 'journals': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <JournalRecommendations activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
       case 'reviews': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <PeerReviewSimulation activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
+      case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} />;
       case 'transactions': return <TransactionHistory profile={profile} mode="researcher" />;
       case 'records': return <PublicationRecords profile={profile} />;
       case 'users': return <UserManagement initialRoleFilter="user" addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
