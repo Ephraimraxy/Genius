@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background gradient: deep maroon to slightly lighter maroon -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#6b0000"/>
+      <stop offset="100%" stop-color="#9a0000"/>
+    </linearGradient>
+
+    <!-- Gold shimmer on the arc -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#f5c842"/>
+      <stop offset="50%"  stop-color="#fde68a"/>
+      <stop offset="100%" stop-color="#d4a00a"/>
+    </linearGradient>
+
+    <!-- White shimmer on the G -->
+    <linearGradient id="whiteGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+
+    <!-- Inner glow filter -->
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <!-- Subtle drop shadow on G -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+
+    <!-- Clip to rounded square -->
+    <clipPath id="roundedSquare">
+      <rect width="512" height="512" rx="115" ry="115"/>
+    </clipPath>
+  </defs>
+
+  <!-- ── Background ── -->
+  <rect width="512" height="512" rx="115" ry="115" fill="url(#bgGrad)"/>
+
+  <!-- Subtle radial highlight top-left -->
+  <radialGradient id="topGlow" cx="25%" cy="20%" r="55%">
+    <stop offset="0%"   stop-color="#fff" stop-opacity="0.10"/>
+    <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+  </radialGradient>
+  <rect width="512" height="512" rx="115" ry="115" fill="url(#topGlow)"/>
+
+  <!-- ── Decorative thin gold ring (academic seal feel) ── -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="url(#goldGrad)" stroke-width="3.5" opacity="0.55"/>
+  <circle cx="256" cy="256" r="197" fill="none" stroke="url(#goldGrad)" stroke-width="1.5" opacity="0.30"/>
+
+  <!-- ── Open book icon (bottom-center, subtle) ── -->
+  <g transform="translate(256,318)" opacity="0.22">
+    <!-- Left page -->
+    <path d="M-86,-28 Q-86,-48 -56,-52 L-4,-52 L-4,28 Q-34,22 -86,28 Z" fill="#fff"/>
+    <!-- Right page -->
+    <path d="M86,-28 Q86,-48 56,-52 L4,-52 L4,28 Q34,22 86,28 Z" fill="#fff"/>
+    <!-- Spine -->
+    <rect x="-4" y="-52" width="8" height="80" rx="2" fill="#f5c842"/>
+  </g>
+
+  <!-- ── Big G lettermark ── -->
+  <!--
+    Hand-crafted G path centred at (256, 240):
+    Outer radius 148, inner radius 92, crossbar starts at centre going right.
+    Opening gap at top-right (roughly 60° arc).
+  -->
+  <g filter="url(#shadow)">
+    <path
+      d="
+        M 256,96
+        A 160,160 0 1 0 376,316
+        L 376,256
+        L 264,256
+        L 264,304
+        L 326,304
+        A 100,100 0 1 1 256,156
+        Z
+      "
+      fill="url(#whiteGrad)"
+    />
+  </g>
+
+  <!-- ── Gold crossbar accent line on the G arm ── -->
+  <rect x="260" y="250" width="118" height="14" rx="7" fill="url(#goldGrad)" opacity="0.95"/>
+
+  <!-- ── "GMIJP" small label under the G ── -->
+  <text
+    x="256" y="430"
+    font-family="'Georgia', 'Times New Roman', serif"
+    font-size="36"
+    font-weight="700"
+    letter-spacing="8"
+    fill="url(#goldGrad)"
+    text-anchor="middle"
+    opacity="0.90"
+  >GMIJP</text>
+
+  <!-- ── Thin gold baseline under label ── -->
+  <rect x="148" y="440" width="216" height="2.5" rx="1.5" fill="url(#goldGrad)" opacity="0.50"/>
+</svg>
