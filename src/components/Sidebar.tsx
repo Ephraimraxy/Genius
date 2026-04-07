@@ -106,6 +106,7 @@ export default function Sidebar({
     { id: 'assignments', label: 'Assignments', icon: FileUp },
     { id: 'exams', label: 'Exams', icon: GraduationCap },
     { id: 'transactions', label: 'Transactions', icon: CreditCard, section: 'Finance' },
+    { id: 'tokenStatus', label: 'Revenue Tracking', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: Settings, section: 'Preferences' },
   ];
 

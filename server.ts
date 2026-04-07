@@ -977,6 +977,17 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(tenant_id) REFERENCES tenants(id)
     );
+    CREATE TABLE IF NOT EXISTS videos (
+      id SERIAL PRIMARY KEY,
+      guid TEXT UNIQUE NOT NULL,
+      tenant_id INTEGER,
+      title TEXT,
+      price INTEGER DEFAULT 0,
+      is_paid BOOLEAN DEFAULT FALSE,
+      is_available BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(tenant_id) REFERENCES tenants(id)
+    );
   `);
 
   try { await pool.query('ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_name_key'); } catch (e) { }
@@ -1730,12 +1741,13 @@ app.get('/api/admin/lecturer-material-stats', authenticateToken, async (req: any
         u.name,
         u.email,
         u.tenant_id,
-        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'material') as material_count,
-        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'material' AND is_available = true) as active_materials,
-        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'audio') as audio_count,
-        (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'test') as test_count,
-        (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'assignment') as assignment_count,
-        (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'exam') as exam_count,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'material' AND is_paid = true) as material_count,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'material' AND is_paid = true AND is_available = true) as active_materials,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'audio' AND is_paid = true) as audio_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'test' AND is_paid = true) as test_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'assignment' AND is_paid = true) as assignment_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'exam' AND is_paid = true) as exam_count,
+        (SELECT COUNT(*) FROM videos WHERE tenant_id = u.tenant_id AND is_paid = true) as video_count,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'material_access') as material_revenue,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'assessment_access') as assessment_revenue,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'portal_entry') as access_fee_revenue
@@ -1746,6 +1758,30 @@ app.get('/api/admin/lecturer-material-stats', authenticateToken, async (req: any
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch lecturer material stats' });
+  }
+});
+
+// Lecturer: own paid-content stats
+app.get('/api/lecturer/my-stats', authenticateToken, checkSubscription, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const tid = req.tenant_id;
+    const result = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = $1 AND type = 'material' AND is_paid = true) as material_count,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = $1 AND type = 'material' AND is_paid = true AND is_available = true) as active_materials,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = $1 AND type = 'audio' AND is_paid = true) as audio_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'test' AND is_paid = true) as test_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'assignment' AND is_paid = true) as assignment_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'exam' AND is_paid = true) as exam_count,
+        (SELECT COUNT(*) FROM videos WHERE tenant_id = $1 AND is_paid = true) as video_count,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'material_access') as material_revenue,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'assessment_access') as assessment_revenue,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'portal_entry') as access_fee_revenue
+    `, [tid]);
+    res.json(result.rows[0] || {});
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
 
@@ -8035,6 +8071,11 @@ app.post('/api/videos/create', authenticateToken, checkSubscription, async (req:
       body: JSON.stringify({ title })
     });
     const data = await bunnyRes.json();
+    // Persist guid ↔ tenant mapping so admin stats can count per lecturer
+    await pool.query(
+      'INSERT INTO videos (guid, tenant_id, title) VALUES ($1, $2, $3) ON CONFLICT (guid) DO NOTHING',
+      [data.guid, req.tenant_id, title]
+    );
     res.json({
       videoId: data.guid,
       uploadUrl: `/api/videos/${data.guid}/upload`,
@@ -8077,13 +8118,14 @@ app.delete('/api/videos/:guid', authenticateToken, checkSubscription, async (req
       method: 'DELETE',
       headers: { 'AccessKey': BUNNY_STREAM_API_KEY }
     });
+    await pool.query('DELETE FROM videos WHERE guid = $1 AND tenant_id = $2', [req.params.guid, req.tenant_id]);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Update video settings (monetization metadata stored as metaTags)
+// Update video settings (monetization metadata stored as metaTags + mirrored in DB)
 app.put('/api/videos/:guid/settings', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
@@ -8101,6 +8143,11 @@ app.put('/api/videos/:guid/settings', authenticateToken, checkSubscription, asyn
       },
       body: JSON.stringify({ metaTags })
     });
+    // Mirror in DB so stats can filter by is_paid
+    await pool.query(
+      'UPDATE videos SET price = $1, is_paid = $2, is_available = $3 WHERE guid = $4 AND tenant_id = $5',
+      [price ?? 0, is_paid ?? false, is_available ?? true, req.params.guid, req.tenant_id]
+    );
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

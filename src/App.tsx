@@ -580,7 +580,7 @@ export default function App() {
             case 'lectureRecords': return <AcademicManagement mode="records" addToast={addToast} token={token} />;
             case 'storage': return <ResourceHub addToast={addToast} token={token} />;
             case 'videoLectures': return <VideoLectures addToast={addToast} token={token} />;
-            case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} />;
+            case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} profile={profile} />;
             case 'transactions': return <TransactionHistory profile={profile} mode="lecturer" />;
             case 'reviewQueue': return <ReviewQueue initialStatusFilter="pending" profile={profile} />;
             case 'settings': return <LecturerSettings />;
@@ -601,7 +601,7 @@ export default function App() {
       case 'integrity': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <IntegrityChecks activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
       case 'journals': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <JournalRecommendations activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
       case 'reviews': return isAdmin ? <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} /> : <PeerReviewSimulation activePaperId={activePaperId} setActivePaperId={setActivePaperId} onNavigate={setActiveTab} />;
-      case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} />;
+      case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} profile={profile} />;
       case 'transactions': return <TransactionHistory profile={profile} mode="researcher" />;
       case 'records': return <PublicationRecords profile={profile} />;
       case 'users': return <UserManagement initialRoleFilter="user" addToast={addToast} onOpenChat={(userId) => setOpenChatUserId(userId)} confirm={confirm} />;
