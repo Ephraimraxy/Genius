@@ -1942,23 +1942,36 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
           margin: 35mm 15mm 25mm 15mm;
           size: A4;
         }
-        /* CSS counter for correct journal page numbering (continuation across issues) */
+        /* CSS counter for correct journal page numbering (continuation across issues).
+           The counter starts one below target so the first ::before increment hits startPage. */
         body { counter-reset: journal-page ${startPage - 1}; }
-        .journal-page-number {
+
+        /* Single footer bar — journal name left, page number right — sits in the
+           bottom margin so it never overlaps body content regardless of page length */
+        .pdf-footer-bar {
           position: fixed;
-          bottom: 8mm;
-          right: 0;
+          bottom: 0;
           left: 0;
-          text-align: right;
-          padding-right: 15mm;
+          right: 0;
+          height: 20mm;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 15mm;
           font-family: sans-serif;
-          font-size: 9px;
+          font-size: 8.5px;
           color: #94a3b8;
-          font-weight: normal;
+          border-top: 0.75px solid #e2e8f0;
         }
-        .journal-page-number::before {
+        .pdf-footer-bar .footer-journal-name {
+          text-transform: uppercase;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+        }
+        .pdf-footer-bar .footer-page-num::before {
           counter-increment: journal-page;
           content: "Page " counter(journal-page);
+          font-weight: 600;
         }
         /* Apply justify directly to body so Puppeteer PDF engine
            inherits it on every page — not just the first */
@@ -2065,7 +2078,10 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
       </style>
     </head>
     <body>
-      <div class="journal-page-number"></div>
+      <div class="pdf-footer-bar">
+        <span class="footer-journal-name">Genius Multidisciplinary International Journal</span>
+        <span class="footer-page-num"></span>
+      </div>
       <div class="academic-content">
         ${scrubbedContent}
       </div>
@@ -2141,11 +2157,9 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
       </div>
     `;
 
-    const footerTemplate = `
-      <div style="width: 100%; font-family: sans-serif; font-size: 9px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 5px; margin: 0 45px;">
-        <div style="text-transform: uppercase; font-weight: bold; letter-spacing: 0.1em;">Genius Multidisciplinary International Journal</div>
-      </div>
-    `;
+    // Footer is now rendered via position:fixed inside the HTML body (pdf-footer-bar)
+    // so the Puppeteer footer slot must be a non-empty but invisible placeholder
+    const footerTemplate = `<span style="display:none"></span>`;
 
     const pdfUint8 = await page.pdf({
       format: 'A4',
