@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   CreditCard, Users, BookOpen, TrendingUp, Search, RefreshCw,
-  DollarSign, Volume2, ClipboardList, GraduationCap, FileText, Video, BarChart3
+  DollarSign, Volume2, ClipboardList, GraduationCap, FileText, Video, BarChart3,
+  ChevronDown, ChevronUp, Eye
 } from 'lucide-react';
 import { ToastType } from './ToastSystem';
 
@@ -34,6 +35,12 @@ interface MyStat {
   material_revenue: number;
   assessment_revenue: number;
   access_fee_revenue: number;
+  free_material_count: number;
+  free_audio_count: number;
+  free_test_count: number;
+  free_assignment_count: number;
+  free_exam_count: number;
+  free_video_count: number;
 }
 
 interface TokenStatusViewProps {
@@ -225,6 +232,7 @@ function AdminView({ token, addToast }: { token: string | null; addToast: (m: st
 function LecturerView({ token, addToast, profile }: { token: string | null; addToast: (m: string, t: ToastType) => void; profile?: any }) {
   const [stats, setStats] = useState<MyStat | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showFree, setShowFree] = useState(false);
 
   const fetchStats = async () => {
     setLoading(true);
@@ -308,9 +316,66 @@ function LecturerView({ token, addToast, profile }: { token: string | null; addT
         </div>
       </div>
 
-      {/* Note */}
-      <div className="bg-amber-50 border border-amber-100 rounded-2xl px-6 py-4 text-sm text-amber-700 font-medium">
-        Only content you have marked as <strong>paid</strong> appears above. Free materials, videos, audio, tests, assignments and exams are excluded from this report.
+      {/* Note + expandable free content */}
+      <div className="border border-amber-100 rounded-2xl overflow-hidden">
+        {/* Note bar + toggle button */}
+        <div className="bg-amber-50 px-6 py-4 flex items-center justify-between gap-4">
+          <p className="text-sm text-amber-700 font-medium">
+            Only <strong>paid</strong> content appears above. Free items are excluded.
+          </p>
+          <button
+            onClick={() => setShowFree(v => !v)}
+            className="flex items-center gap-2 shrink-0 text-xs font-black uppercase tracking-wider text-amber-700 bg-amber-100 hover:bg-amber-200 px-4 py-2 rounded-xl transition-all border border-amber-200"
+          >
+            <Eye size={14} />
+            {showFree ? 'Hide Free Content' : 'View Free Content'}
+            {showFree ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </div>
+
+        {/* Expandable free content section */}
+        <AnimatePresence>
+          {showFree && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="overflow-hidden"
+            >
+              <div className="bg-white px-6 py-6 space-y-4 border-t border-amber-100">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Free Content Items</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                  {[
+                    { label: 'Free Materials',   value: stats.free_material_count,   icon: <BookOpen size={18} />,      color: 'bg-slate-50 text-slate-500',  border: 'border-slate-100' },
+                    { label: 'Free Audio',        value: stats.free_audio_count,      icon: <Volume2 size={18} />,       color: 'bg-slate-50 text-slate-500',  border: 'border-slate-100' },
+                    { label: 'Free Videos',       value: stats.free_video_count,      icon: <Video size={18} />,         color: 'bg-slate-50 text-slate-500',  border: 'border-slate-100' },
+                    { label: 'Free Tests',        value: stats.free_test_count,       icon: <ClipboardList size={18} />, color: 'bg-slate-50 text-slate-500',  border: 'border-slate-100' },
+                    { label: 'Free Assignments',  value: stats.free_assignment_count, icon: <FileText size={18} />,      color: 'bg-slate-50 text-slate-500',  border: 'border-slate-100' },
+                    { label: 'Free Exams',        value: stats.free_exam_count,       icon: <GraduationCap size={18} />, color: 'bg-slate-50 text-slate-500',  border: 'border-slate-100' },
+                  ].map((c, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      className={`bg-white p-4 rounded-2xl border ${c.border} shadow-sm`}
+                    >
+                      <div className={`w-9 h-9 ${c.color} rounded-xl flex items-center justify-center mb-3`}>
+                        {c.icon}
+                      </div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">{c.label}</p>
+                      <p className="text-lg font-black text-slate-600 mt-1">{Number(c.value)}</p>
+                    </motion.div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-400 font-medium">
+                  Free content generates no revenue and is shown here for reference only.
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

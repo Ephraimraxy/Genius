@@ -1777,7 +1777,13 @@ app.get('/api/lecturer/my-stats', authenticateToken, checkSubscription, async (r
         (SELECT COUNT(*) FROM videos WHERE tenant_id = $1 AND is_paid = true) as video_count,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'material_access') as material_revenue,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'assessment_access') as assessment_revenue,
-        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'portal_entry') as access_fee_revenue
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'portal_entry') as access_fee_revenue,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = $1 AND type = 'material' AND is_paid = false) as free_material_count,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = $1 AND type = 'audio' AND is_paid = false) as free_audio_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'test' AND is_paid = false) as free_test_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'assignment' AND is_paid = false) as free_assignment_count,
+        (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'exam' AND is_paid = false) as free_exam_count,
+        (SELECT COUNT(*) FROM videos WHERE tenant_id = $1 AND is_paid = false) as free_video_count
     `, [tid]);
     res.json(result.rows[0] || {});
   } catch (error) {
