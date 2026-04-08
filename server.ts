@@ -7012,7 +7012,6 @@ app.delete('/api/admin/papers/:id', authenticateToken, async (req: any, res) => 
     // Cascade delete in correct order to avoid FK violations
     await pool.query('DELETE FROM paper_references WHERE paper_id = $1', [id]);
     await pool.query('DELETE FROM reviews WHERE paper_id = $1', [id]);
-    await pool.query('DELETE FROM chat_messages WHERE paper_id = $1', [id]);
     // Nullify paper_id on ALL transactions (including successful ones) to release FK
     await pool.query('UPDATE transactions SET paper_id = NULL WHERE paper_id = $1', [id]);
     await pool.query('DELETE FROM papers WHERE id = $1', [id]);
