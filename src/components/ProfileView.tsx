@@ -350,7 +350,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
 
                   <div className="flex flex-wrap items-center gap-4">
                     <span className="flex items-center gap-2 text-sm font-bold bg-slate-100 text-slate-600 px-4 py-2 rounded-xl border border-slate-200">
-                      DOI: {pub.doi}
+                      DOI: {pub.doi?.startsWith('10.') ? `https://doi.org/${pub.doi}` : pub.doi}
                       <ExternalLink size={14} className="opacity-50" />
                     </span>
                     <span className="flex items-center gap-2 text-sm font-bold text-emerald-600 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">

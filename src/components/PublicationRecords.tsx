@@ -463,12 +463,12 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                     <td className="px-8 py-6">
                       {pub.doi ? (
                         <a
-                          href={pub.doi.startsWith('10.GMIJ') ? `/article/${pub.doi}` : `https://doi.org/${pub.doi}`}
+                          href={pub.doi.startsWith('10.GMIJ') ? `/article/${pub.doi}` : pub.doi.startsWith('http') ? pub.doi : `https://doi.org/${pub.doi}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[#800000] font-mono text-[10px] font-black hover:underline tracking-tight"
                         >
-                          {pub.doi}
+                          {pub.doi.startsWith('10.') ? `https://doi.org/${pub.doi}` : pub.doi}
                         </a>
                       ) : (
                         <span className="text-[10px] font-bold text-slate-300">PENDING</span>

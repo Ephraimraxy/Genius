@@ -437,7 +437,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
                       <div className="flex items-center justify-between pt-4 border-t border-slate-100 w-full mb-8">
                         <div className="flex flex-col gap-1 items-start text-indigo-600 font-mono font-bold text-[10px] md:text-xs">
                           <div className="flex items-center gap-2">
-                            <Globe size={12} className="shrink-0" /> {publicationDetails.doi || 'PENDING'}
+                            <Globe size={12} className="shrink-0" /> {publicationDetails.doi ? (publicationDetails.doi.startsWith('10.') ? `https://doi.org/${publicationDetails.doi}` : publicationDetails.doi) : 'PENDING'}
                           </div>
                           {publicationDetails.date && (
                             <div className="text-slate-500 font-sans text-[9px] md:text-[10px] uppercase tracking-widest pl-5">

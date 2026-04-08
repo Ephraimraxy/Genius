@@ -258,7 +258,7 @@ export default function QuickPublishModal({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                    <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Assigned DOI</p>
-                      <p className="text-sm font-mono font-black text-[#800000] truncate">{result?.doi || 'Pending'}</p>
+                      <p className="text-sm font-mono font-black text-[#800000] break-all">{result?.doi ? (result.doi.startsWith('10.') ? `https://doi.org/${result.doi}` : result.doi) : 'Pending'}</p>
                    </div>
                    <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Journal Stamp</p>

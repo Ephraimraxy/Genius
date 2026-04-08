@@ -33,7 +33,7 @@ export default function JournalRecommendations({ activePaperId, setActivePaperId
     const content = `GENIUS RESEARCH REGISTRY - PUBLICATION CREDENTIALS
 --------------------------------------------------
 Title: ${publishedInfo.title || 'Untitled'}
-DOI: ${publishedInfo.doi}
+DOI: ${publishedInfo.doi?.startsWith('10.') ? `https://doi.org/${publishedInfo.doi}` : publishedInfo.doi}
 Registry URL: ${publishedInfo.url}
 Status: Published & Verified
 Verification Date: ${new Date().toLocaleString()}
@@ -156,7 +156,7 @@ on the Genius Global Network.`;
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10 relative z-10">
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 block">Cryptographic DOI</span>
-              <p className="font-mono text-indigo-600 font-bold text-lg">{publishedInfo.doi}</p>
+              <p className="font-mono text-indigo-600 font-bold text-lg break-all">{publishedInfo.doi?.startsWith('10.') ? `https://doi.org/${publishedInfo.doi}` : publishedInfo.doi}</p>
             </div>
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 block">Publication Node</span>

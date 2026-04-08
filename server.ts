@@ -595,9 +595,16 @@ const buildCertificateId = (paperId: number | string, publishedAt?: string | Dat
   return `${JOURNAL_SHORT_NAME}-CERT-${year}-${String(paperId).padStart(6, '0')}`;
 };
 
+const doiUrl = (doi: string): string => {
+  if (!doi || doi === 'DOI Pending' || doi === 'Verification Pending' || doi === 'Pending') return doi;
+  if (doi.startsWith('http')) return doi;
+  if (doi.startsWith('10.')) return `https://doi.org/${doi}`;
+  return doi;
+};
+
 const buildCertificateVerificationUrl = (paper: any) => {
   if (paper?.doi) {
-    return `https://doi.org/${paper.doi}`;
+    return doiUrl(paper.doi);
   }
   return `${APP_URL}/publications/${paper?.id || ''}`;
 };
@@ -630,7 +637,7 @@ const buildPaperBranding = (paper: any, config: any, overrides: Record<string, a
     volume: String(overrides.volume || paper?.volume || config.currentVolume || '1'),
     issue: String(overrides.issue || paper?.issue || config.currentIssue || '1'),
     issn: String(overrides.issn || paper?.issn || config.journalIssn || '2971-7760'),
-    doi: String(overrides.doi || paper?.doi || 'DOI Pending'),
+    doi: doiUrl(String(overrides.doi || paper?.doi || 'DOI Pending')),
     date: overrides.date || new Date(publicationDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
     startPageNumber: overrides.startPageNumber || 1,
     institution: overrides.institution || null
@@ -3389,7 +3396,7 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
     });
 
     if (doi || dateStr) {
-      const lineText = `${doi ? 'DOI: ' + doi : ''}${doi && dateStr ? '   •   ' : ''}${dateStr ? 'Published: ' + dateStr : ''}`;
+      const lineText = `${doi ? 'DOI: ' + doiUrl(doi) : ''}${doi && dateStr ? '   •   ' : ''}${dateStr ? 'Published: ' + dateStr : ''}`;
       p.drawText(lineText, {
         x: PAGE_W / 2 - fontRegular.widthOfTextAtSize(lineText, 7) / 2,
         y: PAGE_H - 58,
@@ -3746,7 +3753,7 @@ async function generatePublicationCertificatePDF(
   );
 
   y -= 6;
-  y = drawCenteredLines(wrapText(`DOI: ${doi}`, fontBold, 11, width - 160), y, fontBold, 11, maroon, 4);
+  y = drawCenteredLines(wrapText(`DOI: ${doiUrl(doi)}`, fontBold, 11, width - 160), y, fontBold, 11, maroon, 4);
   y = drawCenteredLines(
     wrapText(`ISSN: ${issn}   |   Volume ${volume}   |   Issue ${issue}`, font, 10, width - 160),
     y,
@@ -3802,7 +3809,7 @@ async function sendPublicationEmailLegacy(to: string, researcherName: string, ma
           <div style="background: white; padding: 30px; border-radius: 0 0 24px 24px; border: 1px solid #e2e8f0; border-top: none;">
             <h2 style="color: #0f172a; margin-top: 0;">Congratulations, ${researcherName}!</h2>
             <p>Your manuscript has been successfully published to the <strong>Genius Global Network</strong>.</p>
-            <p><strong>DOI:</strong> ${doi}</p>
+            <p><strong>DOI:</strong> <a href="${doiUrl(doi)}" style="color:#4338ca;">${doiUrl(doi)}</a></p>
             <p>Please find your official published manuscript attached to this email.</p>
             <div style="text-align: center; margin: 20px 0;">
               <a href="${url}" style="background: #4338ca; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">View Registry Page</a>
@@ -3868,7 +3875,7 @@ async function sendPublicationEmail(
         <div style="padding: 32px;">
           <p>Dear ${researcherName},</p>
           <p>Your manuscript titled <strong>${manuscriptTitle}</strong> has been formally published.</p>
-          <p><strong>DOI:</strong> ${doi}<br/>
+          <p><strong>DOI:</strong> <a href="${doiUrl(doi)}" style="color:#800000;">${doiUrl(doi)}</a><br/>
           <strong>Volume / Issue:</strong> ${volume} / ${issue}<br/>
           <strong>ISSN:</strong> ${issn}<br/>
           <strong>Published:</strong> ${publishedAt}</p>
@@ -6683,7 +6690,7 @@ app.get('/article/:doi(*)', async (req, res) => {
       ${refsHtml}
       
       <div class="metadata">
-        <p><strong>DOI:</strong> ${paper.doi}</p>
+        <p><strong>DOI:</strong> <a href="${doiUrl(paper.doi)}">${doiUrl(paper.doi)}</a></p>
         <p><strong>Published:</strong> ${new Date(paper.published_at || paper.created_at).toLocaleDateString()}</p>
         <p><strong>Publisher:</strong> Genius Open Access</p>
         <p><strong>ISSN:</strong> ${process.env.JOURNAL_ISSN || '0000-0000'}</p>
@@ -9799,7 +9806,7 @@ app.get('/article/:prefix/:suffix', async (req, res) => {
         <h1>${ast.title || paper.title}</h1>
         <div class="meta">
           <strong>Authors:</strong> ${authorNames}<br>
-          <strong>DOI:</strong> <a class="doi-link" href="https://doi.org/${doi}">${doi}</a><br>
+          <strong>DOI:</strong> <a class="doi-link" href="${doiUrl(doi)}">${doiUrl(doi)}</a><br>
           <strong>Published:</strong> ${new Date(paper.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
         </div>
         <div class="abstract">

@@ -460,7 +460,7 @@ export default function QuickPublishPage({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm">
                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Assigned DOI</p>
-                <p className="text-sm font-mono font-black text-[#800000] truncate">{publicationResult.doi || 'Pending assignment'}</p>
+                <p className="text-sm font-mono font-black text-[#800000] break-all">{publicationResult.doi ? (publicationResult.doi.startsWith('10.') ? `https://doi.org/${publicationResult.doi}` : publicationResult.doi) : 'Pending assignment'}</p>
               </div>
               <div className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm">
                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Journal Stamp</p>
