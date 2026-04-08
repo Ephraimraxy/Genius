@@ -1005,6 +1005,16 @@ async function initDB() {
   try { await pool.query('ALTER TABLE papers ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE chat_messages ADD COLUMN tenant_id INTEGER'); } catch (e) { }
   try { await pool.query('ALTER TABLE chat_messages ADD COLUMN is_read BOOLEAN DEFAULT FALSE'); } catch (e) { }
+  try { await pool.query('ALTER TABLE exam_results ADD COLUMN tenant_id INTEGER'); } catch (e) { }
+  try { await pool.query(`CREATE TABLE IF NOT EXISTS attendance (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER,
+    tenant_id INTEGER,
+    course_id TEXT,
+    reference TEXT UNIQUE,
+    attended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN issn TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN pin_hash TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN setup_token TEXT'); } catch (e) { }
@@ -8856,6 +8866,92 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
   }
 });
 
+// ─── FIX 3: ATTENDANCE RECORDING & RETRIEVAL ────────────────────────
+// Student: Mark attendance after confirmed payment
+app.post('/api/attendance/mark', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { reference, course_id } = req.body;
+    if (!reference) return res.status(400).json({ error: 'Payment reference is required' });
+
+    // Verify a successful attendance_token transaction for this reference
+    const txRes = await pool.query(
+      `SELECT id, metadata FROM transactions WHERE reference = $1 AND user_id = $2
+       AND type = 'attendance_token' AND status = 'success' LIMIT 1`,
+      [reference, req.user.id]
+    );
+    if (txRes.rows.length === 0)
+      return res.status(402).json({ error: 'No confirmed attendance payment found for this reference' });
+
+    // Prevent duplicate attendance record
+    const dup = await pool.query('SELECT id FROM attendance WHERE reference = $1 LIMIT 1', [reference]);
+    if (dup.rows.length > 0)
+      return res.status(409).json({ error: 'Attendance already recorded for this payment' });
+
+    const meta = txRes.rows[0].metadata || {};
+    const resolvedCourseId = course_id || meta.course_id || 'general';
+
+    await pool.query(
+      'INSERT INTO attendance (user_id, tenant_id, course_id, reference) VALUES ($1, $2, $3, $4)',
+      [req.user.id, req.tenant_id, resolvedCourseId, reference]
+    );
+
+    res.json({ success: true, message: 'Attendance recorded successfully' });
+  } catch (error: any) {
+    console.error('Attendance mark error:', error);
+    res.status(500).json({ error: 'Failed to record attendance' });
+  }
+});
+
+// Student: View own attendance history
+app.get('/api/student/attendance', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query(
+      `SELECT a.id, a.course_id, a.attended_at, a.reference
+       FROM attendance a
+       WHERE a.user_id = $1 AND a.tenant_id = $2
+       ORDER BY a.attended_at DESC`,
+      [req.user.id, req.tenant_id]
+    );
+    res.json({ success: true, attendance: result.rows });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch attendance' });
+  }
+});
+
+// Lecturer: View all attendance for their workspace
+app.get('/api/attendance', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { course_id, date } = req.query;
+    let query = `
+      SELECT a.id, a.course_id, a.attended_at, a.reference,
+             sr.name as student_name, sr.matric_number, sr.course
+      FROM attendance a
+      JOIN users u ON u.id = a.user_id
+      LEFT JOIN students_roster sr ON sr.matric_number = u.matric_number AND sr.tenant_id = a.tenant_id
+      WHERE a.tenant_id = $1`;
+    const params: any[] = [req.tenant_id];
+
+    if (course_id) { params.push(course_id); query += ` AND a.course_id = $${params.length}`; }
+    if (date) { params.push(date); query += ` AND DATE(a.attended_at) = $${params.length}`; }
+
+    query += ' ORDER BY a.attended_at DESC';
+    const result = await pool.query(query, params);
+
+    // Group by course_id for summary
+    const grouped: Record<string, any[]> = {};
+    for (const row of result.rows) {
+      if (!grouped[row.course_id]) grouped[row.course_id] = [];
+      grouped[row.course_id].push(row);
+    }
+    res.json({ success: true, attendance: result.rows, grouped, total: result.rows.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch attendance records' });
+  }
+});
+
 // Lecturer: Get student roster
 app.get('/api/courses/roster', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
@@ -8878,21 +8974,37 @@ app.get('/api/courses/categories', authenticateToken, checkSubscription, async (
   }
 });
 
+// ─── FIX 9: Category fee editable until first payment is made ────────
 app.put('/api/courses/categories/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = req.params;
     const { is_paid_entry, entry_fee } = req.body;
-    // Price Lock Enforcement: Only update if current entry_fee is 0
+
+    // Check if any student has already successfully paid for this category
+    const paidCheck = await pool.query(
+      `SELECT t.id FROM transactions t
+       JOIN users u ON u.id = t.user_id
+       WHERE u.category_id = $1 AND t.type = 'portal_entry'
+       AND t.status = 'success' LIMIT 1`,
+      [id]
+    );
+
+    if (paidCheck.rows.length > 0) {
+      return res.status(403).json({
+        error: 'This category fee is permanently locked — students have already paid it and cannot be retroactively affected.',
+        locked: true
+      });
+    }
+
+    // No payments yet — allow the update freely
     await pool.query(
-      `UPDATE student_categories 
-             SET is_paid_entry = CASE WHEN entry_fee = 0 THEN $1 ELSE is_paid_entry END,
-                 entry_fee = CASE WHEN entry_fee = 0 THEN $2 ELSE entry_fee END 
-             WHERE id = $3 AND tenant_id = $4`,
+      `UPDATE student_categories SET is_paid_entry = $1, entry_fee = $2 WHERE id = $3 AND tenant_id = $4`,
       [is_paid_entry, entry_fee, id, req.tenant_id]
     );
-    res.json({ success: true, message: 'Settings updated (Price lock applied if non-zero)' });
-  } catch (err) {
+    res.json({ success: true, message: 'Category fee updated successfully' });
+  } catch (err: any) {
+    if (err.status === 403) return res.status(403).json({ error: err.message, locked: true });
     res.status(500).json({ error: 'Update failed' });
   }
 });
@@ -9044,6 +9156,194 @@ app.post('/api/student/setup-pin', async (req, res) => {
     res.json({ success: true, message: 'PIN set successfully. You can now log in.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── FIX 6: Atomic bulk roster import ───────────────────────────────
+app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { students } = req.body; // Array of {matricNumber, name, email, course, categoryName}
+    if (!Array.isArray(students) || students.length === 0)
+      return res.status(400).json({ error: 'Provide a non-empty students array' });
+    if (students.length > 500)
+      return res.status(400).json({ error: 'Bulk limit is 500 students per request' });
+
+    const tenantRes = await pool.query('SELECT workspace_id, name FROM tenants WHERE id = $1', [req.tenant_id]);
+    const workspaceId = tenantRes.rows[0]?.workspace_id || 'N/A';
+    const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
+
+    const clean = (val: any) => typeof val === 'string' ? val.replace(/\0/g, '').trim() : val;
+    const succeeded: any[] = [];
+    const failed: any[] = [];
+
+    // Cache categories to avoid repeated lookups per student
+    const categoryCache: Record<string, number> = {};
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const raw of students) {
+        const matricNumber = clean(raw.matricNumber || raw.regNumber || raw.matric);
+        const name = clean(raw.name || raw.studentName || raw.fullName);
+        const email = clean(raw.email || raw.studentEmail);
+        const course = clean(raw.course || raw.department || '');
+        const categoryName = clean(raw.categoryName || '');
+
+        // Validate
+        if (!matricNumber || !name || !email) {
+          failed.push({ matric: matricNumber || '?', reason: 'Missing matric, name, or email' });
+          continue;
+        }
+        if (!email.includes('@') || email.length < 5) {
+          failed.push({ matric: matricNumber, reason: 'Invalid email address' });
+          continue;
+        }
+
+        // Duplicate check
+        const dup = await client.query(
+          'SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
+          [matricNumber, req.tenant_id]
+        );
+        if (dup.rows.length > 0) {
+          failed.push({ matric: matricNumber, reason: 'Already in roster' });
+          continue;
+        }
+
+        // Category resolution (cached)
+        let category_id: number | null = null;
+        if (categoryName) {
+          if (categoryCache[categoryName] !== undefined) {
+            category_id = categoryCache[categoryName];
+          } else {
+            const catCheck = await client.query(
+              'SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2',
+              [req.tenant_id, categoryName]
+            );
+            if (catCheck.rows.length > 0) {
+              category_id = catCheck.rows[0].id;
+            } else {
+              const catInsert = await client.query(
+                'INSERT INTO student_categories (tenant_id, name) VALUES ($1, $2) RETURNING id',
+                [req.tenant_id, categoryName]
+              );
+              category_id = catInsert.rows[0].id;
+            }
+            categoryCache[categoryName] = category_id!;
+          }
+        }
+
+        // PIN generation
+        const autoPin = String(Math.floor(1000 + Math.random() * 9000));
+        const hashedPin = await bcrypt.hash(autoPin, 10);
+
+        // Insert roster entry
+        await client.query(
+          'INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+          [req.tenant_id, matricNumber, name, email, course, hashedPin, category_id]
+        );
+
+        // Insert user account
+        const userCheck = await client.query(
+          'SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]
+        );
+        if (userCheck.rows.length === 0) {
+          await client.query(
+            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+            [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id, autoPin]
+          );
+        }
+
+        succeeded.push({ matric: matricNumber, name, email, autoPin });
+      }
+
+      await client.query('COMMIT');
+    } catch (txErr: any) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
+    // Send onboarding emails after successful commit (fire-and-forget)
+    for (const s of succeeded) {
+      sendResendEmail({
+        fromName: 'Genius Academic Portal',
+        to: s.email,
+        subject: `[Genius Academy] Welcome ${s.name} — Your Access Credentials`,
+        html: `<div style="font-family:Arial,sans-serif;padding:20px;color:#333;max-width:600px;margin:0 auto">
+          <h2 style="color:#1a237e">Welcome to Genius Academy</h2>
+          <p>Hi <b>${s.name}</b>, you have been registered in the <b>${workspaceName}</b> workspace.</p>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:20px;border-radius:12px;margin:20px 0">
+            <table style="width:100%;font-size:15px">
+              <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${workspaceId}</td></tr>
+              <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric}</td></tr>
+              <tr><td style="color:#64748b;padding:6px 0">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${s.autoPin}</span></td></tr>
+            </table>
+          </div>
+          <p style="color:#d97706;font-weight:bold;text-align:center">🔒 Keep your PIN private.</p>
+        </div>`
+      }).catch(() => {});
+    }
+
+    res.json({
+      success: true,
+      imported: succeeded.length,
+      failed: failed.length,
+      succeeded: succeeded.map(s => ({ matric: s.matric, name: s.name })),
+      failed
+    });
+  } catch (error: any) {
+    console.error('Bulk roster import error:', error);
+    res.status(500).json({ error: 'Bulk import failed: ' + error.message });
+  }
+});
+
+// ─── FIX 7: Material preview (first 300 words) ──────────────────────
+app.get('/api/student/materials/:id/preview', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT r.id, r.name, r.type, r.is_paid, r.price, r.content,
+       EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'material_access'
+              AND (metadata->>'resource_id')::int = r.id AND status = 'success') as "hasPaid"
+       FROM resources r
+       JOIN users u ON u.id = $1
+       WHERE r.id = $2 AND r.tenant_id = $3 AND r.is_available = true
+       AND (r.category_id IS NULL OR r.category_id = u.category_id)`,
+      [req.user.id, id, req.tenant_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Material not found' });
+    const mat = result.rows[0];
+
+    // If free or already paid, return full content
+    if (!mat.is_paid || mat.hasPaid) {
+      return res.json({ success: true, preview: false, content: mat.content, name: mat.name, type: mat.type });
+    }
+
+    // Extract preview text (~300 words) from content
+    let rawText = '';
+    if (mat.content) {
+      if (typeof mat.content === 'string') rawText = mat.content;
+      else if (mat.content.text) rawText = mat.content.text;
+      else rawText = JSON.stringify(mat.content);
+    }
+    const words = rawText.split(/\s+/).filter(Boolean);
+    const previewText = words.slice(0, 300).join(' ') + (words.length > 300 ? '…' : '');
+
+    res.json({
+      success: true,
+      preview: true,
+      previewText,
+      wordCount: words.length,
+      name: mat.name,
+      type: mat.type,
+      price: mat.price
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load preview' });
   }
 });
 
@@ -9250,6 +9550,43 @@ app.get('/api/student/assessments', authenticateToken, async (req: any, res) => 
   }
 });
 
+// ─── FIX 4: Student video access ────────────────────────────────────
+app.get('/api/student/videos', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    // Get all videos for this tenant from the DB mirror (respects is_available)
+    const dbVideos = await pool.query(
+      `SELECT v.*,
+       EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'video_access'
+              AND (metadata->>'guid') = v.guid AND status = 'success') as "hasPaid"
+       FROM videos v
+       WHERE v.tenant_id = $2 AND v.is_available = true
+       ORDER BY v.created_at DESC`,
+      [req.user.id, req.tenant_id]
+    );
+
+    if (dbVideos.rows.length === 0) return res.json({ success: true, videos: [] });
+
+    // Enrich with Bunny stream embed URLs (no upload key needed — just CDN host)
+    const BUNNY_CDN_HOST_VAL = process.env.BUNNY_CDN_HOST || BUNNY_CDN_HOST;
+    const videos = dbVideos.rows.map((v: any) => ({
+      guid: v.guid,
+      title: v.title,
+      is_paid: v.is_paid,
+      price: v.price,
+      hasPaid: v.hasPaid,
+      thumbnailUrl: `https://${BUNNY_CDN_HOST_VAL}/${v.guid}/thumbnail.jpg`,
+      embedUrl: `https://iframe.mediadelivery.net/embed/${BUNNY_STREAM_LIBRARY_ID}/${v.guid}?autoplay=false`,
+      created_at: v.created_at
+    }));
+
+    res.json({ success: true, videos });
+  } catch (error: any) {
+    console.error('Student videos error:', error);
+    res.status(500).json({ error: 'Failed to fetch videos' });
+  }
+});
+
 // Student: Get Materials
 app.get('/api/student/materials', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
@@ -9269,20 +9606,115 @@ app.get('/api/student/materials', authenticateToken, async (req: any, res) => {
     res.status(500).json({ error: 'Failed to fetch materials' });
   }
 });
+// ─── FIX 2: Exam payment enforced before returning questions ────────
 app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = req.params;
     const examResult = await pool.query('SELECT * FROM exams WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
     if (examResult.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
 
-    const questionsResult = await pool.query('SELECT id, text, options, type, formula, points FROM questions WHERE exam_id = $1', [id]);
+    const exam = examResult.rows[0];
 
-    res.json({
-      exam: examResult.rows[0],
-      questions: questionsResult.rows
-    });
+    // Enforce payment gate on backend — prevents API-level bypass
+    if (exam.is_paid && req.user.role === 'student') {
+      const txCheck = await pool.query(
+        `SELECT id FROM transactions WHERE user_id = $1 AND type = 'assessment_access'
+         AND (metadata->>'exam_id')::int = $2 AND status = 'success' LIMIT 1`,
+        [req.user.id, id]
+      );
+      if (txCheck.rows.length === 0) {
+        return res.status(402).json({ error: 'Payment required to access this assessment', price: exam.price });
+      }
+    }
+
+    // Prevent retaking already-completed exams
+    if (req.user.role === 'student') {
+      const alreadyDone = await pool.query(
+        'SELECT id FROM exam_results WHERE user_id = $1 AND exam_id = $2 LIMIT 1',
+        [req.user.id, id]
+      );
+      if (alreadyDone.rows.length > 0) {
+        return res.status(409).json({ error: 'You have already submitted this assessment.' });
+      }
+    }
+
+    const questionsResult = await pool.query('SELECT id, text, options, type, formula, points FROM questions WHERE exam_id = $1', [id]);
+    res.json({ exam, questions: questionsResult.rows });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch exam data' });
+  }
+});
+
+// ─── FIX 1: Exam submission — grade, persist, return score ──────────
+app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const { answers, riskScore, violations } = req.body;
+
+    // Verify exam exists and belongs to tenant
+    const examRes = await pool.query('SELECT * FROM exams WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    if (examRes.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
+    const exam = examRes.rows[0];
+
+    // Prevent duplicate submission
+    const duplicate = await pool.query(
+      'SELECT id FROM exam_results WHERE user_id = $1 AND exam_id = $2 LIMIT 1',
+      [req.user.id, id]
+    );
+    if (duplicate.rows.length > 0) {
+      return res.status(409).json({ error: 'You have already submitted this assessment.' });
+    }
+
+    // Fetch all questions with correct answers and points
+    const questionsRes = await pool.query(
+      'SELECT id, correct_answer, points FROM questions WHERE exam_id = $1',
+      [id]
+    );
+    const questions = questionsRes.rows;
+
+    // Grade: match each submitted answer against correct_answer
+    let totalEarned = 0;
+    let totalPossible = 0;
+    const gradedAnswers = (answers || []).map((a: any) => {
+      const q = questions.find((q: any) => q.id === a.questionId);
+      if (!q) return { ...a, correct: false, points: 0 };
+      totalPossible += Number(q.points || 10);
+      const isCorrect = String(a.answer || '').trim().toLowerCase() === String(q.correct_answer || '').trim().toLowerCase();
+      if (isCorrect) totalEarned += Number(q.points || 10);
+      return { ...a, correct: isCorrect, points: isCorrect ? q.points : 0 };
+    });
+
+    const scorePercent = totalPossible > 0 ? Math.round((totalEarned / totalPossible) * 100) : 0;
+    const scoreDisplay = `${scorePercent}`;
+
+    // Grade letter
+    let grade = 'F';
+    if (scorePercent >= 90) grade = 'A+';
+    else if (scorePercent >= 80) grade = 'A';
+    else if (scorePercent >= 70) grade = 'B';
+    else if (scorePercent >= 60) grade = 'C';
+    else if (scorePercent >= 50) grade = 'D';
+
+    // Persist result
+    await pool.query(
+      `INSERT INTO exam_results (user_id, exam_id, tenant_id, score, risk_score, violations, submitted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [req.user.id, id, req.tenant_id, scoreDisplay, riskScore || 0, JSON.stringify(violations || [])]
+    );
+
+    res.json({
+      success: true,
+      score: scorePercent,
+      scoreDisplay: `${totalEarned}/${totalPossible}`,
+      grade,
+      totalEarned,
+      totalPossible,
+      examTitle: exam.title
+    });
+  } catch (error: any) {
+    console.error('Exam submit error:', error);
+    res.status(500).json({ error: 'Failed to submit exam. Please try again.' });
   }
 });
 

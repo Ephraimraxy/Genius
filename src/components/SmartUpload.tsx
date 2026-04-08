@@ -1128,7 +1128,7 @@ export default function SmartUpload({
               type="file"
               ref={fileInputRef}
               className="hidden"
-              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
               onChange={handleFileChange}
             />
 
@@ -1149,7 +1149,7 @@ export default function SmartUpload({
                   <UploadCloud className="w-12 h-12 text-white" />
                 </div>
                 <h3 className="text-3xl font-bold text-slate-900 mb-4 tracking-tight">Drop manuscript here</h3>
-                <p className="text-slate-500 mb-10 text-lg font-medium">Supports .docx and .pdf up to 50MB</p>
+                <p className="text-slate-500 mb-10 text-lg font-medium">Supports .docx, .pdf and .doc (auto-converted) up to 50MB</p>
                 <button className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-bold shadow-2xl shadow-slate-900/20 hover:bg-indigo-600 transition-all group/btn flex items-center gap-3">
                   Browse Workstation
                   <ArrowRight size={20} className="group-hover/btn:translate-x-1 transition-transform" />
