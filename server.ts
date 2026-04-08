@@ -8590,9 +8590,12 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
       }
     }
 
+    // Store as JSON object so the JSONB column accepts it and the preview
+    // endpoint can read it back via content.text
+    const contentJson = JSON.stringify({ text: textContent });
     const result = await pool.query(
       'INSERT INTO resources (tenant_id, type, name, content, status, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [req.tenant_id, type, name, textContent, 'ready', final_category_id]
+      [req.tenant_id, type, name, contentJson, 'ready', final_category_id]
     );
 
     res.json({ success: true, id: result.rows[0].id });
@@ -9539,7 +9542,7 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
 
     // 2. Calculate Stats
     const totalExams = results.rows ? results.rows.length : 0;
-    const totalScore = (results.rows || []).reduce((sum: number, r: any) => sum + (r.score || 0), 0);
+    const totalScore = (results.rows || []).reduce((sum: number, r: any) => sum + (Number(r.score) || 0), 0);
     const avgScore = totalExams > 0 ? totalScore / totalExams : 0;
 
     // CGPA Calculation (Simplified: mapping 0-100 to 0-4.0)
@@ -9550,10 +9553,10 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
 
     // Global Rank (Relative to other students in the same tenant)
     const rankResult = await pool.query(
-      `SELECT user_id, AVG(score) as avg_score 
-       FROM exam_results 
-       WHERE tenant_id = $1 
-       GROUP BY user_id 
+      `SELECT user_id, AVG(score::numeric) as avg_score
+       FROM exam_results
+       WHERE tenant_id = $1
+       GROUP BY user_id
        ORDER BY avg_score DESC`,
       [req.tenant_id]
     );
