@@ -298,7 +298,9 @@ export default function SmartUpload({
       setShowConvertApproval(true);
       addToast(`Converted to ${format.toUpperCase()} successfully! Review and approve to proceed.`, 'success');
     } catch (err: any) {
-      addToast(friendlyError(err, 'upload'), 'error');
+      // Show server's descriptive message directly — it explains exactly why conversion failed
+      const msg = err?.message || '';
+      addToast(msg.length > 0 && msg.length < 300 ? msg : 'Conversion failed. Please open the file in Microsoft Word and save it as .docx or .pdf manually.', 'error');
     } finally {
       setIsConverting(false);
       setConvertingTo(null);
