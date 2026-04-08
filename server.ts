@@ -8539,6 +8539,63 @@ app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req:
   }
 });
 
+// File-based material upload — extracts text from PDF/DOCX before storing
+app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upload.single('file'), async (req: any, res: any) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file provided.' });
+    const { type, name, categoryName, categoryId, isPaidEntry, entryFee } = req.body;
+    if (!type || !name) return res.status(400).json({ error: 'Missing required fields' });
+
+    // Extract text content from binary file
+    let textContent = '';
+    const mime = req.file.mimetype;
+    const origName = (req.file.originalname || '').toLowerCase();
+
+    if (mime === 'application/pdf' || origName.endsWith('.pdf')) {
+      const data = await pdfParse(req.file.buffer);
+      textContent = data.text || '';
+    } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || origName.endsWith('.docx')) {
+      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      textContent = result.value || '';
+    } else if (mime === 'application/msword' || origName.endsWith('.doc')) {
+      const extractor = new WordExtractor();
+      const extracted = await extractor.extract(req.file.buffer);
+      textContent = extracted.getBody() || '';
+    } else {
+      // Plain text fallback
+      textContent = req.file.buffer.toString('utf8').replace(/\0/g, '');
+    }
+
+    // Sanitize: strip null bytes that PostgreSQL rejects
+    textContent = textContent.replace(/\0/g, '');
+
+    // Handle category
+    let final_category_id = categoryId ? parseInt(categoryId) : null;
+    if (categoryName && !final_category_id) {
+      const catCheck = await pool.query('SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
+      if (catCheck.rows.length > 0) {
+        final_category_id = catCheck.rows[0].id;
+      } else {
+        const catRes = await pool.query(
+          'INSERT INTO student_categories (tenant_id, name, is_paid_entry, entry_fee) VALUES ($1, $2, $3, $4) RETURNING id',
+          [req.tenant_id, categoryName.trim(), !!isPaidEntry, parseInt(entryFee) || 0]
+        );
+        final_category_id = catRes.rows[0].id;
+      }
+    }
+
+    const result = await pool.query(
+      'INSERT INTO resources (tenant_id, type, name, content, status, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [req.tenant_id, type, name, textContent, 'ready', final_category_id]
+    );
+
+    res.json({ success: true, id: result.rows[0].id });
+  } catch (err: any) {
+    console.error('File material upload error:', err?.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/resources/upload', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const { type, name, content, categoryName, categoryId, isPaidEntry, entryFee } = req.body;

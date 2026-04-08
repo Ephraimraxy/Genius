@@ -167,59 +167,76 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             return;
         }
 
-        // ─── ROSTER / MATERIAL: Keep existing PostgreSQL flow ───
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const rawContent = e.target?.result as string;
-            let finalContent: any = rawContent;
-
-            if (uploadType === 'roster') {
+        // ─── ROSTER: Parse CSV client-side → send as JSON ───
+        if (uploadType === 'roster') {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const rawContent = e.target?.result as string;
                 const lines = rawContent.split('\n');
-                finalContent = lines.map(line => {
+                const finalContent = lines.map(line => {
                     const parts = line.split(',').map(p => p.trim());
                     if (parts.length === 3) {
-                        // Order: Name, Matric, Email
                         return { name: parts[0], matricNumber: parts[1], email: parts[2] };
                     } else if (parts.length === 2) {
-                        // Order: Matric, Email (Legacy)
                         return { name: parts[0], matricNumber: parts[0], email: parts[1] };
                     }
                     return null;
-                }).filter(s => s && s.matricNumber && s.email);
-            }
+                }).filter(s => s && (s as any).matricNumber && (s as any).email);
 
-            try {
-                const res = await fetch('/api/resources/upload', {
-                    method: 'POST',
-                    headers: { 
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        type: uploadType,
-                        name: fileHandle.name,
-                        content: finalContent,
-                        categoryId: selectedCatId,
-                        categoryName: newCatName,
-                        isPaidEntry,
-                        entryFee
-                    })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    addToast(`${uploadType === 'roster' ? 'Student Data' : 'Material'} uploaded & sanitized successfully`, 'success');
-                    fetchResources();
-                    setFileHandle(null);
-                } else {
-                    addToast(data.error || 'Upload failed', 'error');
+                try {
+                    const res = await fetch('/api/resources/upload', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'roster', name: fileHandle.name, content: finalContent,
+                            categoryId: selectedCatId, categoryName: newCatName, isPaidEntry, entryFee
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        addToast('Student data uploaded & sanitized successfully', 'success');
+                        fetchResources();
+                        setFileHandle(null);
+                    } else {
+                        addToast(data.error || 'Upload failed', 'error');
+                    }
+                } catch (err) {
+                    addToast('Network error during upload', 'error');
                 }
-            } catch (err) {
-                addToast('Network error during upload', 'error');
-            }
-            setIsUploading(false);
-        };
+                setIsUploading(false);
+            };
+            reader.readAsText(fileHandle);
+            return;
+        }
 
-        reader.readAsText(fileHandle);
+        // ─── MATERIAL: Send binary file via FormData — server extracts text ───
+        try {
+            const formData = new FormData();
+            formData.append('file', fileHandle);
+            formData.append('type', uploadType);
+            formData.append('name', fileHandle.name);
+            if (selectedCatId) formData.append('categoryId', String(selectedCatId));
+            if (newCatName) formData.append('categoryName', newCatName);
+            if (isPaidEntry !== undefined) formData.append('isPaidEntry', String(isPaidEntry));
+            if (entryFee !== undefined) formData.append('entryFee', String(entryFee));
+
+            const res = await fetch('/api/resources/upload/file', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+            const data = await res.json();
+            if (data.success) {
+                addToast('Material uploaded successfully', 'success');
+                fetchResources();
+                setFileHandle(null);
+            } else {
+                addToast(data.error || 'Upload failed', 'error');
+            }
+        } catch (err) {
+            addToast('Network error during upload', 'error');
+        }
+        setIsUploading(false);
     };
 
 
