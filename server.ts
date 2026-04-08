@@ -1096,6 +1096,20 @@ async function initDB() {
   await pool.query(`INSERT INTO settings (key, value) VALUES ('journal_signature', '') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('journal_secretary', 'Dr. Danjuma Namo') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('pin_recovery_price', '1000') ON CONFLICT (key) DO NOTHING`);
+
+  // Migration: rename gateway_paymentpoint_enabled → gateway_paystack_enabled
+  try {
+    const old = await pool.query("SELECT value FROM settings WHERE key = 'gateway_paymentpoint_enabled'");
+    if (old.rows.length > 0) {
+      const val = old.rows[0].value;
+      await pool.query("INSERT INTO settings (key, value) VALUES ('gateway_paystack_enabled', $1) ON CONFLICT (key) DO NOTHING", [val]);
+      await pool.query("DELETE FROM settings WHERE key = 'gateway_paymentpoint_enabled'");
+    }
+  } catch (e) { }
+
+  // Seed gateway defaults if not set
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('gateway_paystack_enabled', 'true') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('gateway_kora_enabled', 'true') ON CONFLICT (key) DO NOTHING`);
 }
 initDB().catch(err => {
   console.error('CRITICAL: Database initialization failed');
@@ -7101,12 +7115,12 @@ app.get('/api/settings/price', async (req, res) => {
 app.get('/api/payment/gateways', async (_req, res) => {
   try {
     const result = await pool.query(
-      "SELECT key, value FROM settings WHERE key IN ('gateway_paymentpoint_enabled', 'gateway_kora_enabled')"
+      "SELECT key, value FROM settings WHERE key IN ('gateway_paystack_enabled', 'gateway_kora_enabled')"
     );
     const map: Record<string, string> = {};
     result.rows.forEach(r => { map[r.key] = r.value; });
     res.json({
-      paymentpoint: map['gateway_paymentpoint_enabled'] !== 'false',
+      paystack: map['gateway_paystack_enabled'] !== 'false',
       kora: map['gateway_kora_enabled'] !== 'false'
     });
   } catch (err) {
@@ -7119,12 +7133,12 @@ app.get('/api/admin/config/gateways', authenticateToken, async (req: any, res) =
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const result = await pool.query(
-      "SELECT key, value FROM settings WHERE key IN ('gateway_paymentpoint_enabled', 'gateway_kora_enabled')"
+      "SELECT key, value FROM settings WHERE key IN ('gateway_paystack_enabled', 'gateway_kora_enabled')"
     );
     const map: Record<string, string> = {};
     result.rows.forEach(r => { map[r.key] = r.value; });
     res.json({
-      paymentpoint: map['gateway_paymentpoint_enabled'] !== 'false',
+      paystack: map['gateway_paystack_enabled'] !== 'false',
       kora: map['gateway_kora_enabled'] !== 'false'
     });
   } catch (err) {
@@ -7135,11 +7149,11 @@ app.get('/api/admin/config/gateways', authenticateToken, async (req: any, res) =
 // Admin: Update gateway toggle settings
 app.post('/api/admin/config/gateways', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
-  const { paymentpoint, kora } = req.body;
+  const { paystack, kora } = req.body;
   try {
     await pool.query(
-      "INSERT INTO settings (key, value) VALUES ('gateway_paymentpoint_enabled', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
-      [paymentpoint === false ? 'false' : 'true']
+      "INSERT INTO settings (key, value) VALUES ('gateway_paystack_enabled', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+      [paystack === false ? 'false' : 'true']
     );
     await pool.query(
       "INSERT INTO settings (key, value) VALUES ('gateway_kora_enabled', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
