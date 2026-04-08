@@ -7008,12 +7008,8 @@ app.delete('/api/admin/papers/:id', authenticateToken, async (req: any, res) => 
     await pool.query('DELETE FROM paper_references WHERE paper_id = $1', [id]);
     await pool.query('DELETE FROM reviews WHERE paper_id = $1', [id]);
     await pool.query('DELETE FROM chat_messages WHERE paper_id = $1', [id]);
-    // Free up any unused transaction credit linked to this paper
-    await pool.query(
-      "UPDATE transactions SET paper_id = NULL, metadata = metadata - 'consumed' WHERE paper_id = $1 AND status != 'success'",
-      [id]
-    );
-    await pool.query('DELETE FROM transactions WHERE paper_id = $1', [id]);
+    // Nullify paper_id on ALL transactions (including successful ones) to release FK
+    await pool.query('UPDATE transactions SET paper_id = NULL WHERE paper_id = $1', [id]);
     await pool.query('DELETE FROM papers WHERE id = $1', [id]);
 
     console.log(`[Admin] Paper #${id} ("${title}") permanently deleted by user #${req.user.id}`);

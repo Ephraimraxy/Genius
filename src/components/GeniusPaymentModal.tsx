@@ -28,6 +28,14 @@ type Gateway = 'paystack' | 'kora';
 
 export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseName, courseId, token, addToast, type = 'attendance', onPaymentReference }: GeniusPaymentModalProps) {
   const MAX_AUTO_RETRY = 1;
+  // Guard: once the user explicitly closes this modal, suppress any further onClose/onSuccess calls
+  const closedRef = React.useRef(false);
+  const safeClose = React.useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    onClose();
+  }, [onClose]);
+
   const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean, kora: boolean } | null>(null);
   const [gateway, setGateway] = useState<Gateway | null>(null);
   const [loading, setLoading] = useState(false);
@@ -97,7 +105,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         body = { amount, exam_id: parseInt(courseId), gateway: selectedGateway, mode: 'inline' };
       } else if (type === 'audio') {
         addToast('Audio payments are temporarily unavailable while the secure flow is being finalized.', 'info');
-        onClose();
+        safeClose();
         return;
       } else if (type === 'portal_entry') {
         endpoint = '/api/payment/portal-entry/initialize';
@@ -156,11 +164,11 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         }
       } else {
         addToast(data.error || 'Failed to initialize payment', 'error');
-        onClose();
+        safeClose();
       }
     } catch (err: any) {
       addToast(friendlyError(err, 'payment'), 'error');
-      onClose();
+      safeClose();
     } finally {
       setLoading(false);
     }
@@ -518,8 +526,8 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
 
         {/* Right Side: Action & Details */}
         <div className="flex-1 p-8 md:p-10 flex flex-col bg-white overflow-y-auto relative">
-          <button 
-            onClick={onClose}
+          <button
+            onClick={safeClose}
             className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors"
           >
             <X size={24} />

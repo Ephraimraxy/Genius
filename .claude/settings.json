@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l \"d:\\\\Junks\\\\TODAY\\\\Publish AI/src/components\"/*.tsx)",
+      "Bash(npm list:*)"
+    ]
+  }
+}

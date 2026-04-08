@@ -193,6 +193,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
             <AnimatePresence>
                 {showAttendanceModal && selectedCourseForAttendance && (
                     <GeniusPaymentModal
+                        key={`attendance-${selectedCourseForAttendance}`}
                         courseName={selectedCourseForAttendance}
                         courseId={selectedCourseForAttendance}
                         amount={500}
@@ -205,7 +206,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                         onSuccess={() => {
                             setShowAttendanceModal(false);
                             setSelectedCourseForAttendance(null);
-                            // Real app: fetch updated attendance status here
+                            addToast('Attendance signed successfully!', 'success');
                         }}
                         type="attendance"
                     />
