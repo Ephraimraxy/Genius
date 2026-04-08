@@ -1123,9 +1123,9 @@ export default function SmartUpload({
             exit={{ opacity: 0, scale: 0.98 }}
             className={`
               relative group border-2 border-dashed rounded-[3rem] p-20 flex flex-col items-center justify-center text-center transition-all duration-500
-              ${isUploading
-                ? 'border-indigo-400 bg-indigo-50/30'
-                : 'border-slate-200 hover:border-indigo-400 bg-white hover:bg-slate-50/50 cursor-pointer shadow-xl shadow-slate-200/20'}
+              ${isUploading || isDocFile
+                ? 'border-[#800000]/40 bg-red-50/20'
+                : 'border-slate-200 hover:border-[#800000]/40 bg-white hover:bg-slate-50/50 cursor-pointer shadow-xl shadow-slate-200/20'}
             `}
             onClick={() => !isUploading && fileInputRef.current?.click()}
           >
@@ -1140,26 +1140,71 @@ export default function SmartUpload({
             {isUploading ? (
               <div className="flex flex-col items-center">
                 <div className="relative">
-                  <div className="w-24 h-24 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
-                  <Loader2 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={32} />
+                  <div className="w-24 h-24 border-4 border-red-100 border-t-[#800000] rounded-full animate-spin"></div>
+                  <Loader2 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[#800000]" size={32} />
                 </div>
                 <h3 className="text-2xl font-bold text-slate-900 mt-8 mb-4">Neural Analysis in Progress</h3>
                 <p className="text-slate-500 max-w-sm font-medium leading-relaxed">
                   Extracting semantic entities, mapping citations, and validating document architecture...
                 </p>
               </div>
+            ) : isDocFile ? (
+              <div className="p-6 bg-amber-50 border border-amber-200 rounded-2xl space-y-4 max-w-md w-full text-left" onClick={e => e.stopPropagation()}>
+                <div className="flex items-start gap-3">
+                  <AlertCircle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-amber-800">Old Word format detected (.doc)</p>
+                    <p className="text-xs text-amber-700 mt-1">
+                      Your file is in Word 97-2003 format. Re-save it as <strong>.docx</strong> (File → Save As → Word Document) or let us auto-convert it:
+                    </p>
+                  </div>
+                </div>
+                {!showConvertApproval ? (
+                  <div className="flex gap-2">
+                    <button onClick={() => handleDocConvert('docx')} disabled={isConverting}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-[#800000] hover:bg-red-900 disabled:opacity-60 text-white text-xs font-bold rounded-xl transition-colors">
+                      {isConverting && convertingTo === 'docx' ? <><Loader2 size={13} className="animate-spin" /> Converting…</> : <><Zap size={13} /> Convert to .docx</>}
+                    </button>
+                    <button onClick={() => handleDocConvert('pdf')} disabled={isConverting}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-xs font-bold rounded-xl transition-colors">
+                      {isConverting && convertingTo === 'pdf' ? <><Loader2 size={13} className="animate-spin" /> Converting…</> : <><Zap size={13} /> Convert to .pdf</>}
+                    </button>
+                    <button onClick={() => { setIsDocFile(false); setPendingFile(null); }}
+                      className="py-2.5 px-3 bg-white border border-amber-300 text-amber-700 text-xs font-bold rounded-xl hover:bg-amber-100 transition-colors">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-xl space-y-3">
+                    <div className="flex items-center gap-2 text-green-700">
+                      <CheckCircle2 size={16} />
+                      <p className="text-sm font-bold">Conversion complete! ({convertedFile?.name})</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={handleProceedWithConverted}
+                        className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg transition-colors">
+                        Yes, proceed with converted file
+                      </button>
+                      <button onClick={() => { setIsDocFile(false); setShowConvertApproval(false); setConvertedFile(null); setPendingFile(null); }}
+                        className="flex-1 py-2 px-3 bg-white border border-green-300 text-green-700 text-xs font-bold rounded-lg hover:bg-green-50 transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <>
-                <div className="w-28 h-28 premium-gradient rounded-[2rem] flex items-center justify-center mb-10 shadow-2xl shadow-indigo-500/30 group-hover:scale-110 transition-transform duration-500">
+                <div className="w-28 h-28 premium-gradient rounded-[2rem] flex items-center justify-center mb-10 shadow-2xl shadow-[#800000]/30 group-hover:scale-110 transition-transform duration-500">
                   <UploadCloud className="w-12 h-12 text-white" />
                 </div>
                 <h3 className="text-3xl font-bold text-slate-900 mb-4 tracking-tight">Drop manuscript here</h3>
                 <p className="text-slate-500 mb-10 text-lg font-medium">Supports .docx, .pdf and .doc (auto-converted) up to 50MB</p>
-                <button className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-bold shadow-2xl shadow-slate-900/20 hover:bg-indigo-600 transition-all group/btn flex items-center gap-3">
+                <button className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-bold shadow-2xl shadow-slate-900/20 hover:bg-[#800000] transition-all group/btn flex items-center gap-3">
                   Browse Workstation
                   <ArrowRight size={20} className="group-hover/btn:translate-x-1 transition-transform" />
                 </button>
-                {!isDocFile && error && (
+                {error && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
