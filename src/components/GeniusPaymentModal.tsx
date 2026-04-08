@@ -485,9 +485,9 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
         className="w-full max-w-4xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh]"
       >
         {/* Left Side: Branding & Info */}
-        <div className="md:w-5/12 bg-gradient-to-br from-indigo-600 to-blue-800 p-8 md:p-10 text-white flex flex-col items-center md:items-start text-center md:text-left relative overflow-hidden shrink-0">
+        <div className="md:w-5/12 bg-gradient-to-br from-[#800000] to-red-900 p-8 md:p-10 text-white flex flex-col items-center md:items-start text-center md:text-left relative overflow-hidden shrink-0">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-900/40 rounded-full blur-3xl -ml-32 -mb-32 pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-red-900/40 rounded-full blur-3xl -ml-32 -mb-32 pointer-events-none" />
           
           <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center mb-6 backdrop-blur-md relative z-10 border border-white/20">
             <ShieldUser size={24} className="text-white" />
@@ -496,20 +496,20 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
           <h2 className="text-3xl md:text-4xl font-black mb-4 tracking-tight leading-tight relative z-10">
             {type === 'portal_entry' ? 'Portal Access' : type === 'attendance' ? 'Sign Attendance' : type === 'material' ? 'Unlock Material' : type === 'audio' ? 'Unlock Audio' : type === 'republish' ? 'Republish Manuscript' : 'Unlock Assessment'}
           </h2>
-          <p className="text-indigo-100 mb-8 font-medium leading-relaxed relative z-10 text-sm">
+          <p className="text-red-100 mb-8 font-medium leading-relaxed relative z-10 text-sm">
             Pay the required token to access <span className="font-bold text-white">{courseName}</span>.
           </p>
 
           <div className="space-y-4 w-full relative z-10 mt-auto">
-            <div className="flex items-center gap-3 text-indigo-100 text-sm">
+            <div className="flex items-center gap-3 text-red-100 text-sm">
               <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
               <span className="font-medium">Automatic roster update</span>
             </div>
-            <div className="flex items-center gap-3 text-indigo-100 text-sm">
+            <div className="flex items-center gap-3 text-red-100 text-sm">
               <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
               <span className="font-medium">{gateway ? gatewayLabel : 'Secure Payment Gateway'}</span>
             </div>
-            <div className="flex items-center gap-3 text-indigo-100 text-sm">
+            <div className="flex items-center gap-3 text-red-100 text-sm">
               <AlertCircle size={18} className="text-amber-400 shrink-0" />
               <span className="font-medium">Valid for today's session only</span>
             </div>
@@ -530,7 +530,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
             <div className="flex-1 flex flex-col justify-center">
               {!gatewaysStatus ? (
                 <div className="flex flex-col items-center justify-center py-12">
-                  <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
+                  <Loader2 className="animate-spin text-[#800000] mb-4" size={40} />
                   <p className="text-slate-500 font-bold animate-pulse text-sm">Checking available payment methods...</p>
                 </div>
               ) : !gatewaysStatus.paystack && !gatewaysStatus.kora ? (
@@ -554,16 +554,16 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                     {gatewaysStatus.paystack && (
                       <button
                         onClick={() => handleGatewaySelect('paystack')}
-                        className="w-full group flex items-center gap-5 p-5 rounded-2xl border-2 border-slate-100 hover:border-indigo-400 hover:bg-indigo-50/40 transition-all text-left"
+                        className="w-full group flex items-center gap-5 p-5 rounded-2xl border-2 border-slate-100 hover:border-red-400 hover:bg-red-50/40 transition-all text-left"
                       >
-                        <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0 group-hover:bg-indigo-600 transition-colors">
-                          <CreditCard size={22} className="text-indigo-600 group-hover:text-white transition-colors" />
+                        <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center shrink-0 group-hover:bg-[#800000] transition-colors">
+                          <CreditCard size={22} className="text-[#800000] group-hover:text-white transition-colors" />
                         </div>
                         <div className="flex-1">
                           <p className="font-black text-slate-900 text-base">Standard Gateway</p>
                           <p className="text-xs text-slate-500 font-medium mt-0.5">Secure checkout via card, transfer or USSD</p>
                         </div>
-                        <ChevronRight size={20} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
+                        <ChevronRight size={20} className="text-slate-300 group-hover:text-red-500 transition-colors" />
                       </button>
                     )}
 
@@ -594,7 +594,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
           ) : loading ? (
             /* ── Loading ── */
             <div className="flex-1 flex flex-col items-center justify-center py-12">
-              <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
+              <Loader2 className="animate-spin text-[#800000] mb-4" size={40} />
               <p className="text-slate-500 font-bold animate-pulse text-sm">Generating secure transaction via {gateway === 'kora' ? 'Kora' : 'Paystack'}...</p>
             </div>
           ) : isExpired ? (
@@ -622,7 +622,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                 <div>
                   <h3 className="text-2xl font-black text-slate-900">Payment Details</h3>
                   <p className="text-slate-500 text-sm font-medium">
-                    Via <span className="font-bold text-indigo-600">{gateway === 'kora' ? 'Kora' : 'Paystack'}</span>
+                    Via <span className="font-bold text-[#800000]">{gateway === 'kora' ? 'Kora' : 'Paystack'}</span>
                     {' — '}Complete payment to {type === 'attendance' ? "log today's attendance" : type === 'republish' ? 'trigger republication' : "gain instant access"}.
                   </p>
                 </div>
@@ -701,9 +701,9 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                 })()}
 
                 {creditUsed !== null && creditUsed > 0 && (
-                  <div className="mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-2xl">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-1">Wallet Credit Applied</p>
-                    <p className="font-black text-indigo-700 text-sm">₦{creditUsed.toLocaleString()} deducted from your wallet balance.</p>
+                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-red-600 mb-1">Wallet Credit Applied</p>
+                    <p className="font-black text-[#800000] text-sm">₦{creditUsed.toLocaleString()} deducted from your wallet balance.</p>
                   </div>
                 )}
 
@@ -746,7 +746,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                           openCheckoutPopup(checkoutUrl);
                         }
                       }}
-                      className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition"
+                      className="inline-block px-6 py-3 bg-[#800000] text-white rounded-xl font-bold hover:bg-red-900 transition"
                     >
                       Open Payment Gateway
                     </button>
@@ -783,15 +783,15 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                     </p>
                   ) : (
                     bankAccounts.map((acct, i) => (
-                      <div key={i} className="bg-white rounded-2xl p-5 border-2 border-indigo-50 hover:border-indigo-100 transition-all group flex items-center justify-between">
+                      <div key={i} className="bg-white rounded-2xl p-5 border-2 border-red-50 hover:border-red-100 transition-all group flex items-center justify-between">
                         <div>
-                          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 block mb-1">{acct.bankName}</span>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-red-400 block mb-1">{acct.bankName}</span>
                           <span className="text-xl font-mono font-black tracking-widest text-slate-900">{acct.accountNumber}</span>
                           <span className="block text-xs text-slate-500 font-medium mt-1">{acct.accountName}</span>
                         </div>
                         <button 
                           onClick={() => copyToClipboard(acct.accountNumber)}
-                          className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                          className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 hover:text-[#800000] hover:bg-red-50 transition-colors"
                         >
                           <Copy size={16} />
                         </button>
@@ -840,7 +840,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                       setIsPaymentCancelled(false);
                       setRetryMode('init');
                     }}
-                    className="text-xs text-slate-400 hover:text-indigo-600 underline underline-offset-2 transition-colors"
+                    className="text-xs text-slate-400 hover:text-[#800000] underline underline-offset-2 transition-colors"
                   >
                     Switch gateway
                   </button>
@@ -852,7 +852,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                 <button
                   onClick={() => void verifyPaymentStatus(false)}
                   disabled={isVerifying || isExpired || (bankAccounts.length === 0 && !checkoutUrl && !(checkoutData && checkoutData.publicKey)) || isConfirmed}
-                  className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] flex items-center justify-center gap-3 hover:bg-indigo-600 transition-all disabled:opacity-50"
+                  className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.15em] flex items-center justify-center gap-3 hover:bg-[#800000] transition-all disabled:opacity-50"
                 >
                   {isVerifying ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
                   {isConfirmed ? 'Payment Confirmed' : 'Check Payment Status'}
