@@ -18,6 +18,7 @@ const require = createRequire(import.meta.url);
 const _pdfParseModule = require('pdf-parse');
 const pdfParse: (buffer: Buffer) => Promise<any> = typeof _pdfParseModule === 'function' ? _pdfParseModule : (_pdfParseModule.default || _pdfParseModule);
 import mammoth from 'mammoth';
+const WordExtractor = require('word-extractor');
 import cors from 'cors';
 import OpenAI from 'openai';
 import { Pool } from 'pg';
@@ -2812,27 +2813,23 @@ app.post('/api/convert/doc-to-docx', authenticateToken, upload.single('file'), a
   try {
     if (!req.file) return res.status(400).json({ error: 'No file provided.' });
 
-    // Extract text content using mammoth — try both methods
+    // Extract text from .doc (OLE2 binary) using word-extractor
     let textContent = '';
     try {
       const buf = Buffer.isBuffer(req.file.buffer) ? req.file.buffer : Buffer.from(req.file.buffer);
-      let result = await mammoth.extractRawText({ buffer: buf });
-      textContent = result.value || '';
-      // Fallback: try convertToHtml if extractRawText returned nothing
-      if (!textContent.trim()) {
-        const htmlResult = await mammoth.convertToHtml({ buffer: buf });
-        textContent = htmlResult.value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      }
+      const extractor = new WordExtractor();
+      const extracted = await extractor.extract(buf);
+      textContent = extracted.getBody() || '';
     } catch (e: any) {
-      console.error('[DOC→DOCX] mammoth error:', e?.message);
+      console.error('[DOC→DOCX] word-extractor error:', e?.message);
       return res.status(422).json({
-        error: `Auto-conversion failed: ${e?.message || 'mammoth could not read this file'}. Please open it in Microsoft Word and use File → Save As → Word Document (.docx) to convert it manually.`
+        error: `Auto-conversion failed: ${e?.message || 'could not read this .doc file'}. Please open it in Microsoft Word and use File → Save As → Word Document (.docx) to convert it manually.`
       });
     }
 
     if (!textContent || textContent.trim().length < 20) {
       return res.status(422).json({
-        error: 'Auto-conversion could not extract readable content from this file. The .doc format may be too old or encrypted. Please open it in Microsoft Word and save it manually as .docx.'
+        error: 'Auto-conversion could not extract readable content from this file. It may be encrypted or password-protected. Please open it in Microsoft Word and save it manually as .docx.'
       });
     }
 
@@ -2867,27 +2864,23 @@ app.post('/api/convert/doc-to-pdf', authenticateToken, upload.single('file'), as
   try {
     if (!req.file) return res.status(400).json({ error: 'No file provided.' });
 
-    // Extract text using mammoth — try both methods
+    // Extract text from .doc (OLE2 binary) using word-extractor
     let textContent = '';
     try {
       const buf = Buffer.isBuffer(req.file.buffer) ? req.file.buffer : Buffer.from(req.file.buffer);
-      let result = await mammoth.extractRawText({ buffer: buf });
-      textContent = result.value || '';
-      // Fallback: try convertToHtml if extractRawText returned nothing
-      if (!textContent.trim()) {
-        const htmlResult = await mammoth.convertToHtml({ buffer: buf });
-        textContent = htmlResult.value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      }
+      const extractor = new WordExtractor();
+      const extracted = await extractor.extract(buf);
+      textContent = extracted.getBody() || '';
     } catch (e: any) {
-      console.error('[DOC→PDF] mammoth error:', e?.message);
+      console.error('[DOC→PDF] word-extractor error:', e?.message);
       return res.status(422).json({
-        error: `Auto-conversion failed: ${e?.message || 'mammoth could not read this file'}. Please open it in Microsoft Word and save it as PDF manually (File → Save As → PDF).`
+        error: `Auto-conversion failed: ${e?.message || 'could not read this .doc file'}. Please open it in Microsoft Word and save it as PDF manually (File → Save As → PDF).`
       });
     }
 
     if (!textContent || textContent.trim().length < 20) {
       return res.status(422).json({
-        error: 'Auto-conversion could not extract readable content from this file. The .doc format may be too old or encrypted. Please save it manually as PDF from Microsoft Word.'
+        error: 'Auto-conversion could not extract readable content from this file. It may be encrypted or password-protected. Please save it manually as PDF from Microsoft Word.'
       });
     }
 
