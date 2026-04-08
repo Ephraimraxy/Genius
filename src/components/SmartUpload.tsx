@@ -338,6 +338,11 @@ export default function SmartUpload({
 
       if (!res.ok) {
         const err = await res.json();
+        if (res.status === 409 && err.duplicate) {
+          throw new Error(
+            `${err.error} (${err.duplicate.similarity}% match with an existing submission titled: "${err.duplicate.title}")`
+          );
+        }
         throw new Error(err.error || 'Upload failed');
       }
 

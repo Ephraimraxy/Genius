@@ -101,6 +101,17 @@ export function friendlyError(err: any, context: ErrorContext = 'generic'): stri
     if (raw.includes('type') || raw.includes('format') || raw.includes('unsupported')) {
       return 'Unsupported file format. Please upload a PDF or DOCX file.';
     }
+    if (raw.includes('duplicate') || raw.includes('already been submitted') || raw.includes('already submitted')) {
+      // Pass through the original server message — it's descriptive and user-safe
+      const original = String(err?.message || '').trim();
+      if (original && original.length < 300) return original;
+      return 'A manuscript with this title has already been submitted. Duplicate submissions are not permitted. Please contact the editorial office if you believe this is an error.';
+    }
+    // If the server sent a short, readable message, show it directly
+    const original = String(err?.message || '').trim();
+    if (original && original.length < 200 && !original.includes(' at ') && !original.includes('\n')) {
+      return original;
+    }
     return 'File upload failed. Please check your connection and try again.';
   }
 
