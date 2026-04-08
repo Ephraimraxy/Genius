@@ -63,9 +63,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
       .then(data => {
         if (!data.error) {
            setGatewaysStatus(data);
-           // Auto-select if only one is enabled
-           if (data.paystack && !data.kora) handleGatewaySelect('paystack');
-           else if (!data.paystack && data.kora) handleGatewaySelect('kora');
+           // Always show the selection screen; never auto-select silently
         } else {
            setGatewaysStatus({ paystack: true, kora: true }); // Fallback
         }
@@ -496,7 +494,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
           </div>
           
           <h2 className="text-3xl md:text-4xl font-black mb-4 tracking-tight leading-tight relative z-10">
-            {type === 'portal_entry' ? 'Portal Access' : type === 'attendance' ? 'Sign Attendance' : type === 'material' ? 'Unlock Material' : type === 'audio' ? 'Unlock Audio' : 'Unlock Assessment'}
+            {type === 'portal_entry' ? 'Portal Access' : type === 'attendance' ? 'Sign Attendance' : type === 'material' ? 'Unlock Material' : type === 'audio' ? 'Unlock Audio' : type === 'republish' ? 'Republish Manuscript' : 'Unlock Assessment'}
           </h2>
           <p className="text-indigo-100 mb-8 font-medium leading-relaxed relative z-10 text-sm">
             Pay the required token to access <span className="font-bold text-white">{courseName}</span>.
@@ -625,7 +623,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                   <h3 className="text-2xl font-black text-slate-900">Payment Details</h3>
                   <p className="text-slate-500 text-sm font-medium">
                     Via <span className="font-bold text-indigo-600">{gateway === 'kora' ? 'Kora' : 'Paystack'}</span>
-                    {' — '}Complete payment to {type === 'attendance' ? "log today's attendance" : "gain instant access"}.
+                    {' — '}Complete payment to {type === 'attendance' ? "log today's attendance" : type === 'republish' ? 'trigger republication' : "gain instant access"}.
                   </p>
                 </div>
                 {/* Live Countdown Timer */}
@@ -647,7 +645,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{type === 'attendance' ? 'Course' : type === 'material' ? 'Material ID' : 'Assessment ID'}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{type === 'attendance' ? 'Course' : type === 'material' ? 'Material ID' : type === 'republish' ? 'Paper ID' : 'Assessment ID'}</p>
                   <p className="font-bold text-slate-700">{courseId}</p>
                 </div>
               </div>
@@ -656,36 +654,90 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
               <div className="mb-6">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Complete your payment of ₦{formattedAmount}:</p>
 
-                {remainingAmount !== null && remainingAmount > 0 && (
-                  <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700 text-sm font-bold space-y-3">
-                    <div>
-                      Partial payment detected. Paid ₦{(paidSoFar || 0).toLocaleString()}. Remaining ₦{remainingAmount.toLocaleString()}.
+                {remainingAmount !== null && remainingAmount > 0 && (() => {
+                  const paid = paidSoFar || 0;
+                  const total = paymentAmount;
+                  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+                  return (
+                    <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 overflow-hidden">
+                      <div className="px-4 pt-4 pb-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-amber-700">Partial Payment Detected</span>
+                          <span className="text-[10px] font-black text-amber-600">{pct}% received</span>
+                        </div>
+                        {/* Progress bar */}
+                        <div className="w-full h-2 bg-amber-100 rounded-full overflow-hidden mb-3">
+                          <div
+                            className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="bg-white rounded-xl p-2 border border-amber-100">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Required</p>
+                            <p className="font-black text-slate-700 text-sm">₦{total.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-white rounded-xl p-2 border border-emerald-100">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Received</p>
+                            <p className="font-black text-emerald-600 text-sm">₦{paid.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-white rounded-xl p-2 border border-rose-100">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Outstanding</p>
+                            <p className="font-black text-rose-600 text-sm">₦{remainingAmount.toLocaleString()}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-4 pb-4">
+                        <button
+                          onClick={handlePayRemaining}
+                          disabled={isTopupLoading}
+                          className="w-full bg-amber-600 text-white py-3 rounded-xl font-black text-[11px] uppercase tracking-[0.15em] hover:bg-amber-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {isTopupLoading ? <><Loader2 size={14} className="animate-spin" /> Processing…</> : `Pay Outstanding ₦${remainingAmount.toLocaleString()}`}
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={handlePayRemaining}
-                      disabled={isTopupLoading}
-                      className="w-full bg-amber-600 text-white py-2.5 rounded-xl font-black text-[10px] uppercase tracking-[0.15em] hover:bg-amber-700 transition disabled:opacity-50"
-                    >
-                      {isTopupLoading ? 'Processing...' : 'Pay Remaining Balance'}
-                    </button>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {creditUsed !== null && creditUsed > 0 && (
-                  <div className="mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-2xl text-indigo-700 text-sm font-bold">
-                    Wallet credit applied: ₦{creditUsed.toLocaleString()}.
+                  <div className="mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-2xl">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-1">Wallet Credit Applied</p>
+                    <p className="font-black text-indigo-700 text-sm">₦{creditUsed.toLocaleString()} deducted from your wallet balance.</p>
                   </div>
                 )}
 
-                {overpaidAmount !== null && overpaidAmount > 0 && (
-                  <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm font-bold">
-                    Overpayment of ₦{overpaidAmount.toLocaleString()} detected. A refund will be initiated automatically.
-                  </div>
-                )}
+                {overpaidAmount !== null && overpaidAmount > 0 && (() => {
+                  const expectedFmt = paymentAmount.toLocaleString();
+                  const overpaidFmt = overpaidAmount.toLocaleString();
+                  return (
+                    <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 overflow-hidden">
+                      <div className="px-4 pt-4 pb-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Payment Confirmed — Overpayment Detected</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-center">
+                          <div className="bg-white rounded-xl p-2 border border-slate-100">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Expected</p>
+                            <p className="font-black text-slate-700 text-sm">₦{expectedFmt}</p>
+                          </div>
+                          <div className="bg-white rounded-xl p-2 border border-amber-100">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Excess Paid</p>
+                            <p className="font-black text-amber-600 text-sm">+₦{overpaidFmt}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-4 pb-4 text-xs text-emerald-700 font-medium leading-relaxed">
+                        Your access has been granted. The excess ₦{overpaidFmt} will be credited to your wallet automatically and can be used for future payments.
+                      </div>
+                    </div>
+                  );
+                })()}
                 
                 {(checkoutUrl || (checkoutData && checkoutData.publicKey)) ? (
                   <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 text-center">
-                    <p className="text-sm font-bold text-slate-700 mb-4">A secure Paystack checkout window has been opened.</p>
+                    <p className="text-sm font-bold text-slate-700 mb-4">A secure {gateway === 'kora' ? 'Kora' : 'Paystack'} checkout window has been opened.</p>
                     <button
                       onClick={() => {
                         if (checkoutData) {

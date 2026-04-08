@@ -24,6 +24,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
     const [tenantName, setTenantName] = useState('');
     const [phone, setPhone] = useState('');
     const [regStep, setRegStep] = useState(1);
+    const [otpCode, setOtpCode] = useState('');
 
     const isLecturer = role === 'lecturer';
     const themeColor = isLecturer ? '#1a237e' : '#800000';
@@ -81,6 +82,62 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
             localStorage.setItem('token', data.token);
             localStorage.setItem('user', JSON.stringify(data.user));
             addToast(isLogin ? `Welcome back, ${data.user.name}!` : 'Account created successfully!', 'success');
+            onAuthSuccess(data.token, data.user);
+        } catch (err: any) {
+            setError(friendlyError(err, 'auth'));
+            addToast(friendlyError(err, 'auth'), 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSendOtp = async () => {
+        setError('');
+        setLoading(true);
+        try {
+            const res = await fetch('/api/auth/send-registration-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email,
+                    password,
+                    name,
+                    affiliation,
+                    tenantName,
+                    phone,
+                    portalType: isLecturer ? 'lecturer' : 'researcher',
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to send code');
+            addToast('Verification code sent! Check your email.', 'success');
+            setRegStep(3);
+        } catch (err: any) {
+            setError(friendlyError(err, 'auth'));
+            addToast(friendlyError(err, 'auth'), 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleVerifyOtp = async () => {
+        if (otpCode.length !== 6) {
+            setError('Please enter the 6-digit code from your email.');
+            return;
+        }
+        setError('');
+        setLoading(true);
+        try {
+            const res = await fetch('/api/auth/verify-registration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, otp: otpCode }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Verification failed');
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            addToast('Account verified and created successfully!', 'success');
             onAuthSuccess(data.token, data.user);
         } catch (err: any) {
             setError(friendlyError(err, 'auth'));
@@ -356,7 +413,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                         <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                                                     </motion.button>
                                                 </motion.div>
-                                            ) : (
+                                            ) : regStep === 2 ? (
                                                 <motion.div
                                                     key="step2"
                                                     initial={{ opacity: 0, x: 20 }}
@@ -415,8 +472,9 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                     <motion.button
                                                         whileHover={{ scale: 1.01, boxShadow: `0 20px 25px -5px ${themeColor}1a` }}
                                                         whileTap={{ scale: 0.99 }}
-                                                        type="submit"
+                                                        type="button"
                                                         disabled={loading}
+                                                        onClick={handleSendOtp}
                                                         className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
                                                         style={{ backgroundColor: themeColor }}
                                                     >
@@ -424,11 +482,88 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                             <Loader2 size={20} className="animate-spin" />
                                                         ) : (
                                                             <>
-                                                                <span>{isLecturer ? 'SECURE SPACE' : 'ESTABLISH ACCOUNT'}</span>
-                                                                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                                                                <Send size={16} />
+                                                                <span>SEND VERIFICATION CODE</span>
                                                             </>
                                                         )}
                                                     </motion.button>
+                                                </motion.div>
+                                            ) : (
+                                                <motion.div
+                                                    key="step3"
+                                                    initial={{ opacity: 0, x: 20 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    exit={{ opacity: 0, x: -20 }}
+                                                    className="space-y-4"
+                                                >
+                                                    <div className="flex justify-between items-center mb-2 px-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setRegStep(2)}
+                                                            className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 flex items-center gap-1"
+                                                        >
+                                                            <ArrowLeft size={10} /> BACK
+                                                        </button>
+                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${labelColor}`}>Step 3: Verify Email</span>
+                                                    </div>
+
+                                                    {/* Branded info banner */}
+                                                    <div className={`rounded-2xl p-4 flex items-start gap-3 ${isLecturer ? 'bg-indigo-50' : 'bg-rose-50'}`}>
+                                                        <ShieldCheck size={18} className="mt-0.5 shrink-0" style={{ color: themeColor }} />
+                                                        <div>
+                                                            <p className="text-[11px] font-black uppercase tracking-wider" style={{ color: themeColor }}>
+                                                                {isLecturer ? 'Genius Academy School Portal' : 'Genius Research Publication Portal'}
+                                                            </p>
+                                                            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                                                                A 6-digit code was sent to <strong className="text-slate-700">{email}</strong>. Enter it below to activate your account.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-1">
+                                                        <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>VERIFICATION CODE</label>
+                                                        <div className="relative group">
+                                                            <KeyRound className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                            <input
+                                                                type="text"
+                                                                inputMode="numeric"
+                                                                maxLength={6}
+                                                                value={otpCode}
+                                                                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                                                className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-black text-2xl tracking-[0.4em] ${focusRing}`}
+                                                                placeholder="······"
+                                                                autoFocus
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <motion.button
+                                                        whileHover={{ scale: 1.01, boxShadow: `0 20px 25px -5px ${themeColor}1a` }}
+                                                        whileTap={{ scale: 0.99 }}
+                                                        type="button"
+                                                        disabled={loading || otpCode.length !== 6}
+                                                        onClick={handleVerifyOtp}
+                                                        className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all disabled:opacity-50 mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
+                                                        style={{ backgroundColor: themeColor }}
+                                                    >
+                                                        {loading ? (
+                                                            <Loader2 size={20} className="animate-spin" />
+                                                        ) : (
+                                                            <>
+                                                                <CheckCircle size={16} />
+                                                                <span>{isLecturer ? 'VERIFY & SECURE SPACE' : 'VERIFY & ESTABLISH ACCOUNT'}</span>
+                                                            </>
+                                                        )}
+                                                    </motion.button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSendOtp}
+                                                        disabled={loading}
+                                                        className="w-full text-center text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors pt-1"
+                                                    >
+                                                        Didn't receive a code? Resend
+                                                    </button>
                                                 </motion.div>
                                             )}
                                         </div>

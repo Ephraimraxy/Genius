@@ -21,7 +21,8 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   const [republishingId, setRepublishingId] = useState<number | null>(null);
   const [republishModal, setRepublishModal] = useState<{ paperId: number; title: string } | null>(null);
   const [republishError, setRepublishError] = useState<string | null>(null);
-  const [republishSuccess, setRepublishSuccess] = useState<number | null>(null);
+  // Track papers queued for republication locally so button disappears instantly after success
+  const [republishedIds, setRepublishedIds] = useState<Set<number>>(new Set());
   const [showRepublishPayment, setShowRepublishPayment] = useState(false);
   const [pendingRepublishRef, setPendingRepublishRef] = useState<string | null>(null);
 
@@ -48,8 +49,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Republish failed');
       setRepublishModal(null);
-      setRepublishSuccess(paperId);
-      setTimeout(() => setRepublishSuccess(null), 4000);
+      setRepublishedIds((prev: Set<number>) => new Set(prev).add(paperId));
     } catch (err: any) {
       setRepublishError(friendlyError(err, 'generic'));
     } finally {
@@ -404,9 +404,12 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               {/* Republish button — published papers only, when admin has enabled it */}
               {paper.status === 'published' && republishConfig?.enabled && (
                 <div className="flex flex-col items-end gap-1 self-end sm:self-center">
-                  {republishSuccess === paper.id ? (
-                    <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
-                      <CheckCircle size={14} /> Queued for republication!
+                  {republishedIds.has(paper.id) ? (
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-50 px-4 py-2.5 rounded-xl border border-emerald-100">
+                        <CheckCircle size={14} /> Queued for republication
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium">Re-entering publication pipeline…</span>
                     </div>
                   ) : (
                     <button
@@ -419,7 +422,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                         : <><RefreshCw size={15} /> Republish</>}
                     </button>
                   )}
-                  {republishConfig.paid && republishConfig.amount > 0 && (
+                  {!republishedIds.has(paper.id) && republishConfig.paid && republishConfig.amount > 0 && (
                     <span className="text-[10px] text-slate-400 font-medium">Fee: ₦{republishConfig.amount.toLocaleString()}</span>
                   )}
                 </div>

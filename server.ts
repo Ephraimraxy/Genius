@@ -1285,6 +1285,148 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
   }
 });
 
+// ─── REGISTRATION OTP: SEND ─────────────────────────────────────────
+// Phase 1 – validate fields, hash password, store pending entry, email OTP.
+// If the same email re-submits (network drop / retry) the pending entry is
+// refreshed (new OTP, new 10-min window) so the user can continue seamlessly.
+app.post('/api/auth/send-registration-otp', authLimiter, async (req, res) => {
+  try {
+    const { email, password, name, affiliation, tenantName, phone, portalType } = req.body;
+
+    if (!email || !password || !name || !portalType)
+      return res.status(400).json({ error: 'Missing required fields' });
+
+    if (portalType === 'lecturer' && (!tenantName || !phone))
+      return res.status(400).json({ error: 'Workspace name and phone number are required' });
+
+    if (portalType === 'lecturer' && !/^\d{11}$/.test(phone))
+      return res.status(400).json({ error: 'Phone number must be exactly 11 digits' });
+
+    if (password.length < 6)
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    const normalizedEmail = (email as string).toLowerCase().trim();
+    const dbRole = portalType === 'lecturer' ? 'tenant_admin' : 'user';
+
+    // Reject if already fully registered in DB
+    const existing = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND role = $2',
+      [normalizedEmail, dbRole]
+    );
+    if (existing.rows.length > 0) {
+      const portalLabel = portalType === 'lecturer' ? 'Academic Workspace' : 'Research portal';
+      return res.status(400).json({ error: `An account with this email already exists in the ${portalLabel}` });
+    }
+
+    const hashedPassword = await bcrypt.hash((password as string).trim(), 10);
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    // Upsert: refresh if pending entry already exists (network-drop resume)
+    pendingRegistrations.set(normalizedEmail, {
+      portalType,
+      name,
+      hashedPassword,
+      affiliation: affiliation || '',
+      tenantName,
+      phone,
+      otp,
+      expiresAt,
+    });
+
+    const isLecturer = portalType === 'lecturer';
+    await sendResendEmail({
+      fromName: isLecturer ? 'Genius Academy School Portal' : 'Genius Research Publication Portal',
+      to: normalizedEmail,
+      subject: isLecturer
+        ? 'Verify Your Genius Academy Lecturer Account'
+        : 'Verify Your Research Publication Account',
+      html: isLecturer
+        ? buildLecturerOtpEmail(name, otp)
+        : buildResearcherOtpEmail(name, otp),
+    });
+
+    res.json({ success: true, message: 'A 6-digit verification code has been sent to your email.' });
+  } catch (error: any) {
+    console.error('Send registration OTP error:', error);
+    res.status(500).json({ error: 'Failed to send verification code. Please try again.' });
+  }
+});
+
+// ─── REGISTRATION OTP: VERIFY & CREATE ACCOUNT ──────────────────────
+// Phase 2 – verify OTP, then atomically create the account from the pending
+// entry and delete it so the same code cannot be reused.
+app.post('/api/auth/verify-registration', authLimiter, async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) return res.status(400).json({ error: 'Email and verification code are required' });
+
+    const normalizedEmail = (email as string).toLowerCase().trim();
+    const pending = pendingRegistrations.get(normalizedEmail);
+
+    if (!pending)
+      return res.status(400).json({ error: 'No pending registration found. Please fill in your details again.' });
+
+    if (Date.now() > pending.expiresAt) {
+      pendingRegistrations.delete(normalizedEmail);
+      return res.status(400).json({ error: 'Verification code has expired. Please start registration again.' });
+    }
+
+    if (pending.otp !== (otp as string).trim())
+      return res.status(400).json({ error: 'Invalid verification code. Please check and try again.' });
+
+    // Consume the pending entry immediately (prevent replay)
+    pendingRegistrations.delete(normalizedEmail);
+
+    if (pending.portalType === 'researcher') {
+      const accountRole = normalizedEmail === 'burstbrainconcept@gmail.com' ? 'super_admin' : 'user';
+      const result = await pool.query(
+        'INSERT INTO users (email, password, name, affiliation, role, tenant_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+        [normalizedEmail, pending.hashedPassword, pending.name, pending.affiliation || '', accountRole, null]
+      );
+      const userId = result.rows[0].id;
+      await pool.query(
+        'INSERT INTO profiles (user_id, publications, metrics) VALUES ($1,$2,$3)',
+        [userId, JSON.stringify([]), JSON.stringify({ citations: 0, hIndex: 0, i10Index: 0 })]
+      );
+      const token = jwt.sign(
+        { id: userId, email: normalizedEmail, name: pending.name, role: accountRole, tenant_id: null },
+        JWT_SECRET, { expiresIn: '7d' }
+      );
+      return res.json({ token, user: { id: userId, email: normalizedEmail, name: pending.name, role: accountRole, tenant_id: null } });
+    } else {
+      // Lecturer – create tenant then user
+      let workspace_id = '';
+      while (true) {
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const randomLetters = letters[Math.floor(Math.random() * 26)] + letters[Math.floor(Math.random() * 26)];
+        const digits = Math.floor(Math.random() * 90 + 10);
+        workspace_id = randomLetters + digits;
+        const check = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspace_id]);
+        if (check.rows.length === 0) break;
+      }
+      const tenantResult = await pool.query(
+        'INSERT INTO tenants (name, owner_name, owner_email, workspace_id) VALUES ($1,$2,$3,$4) RETURNING id',
+        [pending.tenantName, pending.name, normalizedEmail, workspace_id]
+      );
+      const tenantId = tenantResult.rows[0].id;
+      const userResult = await pool.query(
+        'INSERT INTO users (email, phone, password, name, role, tenant_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+        [normalizedEmail, pending.phone, pending.hashedPassword, pending.name, 'tenant_admin', tenantId]
+      );
+      const userId = userResult.rows[0].id;
+      const token = jwt.sign(
+        { id: userId, email: normalizedEmail, name: pending.name, role: 'tenant_admin', tenant_id: tenantId, phone: pending.phone },
+        JWT_SECRET, { expiresIn: '7d' }
+      );
+      return res.json({ token, user: { id: userId, email: normalizedEmail, name: pending.name, role: 'tenant_admin', tenant_id: tenantId, tenantName: pending.tenantName, phone: pending.phone } });
+    }
+  } catch (error: any) {
+    console.error('Verify registration OTP error:', error);
+    res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
+});
+
 // Public: Get all active academic workspaces (lecturers)
 app.get('/api/auth/workspaces', async (req, res) => {
   try {
@@ -1573,6 +1715,104 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     res.status(500).json({ error: 'Login failed' });
   }
 });
+
+// ─── REGISTRATION OTP EMAIL TEMPLATES ───────────────────────────────
+function buildLecturerOtpEmail(name: string, otp: string): string {
+  return `
+<div style="font-family:'Segoe UI',Arial,sans-serif;background:#f0f2ff;padding:32px 0;">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,35,126,0.10);">
+    <div style="background:linear-gradient(135deg,#1a237e 0%,#3f51b5 100%);padding:36px 40px 28px;text-align:center;">
+      <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:12px;padding:10px 20px;margin-bottom:16px;">
+        <span style="color:#fff;font-size:12px;font-weight:800;letter-spacing:0.2em;text-transform:uppercase;">Genius Academy</span>
+      </div>
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:900;letter-spacing:-0.5px;">School Portal</h1>
+      <p style="color:rgba(255,255,255,0.75);margin:8px 0 0;font-size:13px;">Lecturer &amp; Workspace Registration</p>
+    </div>
+    <div style="padding:36px 40px;">
+      <p style="color:#374151;font-size:15px;margin:0 0 8px;font-weight:600;">Hello, ${name}!</p>
+      <p style="color:#6b7280;font-size:14px;margin:0 0 28px;line-height:1.6;">
+        You&rsquo;re one step away from setting up your <strong style="color:#1a237e;">Genius Academy Lecturer Workspace</strong>.
+        Enter the verification code below to confirm your email and activate your account.
+      </p>
+      <div style="background:#f0f2ff;border:2px dashed #3f51b5;border-radius:14px;padding:28px;text-align:center;margin:0 0 28px;">
+        <p style="color:#3f51b5;font-size:11px;font-weight:800;letter-spacing:0.2em;text-transform:uppercase;margin:0 0 12px;">Your Verification Code</p>
+        <div style="font-size:42px;font-weight:900;letter-spacing:12px;color:#1a237e;font-family:'Courier New',monospace;">${otp}</div>
+        <p style="color:#9ca3af;font-size:12px;margin:14px 0 0;">Valid for <strong>10 minutes</strong></p>
+      </div>
+      <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 18px;margin:0 0 24px;">
+        <p style="color:#92400e;font-size:12px;margin:0;font-weight:600;">&#9888;&#65039; If you didn&rsquo;t request this, ignore this email. Your account will NOT be created without this code.</p>
+      </div>
+      <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:0;">
+        This code was sent from the <strong>Genius Academy School Portal</strong>.
+        Once verified, you&rsquo;ll gain access to your lecturer dashboard to manage courses, students, and workspaces.
+      </p>
+    </div>
+    <div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:20px 40px;text-align:center;">
+      <p style="color:#9ca3af;font-size:11px;margin:0;">Genius Academy School Portal &bull; Academic Management System</p>
+      <p style="color:#d1d5db;font-size:10px;margin:6px 0 0;">Do not share this code with anyone.</p>
+    </div>
+  </div>
+</div>`;
+}
+
+function buildResearcherOtpEmail(name: string, otp: string): string {
+  return `
+<div style="font-family:'Segoe UI',Arial,sans-serif;background:#fff5f5;padding:32px 0;">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(128,0,0,0.10);">
+    <div style="background:linear-gradient(135deg,#800000 0%,#c0392b 100%);padding:36px 40px 28px;text-align:center;">
+      <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:12px;padding:10px 20px;margin-bottom:16px;">
+        <span style="color:#fff;font-size:12px;font-weight:800;letter-spacing:0.2em;text-transform:uppercase;">Genius Research</span>
+      </div>
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:900;letter-spacing:-0.5px;">Publication Portal</h1>
+      <p style="color:rgba(255,255,255,0.75);margin:8px 0 0;font-size:13px;">Researcher Account Registration</p>
+    </div>
+    <div style="padding:36px 40px;">
+      <p style="color:#374151;font-size:15px;margin:0 0 8px;font-weight:600;">Hello, ${name}!</p>
+      <p style="color:#6b7280;font-size:14px;margin:0 0 28px;line-height:1.6;">
+        Welcome to the <strong style="color:#800000;">Genius Research Publication Portal</strong>.
+        Enter the verification code below to confirm your email and establish your researcher account.
+      </p>
+      <div style="background:#fff5f5;border:2px dashed #c0392b;border-radius:14px;padding:28px;text-align:center;margin:0 0 28px;">
+        <p style="color:#c0392b;font-size:11px;font-weight:800;letter-spacing:0.2em;text-transform:uppercase;margin:0 0 12px;">Your Verification Code</p>
+        <div style="font-size:42px;font-weight:900;letter-spacing:12px;color:#800000;font-family:'Courier New',monospace;">${otp}</div>
+        <p style="color:#9ca3af;font-size:12px;margin:14px 0 0;">Valid for <strong>10 minutes</strong></p>
+      </div>
+      <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 18px;margin:0 0 24px;">
+        <p style="color:#92400e;font-size:12px;margin:0;font-weight:600;">&#9888;&#65039; If you didn&rsquo;t request this, ignore this email. Your account will NOT be created without this code.</p>
+      </div>
+      <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:0;">
+        This code was sent from the <strong>Genius Research Publication Portal</strong>.
+        Once verified, you&rsquo;ll gain access to your researcher dashboard for publishing, tracking citations, and collaborating on research.
+      </p>
+    </div>
+    <div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:20px 40px;text-align:center;">
+      <p style="color:#9ca3af;font-size:11px;margin:0;">Genius Research Publication Portal &bull; Academic Publishing System</p>
+      <p style="color:#d1d5db;font-size:10px;margin:6px 0 0;">Do not share this code with anyone.</p>
+    </div>
+  </div>
+</div>`;
+}
+
+// ─── PENDING REGISTRATION STORE (OTP-gated, 10-min TTL) ─────────────
+interface PendingRegistration {
+  portalType: 'researcher' | 'lecturer';
+  name: string;
+  hashedPassword: string;
+  affiliation?: string;
+  tenantName?: string;
+  phone?: string;
+  otp: string;
+  expiresAt: number;
+}
+const pendingRegistrations = new Map<string, PendingRegistration>();
+
+// Auto-purge expired entries every 60 s
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, entry] of pendingRegistrations.entries()) {
+    if (entry.expiresAt <= now) pendingRegistrations.delete(email);
+  }
+}, 60_000);
 
 // ─── PASSWORD RESET SYSTEM ──────────────────────────────────────────
 const resetCodes = new Map<string, { code: string; expires: number }>();
