@@ -348,9 +348,10 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                             </div>
 
                             <div className="border-2 border-dashed border-white/20 rounded-[2rem] p-10 text-center hover:border-blue-400 hover:bg-white/5 transition-all cursor-pointer relative group">
-                                <input 
-                                    type="file" 
+                                <input
+                                    type="file"
                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    accept={uploadType === 'roster' ? '.csv,text/csv' : uploadType === 'audio' ? 'audio/*' : '.pdf,.docx,.doc,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.presentationml.presentation'}
                                     onChange={handleFileUpload}
                                 />
                                 <Upload className="mx-auto text-white/30 group-hover:text-blue-400 mb-4" size={32} />

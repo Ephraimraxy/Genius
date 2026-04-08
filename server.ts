@@ -19,6 +19,7 @@ const _pdfParseModule = require('pdf-parse');
 const pdfParse: (buffer: Buffer) => Promise<any> = typeof _pdfParseModule === 'function' ? _pdfParseModule : (_pdfParseModule.default || _pdfParseModule);
 import mammoth from 'mammoth';
 const WordExtractor = require('word-extractor');
+const officeParser = require('officeparser');
 import cors from 'cors';
 import OpenAI from 'openai';
 import { Pool } from 'pg';
@@ -8561,6 +8562,11 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
       const extractor = new WordExtractor();
       const extracted = await extractor.extract(req.file.buffer);
       textContent = extracted.getBody() || '';
+    } else if (
+      mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+      origName.endsWith('.pptx')
+    ) {
+      textContent = await officeParser.parseOfficeAsync(req.file.buffer);
     } else {
       // Plain text fallback
       textContent = req.file.buffer.toString('utf8').replace(/\0/g, '');
