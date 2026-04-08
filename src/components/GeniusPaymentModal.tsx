@@ -548,7 +548,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                    </div>
                    <h3 className="text-xl font-black text-slate-900 mb-2">Payments Disabled</h3>
                    <p className="text-slate-500 text-sm font-medium mb-8">All payment gateways are currently inactive. Please contact your administrator.</p>
-                   <button onClick={onClose} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors w-full">
+                   <button onClick={safeClose} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors w-full">
                      Close Window
                    </button>
                 </div>
@@ -615,8 +615,8 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
               <p className="text-slate-500 font-medium text-sm mb-6 max-w-sm">
                 The time limit to complete this payment has passed. Please close this window and try again.
               </p>
-              <button 
-                onClick={onClose}
+              <button
+                onClick={safeClose}
                 className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors"
               >
                 Close Window

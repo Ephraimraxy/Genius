@@ -15,8 +15,13 @@ import multer from 'multer';
 // @ts-ignore
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const _pdfParseModule = require('pdf-parse');
-const pdfParse: (buffer: Buffer) => Promise<any> = typeof _pdfParseModule === 'function' ? _pdfParseModule : (_pdfParseModule.default || _pdfParseModule);
+// Use the inner lib directly — avoids the test-runner that fires on the main entry point
+// and causes "pdfParse is not a function" in some Node/tsx environments.
+const pdfParse: (buffer: Buffer, options?: any) => Promise<any> = (() => {
+  try { return require('pdf-parse/lib/pdf-parse.js'); } catch (_) {}
+  const m = require('pdf-parse');
+  return typeof m === 'function' ? m : (m.default || m);
+})();
 import mammoth from 'mammoth';
 const WordExtractor = require('word-extractor');
 const officeParser = require('officeparser');
