@@ -703,6 +703,29 @@ async function bootstrapDB() {
         payload JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS start_date TIMESTAMP;
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS end_date TIMESTAMP;
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS timer_mode TEXT DEFAULT 'whole';
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS questions_count INTEGER DEFAULT 20;
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS batch_size INTEGER DEFAULT 10;
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS instructions TEXT;
+
+      CREATE TABLE IF NOT EXISTS exam_slots (
+        id SERIAL PRIMARY KEY,
+        exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+        tenant_id INTEGER REFERENCES tenants(id),
+        student_id INTEGER,
+        student_email TEXT,
+        student_name TEXT,
+        scheduled_at TIMESTAMP NOT NULL,
+        window_end TIMESTAMP NOT NULL,
+        status TEXT DEFAULT 'pending',
+        notification_sent BOOLEAN DEFAULT FALSE,
+        started_at TIMESTAMP,
+        submitted_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS payment_events_event_key_idx ON payment_events(event_key);`);
     console.log('--- DATABASE BOOTSTRAP SUCCESSFUL ---');
@@ -9490,18 +9513,128 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
   }
 });
 
-// Lecturer: Create Exam
+// Lecturer: Create Exam/Test with scheduling
 app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const { title, description, duration, type, category_id } = req.body;
+    const {
+      title, description, duration, type, category_id,
+      start_date, end_date, timer_mode, questions_count, batch_size, instructions
+    } = req.body;
+
     const result = await pool.query(
-      'INSERT INTO exams (tenant_id, title, description, duration, type, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [req.tenant_id, title, description, duration, type, category_id || null]
+      `INSERT INTO exams (tenant_id, title, description, duration, type, category_id,
+        start_date, end_date, timer_mode, questions_count, batch_size, instructions)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+      [req.tenant_id, title, description, duration || 60, type, category_id || null,
+       start_date || null, end_date || null, timer_mode || 'whole',
+       questions_count || 20, batch_size || 10, instructions || null]
     );
-    res.json({ id: result.rows[0].id });
+    const examId = result.rows[0].id;
+
+    // ── Scheduling: if a time window + category provided, assign student slots ──
+    if (start_date && end_date && category_id) {
+      const studentsRes = await pool.query(
+        `SELECT id, name, email FROM users
+         WHERE tenant_id = $1 AND category_id = $2 AND role = 'student'
+         ORDER BY id`,
+        [req.tenant_id, category_id]
+      );
+      const students = studentsRes.rows;
+
+      if (students.length > 0) {
+        const batchSz = Math.max(1, parseInt(batch_size) || 10);
+        const durationMin = parseInt(duration) || 60;
+        const startMs = new Date(start_date).getTime();
+        const endMs   = new Date(end_date).getTime();
+        const totalBatches = Math.ceil(students.length / batchSz);
+        const intervalMs = Math.max((endMs - startMs) / totalBatches, durationMin * 60 * 1000 + 30 * 60 * 1000);
+
+        for (let i = 0; i < students.length; i++) {
+          const batchIndex = Math.floor(i / batchSz);
+          const scheduledAt = new Date(startMs + batchIndex * intervalMs);
+          const windowEnd   = new Date(scheduledAt.getTime() + durationMin * 60 * 1000 + 30 * 60 * 1000);
+
+          await pool.query(
+            `INSERT INTO exam_slots (exam_id, tenant_id, student_id, student_email, student_name, scheduled_at, window_end)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [examId, req.tenant_id, students[i].id, students[i].email, students[i].name, scheduledAt, windowEnd]
+          );
+
+          // Notify student of their slot
+          if (students[i].email) {
+            const slotLabel = scheduledAt.toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+            const endLabel  = windowEnd.toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+            const typeLabel = type === 'exam' ? 'Examination' : 'Test';
+            sendResendEmail({
+              to: students[i].email,
+              subject: `📋 Your ${typeLabel} Schedule — ${title}`,
+              html: `
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;color:#1a202c;line-height:1.7;">
+  <div style="border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <div style="padding:24px 32px;background:linear-gradient(135deg,#eff6ff 0%,#fff 70%);border-bottom:3px solid #2563eb;">
+      <h2 style="margin:0;color:#1e40af;font-size:20px;">📋 ${typeLabel} Schedule Notice</h2>
+      <p style="margin:4px 0 0;color:#64748b;font-size:13px;">${title}</p>
+    </div>
+    <div style="padding:28px 32px;">
+      <p>Dear <strong>${students[i].name}</strong>,</p>
+      <p>Your ${typeLabel.toLowerCase()} has been scheduled. Please read all details carefully.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8fafc;border-radius:8px;overflow:hidden;">
+        <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Assessment</td><td style="padding:10px 16px;font-weight:bold;">${title}</td></tr>
+        <tr style="background:#f1f5f9;"><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Your Slot</td><td style="padding:10px 16px;color:#1d4ed8;font-weight:bold;">${slotLabel}</td></tr>
+        <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Deadline</td><td style="padding:10px 16px;color:#dc2626;font-weight:bold;">${endLabel}</td></tr>
+        <tr style="background:#f1f5f9;"><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Duration</td><td style="padding:10px 16px;">${durationMin} minutes</td></tr>
+      </table>
+      ${instructions ? `<div style="background:#fefce8;border-left:4px solid #ca8a04;padding:16px 20px;border-radius:8px;margin:16px 0;"><p style="margin:0;font-weight:bold;color:#92400e;">📌 Instructions from your Lecturer</p><p style="margin:8px 0 0;color:#78350f;">${instructions}</p></div>` : ''}
+      <div style="background:#fef2f2;border-left:4px solid #ef4444;padding:16px 20px;border-radius:8px;margin:16px 0;">
+        <p style="margin:0;font-weight:bold;color:#991b1b;">⚠️ Important Rules</p>
+        <ul style="margin:8px 0 0;padding-left:18px;color:#7f1d1d;">
+          <li>You may ONLY take this ${typeLabel.toLowerCase()} during your assigned time slot.</li>
+          <li>Do NOT attempt to access it before or after your window — access will be blocked.</li>
+          <li>Do NOT switch browser tabs or windows during the assessment.</li>
+          <li>Do NOT close the browser or refresh the page — your session will end.</li>
+          <li>Ensure you have a stable internet connection before starting.</li>
+          <li>Once submitted, you cannot retake or modify your answers.</li>
+          <li>Any detected misbehaviour will be logged and flagged to your lecturer.</li>
+        </ul>
+      </div>
+      <p style="color:#64748b;font-size:12px;margin-top:24px;">This is an automated schedule notification. Do not reply to this email.</p>
+    </div>
+  </div>
+</div>`
+            }).catch((err: any) => console.error(`[Slot Notify] Failed for ${students[i].email}:`, err.message));
+          }
+        }
+
+        await pool.query(
+          `UPDATE exam_slots SET notification_sent = TRUE WHERE exam_id = $1`,
+          [examId]
+        );
+      }
+    }
+
+    res.json({ id: examId, success: true, message: 'Assessment created and students notified.' });
+  } catch (error: any) {
+    console.error('[Create Exam]', error);
+    res.status(500).json({ error: 'Failed to create exam: ' + error.message });
+  }
+});
+
+// Lecturer: Get slots for an exam
+app.get('/api/exams/:id/slots', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const slots = await pool.query(
+      `SELECT es.*, u.name as student_name, u.email as student_email
+       FROM exam_slots es
+       LEFT JOIN users u ON u.id = es.student_id
+       WHERE es.exam_id = $1 AND es.tenant_id = $2
+       ORDER BY es.scheduled_at ASC`,
+      [req.params.id, req.tenant_id]
+    );
+    res.json(slots.rows);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create exam' });
+    res.status(500).json({ error: 'Failed to fetch slots' });
   }
 });
 
@@ -9731,6 +9864,31 @@ app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
       if (alreadyDone.rows.length > 0) {
         return res.status(409).json({ error: 'You have already submitted this assessment.' });
       }
+
+      // Enforce slot window if slots exist for this exam
+      const slotCheck = await pool.query(
+        `SELECT scheduled_at, window_end, status FROM exam_slots
+         WHERE exam_id = $1 AND student_id = $2 LIMIT 1`,
+        [id, req.user.id]
+      );
+      if (slotCheck.rows.length > 0) {
+        const slot = slotCheck.rows[0];
+        const now = new Date();
+        const slotStart = new Date(slot.scheduled_at);
+        const slotEnd   = new Date(slot.window_end);
+        if (now < slotStart) {
+          return res.status(403).json({
+            error: `Your slot has not started yet. You are scheduled for: ${slotStart.toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' })}`,
+            scheduled_at: slot.scheduled_at
+          });
+        }
+        if (now > slotEnd) {
+          await pool.query(`UPDATE exam_slots SET status = 'missed' WHERE exam_id = $1 AND student_id = $2`, [id, req.user.id]);
+          return res.status(403).json({ error: 'Your assigned time window has passed. Contact your lecturer to dispute.' });
+        }
+        // Mark slot as in_progress
+        await pool.query(`UPDATE exam_slots SET status = 'in_progress', started_at = NOW() WHERE exam_id = $1 AND student_id = $2 AND status = 'pending'`, [id, req.user.id]);
+      }
     }
 
     const questionsResult = await pool.query('SELECT id, text, options, type, formula, points FROM questions WHERE exam_id = $1', [id]);
@@ -9796,6 +9954,11 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
       `INSERT INTO exam_results (user_id, exam_id, tenant_id, score, risk_score, violations, submitted_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [req.user.id, id, req.tenant_id, scoreDisplay, riskScore || 0, JSON.stringify(violations || [])]
+    );
+    // Mark slot as completed
+    await pool.query(
+      `UPDATE exam_slots SET status = 'completed', submitted_at = NOW() WHERE exam_id = $1 AND student_id = $2`,
+      [id, req.user.id]
     );
 
     res.json({

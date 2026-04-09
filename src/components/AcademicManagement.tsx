@@ -59,8 +59,20 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [previewFile, setPreviewFile] = useState<File | string | null>(null);
     const [previewName, setPreviewName] = useState<string>('');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-    
     const [categories, setCategories] = useState<{id: number, name: string}[]>([]);
+
+    // Assessment builder state
+    const [assessTitle, setAssessTitle] = useState('');
+    const [assessCategoryId, setAssessCategoryId] = useState('');
+    const [assessDuration, setAssessDuration] = useState('60');
+    const [assessTimerMode, setAssessTimerMode] = useState<'whole' | 'per_question'>('whole');
+    const [assessQuestionsCount, setAssessQuestionsCount] = useState('20');
+    const [assessBatchSize, setAssessBatchSize] = useState('10');
+    const [assessStartDate, setAssessStartDate] = useState('');
+    const [assessEndDate, setAssessEndDate] = useState('');
+    const [assessInstructions, setAssessInstructions] = useState('');
+    const [assessSlots, setAssessSlots] = useState<any[]>([]);
+    const [viewingSlotsFor, setViewingSlotsFor] = useState<number | null>(null);
 
     useEffect(() => {
         if (token) {
@@ -148,40 +160,56 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     const handleCreateAssessment = async (e: React.FormEvent) => {
         e.preventDefault();
-        const form = e.target as HTMLFormElement;
-        const formData = new FormData(form);
-        
+        if (!assessTitle.trim()) return addToast('Please enter an assessment title', 'error');
+
         setIsProcessing(true);
         try {
             const body = {
-                title: formData.get('title'),
-                description: formData.get('description') || '',
-                duration: parseInt(formData.get('duration') as string) || 60,
+                title: assessTitle,
+                description: '',
+                duration: parseInt(assessDuration) || 60,
                 type: mode === 'exams' ? 'exam' : mode === 'assignments' ? 'assignment' : 'test',
-                category_id: formData.get('category_id') ? parseInt(formData.get('category_id') as string) : null
+                category_id: assessCategoryId ? parseInt(assessCategoryId) : null,
+                start_date: assessStartDate || null,
+                end_date: assessEndDate || null,
+                timer_mode: assessTimerMode,
+                questions_count: parseInt(assessQuestionsCount) || 20,
+                batch_size: parseInt(assessBatchSize) || 10,
+                instructions: assessInstructions || null,
+                material_id: selectedHubResource?.id || null
             };
 
             const res = await fetch('/api/exams', {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(body)
             });
+            const data = await res.json();
 
             if (res.ok) {
-                addToast(`${mode.charAt(0).toUpperCase() + mode.slice(1, -1)} created successfully`, 'success');
+                addToast(data.message || 'Assessment created successfully', 'success');
                 fetchRecords();
-                form.reset();
-                setSelectedHubResource(null);
+                setAssessTitle(''); setAssessCategoryId(''); setAssessStartDate(''); setAssessEndDate('');
+                setAssessInstructions(''); setAssessDuration('60'); setAssessQuestionsCount('20');
+                setAssessBatchSize('10'); setAssessTimerMode('whole'); setSelectedHubResource(null);
             } else {
-                addToast('Failed to create assessment', 'error');
+                addToast(data.error || 'Failed to create assessment', 'error');
             }
         } catch (err) {
             addToast('Network error', 'error');
         }
         setIsProcessing(false);
+    };
+
+    const loadSlots = async (examId: number) => {
+        setViewingSlotsFor(examId);
+        try {
+            const res = await fetch(`/api/exams/${examId}/slots`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            setAssessSlots(Array.isArray(data) ? data : []);
+        } catch {
+            addToast('Failed to load slots', 'error');
+        }
     };
 
     const updateSettings = async (itemId: number, isResource: boolean, settings: { price: number; is_available: boolean; is_paid: boolean }) => {
@@ -307,87 +335,224 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         );
     };
 
+    const renderAssessmentBuilder = (isExam: boolean) => (
+        <form onSubmit={handleCreateAssessment} className="space-y-5">
+            {/* Title */}
+            <input
+                value={assessTitle} onChange={e => setAssessTitle(e.target.value)}
+                required placeholder={isExam ? 'Examination Title' : 'Test Title'}
+                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400"
+            />
+
+            {/* Category + Questions Count */}
+            <div className="grid grid-cols-2 gap-3">
+                <select value={assessCategoryId} onChange={e => setAssessCategoryId(e.target.value)}
+                    className="px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
+                    <option value="">Target Category (All)</option>
+                    {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                </select>
+                <input type="number" min="5" max={isExam ? 100 : 50} value={assessQuestionsCount}
+                    onChange={e => setAssessQuestionsCount(e.target.value)}
+                    placeholder={isExam ? 'No. of Questions (e.g. 50)' : 'No. of Questions (e.g. 20)'}
+                    className="px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400"
+                />
+            </div>
+
+            {/* Timer Mode */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Timer Mode</p>
+                <div className="flex gap-3">
+                    <button type="button" onClick={() => setAssessTimerMode('whole')}
+                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${assessTimerMode === 'whole' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                        ⏱ Whole Test Timer
+                    </button>
+                    <button type="button" onClick={() => setAssessTimerMode('per_question')}
+                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${assessTimerMode === 'per_question' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                        ⚡ Per Question Timer
+                    </button>
+                </div>
+                {assessTimerMode === 'whole' && (
+                    <div className="mt-3">
+                        <select value={assessDuration} onChange={e => setAssessDuration(e.target.value)}
+                            className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
+                            {(isExam ? [60,90,120,150,180] : [15,20,30,45,60,90]).map(m => (
+                                <option key={m} value={m}>{m} Minutes</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+                {assessTimerMode === 'per_question' && (
+                    <div className="mt-3">
+                        <select value={assessDuration} onChange={e => setAssessDuration(e.target.value)}
+                            className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
+                            {(isExam ? [60,90,120] : [30,45,60,90,120]).map(s => (
+                                <option key={s} value={s}>{s} Seconds per question</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+            </div>
+
+            {/* Time Window for Batch Scheduling */}
+            <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">📅 Exam Window (Batch Scheduling)</p>
+                <p className="text-[10px] text-slate-500 mb-3">Set a date range. The system will auto-split students into slots across this window and notify each student of their exact time.</p>
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Start Date & Time</label>
+                        <input type="datetime-local" value={assessStartDate} onChange={e => setAssessStartDate(e.target.value)}
+                            className="w-full mt-1 px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">End Date & Time</label>
+                        <input type="datetime-local" value={assessEndDate} onChange={e => setAssessEndDate(e.target.value)}
+                            className="w-full mt-1 px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400" />
+                    </div>
+                </div>
+
+                {/* Batch size */}
+                {assessStartDate && assessEndDate && (
+                    <div className="mt-3">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Students Per Slot</label>
+                        <input type="number" min="1" max="50" value={assessBatchSize} onChange={e => setAssessBatchSize(e.target.value)}
+                            className="w-full mt-1 px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400"
+                            placeholder="e.g. 10 (students sharing same slot time)" />
+                        <p className="text-[10px] text-slate-400 mt-1 ml-1">
+                            The system distributes students evenly — each group gets a unique start time within the window.
+                        </p>
+                    </div>
+                )}
+            </div>
+
+            {/* Instructions to include in notification email */}
+            <textarea value={assessInstructions} onChange={e => setAssessInstructions(e.target.value)}
+                rows={3} placeholder="Instructions / warnings to include in the student notification email (optional)..."
+                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-400 resize-none"
+            />
+
+            {/* Link Material */}
+            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-5 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-all" onClick={handleOpenSelector}>
+                <Database size={20} className="mx-auto mb-2 text-slate-400" />
+                <p className="font-bold text-slate-500 text-sm">{selectedHubResource ? `📎 ${selectedHubResource.name}` : 'Link Lecture Material (AI generates questions from it)'}</p>
+            </div>
+
+            <button type="submit" disabled={isProcessing || !selectedHubResource}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-4 rounded-2xl disabled:opacity-40 transition-all shadow-xl">
+                {isProcessing ? '⚙️ Creating & Notifying Students...' : `🚀 Create ${isExam ? 'Examination' : 'Test'} & Schedule`}
+            </button>
+        </form>
+    );
+
     const renderTestsContent = () => (
         <div className="space-y-8">
-            <div className="grid md:grid-cols-2 gap-8">
+            <div className="grid lg:grid-cols-2 gap-8">
+                {/* Builder */}
                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
-                    <h3 className="text-xl font-bold text-slate-900 mb-6">Genius AI Test Builder</h3>
-                    <form onSubmit={handleCreateAssessment} className="space-y-4">
-                        <input name="title" required placeholder="Assessment Title" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold" />
-                        <div className="flex gap-3">
-                            <select name="duration" className="flex-1 px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold">
-                                <option value="30">30 Mins</option>
-                                <option value="60">60 Mins</option>
-                                <option value="120">120 Mins</option>
-                            </select>
-                            <select name="category_id" className="flex-1 px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-600">
-                                <option value="">Target Category (All)</option>
-                                {categories.map(cat => (
-                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="border-2 border-dashed border-slate-200 rounded-3xl p-6 text-center cursor-pointer" onClick={handleOpenSelector}>
-                            <p className="font-bold text-slate-500 text-sm">{selectedHubResource ? selectedHubResource.name : 'Link Material'}</p>
-                        </div>
-                        <button type="submit" disabled={isProcessing || !selectedHubResource} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl disabled:opacity-50">
-                            {isProcessing ? 'Generating...' : 'Initiate AI Generation'}
-                        </button>
-                    </form>
+                    <h3 className="text-xl font-bold text-slate-900 mb-2">Genius AI Test Builder</h3>
+                    <p className="text-xs text-slate-400 mb-6">AI generates questions from your linked material. Students are auto-scheduled and notified.</p>
+                    {renderAssessmentBuilder(false)}
                 </div>
+
+                {/* Records */}
                 <div className="space-y-4">
-                    <h3 className="text-xs font-black text-slate-400 uppercase px-2">Records</h3>
+                    <h3 className="text-xs font-black text-slate-400 uppercase px-2">Test Records</h3>
+                    {records.length === 0 && !isLoadingRecords && (
+                        <div className="text-center py-16 text-slate-400 font-bold bg-white rounded-[2rem] border border-slate-200">No tests created yet.</div>
+                    )}
                     {records.map((r, i) => (
-                        <div key={i} className="bg-white p-5 rounded-3xl border border-slate-200 flex flex-col gap-4">
+                        <div key={i} className="bg-white p-5 rounded-3xl border border-slate-200 flex flex-col gap-3">
                             <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><BookOpen size={18} /></div>
-                                    <p className="font-bold text-slate-900">{r.title}</p>
+                                    <div>
+                                        <p className="font-bold text-slate-900 text-sm">{r.title}</p>
+                                        <div className="flex gap-2 mt-0.5">
+                                            <span className="text-[9px] font-black text-slate-400 uppercase">{r.duration}m • {r.timer_mode === 'per_question' ? 'Per Q' : 'Whole'}</span>
+                                            {r.start_date && <span className="text-[9px] font-black text-blue-500 uppercase">Scheduled</span>}
+                                        </div>
+                                    </div>
                                 </div>
-                                <span className="text-[10px] font-bold text-slate-400">{r.duration}m</span>
-                            </div>
-                            
-                            <div className="pt-4 border-t border-slate-50 flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase">Paid Access</label>
-                                    <input 
-                                        type="checkbox" 
-                                        checked={r.is_paid} 
-                                        onChange={(e) => updateSettings(r.id, false, { ...r, is_paid: e.target.checked })}
-                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                                    />
+                                    {r.start_date && (
+                                        <button onClick={() => loadSlots(r.id)}
+                                            className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase hover:bg-blue-100 transition-all">
+                                            Slots
+                                        </button>
+                                    )}
                                 </div>
+                            </div>
+                            {r.start_date && (
+                                <div className="text-[10px] text-slate-500 bg-slate-50 rounded-xl px-3 py-2 flex gap-4">
+                                    <span>📅 {new Date(r.start_date).toLocaleDateString()}</span>
+                                    <span>→</span>
+                                    <span>{new Date(r.end_date).toLocaleDateString()}</span>
+                                    <span className="ml-auto">{r.questions_count}Q • {r.batch_size}/slot</span>
+                                </div>
+                            )}
+                            <div className="pt-2 border-t border-slate-50 flex items-center gap-3 flex-wrap">
+                                <button onClick={() => updateSettings(r.id, false, { ...r, is_paid: !r.is_paid })}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${r.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                    {r.is_paid ? 'Paid' : 'Free'}
+                                </button>
                                 {r.is_paid && (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1">
                                         <span className="text-[10px] font-black text-slate-400">₦</span>
-                                        <input 
-                                            type="number" 
-                                            value={r.price} 
-                                            onChange={(e) => {
-                                                const newPrice = parseInt(e.target.value);
-                                                if (isNaN(newPrice)) return;
-                                                // We might want to debounce this or use a button, but for now lets just update
-                                            }}
-                                            onBlur={(e) => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
-                                            className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold"
-                                        />
+                                        <input type="number" defaultValue={r.price}
+                                            onBlur={e => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
+                                            className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold" />
                                     </div>
                                 )}
                                 <div className="flex items-center gap-2 ml-auto">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase">{r.is_available ? 'Enabled' : 'Disabled'}</span>
-                                    <button 
-                                        onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
-                                        className={`w-10 h-5 rounded-full relative transition-colors ${r.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                                    >
+                                    <span className="text-[10px] font-black text-slate-400 uppercase">{r.is_available ? 'Live' : 'Hidden'}</span>
+                                    <button onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
+                                        className={`w-10 h-5 rounded-full relative transition-colors ${r.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}>
                                         <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${r.is_available ? 'right-1' : 'left-1'}`} />
                                     </button>
                                 </div>
                             </div>
                         </div>
                     ))}
-                    {records.length === 0 && !isLoadingRecords && <div className="text-center py-10 text-slate-400 font-bold">No records.</div>}
                 </div>
             </div>
+
+            {/* Slots viewer modal */}
+            <AnimatePresence>
+                {viewingSlotsFor !== null && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onClick={() => setViewingSlotsFor(null)}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl relative z-10 overflow-hidden max-h-[80vh] flex flex-col">
+                            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                                <h3 className="font-black text-slate-900">Student Slots</h3>
+                                <button onClick={() => setViewingSlotsFor(null)} className="text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+                            </div>
+                            <div className="overflow-y-auto p-6 space-y-3">
+                                {assessSlots.length === 0 && <p className="text-center text-slate-400 py-8">No slots found.</p>}
+                                {assessSlots.map((slot, i) => (
+                                    <div key={i} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                                        <div>
+                                            <p className="font-bold text-slate-900 text-sm">{slot.student_name || slot.student_email}</p>
+                                            <p className="text-[10px] text-slate-400">{slot.student_email}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-xs font-bold text-blue-600">{new Date(slot.scheduled_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                                slot.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                                                slot.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                                                slot.status === 'missed' ? 'bg-rose-100 text-rose-700' :
+                                                'bg-slate-100 text-slate-500'}`}>
+                                                {slot.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 
@@ -450,53 +615,61 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     const renderExamsContent = () => (
         <div className="space-y-8">
-            <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl flex flex-col md:flex-row items-center gap-10">
-                <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center"><ShieldCheck size={40} /></div>
-                <div className="flex-1">
-                    <h3 className="text-2xl font-black mb-2">Formal Exam Console</h3>
-                    <p className="text-slate-400 text-sm">Coordinate proctored assessments.</p>
+            <div className="grid lg:grid-cols-2 gap-8">
+                {/* Exam Builder */}
+                <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center"><ShieldCheck size={28} /></div>
+                        <div>
+                            <h3 className="text-xl font-black">Formal Exam Console</h3>
+                            <p className="text-slate-400 text-xs mt-1">AI generates high-standard questions. Students are scheduled, proctored & auto-graded.</p>
+                        </div>
+                    </div>
+                    <div className="[&_input]:!bg-white/10 [&_input]:!border-white/20 [&_input]:!text-white [&_input]:placeholder:!text-white/40 [&_select]:!bg-white/10 [&_select]:!border-white/20 [&_select]:!text-white [&_textarea]:!bg-white/10 [&_textarea]:!border-white/20 [&_textarea]:!text-white [&_textarea]:placeholder:!text-white/40">
+                        {renderAssessmentBuilder(true)}
+                    </div>
                 </div>
-                <button onClick={handleOpenSelector} className="bg-white text-slate-900 font-black px-8 py-4 rounded-xl">New Session</button>
-            </div>
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden p-8">
-                <h3 className="text-lg font-bold text-slate-800 mb-6 font-display">Active & Past Examinations</h3>
+
+                {/* Exam Records */}
                 <div className="space-y-4">
-                    {records.length === 0 ? <p className="text-center py-10 text-slate-400">Empty history.</p> : records.map((r, i) => (
-                        <div key={i} className="p-6 bg-slate-50 rounded-[2rem] flex flex-col md:flex-row justify-between items-center gap-6 group hover:bg-white border border-transparent hover:border-blue-100 transition-all">
-                            <div className="flex items-center gap-4 flex-1">
-                                <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-all"><GraduationCap size={24} /></div>
-                                <div>
+                    <h3 className="text-xs font-black text-slate-400 uppercase px-2">Examination Records</h3>
+                    {records.length === 0 && !isLoadingRecords && (
+                        <div className="text-center py-16 text-slate-400 font-bold bg-white rounded-[2rem] border border-slate-200">No examinations created yet.</div>
+                    )}
+                    {records.map((r, i) => (
+                        <div key={i} className="p-6 bg-white rounded-[2rem] border border-slate-200 shadow-sm flex flex-col gap-3 hover:border-blue-100 transition-all">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm"><GraduationCap size={22} /></div>
+                                <div className="flex-1">
                                     <p className="font-bold text-slate-900">{r.title}</p>
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(r.created_at).toLocaleDateString()}</p>
+                                    <div className="flex gap-3 mt-0.5">
+                                        <span className="text-[9px] font-black text-slate-400 uppercase">{r.duration}m • {r.questions_count || '—'}Q • {r.timer_mode === 'per_question' ? 'Per Q' : 'Whole'}</span>
+                                        {r.start_date && <span className="text-[9px] font-black text-blue-500 uppercase">Scheduled {new Date(r.start_date).toLocaleDateString()} → {new Date(r.end_date).toLocaleDateString()}</span>}
+                                    </div>
                                 </div>
+                                {r.start_date && (
+                                    <button onClick={() => loadSlots(r.id)}
+                                        className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[9px] font-black uppercase hover:bg-indigo-100 transition-all">
+                                        View Slots
+                                    </button>
+                                )}
                             </div>
-                            
-                            <div className="flex items-center gap-6">
-                                <div className="flex items-center gap-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase">Paid Access</label>
-                                    <input 
-                                        type="checkbox" 
-                                        checked={r.is_paid} 
-                                        onChange={(e) => updateSettings(r.id, false, { ...r, is_paid: e.target.checked })}
-                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                                    />
-                                </div>
+                            <div className="pt-2 border-t border-slate-50 flex items-center gap-3 flex-wrap">
+                                <button onClick={() => updateSettings(r.id, false, { ...r, is_paid: !r.is_paid })}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${r.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                    {r.is_paid ? 'Paid' : 'Free'}
+                                </button>
                                 {r.is_paid && (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1">
                                         <span className="text-[10px] font-black text-slate-400">₦</span>
-                                        <input 
-                                            type="number" 
-                                            value={r.price} 
-                                            onBlur={(e) => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
-                                            className="w-24 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-black shadow-sm"
-                                        />
+                                        <input type="number" defaultValue={r.price}
+                                            onBlur={e => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
+                                            className="w-24 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black" />
                                     </div>
                                 )}
-                                <button 
-                                    onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
-                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${r.is_available ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}
-                                >
-                                    {r.is_available ? 'Available' : 'Disabled'}
+                                <button onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
+                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ml-auto ${r.is_available ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                                    {r.is_available ? 'Live' : 'Hidden'}
                                 </button>
                             </div>
                         </div>
