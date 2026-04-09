@@ -8655,7 +8655,10 @@ app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const c = result.rows[0].content;
-    const text = typeof c === 'object' ? (c?.text || '') : (typeof c === 'string' ? c : '');
+    let raw: any = typeof c === 'object' && c !== null ? (c?.text ?? c?.content ?? c) : c;
+    // officeparser may return nested objects — keep drilling until we have a primitive
+    if (typeof raw === 'object' && raw !== null) raw = raw?.text ?? raw?.content ?? JSON.stringify(raw);
+    const text = typeof raw === 'string' ? raw : (raw != null ? String(raw) : '');
     res.json({ name: result.rows[0].name, text });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -8701,7 +8704,15 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
       origName.endsWith('.pptx')
     ) {
       const pptxResult = await officeParser.parseOffice(req.file.buffer);
-      textContent = typeof pptxResult === 'string' ? pptxResult : String(pptxResult ?? '');
+      if (typeof pptxResult === 'string') {
+        textContent = pptxResult;
+      } else if (pptxResult && typeof pptxResult === 'object') {
+        // officeparser may return { text, slides, ... } — extract the string content
+        const candidate = (pptxResult as any).text ?? (pptxResult as any).body ?? (pptxResult as any).content ?? (pptxResult as any).value;
+        textContent = typeof candidate === 'string' ? candidate : JSON.stringify(pptxResult);
+      } else {
+        textContent = String(pptxResult ?? '');
+      }
     } else {
       // Plain text fallback
       textContent = req.file.buffer.toString('utf8').replace(/\0/g, '');

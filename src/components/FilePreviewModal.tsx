@@ -100,7 +100,8 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
               });
               if (textRes.ok) {
-                const { text } = await textRes.json();
+                const data = await textRes.json();
+                const text = typeof data.text === 'string' ? data.text : (data.text != null ? JSON.stringify(data.text) : '');
                 setTextPreview(text || '(No text content extracted)');
               } else {
                 setTextPreview('(Could not load text preview)');
