@@ -21,6 +21,13 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
     const [showProctoringModal, setShowProctoringModal] = useState(false);
     
     const [isDownloadingTranscript, setIsDownloadingTranscript] = useState(false);
+    const [now, setNow] = useState(() => Date.now());
+
+    // Tick every second for countdowns
+    useEffect(() => {
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
 
     // Assessment Payment State
     const [showAssessmentPaymentModal, setShowAssessmentPaymentModal] = useState(false);
@@ -58,6 +65,18 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
 
         syncDashboardData();
     }, [view, token]); // Sync when view context changes // Refetch when view changes
+
+    // Format countdown from ms remaining
+    const formatCountdown = (ms: number) => {
+        if (ms <= 0) return 'Starting soon';
+        const d = Math.floor(ms / 86400000);
+        const h = Math.floor((ms % 86400000) / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        const s = Math.floor((ms % 60000) / 1000);
+        if (d > 0) return `${d}d ${h}h ${m}m`;
+        if (h > 0) return `${h}h ${m}m ${s}s`;
+        return `${m}m ${s}s`;
+    };
 
     // Filter based on BOTH status AND view type (Harden against undefined)
     const activeType = view === 'dashboard' ? 'exam' : view === 'tests' ? 'test' : 'assignment';
@@ -226,7 +245,14 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                             <p className="text-slate-500 font-medium">No {activeType}s scheduled.</p>
                         </div>
                     ) : (
-                        upcomingExams.map(exam => (
+                        upcomingExams.map(exam => {
+                            const startsAt = exam.start_date ? new Date(exam.start_date).getTime() : null;
+                            const msLeft = startsAt ? startsAt - now : null;
+                            const countdownLabel = msLeft !== null
+                                ? (msLeft <= 0 ? 'Starting soon' : formatCountdown(msLeft))
+                                : null;
+                            const isImminent = msLeft !== null && msLeft >= 0 && msLeft < 3600000; // < 1 hour
+                            return (
                             <div key={exam.id} className="p-5 md:p-6 bg-white border border-slate-200 rounded-[1.5rem] md:rounded-[2rem] shadow-sm hover:shadow-md transition-all group">
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="p-3 bg-white border border-indigo-100 text-indigo-600 rounded-xl group-hover:border-indigo-600 transition-colors shadow-sm">
@@ -237,13 +263,21 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                                     </span>
                                 </div>
                                 <h4 className="text-lg font-bold text-slate-900 mb-2">{exam.course}</h4>
-                                <div className="flex items-center gap-4 text-sm font-medium text-slate-500">
+                                <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-slate-500">
                                     <span className="flex items-center gap-1"><Calendar size={14} /> {exam.date}</span>
                                     <span className="flex items-center gap-1"><Clock size={14} /> {exam.duration}</span>
                                     <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 rounded-md">{exam.totalQuestions} Qs</span>
                                 </div>
+                                {countdownLabel && (
+                                    <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-black ${isImminent ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'}`}>
+                                        <Clock size={13} className={isImminent ? 'animate-pulse' : ''} />
+                                        <span className="uppercase tracking-wider">Starts in:</span>
+                                        <span className="font-mono text-sm">{countdownLabel}</span>
+                                    </div>
+                                )}
                             </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
 

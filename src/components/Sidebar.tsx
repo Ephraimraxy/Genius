@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   LayoutDashboard,
   UploadCloud,
@@ -27,7 +27,9 @@ import {
   Database,
   Volume2,
   Video,
-  Zap
+  Zap,
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -57,6 +59,10 @@ export default function Sidebar({
     references: true, integrity: true, reviews: true, journals: true,
   });
 
+  // Student: open attendance sessions
+  const [attendanceSessions, setAttendanceSessions] = React.useState<any[]>([]);
+  const [markingId, setMarkingId] = React.useState<number | null>(null);
+
   React.useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -72,6 +78,43 @@ export default function Sidebar({
     const interval = setInterval(fetchNavConfig, 8000);
     return () => clearInterval(interval);
   }, []);
+
+  // Fetch open attendance sessions for students (always, so panel is always visible)
+  React.useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || profile?.user?.role !== 'student') return;
+    const fetchSessions = () => {
+      fetch('/api/student/attendance/open-sessions', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(r => r.json())
+        .then(data => { if (Array.isArray(data)) setAttendanceSessions(data); })
+        .catch(() => {});
+    };
+    fetchSessions();
+    const interval = setInterval(fetchSessions, 30000);
+    return () => clearInterval(interval);
+  }, [profile?.user?.role]);
+
+  const handleMarkAttendance = async (sessionId: number) => {
+    const token = localStorage.getItem('token');
+    if (!token || markingId === sessionId) return;
+    setMarkingId(sessionId);
+    try {
+      const r = await fetch(`/api/attendance/sessions/${sessionId}/mark`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setAttendanceSessions(prev => prev.map(s => s.id === sessionId ? { ...s, already_marked: true } : s));
+      } else {
+        console.error('Attendance mark failed:', d.error);
+      }
+    } catch { /* silent */ } finally {
+      setMarkingId(null);
+    }
+  };
 
   if (!profile) return null; // Prevent flash of default items
 
@@ -296,6 +339,71 @@ export default function Sidebar({
             );
           })}
         </nav>
+
+        {/* ─── STUDENT: Attendance Panel (always visible) ─── */}
+        {isStudent && !isCollapsed && (
+          <div className="mx-4 mb-3 p-3 rounded-2xl border border-indigo-700/40 bg-indigo-900/30 shrink-0">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle2 size={13} className="text-indigo-400 shrink-0" />
+              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-300">Attendance</span>
+              {attendanceSessions.filter(s => !s.already_marked).length > 0 && (
+                <span className="ml-auto w-4 h-4 bg-indigo-500 text-white text-[9px] font-black rounded-full flex items-center justify-center animate-pulse">
+                  {attendanceSessions.filter(s => !s.already_marked).length}
+                </span>
+              )}
+            </div>
+            {attendanceSessions.length === 0 ? (
+              <p className="text-[10px] text-indigo-400/60 font-medium text-center py-2">No open sessions</p>
+            ) : (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar">
+                {attendanceSessions.map(session => (
+                  <div key={session.id} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-indigo-800/30 border border-indigo-700/30">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-bold text-white truncate">{session.title}</p>
+                      {session.course_code && <p className="text-[9px] text-indigo-300/70 truncate">{session.course_code}</p>}
+                      <p className="text-[9px] font-bold text-indigo-400 mt-0.5">
+                        {session.is_paid ? `₦${Number(session.price).toLocaleString()}` : 'Free'}
+                      </p>
+                    </div>
+                    {session.already_marked ? (
+                      <span className="shrink-0 text-[9px] text-emerald-400 font-black flex items-center gap-0.5">
+                        <CheckCircle2 size={10} /> Signed
+                      </span>
+                    ) : session.is_paid ? (
+                      <button
+                        onClick={() => {/* paid sessions handled via nav button */}}
+                        className="shrink-0 px-2 py-1 bg-indigo-500 text-white text-[9px] font-black rounded-lg hover:bg-indigo-400 transition-colors"
+                      >
+                        Pay
+                      </button>
+                    ) : (
+                      <button
+                        disabled={markingId === session.id}
+                        onClick={() => handleMarkAttendance(session.id)}
+                        className="shrink-0 px-2 py-1 bg-emerald-600 text-white text-[9px] font-black rounded-lg hover:bg-emerald-500 transition-colors disabled:opacity-60 flex items-center gap-1"
+                      >
+                        {markingId === session.id ? <Loader2 size={9} className="animate-spin" /> : null}
+                        Sign
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {isStudent && isCollapsed && (
+          <div className="mx-2 mb-3 flex justify-center">
+            <div className="relative">
+              <CheckCircle2 size={20} className="text-indigo-400" />
+              {attendanceSessions.filter(s => !s.already_marked).length > 0 && (
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-indigo-500 text-white text-[7px] font-black rounded-full flex items-center justify-center animate-pulse">
+                  {attendanceSessions.filter(s => !s.already_marked).length}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         <div
           className={`

@@ -10957,9 +10957,12 @@ app.get('/api/student/assessments', authenticateToken, async (req: any, res) => 
       course: a.title,
       type: a.type || 'test',
       duration: `${a.duration} Mins`,
+      durationMins: a.duration,
       totalQuestions: a.totalQuestions || 0,
       status: a.completed ? 'completed' : 'pending',
       date: new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      start_date: a.start_date ? new Date(a.start_date).toISOString() : null,
+      end_date: a.end_date ? new Date(a.end_date).toISOString() : null,
       is_paid: a.is_paid,
       price: a.price,
       hasPaid: a.hasPaid
