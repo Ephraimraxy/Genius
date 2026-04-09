@@ -834,9 +834,25 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
                         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
                             className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl relative z-10 overflow-hidden max-h-[85vh] flex flex-col">
-                            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                            <div className="p-6 border-b border-slate-100 flex items-center justify-between gap-3">
                                 <h3 className="font-black text-slate-900">📊 Student Results</h3>
-                                <button onClick={() => setViewingResultsFor(null)} className="text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => {
+                                            const t = localStorage.getItem('token') || '';
+                                            const a = document.createElement('a');
+                                            a.href = `/api/transcripts/exam/${viewingResultsFor}?token=${encodeURIComponent(t)}`;
+                                            (a as any).setAttribute('download', `class-report-${viewingResultsFor}.pdf`);
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            document.body.removeChild(a);
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all"
+                                    >
+                                        <DownloadIcon size={12} /> Class Report
+                                    </button>
+                                    <button onClick={() => setViewingResultsFor(null)} className="text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+                                </div>
                             </div>
                             <div className="overflow-y-auto p-6 space-y-3">
                                 {examResults.length === 0 && <p className="text-center text-slate-400 py-8">No submissions yet.</p>}
@@ -858,6 +874,21 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                                             <button onClick={() => loadStudentAnswers(viewingResultsFor!, r.user_id, r.student_name)}
                                                 className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase hover:bg-blue-100 transition-all">
                                                 Review
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const t = localStorage.getItem('token') || '';
+                                                    const a = document.createElement('a');
+                                                    a.href = `/api/transcripts/student/${r.user_id}?token=${encodeURIComponent(t)}`;
+                                                    (a as any).setAttribute('download', `transcript-${r.student_name?.replace(/\s+/g,'-') || r.user_id}.pdf`);
+                                                    document.body.appendChild(a);
+                                                    a.click();
+                                                    document.body.removeChild(a);
+                                                }}
+                                                className="px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-all"
+                                                title="Download student transcript PDF"
+                                            >
+                                                <DownloadIcon size={11} />
                                             </button>
                                             <button onClick={() => clearStudentResult(viewingResultsFor!, r.user_id)}
                                                 className="px-3 py-1.5 bg-rose-50 text-rose-500 rounded-lg text-[10px] font-black uppercase hover:bg-rose-100 transition-all">

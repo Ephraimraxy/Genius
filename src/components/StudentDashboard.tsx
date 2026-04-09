@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, Calendar, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { BookOpen, Calendar, Clock, CheckCircle2, AlertCircle, Download } from 'lucide-react';
 import { ToastType, useToasts } from './ToastSystem';
 import ExamProctoringModal from './ExamProctoringModal';
 import ActiveExamSession from './ActiveExamSession';
@@ -123,13 +123,27 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                 <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight mb-1 md:mb-2">
                     Welcome, {profile?.user?.name || 'Student'}
                 </h2>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                     <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-lg text-xs font-bold uppercase tracking-wider font-mono">
                         {profile?.user?.matricNumber || 'MATRIC NOT FOUND'}
                     </span>
                     <span className="text-slate-500 font-medium text-sm">
                         • {profile?.user?.email}
                     </span>
+                    <button
+                        onClick={() => {
+                            const a = document.createElement('a');
+                            a.href = `/api/transcripts/my?token=${encodeURIComponent(token || '')}`;
+                            a.setAttribute('download', 'my-transcript.pdf');
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-black uppercase tracking-wider hover:bg-emerald-100 transition-all border border-emerald-100"
+                        title="Download your full transcript as PDF"
+                    >
+                        <Download size={12} /> My Transcript
+                    </button>
                 </div>
             </header>
 
