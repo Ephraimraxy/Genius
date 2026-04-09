@@ -821,6 +821,9 @@ async function bootstrapDB() {
       ALTER TABLE exam_slots ADD COLUMN IF NOT EXISTS question_order JSONB;
       ALTER TABLE exam_slots ADD COLUMN IF NOT EXISTS option_orders JSONB;
 
+      -- Notification delivery tracking per slot
+      ALTER TABLE exam_slots ADD COLUMN IF NOT EXISTS notification_status VARCHAR(20) DEFAULT 'pending';
+
       -- GAP 3: Individual answer storage
       CREATE TABLE IF NOT EXISTS exam_answers (
         id SERIAL PRIMARY KEY,
@@ -8899,7 +8902,7 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
 
       // Counters for UI feedback
       const uploadAdded: {matric: string, name: string}[] = [];
-      const uploadUpdated: {matric: string, name: string}[] = [];
+      const uploadUpdated: {matric: string, name: string, changes: string[]}[] = [];
       const uploadConflicts: {matric: string, name: string, reason: string}[] = [];
       const uploadFailed: {matric: string, reason: string}[] = [];
 
@@ -8933,27 +8936,32 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
           continue;
         }
 
-        // Email format validation
-        if (!email.includes('@') || email.length < 5) {
+        // Email format validation — proper RFC-style check before any DB work
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
           uploadFailed.push({ matric: matricNumber, reason: `Invalid email format: ${email}` });
           continue;
         }
 
         // Check if matric already in roster for this tenant
         const existingMatric = await pool.query(
-          'SELECT id, email, name FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
+          'SELECT id, email, name, category_id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
           [matricNumber, req.tenant_id]
         );
 
         if (existingMatric.rows.length > 0) {
           const existingEmail = existingMatric.rows[0].email;
           if (existingEmail.toLowerCase() === email.toLowerCase()) {
-            // Same student re-uploaded — update name/category silently
+            // Same student re-uploaded — detect what changed, then update
+            const oldName = existingMatric.rows[0].name;
+            const oldCategoryId = existingMatric.rows[0].category_id;
+            const changes: string[] = [];
+            if (oldName !== studentName) changes.push(`Name: "${oldName}" → "${studentName}"`);
+            if (final_category_id && String(oldCategoryId) !== String(final_category_id)) changes.push(`Category updated`);
             await pool.query(
               'UPDATE students_roster SET name = $1, category_id = COALESCE($2, category_id) WHERE matric_number = $3 AND tenant_id = $4',
               [studentName, final_category_id, matricNumber, req.tenant_id]
             );
-            uploadUpdated.push({ matric: matricNumber, name: studentName });
+            uploadUpdated.push({ matric: matricNumber, name: studentName, changes });
           } else {
             // Same matric but different email — conflict, skip
             uploadConflicts.push({ matric: matricNumber, name: studentName, reason: `Matric ${matricNumber} already registered with a different email (${existingEmail})` });
@@ -9062,6 +9070,7 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
           failed: rosterSummary.failed.length,
           conflictList: rosterSummary.conflicts,
           failedList: rosterSummary.failed,
+          updatedList: rosterSummary.updated,
         }
       } : {})
     });
@@ -10111,21 +10120,23 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
           const scheduledAt = new Date(startMs + batchIndex * intervalMs);
           const windowEnd   = new Date(scheduledAt.getTime() + durationMin * 60 * 1000 + 30 * 60 * 1000);
 
-          await pool.query(
-            `INSERT INTO exam_slots (exam_id, tenant_id, student_id, student_email, student_name, scheduled_at, window_end)
-             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          const slotInsert = await pool.query(
+            `INSERT INTO exam_slots (exam_id, tenant_id, student_id, student_email, student_name, scheduled_at, window_end, notification_status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING id`,
             [examId, req.tenant_id, students[i].id, students[i].email, students[i].name, scheduledAt, windowEnd]
           );
+          const slotId = slotInsert.rows[0].id;
 
-          // Notify student of their slot
+          // Notify student of their slot and track per-slot delivery status
           if (students[i].email) {
             const slotLabel = scheduledAt.toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
             const endLabel  = windowEnd.toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
             const typeLabel = type === 'exam' ? 'Examination' : 'Test';
-            sendResendEmail({
-              to: students[i].email,
-              subject: `📋 Your ${typeLabel} Schedule — ${title}`,
-              html: `
+            try {
+              await sendResendEmail({
+                to: students[i].email,
+                subject: `📋 Your ${typeLabel} Schedule — ${title}`,
+                html: `
 <div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;color:#1a202c;line-height:1.7;">
   <div style="border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
     <div style="padding:24px 32px;background:linear-gradient(135deg,#eff6ff 0%,#fff 70%);border-bottom:3px solid #2563eb;">
@@ -10158,14 +10169,14 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
     </div>
   </div>
 </div>`
-            }).catch((err: any) => console.error(`[Slot Notify] Failed for ${students[i].email}:`, err.message));
+              });
+              await pool.query(`UPDATE exam_slots SET notification_status = 'sent', notification_sent = TRUE WHERE id = $1`, [slotId]);
+            } catch (err: any) {
+              console.error(`[Slot Notify] Failed for ${students[i].email}:`, err.message);
+              await pool.query(`UPDATE exam_slots SET notification_status = 'failed' WHERE id = $1`, [slotId]);
+            }
           }
         }
-
-        await pool.query(
-          `UPDATE exam_slots SET notification_sent = TRUE WHERE exam_id = $1`,
-          [examId]
-        );
       }
     }
 
@@ -10191,6 +10202,59 @@ app.get('/api/exams/:id/slots', authenticateToken, async (req: any, res) => {
     res.json(slots.rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch slots' });
+  }
+});
+
+// Lecturer: Resend schedule notification to a single slot
+app.post('/api/exams/:id/slots/:slotId/resend', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id: examId, slotId } = req.params;
+    const slotRes = await pool.query(
+      `SELECT es.*, e.title, e.type, e.duration, e.instructions
+       FROM exam_slots es JOIN exams e ON e.id = es.exam_id
+       WHERE es.id = $1 AND es.exam_id = $2 AND es.tenant_id = $3`,
+      [slotId, examId, req.tenant_id]
+    );
+    if (slotRes.rows.length === 0) return res.status(404).json({ error: 'Slot not found' });
+    const slot = slotRes.rows[0];
+    if (!slot.student_email) return res.status(400).json({ error: 'No email on record for this student' });
+
+    const slotLabel = new Date(slot.scheduled_at).toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+    const endLabel  = new Date(slot.window_end).toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+    const typeLabel = slot.type === 'exam' ? 'Examination' : 'Test';
+    const durationMin = slot.duration || 60;
+
+    await sendResendEmail({
+      to: slot.student_email,
+      subject: `📋 [RESENT] Your ${typeLabel} Schedule — ${slot.title}`,
+      html: `
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;color:#1a202c;line-height:1.7;">
+  <div style="border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <div style="padding:24px 32px;background:linear-gradient(135deg,#eff6ff 0%,#fff 70%);border-bottom:3px solid #2563eb;">
+      <h2 style="margin:0;color:#1e40af;font-size:20px;">📋 ${typeLabel} Schedule Notice</h2>
+      <p style="margin:4px 0 0;color:#64748b;font-size:13px;">${slot.title} — <em>Re-sent on request</em></p>
+    </div>
+    <div style="padding:28px 32px;">
+      <p>Dear <strong>${slot.student_name}</strong>,</p>
+      <p>Your ${typeLabel.toLowerCase()} schedule is below. This is a re-sent copy.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8fafc;border-radius:8px;overflow:hidden;">
+        <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Assessment</td><td style="padding:10px 16px;font-weight:bold;">${slot.title}</td></tr>
+        <tr style="background:#f1f5f9;"><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Your Slot</td><td style="padding:10px 16px;color:#1d4ed8;font-weight:bold;">${slotLabel}</td></tr>
+        <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Deadline</td><td style="padding:10px 16px;color:#dc2626;font-weight:bold;">${endLabel}</td></tr>
+        <tr style="background:#f1f5f9;"><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Duration</td><td style="padding:10px 16px;">${durationMin} minutes</td></tr>
+      </table>
+      ${slot.instructions ? `<div style="background:#fefce8;border-left:4px solid #ca8a04;padding:16px 20px;border-radius:8px;margin:16px 0;"><p style="margin:0;font-weight:bold;color:#92400e;">📌 Instructions</p><p style="margin:8px 0 0;color:#78350f;">${slot.instructions}</p></div>` : ''}
+      <p style="color:#64748b;font-size:12px;margin-top:24px;">This is an automated notification. Do not reply to this email.</p>
+    </div>
+  </div>
+</div>`
+    });
+    await pool.query(`UPDATE exam_slots SET notification_status = 'sent', notification_sent = TRUE WHERE id = $1`, [slotId]);
+    res.json({ success: true });
+  } catch (err: any) {
+    await pool.query(`UPDATE exam_slots SET notification_status = 'failed' WHERE id = $1`, [req.params.slotId]).catch(() => {});
+    res.status(500).json({ error: err.message });
   }
 });
 

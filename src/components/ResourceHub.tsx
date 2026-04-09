@@ -64,6 +64,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         added: number; updated: number; conflicts: number; failed: number;
         conflictList: {matric: string, name: string, reason: string}[];
         failedList: {matric: string, reason: string}[];
+        updatedList: {matric: string, name: string, changes: string[]}[];
     } | null>(null);
 
     // Roster viewer state
@@ -798,8 +799,19 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                     </div>
                                 )}
                                 {importSummary.updated > 0 && (
-                                    <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
-                                        <p className="text-[11px] font-black text-blue-700 uppercase tracking-widest">🔄 {importSummary.updated} existing record(s) updated — no re-email</p>
+                                    <div>
+                                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2">🔄 {importSummary.updated} record(s) updated — no re-email</p>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                                            {(importSummary.updatedList || []).map((u: {matric: string, name: string, changes: string[]}, i: number) => (
+                                                <div key={i} className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                                                    <p className="text-xs font-bold text-slate-900">{u.matric} — {u.name}</p>
+                                                    {u.changes.length > 0
+                                                        ? u.changes.map((c: string, j: number) => <p key={j} className="text-[10px] text-blue-700 mt-0.5">{c}</p>)
+                                                        : <p className="text-[10px] text-slate-400 mt-0.5">No field changes detected</p>
+                                                    }
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
 
@@ -905,16 +917,18 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                                     {s.category_name && <p className="text-[9px] text-indigo-500 font-black uppercase tracking-widest mt-0.5">{s.category_name}</p>}
                                                 </div>
                                                 <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${statusColor}`}>{statusLabel}</span>
-                                                {(s.email_status === 'failed' || s.email_status === 'pending') && (
-                                                    <button
-                                                        onClick={() => resendOne(s.id)}
-                                                        disabled={resendingId === s.id}
-                                                        className="shrink-0 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-black uppercase hover:bg-blue-100 transition-all disabled:opacity-50 flex items-center gap-1"
-                                                    >
-                                                        {resendingId === s.id ? <RefreshCw size={10} className="animate-spin" /> : null}
-                                                        Resend
-                                                    </button>
-                                                )}
+                                                <button
+                                                    onClick={() => resendOne(s.id)}
+                                                    disabled={resendingId === s.id}
+                                                    className={`shrink-0 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center gap-1 ${
+                                                        s.email_status === 'sent'
+                                                            ? 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                                            : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                                    }`}
+                                                >
+                                                    {resendingId === s.id ? <RefreshCw size={10} className="animate-spin" /> : null}
+                                                    {s.email_status === 'sent' ? 'Re-send' : 'Resend'}
+                                                </button>
                                             </div>
                                         );
                                     })

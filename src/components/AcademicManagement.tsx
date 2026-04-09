@@ -75,6 +75,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [assessInstructions, setAssessInstructions] = useState('');
     const [assessSlots, setAssessSlots] = useState<any[]>([]);
     const [viewingSlotsFor, setViewingSlotsFor] = useState<number | null>(null);
+    const [resendingSlotId, setResendingSlotId] = useState<number | null>(null);
 
     // Assignment-specific
     const [assessDueDate, setAssessDueDate] = useState('');
@@ -258,6 +259,26 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         } catch {
             addToast('Failed to load slots', 'error');
         }
+    };
+
+    const resendSlotNotification = async (examId: number, slotId: number) => {
+        setResendingSlotId(slotId);
+        try {
+            const res = await fetch(`/api/exams/${examId}/slots/${slotId}/resend`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setAssessSlots(prev => prev.map(s => s.id === slotId ? { ...s, notification_status: 'sent', notification_sent: true } : s));
+                addToast('Notification re-sent', 'success');
+            } else {
+                addToast(data.error || 'Resend failed', 'error');
+            }
+        } catch {
+            addToast('Network error', 'error');
+        }
+        setResendingSlotId(null);
     };
 
     const deleteRecord = async (id: number) => {
@@ -952,20 +973,45 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             <div className="overflow-y-auto p-6 space-y-3">
                                 {assessSlots.length === 0 && <p className="text-center text-slate-400 py-8">No slots found.</p>}
                                 {assessSlots.map((slot, i) => (
-                                    <div key={i} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
-                                        <div>
-                                            <p className="font-bold text-slate-900 text-sm">{slot.student_name || slot.student_email}</p>
-                                            <p className="text-[10px] text-slate-400">{slot.student_email}</p>
+                                    <div key={i} className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-slate-900 text-sm truncate">{slot.student_name || slot.student_email}</p>
+                                            <p className="text-[10px] text-slate-400 truncate">{slot.student_email}</p>
+                                            <p className="text-xs font-bold text-blue-600 mt-0.5">{new Date(slot.scheduled_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}</p>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="text-xs font-bold text-blue-600">{new Date(slot.scheduled_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                                        <div className="flex flex-col items-end gap-1.5 shrink-0">
                                             <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
                                                 slot.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
                                                 slot.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
                                                 slot.status === 'missed' ? 'bg-rose-100 text-rose-700' :
                                                 'bg-slate-100 text-slate-500'}`}>
-                                                {slot.status}
+                                                {slot.status || 'pending'}
                                             </span>
+                                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                                slot.notification_status === 'sent' ? 'bg-emerald-50 text-emerald-600' :
+                                                slot.notification_status === 'failed' ? 'bg-rose-50 text-rose-600' :
+                                                'bg-amber-50 text-amber-600'}`}>
+                                                {slot.notification_status === 'sent' ? '✓ Notified' :
+                                                 slot.notification_status === 'failed' ? '✗ Notify Failed' : '⏳ Not Sent'}
+                                            </span>
+                                            {slot.notification_status !== 'sent' && (
+                                                <button
+                                                    onClick={() => resendSlotNotification(viewingSlotsFor!, slot.id)}
+                                                    disabled={resendingSlotId === slot.id}
+                                                    className="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase hover:bg-blue-100 transition-all disabled:opacity-50"
+                                                >
+                                                    {resendingSlotId === slot.id ? '...' : 'Send'}
+                                                </button>
+                                            )}
+                                            {slot.notification_status === 'sent' && (
+                                                <button
+                                                    onClick={() => resendSlotNotification(viewingSlotsFor!, slot.id)}
+                                                    disabled={resendingSlotId === slot.id}
+                                                    className="px-2 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase hover:bg-slate-200 transition-all disabled:opacity-50"
+                                                >
+                                                    {resendingSlotId === slot.id ? '...' : 'Re-send'}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
