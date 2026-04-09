@@ -52,6 +52,10 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [isUpdatingCategory, setIsUpdatingCategory] = useState<number | null>(null);
     const [workspaceId, setWorkspaceId] = useState<string>('');
 
+    // Delete category confirmation modal
+    const [deleteCatTarget, setDeleteCatTarget] = useState<{id: number, name: string} | null>(null);
+    const [isDeletingCat, setIsDeletingCat] = useState(false);
+
     // Batch Category Modal States
     const [showBatchModal, setShowBatchModal] = useState(false);
     const [selectedCatId, setSelectedCatId] = useState<string>('');
@@ -373,6 +377,28 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         setIsUpdatingCategory(null);
     };
 
+    const deleteCategory = async () => {
+        if (!deleteCatTarget) return;
+        setIsDeletingCat(true);
+        try {
+            const res = await fetch(`/api/courses/categories/${deleteCatTarget.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                addToast(`"${deleteCatTarget.name}" and all students deleted`, 'success');
+                setDeleteCatTarget(null);
+                fetchCategories();
+            } else {
+                const d = await res.json().catch(() => ({}));
+                addToast(d.error || 'Failed to delete category', 'error');
+            }
+        } catch {
+            addToast('Failed to delete category', 'error');
+        }
+        setIsDeletingCat(false);
+    };
+
     return (
         <div className="space-y-8 pb-12">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -485,12 +511,21 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 <div key={cat.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                                     <div className="flex items-center justify-between mb-3">
                                         <span className="text-xs font-black text-slate-900 uppercase truncate max-w-[120px]">{cat.name}</span>
-                                        <button 
-                                            onClick={() => updateCategoryFee(cat.id, !cat.is_paid_entry, cat.entry_fee)}
-                                            className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${cat.is_paid_entry ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-500'}`}
-                                        >
-                                            {cat.is_paid_entry ? 'Paid Entry' : 'Free Entry'}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => updateCategoryFee(cat.id, !cat.is_paid_entry, cat.entry_fee)}
+                                                className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${cat.is_paid_entry ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-500'}`}
+                                            >
+                                                {cat.is_paid_entry ? 'Paid Entry' : 'Free Entry'}
+                                            </button>
+                                            <button
+                                                onClick={() => setDeleteCatTarget({ id: cat.id, name: cat.name })}
+                                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all"
+                                                title="Delete category and all students"
+                                            >
+                                                <Trash2 size={13} />
+                                            </button>
+                                        </div>
                                     </div>
                                     {cat.is_paid_entry && (
                                         <div className="flex items-center gap-2">
@@ -665,6 +700,52 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                     onClose={() => setIsPreviewOpen(false)}
                 />
             )}
+
+            {/* Delete Category Confirmation Modal */}
+            <AnimatePresence>
+                {deleteCatTarget && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+                        <motion.div
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            onClick={() => !isDeletingCat && setDeleteCatTarget(null)}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}
+                            className="relative bg-white rounded-3xl p-8 shadow-2xl w-full max-w-md z-10"
+                        >
+                            <div className="flex flex-col items-center text-center gap-4">
+                                <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center">
+                                    <Trash2 className="text-red-600" size={24} />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-black text-slate-900">Delete Category?</h3>
+                                    <p className="text-sm text-slate-500 mt-2">
+                                        This will permanently delete <span className="font-bold text-slate-800">"{deleteCatTarget.name}"</span> and <span className="font-bold text-red-600">all students enrolled in it</span>. This cannot be undone.
+                                    </p>
+                                </div>
+                                <div className="flex gap-3 w-full mt-2">
+                                    <button
+                                        onClick={() => setDeleteCatTarget(null)}
+                                        disabled={isDeletingCat}
+                                        className="flex-1 py-3 rounded-2xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-40"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={deleteCategory}
+                                        disabled={isDeletingCat}
+                                        className="flex-1 py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-sm font-black transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                                    >
+                                        {isDeletingCat ? <RefreshCw size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                                        {isDeletingCat ? 'Deleting...' : 'Yes, Delete All'}
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             {/* Batch Category Modal */}
             <AnimatePresence>
