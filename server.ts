@@ -7232,6 +7232,8 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
         try { await pool.query('DELETE FROM attendance WHERE tenant_id = $1', [tid]); } catch (_) {}
         await pool.query('DELETE FROM students_roster WHERE tenant_id = $1', [tid]);
         await pool.query('UPDATE users SET category_id = NULL WHERE tenant_id = $1', [tid]);
+        // Delete profiles before users to satisfy FK constraint profiles_user_id_fkey
+        await pool.query("DELETE FROM profiles WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1 AND role = 'student')", [tid]);
         await pool.query("DELETE FROM users WHERE tenant_id = $1 AND role = 'student'", [tid]);
         await pool.query('DELETE FROM student_categories WHERE tenant_id = $1', [tid]);
       }
@@ -7249,7 +7251,8 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
       await pool.query('DELETE FROM tenants WHERE id = $1', [tid]);
     }
 
-    // Finally delete the lecturer user account
+    // Finally delete the lecturer user account (clear profiles FK first)
+    await pool.query('DELETE FROM profiles WHERE user_id = $1', [id]);
     await pool.query('DELETE FROM users WHERE id = $1', [id]);
 
     res.json({ success: true });
@@ -10016,7 +10019,8 @@ app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, asyn
     if (studentRes.rows.length === 0) return res.status(404).json({ error: 'Student not found in your roster' });
     const matric = studentRes.rows[0].matric_number;
 
-    // 2. Delete from users (tenant-scoped)
+    // 2. Delete from users (clear profiles FK first)
+    await pool.query("DELETE FROM profiles WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
     await pool.query('DELETE FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = \'student\'', [matric, req.tenant_id]);
 
     // 3. Delete from roster
@@ -10140,8 +10144,8 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
     const catCheck = await pool.query('SELECT id FROM student_categories WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
     if (catCheck.rows.length === 0) return res.status(404).json({ error: 'Category not found' });
 
-    // 2. Delete all students in this category for this tenant
-    // Note: We delete from users first (tenant-scoped) then from students_roster
+    // 2. Delete all students in this category (clear profiles FK first)
+    await pool.query("DELETE FROM profiles WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query('DELETE FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = \'student\'', [id, req.tenant_id]);
     await pool.query('DELETE FROM students_roster WHERE category_id = $1 AND tenant_id = $2', [id, req.tenant_id]);
 
