@@ -8566,7 +8566,8 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
       mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
       origName.endsWith('.pptx')
     ) {
-      textContent = await officeParser.parseOffice(req.file.buffer);
+      const pptxResult = await officeParser.parseOffice(req.file.buffer);
+      textContent = typeof pptxResult === 'string' ? pptxResult : String(pptxResult ?? '');
     } else {
       // Plain text fallback
       textContent = req.file.buffer.toString('utf8').replace(/\0/g, '');
