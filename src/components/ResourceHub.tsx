@@ -57,6 +57,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [newCatName, setNewCatName] = useState('');
     const [isPaidEntry, setIsPaidEntry] = useState(false);
     const [entryFee, setEntryFee] = useState(0);
+    const [batchNameError, setBatchNameError] = useState('');
 
     // Import result summary modal
     const [importSummary, setImportSummary] = useState<{
@@ -673,7 +674,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                             value={selectedCatId}
                                             onChange={(e) => {
                                                 setSelectedCatId(e.target.value);
-                                                if(e.target.value) setNewCatName('');
+                                                if (e.target.value) { setNewCatName(''); setBatchNameError(''); }
                                             }}
                                             className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-600 outline-none font-bold text-sm"
                                         >
@@ -687,12 +688,12 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                     {!selectedCatId && (
                                         <div className="space-y-2">
                                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">New Batch Name</label>
-                                            <input 
+                                            <input
                                                 type="text"
                                                 placeholder="e.g. 200 Level Maths"
                                                 value={newCatName}
-                                                onChange={(e) => setNewCatName(e.target.value)}
-                                                className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-600 outline-none font-bold text-sm"
+                                                onChange={(e) => { setNewCatName(e.target.value); if (e.target.value.trim()) setBatchNameError(''); }}
+                                                className={`w-full px-6 py-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-600 outline-none font-bold text-sm transition-all ${batchNameError ? 'border-rose-300 bg-rose-50' : 'border-slate-100'}`}
                                             />
                                         </div>
                                     )}
@@ -732,9 +733,20 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                     )}
                                 </div>
 
-                                <button 
+                                {batchNameError && (
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 border border-rose-200 rounded-2xl">
+                                        <span className="text-rose-500 text-lg">⚠️</span>
+                                        <p className="text-rose-700 text-xs font-bold">{batchNameError}</p>
+                                    </div>
+                                )}
+
+                                <button
                                     onClick={() => {
-                                        if(!selectedCatId && !newCatName) return alert('Please name your batch');
+                                        if (!selectedCatId && !newCatName.trim()) {
+                                            setBatchNameError('Please choose an existing category or enter a new batch name to continue.');
+                                            return;
+                                        }
+                                        setBatchNameError('');
                                         setShowBatchModal(false);
                                         processUpload();
                                     }}

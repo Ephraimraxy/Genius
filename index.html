@@ -17,6 +17,18 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <!-- Hard-reload once on stale asset 404 (e.g. after a new deployment) -->
+    <script>
+      window.addEventListener('error', function(e) {
+        var src = (e.target && (e.target.src || e.target.href)) || '';
+        if (src && (src.includes('/assets/') || src.endsWith('.js') || src.endsWith('.css'))) {
+          if (!sessionStorage.getItem('_reloaded')) {
+            sessionStorage.setItem('_reloaded', '1');
+            window.location.reload(true);
+          }
+        }
+      }, true);
+    </script>
   </body>
 </html>
 
