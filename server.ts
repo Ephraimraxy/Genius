@@ -49,6 +49,42 @@ async function pdfParse(buffer: Buffer, options?: any): Promise<any> {
 import mammoth from 'mammoth';
 const WordExtractor = require('word-extractor');
 const officeParser = require('officeparser');
+const JSZip = require('jszip');
+import { XMLParser as FastXMLParser } from 'fast-xml-parser';
+
+// Extract text from PPTX by reading slide XML files directly
+async function extractPptxText(buffer: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  const slideFiles = Object.keys(zip.files)
+    .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort((a, b) => {
+      const na = parseInt(a.match(/\d+/)?.[0] ?? '0');
+      const nb = parseInt(b.match(/\d+/)?.[0] ?? '0');
+      return na - nb;
+    });
+
+  const parser = new FastXMLParser({ ignoreAttributes: true, textNodeName: '_text' });
+  const slideTexts: string[] = [];
+
+  for (const slideFile of slideFiles) {
+    const xml = await zip.files[slideFile].async('string');
+    const parsed = parser.parse(xml);
+    const texts: string[] = [];
+    function collectText(node: any) {
+      if (typeof node === 'string' || typeof node === 'number') { texts.push(String(node)); return; }
+      if (Array.isArray(node)) { node.forEach(collectText); return; }
+      if (node && typeof node === 'object') {
+        // 'a:t' elements hold the actual text runs in OOXML
+        if (node['a:t'] !== undefined) collectText(node['a:t']);
+        else Object.values(node).forEach(collectText);
+      }
+    }
+    collectText(parsed);
+    const slideText = texts.join(' ').replace(/\s+/g, ' ').trim();
+    if (slideText) slideTexts.push(slideText);
+  }
+  return slideTexts.join('\n');
+}
 import cors from 'cors';
 import OpenAI from 'openai';
 import { Pool } from 'pg';
@@ -8995,14 +9031,11 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
       mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
       origName.endsWith('.pptx')
     ) {
-      const pptxResult = await officeParser.parseOffice(fileBuffer);
-      if (typeof pptxResult === 'string') {
-        textContent = pptxResult;
-      } else if (pptxResult && typeof pptxResult === 'object') {
-        const candidate = (pptxResult as any).text ?? (pptxResult as any).body ?? (pptxResult as any).content ?? (pptxResult as any).value;
-        textContent = typeof candidate === 'string' ? candidate : JSON.stringify(pptxResult);
-      } else {
-        textContent = String(pptxResult ?? '');
+      textContent = await extractPptxText(fileBuffer);
+      // fallback to officeParser if zip approach yields nothing
+      if (!textContent.trim()) {
+        const pptxResult = await officeParser.parseOffice(fileBuffer).catch(() => '');
+        textContent = typeof pptxResult === 'string' ? pptxResult : '';
       }
     } else {
       // Plain text fallback
