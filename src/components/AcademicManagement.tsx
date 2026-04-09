@@ -933,17 +933,15 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         <div className="space-y-8">
             <div className="grid lg:grid-cols-2 gap-8">
                 {/* Exam Builder */}
-                <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl">
+                <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
                     <div className="flex items-center gap-4 mb-6">
-                        <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center"><ShieldCheck size={28} /></div>
+                        <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center"><ShieldCheck size={28} /></div>
                         <div>
-                            <h3 className="text-xl font-black">Formal Exam Console</h3>
+                            <h3 className="text-xl font-bold text-slate-900">Formal Exam Console</h3>
                             <p className="text-slate-400 text-xs mt-1">AI generates high-standard questions. Students are scheduled, proctored & auto-graded.</p>
                         </div>
                     </div>
-                    <div className="[&_input]:!bg-white/10 [&_input]:!border-white/20 [&_input]:!text-white [&_input]:placeholder:!text-white/40 [&_select]:!bg-white/10 [&_select]:!border-white/20 [&_select]:!text-white [&_textarea]:!bg-white/10 [&_textarea]:!border-white/20 [&_textarea]:!text-white [&_textarea]:placeholder:!text-white/40">
-                        {renderAssessmentBuilder(true)}
-                    </div>
+                    {renderAssessmentBuilder(false)}
                 </div>
 
                 {/* Exam Records */}
