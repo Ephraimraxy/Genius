@@ -359,22 +359,22 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             </div>
 
             {/* Timer Mode */}
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Timer Mode</p>
+            <div className={`p-4 rounded-2xl border ${isExam ? 'bg-white/10 border-white/20' : 'bg-slate-50 border-slate-200'}`}>
+                <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${isExam ? 'text-white/60' : 'text-slate-400'}`}>Timer Mode</p>
                 <div className="flex gap-3">
                     <button type="button" onClick={() => setAssessTimerMode('whole')}
-                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${assessTimerMode === 'whole' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${assessTimerMode === 'whole' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : isExam ? 'bg-white/10 border border-white/20 text-white/60' : 'bg-white border border-slate-200 text-slate-500'}`}>
                         ⏱ Whole Test Timer
                     </button>
                     <button type="button" onClick={() => setAssessTimerMode('per_question')}
-                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${assessTimerMode === 'per_question' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${assessTimerMode === 'per_question' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : isExam ? 'bg-white/10 border border-white/20 text-white/60' : 'bg-white border border-slate-200 text-slate-500'}`}>
                         ⚡ Per Question Timer
                     </button>
                 </div>
                 {assessTimerMode === 'whole' && (
                     <div className="mt-3">
                         <select value={assessDuration} onChange={e => setAssessDuration(e.target.value)}
-                            className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
+                            className={`w-full px-5 py-3 rounded-xl font-bold focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>
                             {(isExam ? [60,90,120,150,180] : [15,20,30,45,60,90]).map(m => (
                                 <option key={m} value={m}>{m} Minutes</option>
                             ))}
@@ -384,7 +384,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 {assessTimerMode === 'per_question' && (
                     <div className="mt-3">
                         <select value={assessDuration} onChange={e => setAssessDuration(e.target.value)}
-                            className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
+                            className={`w-full px-5 py-3 rounded-xl font-bold focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>
                             {(isExam ? [60,90,120] : [30,45,60,90,120]).map(s => (
                                 <option key={s} value={s}>{s} Seconds per question</option>
                             ))}
@@ -394,30 +394,30 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             </div>
 
             {/* Time Window for Batch Scheduling */}
-            <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">📅 Exam Window (Batch Scheduling)</p>
-                <p className="text-[10px] text-slate-500 mb-3">Set a date range. The system will auto-split students into slots across this window and notify each student of their exact time.</p>
+            <div className={`p-4 rounded-2xl border ${isExam ? 'bg-blue-500/20 border-blue-400/30' : 'bg-blue-50 border-blue-100'}`}>
+                <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isExam ? 'text-blue-300' : 'text-blue-600'}`}>📅 Exam Window (Batch Scheduling)</p>
+                <p className={`text-[10px] mb-3 ${isExam ? 'text-white/50' : 'text-slate-500'}`}>Set a date range. The system will auto-split students into slots across this window and notify each student of their exact time.</p>
                 <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Start Date & Time</label>
+                        <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>Start Date & Time</label>
                         <input type="datetime-local" value={assessStartDate} onChange={e => setAssessStartDate(e.target.value)}
-                            className="w-full mt-1 px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400" />
+                            className={`w-full mt-1 px-4 py-3 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
                     </div>
                     <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">End Date & Time</label>
+                        <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>End Date & Time</label>
                         <input type="datetime-local" value={assessEndDate} onChange={e => setAssessEndDate(e.target.value)}
-                            className="w-full mt-1 px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400" />
+                            className={`w-full mt-1 px-4 py-3 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
                     </div>
                 </div>
 
                 {/* Batch size */}
                 {assessStartDate && assessEndDate && (
                     <div className="mt-3">
-                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Students Per Slot</label>
+                        <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>Students Per Slot</label>
                         <input type="number" min="1" max="50" value={assessBatchSize} onChange={e => setAssessBatchSize(e.target.value)}
-                            className="w-full mt-1 px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400"
+                            className={`w-full mt-1 px-4 py-3 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white placeholder:text-white/30' : 'bg-white border border-slate-200 text-slate-700'}`}
                             placeholder="e.g. 10 (students sharing same slot time)" />
-                        <p className="text-[10px] text-slate-400 mt-1 ml-1">
+                        <p className={`text-[10px] mt-1 ml-1 ${isExam ? 'text-white/40' : 'text-slate-400'}`}>
                             The system distributes students evenly — each group gets a unique start time within the window.
                         </p>
                     </div>
@@ -427,13 +427,13 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             {/* Instructions to include in notification email */}
             <textarea value={assessInstructions} onChange={e => setAssessInstructions(e.target.value)}
                 rows={3} placeholder="Instructions / warnings to include in the student notification email (optional)..."
-                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-400 resize-none"
+                className={`w-full px-5 py-3.5 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-400 resize-none border ${isExam ? 'bg-white/10 border-white/20 text-white placeholder:text-white/30' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
             />
 
             {/* Link Material */}
-            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-5 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-all" onClick={handleOpenSelector}>
-                <Database size={20} className="mx-auto mb-2 text-slate-400" />
-                <p className="font-bold text-slate-500 text-sm">{selectedHubResource ? `📎 ${selectedHubResource.name}` : 'Link Lecture Material (AI generates questions from it)'}</p>
+            <div className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all ${isExam ? 'border-white/20 hover:border-blue-400 hover:bg-white/10' : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`} onClick={handleOpenSelector}>
+                <Database size={20} className={`mx-auto mb-2 ${isExam ? 'text-white/40' : 'text-slate-400'}`} />
+                <p className={`font-bold text-sm ${isExam ? 'text-white/60' : 'text-slate-500'}`}>{selectedHubResource ? `📎 ${selectedHubResource.name}` : 'Link Lecture Material (AI generates questions from it)'}</p>
             </div>
 
             <button type="submit" disabled={isProcessing || !selectedHubResource}
