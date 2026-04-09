@@ -71,7 +71,9 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [assessQuestionsCount, setAssessQuestionsCount] = useState('20');
     const [assessBatchSize, setAssessBatchSize] = useState('10');
     const [assessStartDate, setAssessStartDate] = useState('');
+    const [assessStartTime, setAssessStartTime] = useState('08:00');
     const [assessEndDate, setAssessEndDate] = useState('');
+    const [assessEndTime, setAssessEndTime] = useState('18:00');
     const [assessInstructions, setAssessInstructions] = useState('');
     const [assessSlots, setAssessSlots] = useState<any[]>([]);
     const [viewingSlotsFor, setViewingSlotsFor] = useState<number | null>(null);
@@ -211,8 +213,8 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 duration: parseInt(assessDuration) || 60,
                 type: mode === 'exams' ? 'exam' : mode === 'assignments' ? 'assignment' : 'test',
                 category_id: assessCategoryId ? parseInt(assessCategoryId) : null,
-                start_date: assessStartDate || null,
-                end_date: assessEndDate || null,
+                start_date: assessStartDate ? `${assessStartDate}T${assessStartTime || '08:00'}` : null,
+                end_date: assessEndDate ? `${assessEndDate}T${assessEndTime || '18:00'}` : null,
                 timer_mode: assessTimerMode,
                 questions_count: parseInt(assessQuestionsCount) || 20,
                 batch_size: parseInt(assessBatchSize) || 10,
@@ -238,7 +240,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             if (res.ok) {
                 addToast(data.message || 'Assessment created successfully', 'success');
                 fetchRecords();
-                setAssessTitle(''); setAssessCategoryId(''); setAssessStartDate(''); setAssessEndDate('');
+                setAssessTitle(''); setAssessCategoryId(''); setAssessStartDate(''); setAssessStartTime('08:00'); setAssessEndDate(''); setAssessEndTime('18:00');
                 setAssessInstructions(''); setAssessDuration('60'); setAssessQuestionsCount('20');
                 setAssessBatchSize('10'); setAssessTimerMode('whole'); setSelectedHubResource(null);
                 setAssessDueDate(''); setAssessSubmType('file'); setAssessAllowLate(false);
@@ -713,14 +715,18 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 <p className={`text-[10px] mb-3 ${isExam ? 'text-white/50' : 'text-slate-500'}`}>Set a date range. The system will auto-split students into slots across this window and notify each student of their exact time.</p>
                 <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>Start Date & Time</label>
-                        <input type="datetime-local" value={assessStartDate} onChange={e => setAssessStartDate(e.target.value)}
+                        <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>Start Date</label>
+                        <input type="date" value={assessStartDate} onChange={e => setAssessStartDate(e.target.value)}
                             className={`w-full mt-1 px-4 py-3 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
+                        <input type="time" value={assessStartTime} onChange={e => setAssessStartTime(e.target.value)}
+                            className={`w-full mt-1 px-4 py-2 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
                     </div>
                     <div>
-                        <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>End Date & Time</label>
-                        <input type="datetime-local" value={assessEndDate} onChange={e => setAssessEndDate(e.target.value)}
+                        <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>End Date</label>
+                        <input type="date" value={assessEndDate} onChange={e => setAssessEndDate(e.target.value)}
                             className={`w-full mt-1 px-4 py-3 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
+                        <input type="time" value={assessEndTime} onChange={e => setAssessEndTime(e.target.value)}
+                            className={`w-full mt-1 px-4 py-2 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
                     </div>
                 </div>
 
