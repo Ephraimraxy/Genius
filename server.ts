@@ -803,6 +803,46 @@ async function bootstrapDB() {
       ALTER TABLE exams ADD COLUMN IF NOT EXISTS submission_type TEXT DEFAULT 'mcq';
       ALTER TABLE exams ADD COLUMN IF NOT EXISTS due_date TIMESTAMP;
       ALTER TABLE exams ADD COLUMN IF NOT EXISTS allow_late BOOLEAN DEFAULT FALSE;
+
+      -- GAP 2/12: AI generation metadata
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS material_id INTEGER;
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS difficulty TEXT DEFAULT 'medium';
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS blooms_level TEXT DEFAULT 'mixed';
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS ai_generated BOOLEAN DEFAULT FALSE;
+
+      -- GAP 7: Retake policy
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 1;
+
+      -- GAP 4: Question pool support
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS is_pool BOOLEAN DEFAULT FALSE;
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS pool_size INTEGER DEFAULT 0;
+
+      -- GAP 1: Per-student question salting stored in exam_slots
+      ALTER TABLE exam_slots ADD COLUMN IF NOT EXISTS question_order JSONB;
+      ALTER TABLE exam_slots ADD COLUMN IF NOT EXISTS option_orders JSONB;
+
+      -- GAP 3: Individual answer storage
+      CREATE TABLE IF NOT EXISTS exam_answers (
+        id SERIAL PRIMARY KEY,
+        exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+        tenant_id INTEGER REFERENCES tenants(id),
+        student_id INTEGER REFERENCES users(id),
+        question_id INTEGER REFERENCES questions(id) ON DELETE CASCADE,
+        submitted_answer TEXT,
+        correct_answer TEXT,
+        is_correct BOOLEAN DEFAULT FALSE,
+        points_earned INTEGER DEFAULT 0,
+        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- GAP 6: result_details column on exam_results for grade letter + totals
+      ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS grade TEXT;
+      ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS total_earned INTEGER DEFAULT 0;
+      ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS total_possible INTEGER DEFAULT 0;
+      ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS attempt_number INTEGER DEFAULT 1;
+
+      -- GAP 10: graded_at timestamp on assignment_submissions
+      ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS graded_at TIMESTAMP;
     `);
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS payment_events_event_key_idx ON payment_events(event_key);`);
     console.log('--- DATABASE BOOTSTRAP SUCCESSFUL ---');
@@ -9635,24 +9675,153 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
   }
 });
 
+// ─── Helper: AI question generation ─────────────────────────────────
+async function generateQuestionsFromMaterial(
+  materialText: string,
+  count: number,
+  difficulty: string,
+  bloomsLevel: string,
+  isPool: boolean,
+  poolSize: number
+): Promise<Array<{ text: string; options: string[]; correct_answer: string; points: number }>> {
+  const totalToGenerate = isPool ? Math.max(poolSize, count * 2) : count;
+  const difficultyMap: Record<string, string> = {
+    easy: 'straightforward recall and basic comprehension',
+    medium: 'moderate analysis and application of concepts',
+    hard: 'deep critical thinking, synthesis, and evaluation'
+  };
+  const bloomsMap: Record<string, string> = {
+    remember: 'factual recall (definitions, terms, dates)',
+    understand: 'paraphrasing, summarising, classifying concepts',
+    apply: 'using knowledge in new situations, solving problems',
+    analyze: 'breaking down ideas, comparing, distinguishing',
+    evaluate: 'making judgements, critiquing, justifying decisions',
+    create: 'combining ideas, proposing solutions, designing',
+    mixed: 'a balanced mix of recall, comprehension, application, and analysis'
+  };
+  const diffDesc = difficultyMap[difficulty] || difficultyMap.medium;
+  const bloomsDesc = bloomsMap[bloomsLevel] || bloomsMap.mixed;
+
+  const prompt = `You are an expert academic question setter. Generate exactly ${totalToGenerate} high-quality multiple-choice questions from the study material below.
+
+REQUIREMENTS:
+- Difficulty: ${diffDesc}
+- Cognitive level (Bloom's Taxonomy): ${bloomsDesc}
+- Each question must have exactly 4 options (A, B, C, D)
+- Only ONE option is correct per question
+- The correct answer must be the EXACT text of the correct option
+- Questions must be directly based on the provided material — no general knowledge
+- Vary question styles: some should be scenario-based, some definition-based, some application-based
+- Do NOT number the options with A/B/C/D — just provide the plain text
+
+OUTPUT FORMAT (JSON array only, no markdown, no explanation):
+[
+  {
+    "text": "Question text here?",
+    "options": ["Option 1 text", "Option 2 text", "Option 3 text", "Option 4 text"],
+    "correct_answer": "Option 1 text",
+    "points": 10
+  }
+]
+
+STUDY MATERIAL:
+${materialText.slice(0, 12000)}`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7,
+    max_tokens: 4000,
+    response_format: { type: 'json_object' }
+  });
+
+  const raw = completion.choices[0]?.message?.content || '{}';
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Try to extract JSON array from the text
+    const match = raw.match(/\[[\s\S]*\]/);
+    parsed = match ? JSON.parse(match[0]) : [];
+  }
+
+  const questions = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.questions) ? parsed.questions : []);
+  return questions.filter((q: any) => q.text && Array.isArray(q.options) && q.options.length >= 2 && q.correct_answer);
+}
+
 // Lecturer: Create Exam/Test with scheduling
 app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const {
       title, description, duration, type, category_id,
-      start_date, end_date, timer_mode, questions_count, batch_size, instructions
+      start_date, end_date, timer_mode, questions_count, batch_size, instructions,
+      material_id, difficulty, blooms_level, max_attempts, is_pool, pool_size,
+      submission_type, due_date, allow_late
     } = req.body;
+
+    const isPool = !!is_pool;
+    const poolSz = parseInt(pool_size) || 0;
+    const qCount = parseInt(questions_count) || 20;
 
     const result = await pool.query(
       `INSERT INTO exams (tenant_id, title, description, duration, type, category_id,
-        start_date, end_date, timer_mode, questions_count, batch_size, instructions)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-      [req.tenant_id, title, description, duration || 60, type, category_id || null,
+        start_date, end_date, timer_mode, questions_count, batch_size, instructions,
+        material_id, difficulty, blooms_level, ai_generated, max_attempts, is_pool, pool_size,
+        submission_type, due_date, allow_late)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id`,
+      [req.tenant_id, title, description, duration || 60, type || 'test', category_id || null,
        start_date || null, end_date || null, timer_mode || 'whole',
-       questions_count || 20, batch_size || 10, instructions || null]
+       qCount, batch_size || 10, instructions || null,
+       material_id || null, difficulty || 'medium', blooms_level || 'mixed',
+       !!material_id, parseInt(max_attempts) || 1, isPool, poolSz,
+       submission_type || 'mcq', due_date || null, !!allow_late]
     );
     const examId = result.rows[0].id;
+
+    // ── GAP 2: AI Question Generation ───────────────────────────────────
+    if (material_id && type !== 'assignment') {
+      try {
+        const matRes = await pool.query(
+          'SELECT content FROM resources WHERE id = $1 AND tenant_id = $2',
+          [material_id, req.tenant_id]
+        );
+        if (matRes.rows.length > 0) {
+          const c = matRes.rows[0].content;
+          let materialText = '';
+          if (typeof c === 'string') {
+            materialText = c;
+          } else if (c && typeof c === 'object') {
+            const raw = c.text ?? c.content ?? c.body ?? JSON.stringify(c);
+            materialText = typeof raw === 'string' ? raw : String(raw);
+          }
+          materialText = materialText.replace(/\0/g, '').trim();
+
+          if (materialText.length > 100) {
+            const aiQuestions = await generateQuestionsFromMaterial(
+              materialText, qCount,
+              difficulty || 'medium',
+              blooms_level || 'mixed',
+              isPool, poolSz
+            );
+
+            if (aiQuestions.length > 0) {
+              for (const q of aiQuestions) {
+                await pool.query(
+                  `INSERT INTO questions (exam_id, text, options, correct_answer, type, points)
+                   VALUES ($1,$2,$3,$4,'static',$5)`,
+                  [examId, q.text, JSON.stringify(q.options), q.correct_answer, q.points || 10]
+                );
+              }
+              console.log(`[AI] Generated ${aiQuestions.length} questions for exam ${examId}`);
+            }
+          }
+        }
+      } catch (aiErr: any) {
+        console.error('[AI Question Gen] Failed:', aiErr.message);
+        // Non-fatal — exam is created, questions will be empty
+      }
+    }
 
     // ── Scheduling: if a time window + category provided, assign student slots ──
     if (start_date && end_date && category_id) {
@@ -9838,15 +10007,54 @@ app.get('/api/assignments/:id/submissions', authenticateToken, async (req: any, 
   }
 });
 
-// Lecturer: Grade a submission
+// Lecturer: Grade a submission + GAP 10: notify student via email
 app.put('/api/assignments/submissions/:subId/grade', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { grade, feedback } = req.body;
     await pool.query(
-      'UPDATE assignment_submissions SET grade = $1, feedback = $2 WHERE id = $3 AND tenant_id = $4',
+      'UPDATE assignment_submissions SET grade = $1, feedback = $2, graded_at = NOW() WHERE id = $3 AND tenant_id = $4',
       [grade, feedback, req.params.subId, req.tenant_id]
     );
+
+    // GAP 10: fetch submission details and email the student
+    const subRes = await pool.query(
+      `SELECT s.student_email, s.student_name, e.title as assignment_title
+       FROM assignment_submissions s
+       LEFT JOIN exams e ON e.id = s.exam_id
+       WHERE s.id = $1 AND s.tenant_id = $2`,
+      [req.params.subId, req.tenant_id]
+    );
+    if (subRes.rows.length > 0) {
+      const { student_email, student_name, assignment_title } = subRes.rows[0];
+      if (student_email) {
+        sendResendEmail({
+          to: student_email,
+          subject: `📝 Your Assignment Has Been Graded — ${assignment_title}`,
+          html: `
+<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;color:#1a202c;line-height:1.7;">
+  <div style="border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <div style="padding:24px 32px;background:linear-gradient(135deg,#f0fdf4 0%,#fff 70%);border-bottom:3px solid #16a34a;">
+      <h2 style="margin:0;color:#15803d;font-size:20px;">📝 Assignment Graded</h2>
+      <p style="margin:4px 0 0;color:#64748b;font-size:13px;">${assignment_title}</p>
+    </div>
+    <div style="padding:28px 32px;">
+      <p>Dear <strong>${student_name}</strong>,</p>
+      <p>Your lecturer has graded your submission for <strong>${assignment_title}</strong>.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8fafc;border-radius:8px;overflow:hidden;">
+        <tr><td style="padding:12px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;width:40%;">Grade / Score</td>
+            <td style="padding:12px 16px;font-weight:bold;font-size:18px;color:#15803d;">${grade}</td></tr>
+        ${feedback ? `<tr style="background:#f1f5f9;"><td style="padding:12px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;vertical-align:top;">Lecturer Feedback</td>
+            <td style="padding:12px 16px;color:#374151;">${feedback}</td></tr>` : ''}
+      </table>
+      <p style="color:#64748b;font-size:12px;margin-top:24px;">Log in to your portal to view your full submission and grade history.</p>
+    </div>
+  </div>
+</div>`
+        }).catch((e: any) => console.error('[Grade Email]', e.message));
+      }
+    }
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to grade submission' });
@@ -10206,14 +10414,16 @@ app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
       }
     }
 
-    // Prevent retaking already-completed exams
+    // GAP 7: Check attempt count vs max_attempts before allowing entry
     if (req.user.role === 'student') {
-      const alreadyDone = await pool.query(
-        'SELECT id FROM exam_results WHERE user_id = $1 AND exam_id = $2 LIMIT 1',
+      const maxAttempts = parseInt(exam.max_attempts) || 1;
+      const attemptsRes = await pool.query(
+        'SELECT COUNT(*) as cnt FROM exam_results WHERE user_id = $1 AND exam_id = $2',
         [req.user.id, id]
       );
-      if (alreadyDone.rows.length > 0) {
-        return res.status(409).json({ error: 'You have already submitted this assessment.' });
+      const attemptsSoFar = parseInt(attemptsRes.rows[0].cnt) || 0;
+      if (attemptsSoFar >= maxAttempts) {
+        return res.status(409).json({ error: `You have used all ${maxAttempts} attempt(s) for this assessment.` });
       }
 
       // Enforce slot window if slots exist for this exam
@@ -10242,33 +10452,110 @@ app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
       }
     }
 
-    const questionsResult = await pool.query('SELECT id, text, options, type, formula, points FROM questions WHERE exam_id = $1', [id]);
-    res.json({ exam, questions: questionsResult.rows });
+    // ── GAP 4 + GAP 1: Pool draw + per-student question/option salting ──
+    const allQuestionsResult = await pool.query(
+      'SELECT id, text, options, type, formula, points FROM questions WHERE exam_id = $1',
+      [id]
+    );
+    let questionPool = allQuestionsResult.rows;
+
+    if (req.user.role === 'student') {
+      // Fetch or generate per-student shuffle stored in exam_slots
+      const slotRow = await pool.query(
+        'SELECT question_order, option_orders FROM exam_slots WHERE exam_id = $1 AND student_id = $2 LIMIT 1',
+        [id, req.user.id]
+      );
+
+      let questionOrder: number[] | null = slotRow.rows[0]?.question_order ?? null;
+      let optionOrders: Record<number, number[]> | null = slotRow.rows[0]?.option_orders ?? null;
+
+      if (!questionOrder || !optionOrders) {
+        // GAP 4: If pool exam, draw questions_count from the pool
+        let selectedPool = [...questionPool];
+        if (exam.is_pool && exam.questions_count && selectedPool.length > exam.questions_count) {
+          // Fisher-Yates to pick questions_count from pool
+          for (let i = selectedPool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [selectedPool[i], selectedPool[j]] = [selectedPool[j], selectedPool[i]];
+          }
+          selectedPool = selectedPool.slice(0, exam.questions_count);
+        }
+
+        // GAP 1: Shuffle question order
+        const shuffled = [...selectedPool].sort(() => Math.random() - 0.5);
+        questionOrder = shuffled.map((q: any) => q.id);
+
+        // Shuffle options for each question individually
+        optionOrders = {};
+        for (const q of selectedPool) {
+          const opts: string[] = typeof q.options === 'string' ? JSON.parse(q.options) : (q.options || []);
+          const indices = opts.map((_: any, i: number) => i).sort(() => Math.random() - 0.5);
+          optionOrders[q.id] = indices;
+        }
+
+        // Store the shuffle in exam_slots (create slot if none exists for non-scheduled exams)
+        if (slotRow.rows.length > 0) {
+          await pool.query(
+            'UPDATE exam_slots SET question_order = $1, option_orders = $2 WHERE exam_id = $3 AND student_id = $4',
+            [JSON.stringify(questionOrder), JSON.stringify(optionOrders), id, req.user.id]
+          );
+        } else {
+          // Non-scheduled exam — store shuffle in a synthetic slot
+          await pool.query(
+            `INSERT INTO exam_slots (exam_id, tenant_id, student_id, student_email, student_name, scheduled_at, window_end, question_order, option_orders)
+             VALUES ($1,$2,$3,$4,$5,NOW(),NOW() + INTERVAL '1 day',$6,$7)
+             ON CONFLICT DO NOTHING`,
+            [id, req.tenant_id, req.user.id, req.user.email, req.user.name,
+             JSON.stringify(questionOrder), JSON.stringify(optionOrders)]
+          );
+        }
+      }
+
+      // Apply the stored shuffle to build the response
+      const questionMap = Object.fromEntries(questionPool.map((q: any) => [q.id, q]));
+      const orderedQuestions = (questionOrder as number[])
+        .filter((qid: number) => questionMap[qid])
+        .map((qid: number) => {
+          const q = { ...questionMap[qid] };
+          const rawOpts: string[] = typeof q.options === 'string' ? JSON.parse(q.options) : (q.options || []);
+          const indices: number[] = (optionOrders as Record<number, number[]>)[qid] || rawOpts.map((_: any, i: number) => i);
+          q.options = indices.map((i: number) => rawOpts[i]);
+          // correct_answer stays as-is (text match still works since we only reorder, not rename)
+          return q;
+        });
+
+      res.json({ exam, questions: orderedQuestions });
+    } else {
+      // Lecturer/admin sees original order
+      res.json({ exam, questions: questionPool });
+    }
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch exam data' });
   }
 });
 
-// ─── FIX 1: Exam submission — grade, persist, return score ──────────
+// ─── Exam submission — grade, persist answers, enforce max_attempts ──
 app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = req.params;
     const { answers, riskScore, violations } = req.body;
 
-    // Verify exam exists and belongs to tenant
     const examRes = await pool.query('SELECT * FROM exams WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
     if (examRes.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
     const exam = examRes.rows[0];
 
-    // Prevent duplicate submission
-    const duplicate = await pool.query(
-      'SELECT id FROM exam_results WHERE user_id = $1 AND exam_id = $2 LIMIT 1',
+    // GAP 7: Max attempts check
+    const maxAttempts = parseInt(exam.max_attempts) || 1;
+    const attemptsRes = await pool.query(
+      'SELECT COUNT(*) as cnt FROM exam_results WHERE user_id = $1 AND exam_id = $2',
       [req.user.id, id]
     );
-    if (duplicate.rows.length > 0) {
-      return res.status(409).json({ error: 'You have already submitted this assessment.' });
+    const attemptsSoFar = parseInt(attemptsRes.rows[0].cnt) || 0;
+    if (attemptsSoFar >= maxAttempts) {
+      return res.status(409).json({ error: `You have used all ${maxAttempts} attempt(s) for this assessment.` });
     }
+    const attemptNumber = attemptsSoFar + 1;
 
     // Fetch all questions with correct answers and points
     const questionsRes = await pool.query(
@@ -10277,22 +10564,20 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
     );
     const questions = questionsRes.rows;
 
-    // Grade: match each submitted answer against correct_answer
+    // Grade: match each submitted answer against correct_answer (text match — salting preserves text)
     let totalEarned = 0;
     let totalPossible = 0;
     const gradedAnswers = (answers || []).map((a: any) => {
       const q = questions.find((q: any) => q.id === a.questionId);
-      if (!q) return { ...a, correct: false, points: 0 };
+      if (!q) return { ...a, correct: false, pointsEarned: 0 };
       totalPossible += Number(q.points || 10);
       const isCorrect = String(a.answer || '').trim().toLowerCase() === String(q.correct_answer || '').trim().toLowerCase();
       if (isCorrect) totalEarned += Number(q.points || 10);
-      return { ...a, correct: isCorrect, points: isCorrect ? q.points : 0 };
+      return { ...a, correct: isCorrect, correctAnswer: q.correct_answer, pointsEarned: isCorrect ? Number(q.points || 10) : 0 };
     });
 
     const scorePercent = totalPossible > 0 ? Math.round((totalEarned / totalPossible) * 100) : 0;
-    const scoreDisplay = `${scorePercent}`;
 
-    // Grade letter
     let grade = 'F';
     if (scorePercent >= 90) grade = 'A+';
     else if (scorePercent >= 80) grade = 'A';
@@ -10300,12 +10585,25 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
     else if (scorePercent >= 60) grade = 'C';
     else if (scorePercent >= 50) grade = 'D';
 
-    // Persist result
+    // Persist result with grade + totals
     await pool.query(
-      `INSERT INTO exam_results (user_id, exam_id, tenant_id, score, risk_score, violations, submitted_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [req.user.id, id, req.tenant_id, scoreDisplay, riskScore || 0, JSON.stringify(violations || [])]
+      `INSERT INTO exam_results (user_id, exam_id, tenant_id, score, grade, total_earned, total_possible, risk_score, violations, attempt_number, submitted_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+      [req.user.id, id, req.tenant_id, String(scorePercent), grade,
+       totalEarned, totalPossible, riskScore || 0, JSON.stringify(violations || []), attemptNumber]
     );
+
+    // GAP 3: Store per-question answers for review
+    for (const ga of gradedAnswers) {
+      if (!ga.questionId) continue;
+      await pool.query(
+        `INSERT INTO exam_answers (exam_id, tenant_id, student_id, question_id, submitted_answer, correct_answer, is_correct, points_earned)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [id, req.tenant_id, req.user.id, ga.questionId,
+         ga.answer || '', ga.correctAnswer || '', !!ga.correct, ga.pointsEarned || 0]
+      );
+    }
+
     // Mark slot as completed
     await pool.query(
       `UPDATE exam_slots SET status = 'completed', submitted_at = NOW() WHERE exam_id = $1 AND student_id = $2`,
@@ -10319,6 +10617,8 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
       grade,
       totalEarned,
       totalPossible,
+      attemptNumber,
+      attemptsRemaining: maxAttempts - attemptNumber,
       examTitle: exam.title
     });
   } catch (error: any) {
@@ -10326,6 +10626,71 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
     res.status(500).json({ error: 'Failed to submit exam. Please try again.' });
   }
 });
+
+// ─── GAP 6: Lecturer — view all results for an exam ─────────────────
+app.get('/api/exams/:id/results', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const results = await pool.query(
+      `SELECT er.id, er.user_id, u.name as student_name, u.email as student_email,
+              er.score, er.grade, er.total_earned, er.total_possible,
+              er.risk_score, er.violations, er.attempt_number, er.submitted_at
+       FROM exam_results er
+       LEFT JOIN users u ON u.id = er.user_id
+       WHERE er.exam_id = $1 AND er.tenant_id = $2
+       ORDER BY er.submitted_at DESC`,
+      [req.params.id, req.tenant_id]
+    );
+    res.json(results.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GAP 6: Lecturer — view per-question answers for a student ───────
+app.get('/api/exams/:id/answers/:studentId', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const rows = await pool.query(
+      `SELECT ea.question_id, q.text as question_text, ea.submitted_answer,
+              ea.correct_answer, ea.is_correct, ea.points_earned, q.points as max_points
+       FROM exam_answers ea
+       LEFT JOIN questions q ON q.id = ea.question_id
+       WHERE ea.exam_id = $1 AND ea.student_id = $2 AND ea.tenant_id = $3
+       ORDER BY ea.id`,
+      [req.params.id, req.params.studentId, req.tenant_id]
+    );
+    res.json(rows.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GAP 7: Lecturer — clear a student's result to allow retake ──────
+app.delete('/api/exams/:id/results/:studentId', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    await pool.query(
+      'DELETE FROM exam_results WHERE exam_id = $1 AND user_id = $2 AND tenant_id = $3',
+      [req.params.id, req.params.studentId, req.tenant_id]
+    );
+    await pool.query(
+      'DELETE FROM exam_answers WHERE exam_id = $1 AND student_id = $2 AND tenant_id = $3',
+      [req.params.id, req.params.studentId, req.tenant_id]
+    );
+    await pool.query(
+      `UPDATE exam_slots SET status = 'pending', submitted_at = NULL, question_order = NULL, option_orders = NULL
+       WHERE exam_id = $1 AND student_id = $2`,
+      [req.params.id, req.params.studentId]
+    );
+    res.json({ success: true, message: 'Result cleared — student may retake.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GAP 8: Attendance — mark present with optional payment gate ──────
+// (existing endpoint is handled below in attendance section)
 
 // ─── SaaS MONETIZATION & SUBSCRIPTIONS ─────────────────────────────
 // Super Admin: Pricing Configuration

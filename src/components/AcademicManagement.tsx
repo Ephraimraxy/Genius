@@ -86,6 +86,20 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [gradeInput, setGradeInput] = useState('');
     const [feedbackInput, setFeedbackInput] = useState('');
 
+    // GAP 2/12: AI generation settings
+    const [assessDifficulty, setAssessDifficulty] = useState<'easy'|'medium'|'hard'>('medium');
+    const [assessBlooms, setAssessBlooms] = useState('mixed');
+    // GAP 7: Max attempts
+    const [assessMaxAttempts, setAssessMaxAttempts] = useState('1');
+    // GAP 4: Pool mode
+    const [assessIsPool, setAssessIsPool] = useState(false);
+    const [assessPoolSize, setAssessPoolSize] = useState('40');
+    // GAP 6: Results modal
+    const [viewingResultsFor, setViewingResultsFor] = useState<number | null>(null);
+    const [examResults, setExamResults] = useState<any[]>([]);
+    const [viewingAnswersFor, setViewingAnswersFor] = useState<{examId: number; studentId: number; name: string} | null>(null);
+    const [studentAnswers, setStudentAnswers] = useState<any[]>([]);
+
     // Attendance session state
     const [attendSessions, setAttendSessions] = useState<any[]>([]);
     const [attendTitle, setAttendTitle] = useState('');
@@ -202,7 +216,12 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 material_id: selectedHubResource?.id || null,
                 due_date: assessDueDate || null,
                 submission_type: assessSubmType,
-                allow_late: assessAllowLate
+                allow_late: assessAllowLate,
+                difficulty: assessDifficulty,
+                blooms_level: assessBlooms,
+                max_attempts: parseInt(assessMaxAttempts) || 1,
+                is_pool: assessIsPool,
+                pool_size: assessIsPool ? parseInt(assessPoolSize) || 40 : 0
             };
 
             const res = await fetch('/api/exams', {
@@ -219,6 +238,8 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 setAssessInstructions(''); setAssessDuration('60'); setAssessQuestionsCount('20');
                 setAssessBatchSize('10'); setAssessTimerMode('whole'); setSelectedHubResource(null);
                 setAssessDueDate(''); setAssessSubmType('file'); setAssessAllowLate(false);
+                setAssessDifficulty('medium'); setAssessBlooms('mixed'); setAssessMaxAttempts('1');
+                setAssessIsPool(false); setAssessPoolSize('40');
             } else {
                 addToast(data.error || 'Failed to create assessment', 'error');
             }
@@ -337,6 +358,34 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         } catch { addToast('Grade failed', 'error'); }
     };
 
+    // GAP 6: Load exam results for lecturer
+    const loadExamResults = async (examId: number) => {
+        setViewingResultsFor(examId);
+        try {
+            const res = await fetch(`/api/exams/${examId}/results`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            setExamResults(Array.isArray(data) ? data : []);
+        } catch { addToast('Failed to load results', 'error'); }
+    };
+
+    const loadStudentAnswers = async (examId: number, studentId: number, name: string) => {
+        setViewingAnswersFor({ examId, studentId, name });
+        try {
+            const res = await fetch(`/api/exams/${examId}/answers/${studentId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            setStudentAnswers(Array.isArray(data) ? data : []);
+        } catch { addToast('Failed to load answers', 'error'); }
+    };
+
+    const clearStudentResult = async (examId: number, studentId: number) => {
+        if (!window.confirm('Clear this student\'s result? They will be able to retake.')) return;
+        try {
+            await fetch(`/api/exams/${examId}/results/${studentId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+            addToast('Result cleared', 'success');
+            loadExamResults(examId);
+        } catch { addToast('Failed to clear result', 'error'); }
+    };
+
     useEffect(() => {
         if (mode === 'attendance') fetchAttendSessions();
     }, [mode]);
@@ -411,6 +460,13 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${r.published_status === 'published' ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-white'}`}>
                 {r.published_status === 'published' ? '● Live' : '○ Draft'}
             </button>
+            {/* GAP 6: Results button — only for tests/exams (not assignments) */}
+            {r.type !== 'assignment' && (
+                <button onClick={() => loadExamResults(r.id)}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all">
+                    📊 Results
+                </button>
+            )}
             <button onClick={() => deleteRecord(r.id)}
                 className="ml-auto p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all">
                 <Trash2 size={14} />
@@ -652,15 +708,67 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 className={`w-full px-5 py-3.5 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-400 resize-none border ${isExam ? 'bg-white/10 border-white/20 text-white placeholder:text-white/30' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
             />
 
+            {/* AI Settings — Difficulty + Bloom's + Max Attempts + Pool Mode */}
+            <div className="p-4 rounded-2xl border bg-slate-50 border-slate-200 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">🤖 AI Question Settings</p>
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Difficulty</label>
+                        <select value={assessDifficulty} onChange={e => setAssessDifficulty(e.target.value as any)}
+                            className="w-full mt-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-sm text-slate-700 focus:outline-none focus:border-blue-400">
+                            <option value="easy">Easy — Recall & Recognition</option>
+                            <option value="medium">Medium — Application & Analysis</option>
+                            <option value="hard">Hard — Critical Thinking & Synthesis</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Bloom's Taxonomy Focus</label>
+                        <select value={assessBlooms} onChange={e => setAssessBlooms(e.target.value)}
+                            className="w-full mt-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-sm text-slate-700 focus:outline-none focus:border-blue-400">
+                            <option value="mixed">Mixed (Balanced)</option>
+                            <option value="remember">Remember — Facts & Definitions</option>
+                            <option value="understand">Understand — Concepts & Ideas</option>
+                            <option value="apply">Apply — Solve Problems</option>
+                            <option value="analyze">Analyze — Break Down & Compare</option>
+                            <option value="evaluate">Evaluate — Justify & Critique</option>
+                            <option value="create">Create — Design & Propose</option>
+                        </select>
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Max Attempts Per Student</label>
+                        <input type="number" min="1" max="5" value={assessMaxAttempts} onChange={e => setAssessMaxAttempts(e.target.value)}
+                            className="w-full mt-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Question Pool Mode</label>
+                        <div className="mt-1 flex items-center gap-3">
+                            <button type="button" onClick={() => setAssessIsPool(p => !p)}
+                                className={`px-3 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${assessIsPool ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                {assessIsPool ? '🎲 Pool ON' : '🎲 Pool OFF'}
+                            </button>
+                            {assessIsPool && (
+                                <input type="number" min="20" value={assessPoolSize} onChange={e => setAssessPoolSize(e.target.value)}
+                                    placeholder="Pool size (e.g. 60)"
+                                    className="flex-1 px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400" />
+                            )}
+                        </div>
+                        {assessIsPool && <p className="text-[9px] text-slate-400 mt-1 ml-1">AI generates this many, each student draws {assessQuestionsCount} randomly</p>}
+                    </div>
+                </div>
+            </div>
+
             {/* Link Material */}
-            <div className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all ${isExam ? 'border-white/20 hover:border-blue-400 hover:bg-white/10' : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`} onClick={handleOpenSelector}>
-                <Database size={20} className={`mx-auto mb-2 ${isExam ? 'text-white/40' : 'text-slate-400'}`} />
-                <p className={`font-bold text-sm ${isExam ? 'text-white/60' : 'text-slate-500'}`}>{selectedHubResource ? `📎 ${selectedHubResource.name}` : 'Link Lecture Material (AI generates questions from it)'}</p>
+            <div className="border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all border-slate-200 hover:border-blue-300 hover:bg-blue-50" onClick={handleOpenSelector}>
+                <Database size={20} className="mx-auto mb-2 text-slate-400" />
+                <p className="font-bold text-sm text-slate-500">{selectedHubResource ? `📎 ${selectedHubResource.name}` : 'Link Lecture Material (AI generates questions from it)'}</p>
+                <p className="text-[10px] text-slate-400 mt-1">AI reads this material and generates all questions automatically</p>
             </div>
 
             <button type="submit" disabled={isProcessing || !selectedHubResource}
                 className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-4 rounded-2xl disabled:opacity-40 transition-all shadow-xl">
-                {isProcessing ? '⚙️ Creating & Notifying Students...' : `🚀 Create ${isExam ? 'Examination' : 'Test'} & Schedule`}
+                {isProcessing ? '⚙️ AI Generating Questions & Notifying Students...' : `🚀 Create ${isExam ? 'Examination' : 'Test'} & Schedule`}
             </button>
         </form>
     );
@@ -716,6 +824,86 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                     ))}
                 </div>
             </div>
+
+            {/* GAP 6: Results modal */}
+            <AnimatePresence>
+                {viewingResultsFor !== null && !viewingAnswersFor && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onClick={() => setViewingResultsFor(null)}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl relative z-10 overflow-hidden max-h-[85vh] flex flex-col">
+                            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                                <h3 className="font-black text-slate-900">📊 Student Results</h3>
+                                <button onClick={() => setViewingResultsFor(null)} className="text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+                            </div>
+                            <div className="overflow-y-auto p-6 space-y-3">
+                                {examResults.length === 0 && <p className="text-center text-slate-400 py-8">No submissions yet.</p>}
+                                {examResults.map((r, i) => (
+                                    <div key={i} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-slate-900 text-sm truncate">{r.student_name}</p>
+                                            <p className="text-[10px] text-slate-400 truncate">{r.student_email}</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="font-black text-lg text-slate-900">{r.score}%</p>
+                                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${r.grade === 'A+' || r.grade === 'A' ? 'bg-emerald-100 text-emerald-700' : r.grade === 'B' ? 'bg-blue-100 text-blue-700' : r.grade === 'C' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>{r.grade}</span>
+                                        </div>
+                                        <div className="text-center hidden sm:block">
+                                            <p className="text-xs text-slate-500">{r.total_earned}/{r.total_possible} pts</p>
+                                            {r.risk_score > 0 && <p className="text-[10px] text-rose-500 font-bold">⚠️ Risk: {r.risk_score}</p>}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => loadStudentAnswers(viewingResultsFor!, r.user_id, r.student_name)}
+                                                className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase hover:bg-blue-100 transition-all">
+                                                Review
+                                            </button>
+                                            <button onClick={() => clearStudentResult(viewingResultsFor!, r.user_id)}
+                                                className="px-3 py-1.5 bg-rose-50 text-rose-500 rounded-lg text-[10px] font-black uppercase hover:bg-rose-100 transition-all">
+                                                Clear
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Student answer review modal */}
+            <AnimatePresence>
+                {viewingAnswersFor !== null && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onClick={() => setViewingAnswersFor(null)}
+                            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl relative z-10 overflow-hidden max-h-[85vh] flex flex-col">
+                            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                                <div>
+                                    <h3 className="font-black text-slate-900">Answer Review — {viewingAnswersFor.name}</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">{studentAnswers.filter(a => a.is_correct).length}/{studentAnswers.length} correct</p>
+                                </div>
+                                <button onClick={() => setViewingAnswersFor(null)} className="text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+                            </div>
+                            <div className="overflow-y-auto p-6 space-y-4">
+                                {studentAnswers.map((a, i) => (
+                                    <div key={i} className={`p-4 rounded-2xl border ${a.is_correct ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'}`}>
+                                        <p className="font-bold text-slate-900 text-sm mb-2">Q{i + 1}: {a.question_text}</p>
+                                        <div className="flex flex-col gap-1 text-xs">
+                                            <p><span className="font-black text-slate-500 uppercase">Student answered:</span> <span className={a.is_correct ? 'text-emerald-700 font-bold' : 'text-rose-600 font-bold'}>{a.submitted_answer || '(No answer)'}</span></p>
+                                            {!a.is_correct && <p><span className="font-black text-slate-500 uppercase">Correct answer:</span> <span className="text-emerald-700 font-bold">{a.correct_answer}</span></p>}
+                                            <p className="text-slate-400">{a.is_correct ? `+${a.points_earned} pts` : `0 / ${a.max_points} pts`}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             {/* Slots viewer modal */}
             <AnimatePresence>

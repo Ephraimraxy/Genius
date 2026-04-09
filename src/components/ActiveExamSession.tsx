@@ -15,12 +15,17 @@ interface ActiveExamSessionProps {
 }
 
 export default function ActiveExamSession({ examId, courseName, matricNumber, addToast, onExamSubmit, token, confirm }: ActiveExamSessionProps) {
-    const [timeLeft, setTimeLeft] = useState(3600); // 60 mins in seconds
+    const [timeLeft, setTimeLeft] = useState(3600);
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [answers, setAnswers] = useState<Record<number, string>>({});
     const [warningCount, setWarningCount] = useState(0);
     const [submitting, setSubmitting] = useState(false);
     const [shuffledQuestions, setShuffledQuestions] = useState<any[]>([]);
+    // Per-question timer (GAP 11)
+    const [timerMode, setTimerMode] = useState<'whole' | 'per_question'>('whole');
+    const [perQuestionTime, setPerQuestionTime] = useState(60); // seconds per question
+    const [questionTimeLeft, setQuestionTimeLeft] = useState(60);
+    const perQuestionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     
     // --- Advanced Security States ---
     const [riskScore, setRiskScore] = useState(0);
@@ -51,24 +56,35 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
                 }
 
                 const exam = data.exam || {};
-                const questions = exam.questions || data.questions || [];
+                const questions = data.questions || exam.questions || [];
 
-                if (data.success && exam) {
+                if (questions.length > 0) {
+                    // Server already shuffled questions + options per student (GAP 1)
+                    // Just parse options if they came as a JSON string
                     const processed = questions.map((q: any) => {
-                        // Ensure options are handled (the API returns JSON array)
-                        const rawOptions = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
-                        const shuffled = [...rawOptions].sort(() => Math.random() - 0.5);
-                        
+                        const rawOptions = typeof q.options === 'string' ? JSON.parse(q.options) : (q.options || []);
                         return {
                             id: q.id,
                             text: q.question_text || q.text,
-                            options: shuffled,
-                            correct: q.correct_answer // Hidden from frontend mostly
+                            options: rawOptions,
+                            correct: q.correct_answer,
+                            points: q.points || 10
                         };
-                    }).sort(() => Math.random() - 0.5);
+                    });
 
                     setShuffledQuestions(processed);
-                    if (exam.duration) setTimeLeft(exam.duration * 60);
+
+                    // Set timer based on timer_mode (GAP 11)
+                    const mode = exam.timer_mode || 'whole';
+                    setTimerMode(mode as 'whole' | 'per_question');
+                    if (mode === 'per_question') {
+                        const pqt = parseInt(exam.duration) || 60; // duration = seconds per question in per_question mode
+                        setPerQuestionTime(pqt);
+                        setQuestionTimeLeft(pqt);
+                        setTimeLeft(pqt * processed.length); // total time budget display
+                    } else {
+                        if (exam.duration) setTimeLeft(exam.duration * 60);
+                    }
                 } else {
                     addToast("Failed to load exam questions.", "error");
                 }
@@ -93,12 +109,9 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
             document.exitFullscreen().catch(err => console.error(err));
         }
 
-        // Calculate current score & submit to API
-        let score = 0;
+        // Build submission payload — answers keyed by index, server grades by text match
         const submissionPayload: any[] = [];
         shuffledQuestions.forEach((q, index) => {
-            const isCorrect = answers[index] === q.correct;
-            if (isCorrect) score += 10;
             submissionPayload.push({
                 questionId: q.id,
                 answer: answers[index] || ''
@@ -124,7 +137,7 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
         submitToApi();
         
         setTimeout(() => {
-            onExamSubmit(`${score}/${shuffledQuestions.length * 10}`, reason);
+            onExamSubmit('submitted', reason);
         }, 3000);
     }, [answers, shuffledQuestions, submitting, addToast, onExamSubmit]);
 
@@ -293,7 +306,7 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
         // Start AV
         startAVMonitoring();
 
-        // Timer
+        // Whole-exam countdown timer (only used when timer_mode = 'whole')
         const timerObj = setInterval(() => {
             setTimeLeft(prev => {
                 if (prev <= 1) {
@@ -318,6 +331,31 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
         };
     }, [triggerAutoSubmit, handleSecurityWarning]);
 
+    // GAP 11: Per-question countdown — resets on question change, auto-advances when 0
+    useEffect(() => {
+        if (timerMode !== 'per_question' || shuffledQuestions.length === 0) return;
+        if (perQuestionTimerRef.current) clearInterval(perQuestionTimerRef.current);
+        setQuestionTimeLeft(perQuestionTime);
+        perQuestionTimerRef.current = setInterval(() => {
+            setQuestionTimeLeft(prev => {
+                if (prev <= 1) {
+                    clearInterval(perQuestionTimerRef.current!);
+                    // Auto-advance or submit on last question
+                    setCurrentQuestionIndex(idx => {
+                        if (idx >= shuffledQuestions.length - 1) {
+                            triggerAutoSubmit("Time expired on final question");
+                            return idx;
+                        }
+                        return idx + 1;
+                    });
+                    return perQuestionTime; // will be reset by the effect rerun on index change
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => { if (perQuestionTimerRef.current) clearInterval(perQuestionTimerRef.current); };
+    }, [timerMode, currentQuestionIndex, shuffledQuestions.length, perQuestionTime]);
+
     // --- UI Helpers ---
     const formatTime = (seconds: number) => {
         const h = Math.floor(seconds / 3600);
@@ -339,7 +377,8 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
             incrementRisk(12, "Abnormal lookup-pattern detected");
         }
 
-        setAnswers(prev => ({ ...prev, [currentQuestionIndex]: option.split('.')[0] }));
+        // Store full option text — server grading does text match against correct_answer
+        setAnswers(prev => ({ ...prev, [currentQuestionIndex]: option }));
         lastActivityTime.current = Date.now();
     };
     
@@ -386,9 +425,15 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
                         <Maximize2 size={16} />
                         <span className="text-[10px] xl:text-xs font-bold uppercase tracking-widest hidden lg:block">Fullscreen Lock</span>
                     </div>
-                    <div className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl font-bold font-mono tracking-widest text-sm md:text-base ${timeLeft < 300 ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-800 text-slate-300'}`}>
-                        <Clock size={18} /> {formatTime(timeLeft)}
-                    </div>
+                    {timerMode === 'per_question' ? (
+                        <div className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl font-bold font-mono tracking-widest text-sm md:text-base ${questionTimeLeft < 10 ? 'bg-rose-500 text-white animate-pulse' : questionTimeLeft < 20 ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                            <Clock size={18} /> {questionTimeLeft}s
+                        </div>
+                    ) : (
+                        <div className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl font-bold font-mono tracking-widest text-sm md:text-base ${timeLeft < 300 ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-800 text-slate-300'}`}>
+                            <Clock size={18} /> {formatTime(timeLeft)}
+                        </div>
+                    )}
                 </div>
             </header>
 
@@ -447,8 +492,7 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
 
                             <div className="space-y-4">
                                 {shuffledQuestions[currentQuestionIndex].options.map((option: string, i: number) => {
-                                const optLetter = option.split('.')[0];
-                                const isSelected = answers[currentQuestionIndex] === optLetter;
+                                const isSelected = answers[currentQuestionIndex] === option;
                                 
                                 return (
                                     <button
