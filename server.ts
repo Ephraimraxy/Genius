@@ -2238,7 +2238,7 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
       fixed = fixed.replace(/<p(?![^>]*class="reference")([^>]*)>/gi, '<p class="reference"$1>');
       fixed = fixed.replace(
         /<p(?:[^>]*class="reference"[^>]*)>/gi,
-        '<p class="reference" style="margin:0 0 3px 0;padding-left:2em;text-indent:-2em;line-height:1.35;text-align:left;">'
+        '<p class="reference" style="margin:0 0 3px 0;padding-left:2.8em;text-indent:-2.8em;line-height:1.35;text-align:left;">'
       );
       return open + fixed + close;
     }
@@ -2249,7 +2249,7 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     (_m: string, heading: string, body: string) => {
       const tightBody = body.replace(
         /<p([^>]*)>/gi,
-        '<p$1 style="margin:0 0 3px 0;padding-left:2em;text-indent:-2em;line-height:1.35;text-align:left;">'
+        '<p$1 style="margin:0 0 3px 0;padding-left:2.8em;text-indent:-2.8em;line-height:1.35;text-align:left;">'
       );
       return heading + tightBody;
     }
@@ -2343,8 +2343,8 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
         ul.references li {
           margin-top: 0 !important;
           margin-bottom: 3px !important;
-          padding-left: 2em !important;
-          text-indent: -2em !important;
+          padding-left: 2.8em !important;
+          text-indent: -2.8em !important;
           line-height: 1.35 !important;
           text-align: left !important;
           text-align-last: left !important;
@@ -4973,7 +4973,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           14. PAGE DISCIPLINE: The source manuscript is approximately ${targetPageCount} pages. Keep the formatted result very close to that length. Avoid compressing the paper to an unrealistically short output and avoid inflating it with unnecessary spacing or repeated headings.
           15. REFERENCES FORMATTING (NON-NEGOTIABLE): The References section MUST be formatted as a compact, single-spaced list. Each reference entry is ONE paragraph tag: <p class="reference">...</p>. Rules:
               a. NO blank lines or extra margin between individual reference entries. They flow one immediately after another.
-              b. Use a hanging indent: padding-left:2em; text-indent:-2em; on each <p class="reference">.
+              b. Use a hanging indent: padding-left:2.8em; text-indent:-2.8em; on each <p class="reference">.
               c. line-height must be 1.35 on all reference entries — never 1.5, never 2.
               d. margin-bottom on each entry must be 3px maximum — never 0.8em or 1em.
               e. Do NOT use <ol> or <ul> for references. Use <div class="references"> containing <p class="reference"> for each entry.
@@ -5026,7 +5026,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
         fixed = fixed.replace(/<p(?![^>]*class="reference")([^>]*)>/gi, '<p class="reference"$1>');
         fixed = fixed.replace(
           /<p class="reference"([^>]*)>/gi,
-          '<p class="reference" style="margin-top:0;margin-bottom:3px;padding-left:2em;text-indent:-2em;line-height:1.35;text-align:left;"$1>'
+          '<p class="reference" style="margin-top:0;margin-bottom:3px;padding-left:2.8em;text-indent:-2.8em;line-height:1.35;text-align:left;"$1>'
         );
         return open + fixed + close;
       }
