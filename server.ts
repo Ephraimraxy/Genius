@@ -8856,7 +8856,27 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
       const uploadConflicts: {matric: string, name: string, reason: string}[] = [];
       const uploadFailed: {matric: string, reason: string}[] = [];
 
-      for (const s of sanitizedStudents) {
+      // Deduplicate within the file itself (by matric, then by email)
+      const seenMatrics = new Set<string>();
+      const seenEmails = new Set<string>();
+      const deduped = sanitizedStudents.filter((s: any) => {
+        const m = (s.matricNumber || '').toLowerCase();
+        const e = (s.email || '').toLowerCase();
+        if (!m || !e) return true; // validation will catch these
+        if (seenMatrics.has(m)) {
+          uploadConflicts.push({ matric: s.matricNumber || '?', name: s.name || '?', reason: 'Duplicate in uploaded file (same matric appears more than once)' });
+          return false;
+        }
+        if (seenEmails.has(e)) {
+          uploadConflicts.push({ matric: s.matricNumber || '?', name: s.name || '?', reason: 'Duplicate in uploaded file (same email appears more than once)' });
+          return false;
+        }
+        seenMatrics.add(m);
+        seenEmails.add(e);
+        return true;
+      });
+
+      for (const s of deduped) {
         const matricNumber = s.matricNumber;
         const email = s.email;
         const studentName = s.name || matricNumber;
@@ -9525,10 +9545,24 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
     const categoryCache: Record<string, number> = {};
 
     const client = await pool.connect();
+    // Deduplicate within the file before processing
+    const biSeenMatrics = new Set<string>();
+    const biSeenEmails = new Set<string>();
+    const dedupedStudents: any[] = [];
+    for (const raw of students) {
+      const m = clean(raw.matricNumber || raw.regNumber || raw.matric || '').toLowerCase();
+      const e = clean(raw.email || raw.studentEmail || '').toLowerCase();
+      if (m && biSeenMatrics.has(m)) { failed.push({ matric: m, reason: 'Duplicate in file (same matric)' }); continue; }
+      if (e && biSeenEmails.has(e)) { failed.push({ matric: m || '?', reason: 'Duplicate in file (same email)' }); continue; }
+      if (m) biSeenMatrics.add(m);
+      if (e) biSeenEmails.add(e);
+      dedupedStudents.push(raw);
+    }
+
     try {
       await client.query('BEGIN');
 
-      for (const raw of students) {
+      for (const raw of dedupedStudents) {
         const matricNumber = clean(raw.matricNumber || raw.regNumber || raw.matric);
         const name = clean(raw.name || raw.studentName || raw.fullName);
         const email = clean(raw.email || raw.studentEmail);
