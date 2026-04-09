@@ -77,6 +77,9 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [viewingSlotsFor, setViewingSlotsFor] = useState<number | null>(null);
     const [resendingSlotId, setResendingSlotId] = useState<number | null>(null);
 
+    // Inline confirmation dialog (replaces all window.confirm / confirm() calls)
+    const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
     // Assignment-specific
     const [assessDueDate, setAssessDueDate] = useState('');
     const [assessSubmType, setAssessSubmType] = useState<'text'|'file'|'both'>('file');
@@ -281,13 +284,17 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         setResendingSlotId(null);
     };
 
-    const deleteRecord = async (id: number) => {
-        if (!confirm('Delete this record? This cannot be undone.')) return;
-        try {
-            await fetch(`/api/exams/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
-            addToast('Deleted', 'info');
-            fetchRecords();
-        } catch { addToast('Delete failed', 'error'); }
+    const deleteRecord = (id: number) => {
+        setConfirmDialog({
+            message: 'Delete this record? This cannot be undone.',
+            onConfirm: async () => {
+                try {
+                    await fetch(`/api/exams/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                    addToast('Deleted', 'info');
+                    fetchRecords();
+                } catch { addToast('Delete failed', 'error'); }
+            }
+        });
     };
 
     const togglePublish = async (id: number, current: string) => {
@@ -339,13 +346,17 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         } catch { addToast('Update failed', 'error'); }
     };
 
-    const deleteAttendSession = async (id: number) => {
-        if (!confirm('Delete this attendance session?')) return;
-        try {
-            await fetch(`/api/attendance/sessions/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
-            addToast('Session deleted', 'info');
-            fetchAttendSessions();
-        } catch { addToast('Delete failed', 'error'); }
+    const deleteAttendSession = (id: number) => {
+        setConfirmDialog({
+            message: 'Delete this attendance session?',
+            onConfirm: async () => {
+                try {
+                    await fetch(`/api/attendance/sessions/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                    addToast('Session deleted', 'info');
+                    fetchAttendSessions();
+                } catch { addToast('Delete failed', 'error'); }
+            }
+        });
     };
 
     const loadRollCall = async (sessionId: number) => {
@@ -398,13 +409,17 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         } catch { addToast('Failed to load answers', 'error'); }
     };
 
-    const clearStudentResult = async (examId: number, studentId: number) => {
-        if (!window.confirm('Clear this student\'s result? They will be able to retake.')) return;
-        try {
-            await fetch(`/api/exams/${examId}/results/${studentId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
-            addToast('Result cleared', 'success');
-            loadExamResults(examId);
-        } catch { addToast('Failed to clear result', 'error'); }
+    const clearStudentResult = (examId: number, studentId: number) => {
+        setConfirmDialog({
+            message: "Clear this student's result? They will be able to retake.",
+            onConfirm: async () => {
+                try {
+                    await fetch(`/api/exams/${examId}/results/${studentId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                    addToast('Result cleared', 'success');
+                    loadExamResults(examId);
+                } catch { addToast('Failed to clear result', 'error'); }
+            }
+        });
     };
 
     useEffect(() => {
@@ -1463,6 +1478,38 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                     onClose={() => setIsPreviewOpen(false)}
                 />
             )}
+
+            {/* ── Inline Confirmation Dialog ── */}
+            <AnimatePresence>
+                {confirmDialog && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onClick={() => setConfirmDialog(null)}
+                            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.92, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 16 }}
+                            className="relative z-10 bg-white rounded-[2rem] shadow-2xl p-8 w-full max-w-sm text-center">
+                            <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center mx-auto mb-4">
+                                <span className="text-2xl">⚠️</span>
+                            </div>
+                            <p className="font-bold text-slate-900 text-base mb-6">{confirmDialog.message}</p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setConfirmDialog(null)}
+                                    className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-700 font-black text-sm hover:bg-slate-200 transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}
+                                    className="flex-1 py-3 rounded-2xl bg-rose-600 text-white font-black text-sm hover:bg-rose-700 transition-all"
+                                >
+                                    Confirm
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 }

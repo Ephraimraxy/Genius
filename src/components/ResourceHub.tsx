@@ -40,6 +40,7 @@ interface ResourceHubProps {
 export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [resources, setResources] = useState<Resource[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [editingPrice, setEditingPrice] = useState<{id: number, val: string} | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadType, setUploadType] = useState<'roster' | 'material' | 'audio'>('roster');
     const [fileHandle, setFileHandle] = useState<File | null>(null);
@@ -329,19 +330,25 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     };
 
     const updateResourceSettings = async (id: number, settings: { price?: number; is_available?: boolean; is_paid?: boolean }) => {
+        // Optimistic local update — no re-fetch, prevents input losing focus/state
+        setResources(prev => prev.map(r => r.id === id ? { ...r, ...settings } : r));
         try {
-            await fetch(`/api/resources/${id}/settings`, {
+            const res = await fetch(`/api/resources/${id}/settings`, {
                 method: 'PUT',
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(settings)
             });
-            addToast('Settings updated', 'success');
-            fetchResources();
+            if (!res.ok) throw new Error('Failed');
+            if (settings.price !== undefined) {
+                addToast('Price saved', 'success');
+                setEditingPrice(null);
+            }
         } catch (err) {
             addToast('Update failed', 'error');
+            fetchResources(); // revert on failure
         }
     };
 
@@ -561,7 +568,12 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                             {item.type !== 'roster' && (
                                                 <div className="flex items-center gap-2 mr-4 border-r pr-4 border-slate-200">
                                                     <button
-                                                        onClick={() => updateResourceSettings(item.id, { is_paid: !item.is_paid })}
+                                                        onClick={() => {
+                                                            const nowPaid = !item.is_paid;
+                                                            updateResourceSettings(item.id, { is_paid: nowPaid });
+                                                            if (nowPaid) setEditingPrice({ id: item.id, val: String(item.price || '') });
+                                                            else setEditingPrice(null);
+                                                        }}
                                                         className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
                                                             item.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'
                                                         }`}
@@ -573,10 +585,21 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                                             <span className="text-[10px] font-black text-slate-400">₦</span>
                                                             <input
                                                                 type="number"
-                                                                defaultValue={item.price || 0}
-                                                                onBlur={(e) => updateResourceSettings(item.id, { price: parseInt(e.target.value) || 0 })}
-                                                                className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-bold"
+                                                                min={0}
+                                                                value={editingPrice?.id === item.id ? editingPrice.val : String(item.price || '')}
+                                                                onChange={(e) => setEditingPrice({ id: item.id, val: e.target.value })}
+                                                                onFocus={() => { if (editingPrice?.id !== item.id) setEditingPrice({ id: item.id, val: String(item.price || '') }); }}
+                                                                placeholder="0"
+                                                                className="w-20 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-bold focus:border-indigo-400 focus:outline-none"
                                                             />
+                                                            {editingPrice?.id === item.id && (
+                                                                <button
+                                                                    onClick={() => updateResourceSettings(item.id, { price: parseInt(editingPrice.val) || 0 })}
+                                                                    className="px-2 py-1 bg-indigo-600 text-white rounded text-[10px] font-black hover:bg-indigo-700 transition-all"
+                                                                >
+                                                                    ✓
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     )}
                                                     <button
