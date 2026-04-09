@@ -31,6 +31,16 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
   const [resetPassword, setResetPassword] = useState('');
   const [isResettingPw, setIsResettingPw] = useState(false);
   const [pwResetSuccess, setPwResetSuccess] = useState('');
+
+  // Deletion scope modal
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [deleteScope, setDeleteScope] = useState({
+    deleteStudents: true,
+    deleteExams: true,
+    deleteMaterials: true,
+    deletePublications: true,
+    deleteTransactions: false,
+  });
   const [showResetPw, setShowResetPw] = useState(false);
 
   const fetchUsers = async () => {
@@ -86,25 +96,34 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
     }
   };
 
-  const handleDelete = async (id: number) => {
-    const isConfirmed = confirm ? await confirm({
-      title: 'Delete User Account',
-      message: 'Are you sure you want to permanently delete this user? This action cannot be undone and will remove all their papers and data.',
-      confirmLabel: 'Delete Forever',
-      type: 'danger'
-    }) : window.confirm('Are you sure you want to permanently delete this user? This action cannot be undone and will remove all their papers and data.');
+  const handleDelete = (user: User) => {
+    // Reset scope defaults based on role
+    setDeleteScope({
+      deleteStudents:     true,
+      deleteExams:        true,
+      deleteMaterials:    true,
+      deletePublications: true,
+      deleteTransactions: false,
+    });
+    setDeleteTarget(user);
+  };
 
-    if (!isConfirmed) return;
-    setIsDeleting(id);
+  const executeDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(deleteTarget.id);
+    setDeleteTarget(null);
     try {
-      const res = await fetch(`/api/admin/users/${id}`, {
+      const res = await fetch(`/api/admin/users/${deleteTarget.id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(deleteScope),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete user');
-      
-      setUsers(prev => prev.filter(u => u.id !== id));
+      setUsers(prev => prev.filter(u => u.id !== deleteTarget.id));
       if (addToast) addToast('User deleted successfully', 'success');
     } catch (err: any) {
       if (addToast) addToast(friendlyError(err, 'generic'), 'error');
@@ -327,7 +346,7 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
                         <Edit2 size={16} />
                       </button>
                       <button
-                        onClick={() => handleDelete(user.id)}
+                        onClick={() => handleDelete(user)}
                         disabled={isDeleting === user.id}
                         className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-all disabled:opacity-50"
                         title="Delete User"
@@ -467,6 +486,104 @@ export default function UserManagement({ addToast, onOpenChat, confirm, initialR
                   {isSaving ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
                   Save Changes
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Delete Scope Modal ── */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100"
+            >
+              {/* Header */}
+              <div className="bg-rose-600 px-7 py-5 text-white">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-xl">
+                    <Trash2 size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base">Delete Account</h3>
+                    <p className="text-rose-200 text-xs mt-0.5 truncate max-w-[260px]">{deleteTarget.name} · {deleteTarget.role}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-7 space-y-5">
+                <p className="text-sm text-slate-600 font-medium leading-relaxed">
+                  Choose what to permanently erase along with this account. Unchecked items will remain in the database.
+                </p>
+
+                {/* Lecturer-specific options */}
+                {deleteTarget.role === 'tenant_admin' && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lecturer Workspace Data</p>
+                    {([
+                      { key: 'deleteStudents',  label: 'Student records & accounts',       desc: 'Roster, categories, student user accounts' },
+                      { key: 'deleteExams',     label: 'Exams, tests & assignments',        desc: 'Questions, results, submissions, slots' },
+                      { key: 'deleteMaterials', label: 'Uploaded materials & videos',       desc: 'Resources, lecture materials, audio files' },
+                      { key: 'deleteTransactions', label: 'Payment transactions',           desc: 'All financial records for this workspace' },
+                    ] as const).map(opt => (
+                      <label key={opt.key} className="flex items-start gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:bg-rose-50 hover:border-rose-100 transition-all group">
+                        <input
+                          type="checkbox"
+                          checked={deleteScope[opt.key]}
+                          onChange={e => setDeleteScope(prev => ({ ...prev, [opt.key]: e.target.checked }))}
+                          className="mt-0.5 accent-rose-600 w-4 h-4 shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-900">{opt.label}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{opt.desc}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {/* Researcher-specific options */}
+                {(deleteTarget.role === 'user' || deleteTarget.role === 'admin') && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Researcher Data</p>
+                    {([
+                      { key: 'deletePublications',  label: 'All publications & papers',   desc: 'Papers, references, reviews attached to this account' },
+                      { key: 'deleteTransactions',  label: 'Payment & transaction history', desc: 'Subscription payments, purchases' },
+                    ] as const).map(opt => (
+                      <label key={opt.key} className="flex items-start gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:bg-rose-50 hover:border-rose-100 transition-all group">
+                        <input
+                          type="checkbox"
+                          checked={deleteScope[opt.key]}
+                          onChange={e => setDeleteScope(prev => ({ ...prev, [opt.key]: e.target.checked }))}
+                          className="mt-0.5 accent-rose-600 w-4 h-4 shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-900">{opt.label}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{opt.desc}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setDeleteTarget(null)}
+                    className="flex-1 py-3 rounded-2xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={executeDelete}
+                    className="flex-1 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-rose-200"
+                  >
+                    <Trash2 size={14} /> Delete Now
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

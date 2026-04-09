@@ -1607,10 +1607,18 @@ app.post('/api/auth/verify-registration', authLimiter, async (req, res) => {
   }
 });
 
-// Public: Get all active academic workspaces (lecturers)
+// Public: Get all active academic workspaces (only those with an active tenant_admin user)
 app.get('/api/auth/workspaces', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, workspace_id FROM tenants ORDER BY name ASC');
+    const result = await pool.query(`
+      SELECT t.id, t.name, t.workspace_id
+      FROM tenants t
+      WHERE EXISTS (
+        SELECT 1 FROM users u
+        WHERE u.tenant_id = t.id AND u.role = 'tenant_admin'
+      )
+      ORDER BY t.name ASC
+    `);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch workspaces' });
@@ -7003,34 +7011,73 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
     const { id } = idParamSchema.parse(req.params);
     if (id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account' });
 
+    // Scope options sent from frontend (lecturer: deleteStudents, deleteExams, deleteMaterials)
+    // (researcher: deletePublications, deleteTransactions)
+    // Default all to true for backwards compat
+    const scope = {
+      deleteStudents:     req.body?.deleteStudents     !== false,
+      deleteExams:        req.body?.deleteExams        !== false,
+      deleteMaterials:    req.body?.deleteMaterials    !== false,
+      deletePublications: req.body?.deletePublications !== false,
+      deleteTransactions: req.body?.deleteTransactions !== false,
+    };
+
     // Cascading deletes for user data
     await pool.query('DELETE FROM chat_messages WHERE user_id = $1', [id]);
-    await pool.query('DELETE FROM transactions WHERE user_id = $1', [id]);
+    if (scope.deleteTransactions) await pool.query('DELETE FROM transactions WHERE user_id = $1', [id]);
     await pool.query('DELETE FROM reviews WHERE user_id = $1', [id]);
     await pool.query('DELETE FROM profiles WHERE user_id = $1', [id]);
 
-    // Delete refs before papers
-    const papers = await pool.query('SELECT id FROM papers WHERE user_id = $1', [id]);
-    for (const p of papers.rows) {
-      await pool.query('DELETE FROM paper_references WHERE paper_id = $1', [p.id]);
-      await pool.query('DELETE FROM reviews WHERE paper_id = $1', [p.id]);
+    // Delete publication records (optional based on scope)
+    if (scope.deletePublications) {
+      const papers = await pool.query('SELECT id FROM papers WHERE user_id = $1', [id]);
+      for (const p of papers.rows) {
+        await pool.query('DELETE FROM paper_references WHERE paper_id = $1', [p.id]);
+        await pool.query('DELETE FROM reviews WHERE paper_id = $1', [p.id]);
+      }
+      await pool.query('DELETE FROM papers WHERE user_id = $1', [id]);
     }
-    await pool.query('DELETE FROM papers WHERE user_id = $1', [id]);
 
     // Delete associated tenant if user is a lecturer (tenant_admin)
     const userResult = await pool.query('SELECT role, tenant_id FROM users WHERE id = $1', [id]);
     const user = userResult.rows[0];
     if (user && user.role === 'tenant_admin' && user.tenant_id) {
-      // Clear students roster and resources for this tenant first
-      await pool.query('DELETE FROM students_roster WHERE tenant_id = $1', [user.tenant_id]);
-      await pool.query('DELETE FROM resources WHERE tenant_id = $1', [user.tenant_id]);
-      await pool.query('DELETE FROM exams WHERE tenant_id = $1', [user.tenant_id]);
-      await pool.query('UPDATE users SET category_id = NULL WHERE tenant_id = $1', [user.tenant_id]);
-      await pool.query('DELETE FROM student_categories WHERE tenant_id = $1', [user.tenant_id]);
-      await pool.query('DELETE FROM tenants WHERE id = $1', [user.tenant_id]);
+      const tid = user.tenant_id;
+
+      if (scope.deleteExams) {
+        // exam_results has no ON DELETE CASCADE — must delete manually first
+        await pool.query('DELETE FROM exam_results WHERE exam_id IN (SELECT id FROM exams WHERE tenant_id = $1)', [tid]);
+        await pool.query('DELETE FROM exam_results WHERE tenant_id = $1', [tid]);
+        await pool.query('DELETE FROM exam_answers WHERE tenant_id = $1', [tid]);
+        // exams cascade-deletes: questions, exam_slots, assignment_submissions
+        await pool.query('DELETE FROM exams WHERE tenant_id = $1', [tid]);
+      }
+
+      if (scope.deleteStudents) {
+        // Delete attendance first (FK student_id → users)
+        await pool.query('DELETE FROM attendance_records WHERE tenant_id = $1', [tid]);
+        await pool.query('DELETE FROM attendance_sessions WHERE tenant_id = $1', [tid]);
+        try { await pool.query('DELETE FROM attendance WHERE tenant_id = $1', [tid]); } catch (_) {}
+        await pool.query('DELETE FROM students_roster WHERE tenant_id = $1', [tid]);
+        await pool.query('UPDATE users SET category_id = NULL WHERE tenant_id = $1', [tid]);
+        await pool.query("DELETE FROM users WHERE tenant_id = $1 AND role = 'student'", [tid]);
+        await pool.query('DELETE FROM student_categories WHERE tenant_id = $1', [tid]);
+      }
+
+      if (scope.deleteMaterials) {
+        await pool.query('DELETE FROM resources WHERE tenant_id = $1', [tid]);
+        await pool.query('DELETE FROM videos WHERE tenant_id = $1', [tid]);
+      }
+
+      if (scope.deleteTransactions) {
+        await pool.query('DELETE FROM transactions WHERE tenant_id = $1', [tid]);
+      }
+
+      // Always remove the tenant workspace itself
+      await pool.query('DELETE FROM tenants WHERE id = $1', [tid]);
     }
 
-    // Finally delete user
+    // Finally delete the lecturer user account
     await pool.query('DELETE FROM users WHERE id = $1', [id]);
 
     res.json({ success: true });
