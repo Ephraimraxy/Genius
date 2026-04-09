@@ -9384,7 +9384,7 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
     res.json({
       success: true,
       imported: succeeded.length,
-      failed: failed.length,
+      failedCount: failed.length,
       succeeded: succeeded.map(s => ({ matric: s.matric, name: s.name })),
       failed
     });
