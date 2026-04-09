@@ -8,6 +8,7 @@ if (typeof global.DOMMatrix === 'undefined') {
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { Readable } from 'stream';
 import express from 'express';
 
 import { createServer as createViteServer } from 'vite';
@@ -313,7 +314,7 @@ const r2 = R2_ENABLED ? new S3Client({
   },
 }) : null;
 
-async function uploadToR2(key: string, body: Buffer | NodeJS.ReadableStream, mimeType: string, contentLength?: number): Promise<string> {
+async function uploadToR2(key: string, body: Buffer | Readable, mimeType: string, contentLength?: number): Promise<string> {
   if (!r2 || !R2_ENABLED) throw new Error('R2 not configured');
   // Use @aws-sdk/lib-storage Upload for automatic multipart streaming —
   // avoids loading the entire file into memory at once for large files
@@ -7239,6 +7240,8 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
         await pool.query("DELETE FROM chat_messages WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1 AND role = 'student')", [tid]);
         await pool.query("DELETE FROM profiles WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1 AND role = 'student')", [tid]);
         await pool.query("DELETE FROM users WHERE tenant_id = $1 AND role = 'student'", [tid]);
+        // Delete resources referencing student_categories before removing the categories
+        await pool.query('DELETE FROM resources WHERE category_id IN (SELECT id FROM student_categories WHERE tenant_id = $1)', [tid]);
         await pool.query('DELETE FROM student_categories WHERE tenant_id = $1', [tid]);
       }
 
