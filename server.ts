@@ -18,9 +18,18 @@ const require = createRequire(import.meta.url);
 // Use the inner lib directly — avoids the test-runner that fires on the main entry point
 // and causes "pdfParse is not a function" in some Node/tsx environments.
 const pdfParse: (buffer: Buffer, options?: any) => Promise<any> = (() => {
-  try { return require('pdf-parse/lib/pdf-parse.js'); } catch (_) {}
-  const m = require('pdf-parse');
-  return typeof m === 'function' ? m : (m.default || m);
+  const candidates = [
+    () => require('pdf-parse/lib/pdf-parse.js'),
+    () => require('pdf-parse'),
+  ];
+  for (const loader of candidates) {
+    try {
+      const m = loader();
+      if (typeof m === 'function') return m;
+      if (typeof m?.default === 'function') return m.default;
+    } catch (_) {}
+  }
+  throw new Error('pdf-parse: no callable export found');
 })();
 import mammoth from 'mammoth';
 const WordExtractor = require('word-extractor');
@@ -703,6 +712,9 @@ async function bootstrapDB() {
         payload JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_blob BYTEA;
+      ALTER TABLE resources ADD COLUMN IF NOT EXISTS mime_type TEXT;
 
       ALTER TABLE exams ADD COLUMN IF NOT EXISTS start_date TIMESTAMP;
       ALTER TABLE exams ADD COLUMN IF NOT EXISTS end_date TIMESTAMP;
@@ -8535,17 +8547,51 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
       }
     }
 
-    // Handle PDF / Generic Materials or Text
-    // Send as generic attachment based on how it was stored
-    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
-    if (typeof content === 'string') {
-      res.setHeader('Content-Type', 'text/plain');
-      return res.send(content);
-    } else {
-      res.setHeader('Content-Type', 'application/json');
-      return res.send(JSON.stringify(content, null, 2));
+    // Re-query with file_blob and mime_type
+    const fullResult = await pool.query(
+      'SELECT name, type, content, file_blob, mime_type FROM resources WHERE id = $1 AND tenant_id = $2',
+      [req.params.id, req.tenant_id]
+    );
+    const row = fullResult.rows[0];
+
+    // Serve original binary if available
+    if (row.file_blob) {
+      const mime = row.mime_type || 'application/octet-stream';
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Content-Disposition', `attachment; filename="${row.name}"`);
+      return res.send(row.file_blob);
     }
 
+    // Fallback: serve extracted text
+    res.setHeader('Content-Disposition', `attachment; filename="${row.name}"`);
+    const c = row.content;
+    if (typeof c === 'object' && c?.text) {
+      res.setHeader('Content-Type', 'text/plain');
+      return res.send(c.text);
+    }
+    if (typeof c === 'string') {
+      res.setHeader('Content-Type', 'text/plain');
+      return res.send(c);
+    }
+    res.setHeader('Content-Type', 'application/json');
+    return res.send(JSON.stringify(c, null, 2));
+
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Text-only preview (for PPTX / unsupported binary formats)
+app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  try {
+    const result = await pool.query(
+      'SELECT name, content FROM resources WHERE id = $1 AND tenant_id = $2',
+      [req.params.id, req.tenant_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const c = result.rows[0].content;
+    const text = typeof c === 'object' ? (c?.text || '') : (typeof c === 'string' ? c : '');
+    res.json({ name: result.rows[0].name, text });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -8614,12 +8660,12 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
       }
     }
 
-    // Store as JSON object so the JSONB column accepts it and the preview
-    // endpoint can read it back via content.text
+    // Store extracted text + original binary so download returns the real file
     const contentJson = JSON.stringify({ text: textContent });
+    const mimeType = req.file.mimetype || 'application/octet-stream';
     const result = await pool.query(
-      'INSERT INTO resources (tenant_id, type, name, content, status, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [req.tenant_id, type, name, contentJson, 'ready', final_category_id]
+      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+      [req.tenant_id, type, name, contentJson, 'ready', final_category_id, req.file.buffer, mimeType]
     );
 
     res.json({ success: true, id: result.rows[0].id });

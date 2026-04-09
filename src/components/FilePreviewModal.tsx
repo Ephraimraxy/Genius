@@ -51,6 +51,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
   const [activeSheet, setActiveSheet] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [textPreview, setTextPreview] = useState<string | null>(null);
   const docxRef = useRef<HTMLDivElement>(null);
 
   const getExtension = (name: string) => name.split('.').pop()?.toLowerCase() || '';
@@ -64,6 +65,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
     setLoading(true);
     setError(null);
     setExcelData([]);
+    setTextPreview(null);
 
     const processFile = async () => {
       try {
@@ -88,6 +90,24 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
             docxRef.current.innerHTML = '';
             await docx.renderAsync(blob, docxRef.current);
           }
+          setLoading(false); // fix: renderAsync doesn't trigger any load event
+        } else if (ext === 'pptx' || ext === 'ppt') {
+          // PPTX can't be rendered in browser — fetch extracted text from server
+          if (typeof file === 'string') {
+            const resourceId = file.split('/').find((_, i, arr) => arr[i - 1] === 'resources');
+            if (resourceId) {
+              const textRes = await fetch(`/api/resources/${resourceId}/text`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+              });
+              if (textRes.ok) {
+                const { text } = await textRes.json();
+                setTextPreview(text || '(No text content extracted)');
+              } else {
+                setTextPreview('(Could not load text preview)');
+              }
+            }
+          }
+          setLoading(false);
         } else if (ext === 'xlsx' || ext === 'xls') {
           const reader = new FileReader();
           reader.onload = (e) => {
@@ -199,6 +219,26 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
         return (
           <div className="w-full h-full overflow-auto bg-slate-100 p-8 flex justify-center">
             <div ref={docxRef} className="bg-white shadow-2xl p-10 max-w-4xl w-full min-h-full docx-preview-container" />
+          </div>
+        );
+      case 'pptx':
+      case 'ppt':
+        return (
+          <div className="w-full h-full overflow-auto bg-slate-100 p-6 flex justify-center">
+            <div className="bg-white shadow-2xl rounded-2xl p-10 max-w-4xl w-full min-h-full">
+              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+                <div className="p-2 bg-orange-50 text-orange-600 rounded-xl">
+                  <FileText size={20} />
+                </div>
+                <div>
+                  <p className="font-black text-slate-900 text-sm uppercase tracking-tight">{fileName}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Extracted Text Preview · PPTX Visual Rendering Not Supported in Browser</p>
+                </div>
+              </div>
+              <pre className="whitespace-pre-wrap font-sans text-sm text-slate-700 leading-relaxed">
+                {textPreview || '(No text content available)'}
+              </pre>
+            </div>
           </div>
         );
       case 'xlsx':
