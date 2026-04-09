@@ -54,6 +54,7 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
     // Preview state
     const [previewItem, setPreviewItem] = useState<{ name: string; text: string; wordCount: number; price: number } | null>(null);
     const [previewLoading, setPreviewLoading] = useState<number | null>(null);
+    const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
     const fetchMaterials = async () => {
         setIsLoading(true);
@@ -97,6 +98,8 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
             setShowPaymentModal(true);
             return;
         }
+        if (downloadingId === material.id) return; // prevent double-click
+        setDownloadingId(material.id);
         try {
             const res = await fetch(`/api/resources/${material.id}/download`, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -120,6 +123,8 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
             addToast('Download started', 'success');
         } catch (err: any) {
             addToast(friendlyError(err, 'download'), 'error');
+        } finally {
+            setDownloadingId(null);
         }
     };
 
@@ -279,9 +284,14 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
                                 )}
                                 <button
                                     onClick={() => handleDownload(item)}
-                                    className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-black uppercase tracking-[0.15em] text-xs transition-all shadow-lg ${item.is_paid && !item.hasPaid ? 'bg-slate-900 text-white hover:bg-black' : 'bg-amber-600 text-white hover:bg-amber-700 shadow-amber-200'}`}
+                                    disabled={downloadingId === item.id}
+                                    className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-black uppercase tracking-[0.15em] text-xs transition-all shadow-lg disabled:opacity-70 disabled:cursor-not-allowed ${item.is_paid && !item.hasPaid ? 'bg-slate-900 text-white hover:bg-black' : 'bg-amber-600 text-white hover:bg-amber-700 shadow-amber-200'}`}
                                 >
-                                    {item.is_paid && !item.hasPaid ? <><Lock size={16} /> Unlock Access</> : <><Download size={16} /> Download Now</>}
+                                    {downloadingId === item.id
+                                        ? <><Loader2 size={16} className="animate-spin" /> Downloading...</>
+                                        : item.is_paid && !item.hasPaid
+                                            ? <><Lock size={16} /> Unlock Access</>
+                                            : <><Download size={16} /> Download Now</>}
                                 </button>
                             </div>
                         </motion.div>

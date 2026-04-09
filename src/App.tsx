@@ -38,7 +38,8 @@ import QuickPublishPage from './components/QuickPublishPage';
 import PaymentEventsAdmin from './components/PaymentEventsAdmin';
 
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
-import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
+import GeniusPaymentModal from './components/GeniusPaymentModal';
+import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff, CheckCircle2, Loader2 } from 'lucide-react';
 
 export type Tab = 'dashboard' | 'upload' | 'quick_publish' | 'apa_validation' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures' | 'paymentEvents';
 
@@ -213,6 +214,12 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const { toasts, addToast, removeToast } = useToasts();
 
+  // Student attendance state (shown in nav)
+  const [openAttendanceSessions, setOpenAttendanceSessions] = useState<any[]>([]);
+  const [showAttendanceNav, setShowAttendanceNav] = useState(false);
+  const [selectedAttendanceSession, setSelectedAttendanceSession] = useState<any | null>(null);
+  const [markingAttendanceId, setMarkingAttendanceId] = useState<number | null>(null);
+
   const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({
     isOpen: false,
     title: '',
@@ -320,6 +327,20 @@ export default function App() {
       setSyncError(null);
     }
   }, [token, syncTick]);
+
+  // Fetch open attendance sessions for students
+  useEffect(() => {
+    if (!token || !profile || profile?.user?.role !== 'student') return;
+    const fetchSessions = () => {
+      fetch('/api/student/attendance/open-sessions', { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(data => { if (Array.isArray(data)) setOpenAttendanceSessions(data.filter((s: any) => !s.already_marked)); })
+        .catch(() => {});
+    };
+    fetchSessions();
+    const interval = setInterval(fetchSessions, 60000);
+    return () => clearInterval(interval);
+  }, [token, profile]);
 
   useEffect(() => {
     if (!token || !profile) return;
@@ -717,13 +738,107 @@ export default function App() {
             {!isAdmin && (
               <div className="hidden sm:flex items-center bg-slate-100 rounded-2xl px-4 py-2 mr-2 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
                 <Search size={18} className="text-slate-400" />
-                <input 
-                  type="text" 
-                  placeholder={isLecturer ? "Search academic hub..." : isStudent ? "Search courses..." : "Search research..."} 
-                  className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium" 
+                <input
+                  type="text"
+                  placeholder={isLecturer ? "Search academic hub..." : isStudent ? "Search courses..." : "Search research..."}
+                  className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium"
                 />
               </div>
             )}
+
+            {/* Student: Attendance button — only when lecturer has an open session */}
+            {isStudent && openAttendanceSessions.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowAttendanceNav(v => !v)}
+                  className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200 animate-pulse"
+                >
+                  <CheckCircle2 size={14} />
+                  <span className="hidden sm:inline">Attendance</span>
+                  <span className="w-5 h-5 bg-white text-indigo-600 rounded-full text-[10px] font-black flex items-center justify-center">{openAttendanceSessions.length}</span>
+                </button>
+
+                <AnimatePresence>
+                  {showAttendanceNav && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 p-4 z-[200]"
+                    >
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Open Attendance Sessions</p>
+                      <div className="space-y-2">
+                        {openAttendanceSessions.map(session => (
+                          <div key={session.id} className="flex items-center justify-between gap-3 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">{session.title}</p>
+                              {session.course_code && <p className="text-[10px] text-slate-500">{session.course_code}</p>}
+                              <p className="text-[10px] font-bold text-indigo-600 mt-0.5">
+                                {session.is_paid ? `₦${session.price.toLocaleString()}` : 'Free'}
+                              </p>
+                            </div>
+                            {session.is_paid ? (
+                              <button
+                                onClick={() => { setSelectedAttendanceSession(session); setShowAttendanceNav(false); }}
+                                className="shrink-0 px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-lg hover:bg-indigo-700 transition-colors"
+                              >
+                                Pay & Sign
+                              </button>
+                            ) : (
+                              <button
+                                disabled={markingAttendanceId === session.id}
+                                onClick={async () => {
+                                  setMarkingAttendanceId(session.id);
+                                  try {
+                                    const r = await fetch(`/api/attendance/sessions/${session.id}/mark`, {
+                                      method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+                                    });
+                                    const d = await r.json();
+                                    if (!r.ok) throw new Error(d.error || 'Failed');
+                                    addToast('Attendance signed!', 'success');
+                                    setOpenAttendanceSessions(prev => prev.filter(s => s.id !== session.id));
+                                    if (openAttendanceSessions.length <= 1) setShowAttendanceNav(false);
+                                  } catch (err: any) {
+                                    addToast(err.message || 'Failed to sign attendance', 'error');
+                                  } finally {
+                                    setMarkingAttendanceId(null);
+                                  }
+                                }}
+                                className="shrink-0 px-3 py-1.5 bg-emerald-600 text-white text-[10px] font-black uppercase rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-60 flex items-center gap-1"
+                              >
+                                {markingAttendanceId === session.id ? <Loader2 size={10} className="animate-spin" /> : null}
+                                Sign
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Paid attendance payment modal */}
+            <AnimatePresence>
+              {selectedAttendanceSession && (
+                <GeniusPaymentModal
+                  key={`nav-attendance-${selectedAttendanceSession.id}`}
+                  courseName={selectedAttendanceSession.title}
+                  courseId={String(selectedAttendanceSession.id)}
+                  amount={selectedAttendanceSession.price}
+                  token={token}
+                  addToast={addToast}
+                  onClose={() => setSelectedAttendanceSession(null)}
+                  onSuccess={() => {
+                    setSelectedAttendanceSession(null);
+                    setOpenAttendanceSessions(prev => prev.filter(s => s.id !== selectedAttendanceSession?.id));
+                    addToast('Attendance signed successfully!', 'success');
+                  }}
+                  type="attendance"
+                />
+              )}
+            </AnimatePresence>
 
             <div className="relative">
               <button 

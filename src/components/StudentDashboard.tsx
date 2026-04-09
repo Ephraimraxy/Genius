@@ -20,10 +20,6 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
     const [activeExamCourse, setActiveExamCourse] = useState<string | null>(null);
     const [showProctoringModal, setShowProctoringModal] = useState(false);
     
-    // Attendance State
-    const [showAttendanceModal, setShowAttendanceModal] = useState(false);
-    const [selectedCourseForAttendance, setSelectedCourseForAttendance] = useState<string | null>(null);
-    
     // Assessment Payment State
     const [showAssessmentPaymentModal, setShowAssessmentPaymentModal] = useState(false);
     const [selectedAssessmentForPayment, setSelectedAssessmentForPayment] = useState<any | null>(null);
@@ -174,58 +170,6 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                     </button>
                 </motion.div>
             )}
-
-            {/* Attendance Banner (Always Visible for Demo) */}
-            <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-6 bg-gradient-to-r from-indigo-600 to-blue-800 rounded-[2rem] shadow-xl text-white flex flex-col md:flex-row items-center justify-between gap-6"
-            >
-                <div className="flex items-start gap-4 flex-1">
-                    <div className="p-2.5 bg-white/20 rounded-xl mt-1 shrink-0">
-                        <CheckCircle2 size={20} className="text-white" />
-                    </div>
-                    <div className="min-w-0">
-                        <h3 className="text-lg md:text-xl font-black mb-0.5 md:mb-1 truncate">Today's Attendance</h3>
-                        <p className="text-indigo-100 font-medium text-sm md:text-base truncate">General Course Module</p>
-                        <p className="text-[10px] md:text-xs font-bold mt-1.5 md:mt-2 opacity-80 uppercase tracking-widest flex items-center gap-2">
-                            <Clock size={12} /> Date: {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </p>
-                    </div>
-                </div>
-                <button 
-                    onClick={() => {
-                        setSelectedCourseForAttendance('General Course Module');
-                        setShowAttendanceModal(true);
-                    }}
-                    className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-white text-indigo-600 font-black rounded-xl shadow-lg hover:bg-slate-50 transition-colors uppercase tracking-[0.1em] text-xs md:text-sm"
-                >
-                    Sign Attendance (₦500)
-                </button>
-            </motion.div>
-
-            <AnimatePresence>
-                {showAttendanceModal && selectedCourseForAttendance && (
-                    <GeniusPaymentModal
-                        key={`attendance-${selectedCourseForAttendance}`}
-                        courseName={selectedCourseForAttendance}
-                        courseId={selectedCourseForAttendance}
-                        amount={500}
-                        token={token}
-                        addToast={addToast}
-                        onClose={() => {
-                            setShowAttendanceModal(false);
-                            setSelectedCourseForAttendance(null);
-                        }}
-                        onSuccess={() => {
-                            setShowAttendanceModal(false);
-                            setSelectedCourseForAttendance(null);
-                            addToast('Attendance signed successfully!', 'success');
-                        }}
-                        type="attendance"
-                    />
-                )}
-            </AnimatePresence>
 
             <AnimatePresence>
                 {showAssessmentPaymentModal && selectedAssessmentForPayment && (

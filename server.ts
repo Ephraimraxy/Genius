@@ -10775,6 +10775,27 @@ app.get('/api/attendance/sessions/:id/records', authenticateToken, async (req: a
   }
 });
 
+// Student: Get open attendance sessions (for banner display)
+app.get('/api/student/attendance/open-sessions', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const sessions = await pool.query(
+      `SELECT s.id, s.title, s.course_code, s.session_date, s.is_paid, s.price,
+              EXISTS(
+                SELECT 1 FROM attendance_records r
+                WHERE r.session_id = s.id AND r.student_id = $2
+              ) AS already_marked
+       FROM attendance_sessions s
+       WHERE s.tenant_id = $1 AND s.is_open = true
+       ORDER BY s.created_at DESC`,
+      [req.tenant_id, req.user.id]
+    );
+    res.json(sessions.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Student: Mark attendance for a session
 app.post('/api/attendance/sessions/:id/mark', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
