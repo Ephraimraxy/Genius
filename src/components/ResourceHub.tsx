@@ -58,6 +58,21 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [isPaidEntry, setIsPaidEntry] = useState(false);
     const [entryFee, setEntryFee] = useState(0);
 
+    // Import result summary modal
+    const [importSummary, setImportSummary] = useState<{
+        added: number; updated: number; conflicts: number; failed: number;
+        conflictList: {matric: string, name: string, reason: string}[];
+        failedList: {matric: string, reason: string}[];
+    } | null>(null);
+
+    // Roster viewer state
+    const [showRosterViewer, setShowRosterViewer] = useState(false);
+    const [rosterStudents, setRosterStudents] = useState<any[]>([]);
+    const [rosterLoading, setRosterLoading] = useState(false);
+    const [rosterSearch, setRosterSearch] = useState('');
+    const [resendingId, setResendingId] = useState<number | null>(null);
+    const [bulkResending, setBulkResending] = useState(false);
+
     useEffect(() => {
         fetchResources();
         fetchCategories();
@@ -100,6 +115,56 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             addToast('Failed to load resources', 'error');
         }
         setIsLoading(false);
+    };
+
+    const openRosterViewer = async () => {
+        setShowRosterViewer(true);
+        setRosterLoading(true);
+        try {
+            const res = await fetch('/api/courses/roster', { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            setRosterStudents(Array.isArray(data) ? data : []);
+        } catch { addToast('Failed to load roster', 'error'); }
+        setRosterLoading(false);
+    };
+
+    const resendOne = async (studentId: number) => {
+        setResendingId(studentId);
+        try {
+            const res = await fetch(`/api/courses/roster/${studentId}/resend`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.success) {
+                addToast(data.message, 'success');
+                setRosterStudents(prev => prev.map(s => s.id === studentId ? { ...s, email_status: 'sent' } : s));
+            } else {
+                addToast(data.error || 'Resend failed', 'error');
+            }
+        } catch { addToast('Network error', 'error'); }
+        setResendingId(null);
+    };
+
+    const bulkResend = async (categoryId?: number) => {
+        setBulkResending(true);
+        try {
+            const res = await fetch('/api/courses/roster/bulk-resend', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ categoryId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                addToast(`Resent to ${data.sent}/${data.total} student(s)`, 'success');
+                // Refresh roster list
+                const r2 = await fetch('/api/courses/roster', { headers: { 'Authorization': `Bearer ${token}` } });
+                setRosterStudents(await r2.json());
+            } else {
+                addToast(data.error || 'Bulk resend failed', 'error');
+            }
+        } catch { addToast('Network error', 'error'); }
+        setBulkResending(false);
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -194,9 +259,15 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                     });
                     const data = await res.json();
                     if (data.success) {
-                        addToast('Student data uploaded & sanitized successfully', 'success');
+                        if (data.rosterSummary) {
+                            setImportSummary(data.rosterSummary);
+                        } else {
+                            addToast('Students uploaded successfully', 'success');
+                        }
                         fetchResources();
                         setFileHandle(null);
+                        setSelectedCatId('');
+                        setNewCatName('');
                     } else {
                         addToast(data.error || 'Upload failed', 'error');
                     }
@@ -378,7 +449,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 )}
                             </div>
 
-                            <button 
+                            <button
                                 onClick={processUpload}
                                 disabled={!fileHandle || isUploading}
                                 className={`w-full ${uploadType === 'audio' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'} text-white font-black py-4 rounded-2xl transition-all disabled:opacity-40 shadow-xl flex items-center justify-center gap-2`}
@@ -386,6 +457,14 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 {isUploading ? <RefreshCw className="animate-spin" size={20} /> : (uploadType === 'audio' ? <Mic size={20} /> : <ShieldCheck size={20} />)}
                                 {isUploading ? (uploadType === 'audio' ? 'Neural Refining...' : 'Sanitizing...') : (uploadType === 'audio' ? 'Upload & Refine' : 'Upload & Sanitize')}
                             </button>
+                            {uploadType === 'roster' && (
+                                <button
+                                    onClick={openRosterViewer}
+                                    className="w-full bg-white/10 hover:bg-white/20 text-white font-black py-3 rounded-2xl transition-all flex items-center justify-center gap-2 text-sm border border-white/20"
+                                >
+                                    <Users size={16} /> View Enrolled Students & Email Status
+                                </button>
+                            )}
                          </div>
                     </div>
 
@@ -663,6 +742,171 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 >
                                     Confirm & Start Batch Upload
                                 </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Import Result Summary Modal ── */}
+            <AnimatePresence>
+                {importSummary && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onClick={() => setImportSummary(null)}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden max-h-[85vh] flex flex-col">
+                            <div className="bg-slate-900 p-6 text-white flex items-center justify-between">
+                                <div>
+                                    <h3 className="font-black text-lg">Upload Complete</h3>
+                                    <p className="text-slate-400 text-xs mt-1">Detailed import breakdown below</p>
+                                </div>
+                                <button onClick={() => setImportSummary(null)} className="text-white/50 hover:text-white text-xl font-bold">✕</button>
+                            </div>
+                            <div className="p-6 space-y-4 overflow-y-auto">
+                                {/* Stats row */}
+                                <div className="grid grid-cols-4 gap-3">
+                                    {[
+                                        { label: 'Added', value: importSummary.added, color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+                                        { label: 'Updated', value: importSummary.updated, color: 'bg-blue-50 text-blue-700 border-blue-100' },
+                                        { label: 'Conflicts', value: importSummary.conflicts, color: 'bg-amber-50 text-amber-700 border-amber-100' },
+                                        { label: 'Failed', value: importSummary.failed, color: 'bg-rose-50 text-rose-700 border-rose-100' },
+                                    ].map(stat => (
+                                        <div key={stat.label} className={`p-3 rounded-2xl border text-center ${stat.color}`}>
+                                            <p className="text-2xl font-black">{stat.value}</p>
+                                            <p className="text-[10px] font-black uppercase tracking-widest mt-0.5">{stat.label}</p>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {importSummary.added > 0 && (
+                                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                                        <p className="text-[11px] font-black text-emerald-700 uppercase tracking-widest">✅ {importSummary.added} student(s) enrolled — welcome emails sent</p>
+                                    </div>
+                                )}
+                                {importSummary.updated > 0 && (
+                                    <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                                        <p className="text-[11px] font-black text-blue-700 uppercase tracking-widest">🔄 {importSummary.updated} existing record(s) updated — no re-email</p>
+                                    </div>
+                                )}
+
+                                {importSummary.conflictList.length > 0 && (
+                                    <div>
+                                        <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-2">⚠️ Conflicts — review required</p>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                                            {importSummary.conflictList.map((c, i) => (
+                                                <div key={i} className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                                                    <p className="text-xs font-bold text-slate-900">{c.matric} — {c.name}</p>
+                                                    <p className="text-[10px] text-amber-700 mt-0.5">{c.reason}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {importSummary.failedList.length > 0 && (
+                                    <div>
+                                        <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2">❌ Failed — invalid data</p>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                                            {importSummary.failedList.map((f, i) => (
+                                                <div key={i} className="p-3 bg-rose-50 rounded-xl border border-rose-100">
+                                                    <p className="text-xs font-bold text-slate-900">{f.matric}</p>
+                                                    <p className="text-[10px] text-rose-700 mt-0.5">{f.reason}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <button onClick={() => setImportSummary(null)}
+                                    className="w-full bg-slate-900 text-white font-black py-3 rounded-2xl hover:bg-slate-800 transition-all">
+                                    Done
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Roster Viewer Modal ── */}
+            <AnimatePresence>
+                {showRosterViewer && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onClick={() => setShowRosterViewer(false)}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white w-full max-w-3xl rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden max-h-[90vh] flex flex-col">
+                            <div className="bg-slate-900 p-6 text-white">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div>
+                                        <h3 className="font-black text-lg flex items-center gap-2"><Users size={20} className="text-blue-400" /> Enrolled Students</h3>
+                                        <p className="text-slate-400 text-xs mt-1">{rosterStudents.length} total · email delivery status per student</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => bulkResend()}
+                                            disabled={bulkResending}
+                                            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                                        >
+                                            {bulkResending ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
+                                            Resend Failed
+                                        </button>
+                                        <button onClick={() => setShowRosterViewer(false)} className="text-white/50 hover:text-white text-xl font-bold">✕</button>
+                                    </div>
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder="Search by name, matric or email…"
+                                    value={rosterSearch}
+                                    onChange={e => setRosterSearch(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/40 outline-none focus:border-blue-400"
+                                />
+                            </div>
+                            <div className="overflow-y-auto flex-1 p-4 space-y-2">
+                                {rosterLoading && (
+                                    <div className="flex justify-center py-12">
+                                        <RefreshCw className="animate-spin text-slate-400" size={28} />
+                                    </div>
+                                )}
+                                {!rosterLoading && rosterStudents.length === 0 && (
+                                    <p className="text-center text-slate-400 py-12 font-medium">No students enrolled yet.</p>
+                                )}
+                                {!rosterLoading && rosterStudents
+                                    .filter(s => {
+                                        const q = rosterSearch.toLowerCase();
+                                        return !q || s.name?.toLowerCase().includes(q) || s.matric_number?.toLowerCase().includes(q) || s.email?.toLowerCase().includes(q);
+                                    })
+                                    .map(s => {
+                                        const statusColor = s.email_status === 'sent' ? 'bg-emerald-100 text-emerald-700'
+                                            : s.email_status === 'failed' ? 'bg-rose-100 text-rose-700'
+                                            : 'bg-amber-100 text-amber-700';
+                                        const statusLabel = s.email_status === 'sent' ? '✓ Email Sent'
+                                            : s.email_status === 'failed' ? '✗ Email Failed'
+                                            : '⏳ Pending';
+                                        return (
+                                            <div key={s.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-bold text-slate-900 text-sm truncate">{s.name}</p>
+                                                    <p className="text-[10px] text-slate-400 truncate">{s.matric_number} · {s.email}</p>
+                                                    {s.category_name && <p className="text-[9px] text-indigo-500 font-black uppercase tracking-widest mt-0.5">{s.category_name}</p>}
+                                                </div>
+                                                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${statusColor}`}>{statusLabel}</span>
+                                                {(s.email_status === 'failed' || s.email_status === 'pending') && (
+                                                    <button
+                                                        onClick={() => resendOne(s.id)}
+                                                        disabled={resendingId === s.id}
+                                                        className="shrink-0 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-black uppercase hover:bg-blue-100 transition-all disabled:opacity-50 flex items-center gap-1"
+                                                    >
+                                                        {resendingId === s.id ? <RefreshCw size={10} className="animate-spin" /> : null}
+                                                        Resend
+                                                    </button>
+                                                )}
+                                            </div>
+                                        );
+                                    })
+                                }
                             </div>
                         </motion.div>
                     </div>

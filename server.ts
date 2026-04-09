@@ -1173,6 +1173,8 @@ async function initDB() {
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN pin_hash TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN setup_token TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN token_expires TIMESTAMP'); } catch (e) { }
+  try { await pool.query("ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS email_status VARCHAR(20) DEFAULT 'pending'"); } catch (e) { }
+  try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id)'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN is_subscribed BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
@@ -8848,89 +8850,125 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         };
       });
 
+      // Counters for UI feedback
+      const uploadAdded: {matric: string, name: string}[] = [];
+      const uploadUpdated: {matric: string, name: string}[] = [];
+      const uploadConflicts: {matric: string, name: string, reason: string}[] = [];
+      const uploadFailed: {matric: string, reason: string}[] = [];
+
       for (const s of sanitizedStudents) {
         const matricNumber = s.matricNumber;
         const email = s.email;
         const studentName = s.name || matricNumber;
 
-        if (!matricNumber || !email) continue;
-
-        // Basic email validation to prevent email delivery issues
-        if (!email.includes('@') || email.length < 5) {
-          console.warn(`Skipping invalid email: ${email}`);
+        if (!matricNumber || !email) {
+          uploadFailed.push({ matric: matricNumber || '?', reason: 'Missing matric or email' });
           continue;
         }
 
-        if (!matricNumber || !email) continue;
+        // Email format validation
+        if (!email.includes('@') || email.length < 5) {
+          uploadFailed.push({ matric: matricNumber, reason: `Invalid email format: ${email}` });
+          continue;
+        }
 
-        const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
-        if (existing.rows.length === 0) {
-          // Resolve Global Student User & PIN
-          let hashedPin = '';
-          let autoPin = '';
+        // Check if matric already in roster for this tenant
+        const existingMatric = await pool.query(
+          'SELECT id, email, name FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
+          [matricNumber, req.tenant_id]
+        );
 
-          const globalUserCheck = await pool.query('SELECT password, pin_code FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matricNumber]);
-
-          if (globalUserCheck.rows.length > 0) {
-            hashedPin = globalUserCheck.rows[0].password;
-            autoPin = globalUserCheck.rows[0].pin_code || '****';
-          } else {
-            autoPin = String(Math.floor(1000 + Math.random() * 9000));
-            hashedPin = await bcrypt.hash(autoPin, 10);
-          }
-
-          await pool.query(
-            'INSERT INTO students_roster (tenant_id, matric_number, name, email, pin_hash, category_id) VALUES ($1, $2, $3, $4, $5, $6)',
-            [req.tenant_id, matricNumber, studentName, email, hashedPin, final_category_id]
-          );
-
-          // Create or Link User account
-          const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
-          if (userCheck.rows.length === 0) {
+        if (existingMatric.rows.length > 0) {
+          const existingEmail = existingMatric.rows[0].email;
+          if (existingEmail.toLowerCase() === email.toLowerCase()) {
+            // Same student re-uploaded — update name/category silently
             await pool.query(
-              'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-              [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, autoPin]
+              'UPDATE students_roster SET name = $1, category_id = COALESCE($2, category_id) WHERE matric_number = $3 AND tenant_id = $4',
+              [studentName, final_category_id, matricNumber, req.tenant_id]
             );
+            uploadUpdated.push({ matric: matricNumber, name: studentName });
           } else {
-            await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, autoPin, final_category_id]);
+            // Same matric but different email — conflict, skip
+            uploadConflicts.push({ matric: matricNumber, name: studentName, reason: `Matric ${matricNumber} already registered with a different email (${existingEmail})` });
           }
+          continue;
+        }
 
-          // Send Email with auto-generated PIN
-          try {
-            const feeInt = parseInt(entryFee as string) || 0;
+        // Check if email already used by a different matric in this tenant
+        const existingEmail = await pool.query(
+          'SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2',
+          [email, req.tenant_id]
+        );
+        if (existingEmail.rows.length > 0) {
+          uploadConflicts.push({ matric: matricNumber, name: studentName, reason: `Email ${email} already belongs to matric ${existingEmail.rows[0].matric_number}` });
+          continue;
+        }
 
-            await sendResendEmail({
-              fromName: 'Genius Academic Portal',
-              to: email,
-              subject: `[Genius] Welcome ${studentName} - Your Access Credentials`,
-              html: `
+        // New student — resolve PIN and insert
+        let hashedPin = '';
+        let autoPin = '';
+        const globalUserCheck = await pool.query("SELECT password, pin_code FROM users WHERE matric_number = $1 AND role = 'student' LIMIT 1", [matricNumber]);
+        if (globalUserCheck.rows.length > 0) {
+          hashedPin = globalUserCheck.rows[0].password;
+          autoPin = globalUserCheck.rows[0].pin_code || '****';
+        } else {
+          autoPin = String(Math.floor(1000 + Math.random() * 9000));
+          hashedPin = await bcrypt.hash(autoPin, 10);
+        }
+
+        await pool.query(
+          "INSERT INTO students_roster (tenant_id, matric_number, name, email, pin_hash, category_id, email_status) VALUES ($1, $2, $3, $4, $5, $6, 'pending')",
+          [req.tenant_id, matricNumber, studentName, email, hashedPin, final_category_id]
+        );
+
+        const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+        if (userCheck.rows.length === 0) {
+          await pool.query(
+            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+            [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, autoPin]
+          );
+        } else {
+          await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, autoPin, final_category_id]);
+        }
+
+        // Send onboarding email and track status
+        try {
+          const feeInt = parseInt(entryFee as string) || 0;
+          const fullWorkspaceLabel = `${workspaceName} (${workspaceId})`;
+          await sendResendEmail({
+            fromName: 'Genius Academic Portal',
+            to: email,
+            subject: `[Genius] Welcome ${studentName} — Your Access Credentials`,
+            html: `
 <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: 0 auto; line-height: 1.5;">
   <h2 style="color: #1a237e; margin-top: 0;">Welcome to Genius Academy</h2>
   <p>Hi <b>${studentName}</b>,</p>
-  <p>You have been added to the <b>${categoryName || 'Academic'}</b> batch. Your account is ready!</p>
-  
+  <p>You have been enrolled in the <b>${categoryName || 'Academic'}</b> batch at <b>${workspaceName}</b>. Your account is ready!</p>
   <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin: 25px 0;">
     <h3 style="margin-top: 0; color: #0f172a; font-size: 16px; text-transform: uppercase;">Your Access Credentials</h3>
     <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
-      <tr><td style="padding: 8px 0; color: #64748b;">Workspace ID:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${workspaceId}</td></tr>
+      <tr><td style="padding: 8px 0; color: #64748b;">Workspace ID:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${fullWorkspaceLabel}</td></tr>
       <tr><td style="padding: 8px 0; color: #64748b;">Reg. Number:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${matricNumber}</td></tr>
       <tr><td style="padding: 8px 0; color: #64748b;">Secure PIN:</td><td style="padding: 8px 0; text-align: right;"><span style="background: #e0e7ff; color: #3730a3; padding: 6px 12px; border-radius: 6px; font-weight: bold; letter-spacing: 2px;">${autoPin}</span></td></tr>
       <tr><td style="padding: 8px 0; color: #64748b;">Access Mode:</td><td style="padding: 8px 0; text-align: right; font-weight: bold; color: ${isPaidEntry ? '#ef4444' : '#10b981'};">${isPaidEntry ? `Paid (₦${feeInt})` : 'Free Access'}</td></tr>
     </table>
   </div>
-  
   <p style="color: #d97706; font-weight: bold; font-size: 14px; text-align: center;">🔒 Keep your PIN private. Do not share it.</p>
   ${isPaidEntry ? `<p style="color: #ef4444; font-weight: bold; font-size: 14px; text-align: center;">⚠️ Payment required before full portal access.</p>` : ''}
-  
-  <div style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #94a3b8; font-size: 12px;">
-    &copy; 2026 Genius Academic Publishing. All rights reserved.
-  </div>
-</div>
-                        `
-            });
-          } catch (emailErr) { console.error('Batch email failed for', email, emailErr); }
+  <div style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #94a3b8; font-size: 12px;">&copy; 2026 Genius Academic Publishing. All rights reserved.</div>
+</div>`
+          });
+          await pool.query("UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
+          uploadAdded.push({ matric: matricNumber, name: studentName });
+        } catch (emailErr) {
+          console.error('Batch email failed for', email, emailErr);
+          await pool.query("UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
+          uploadAdded.push({ matric: matricNumber, name: studentName }); // Still added, just email failed
         }
       }
+
+      // Attach import summary to response (stored for later use in the 4. Save block)
+      (req as any)._rosterSummary = { added: uploadAdded, updated: uploadUpdated, conflicts: uploadConflicts, failed: uploadFailed };
     }
 
     // 4. Save the Resource Record (using potentially sanitized content)
@@ -8944,7 +8982,22 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
       })) : content) : content), 'ready', final_category_id]
     );
 
-    res.json({ success: true, id: result.rows[0].id, status: 'ready' });
+    const rosterSummary = (req as any)._rosterSummary;
+    res.json({
+      success: true,
+      id: result.rows[0].id,
+      status: 'ready',
+      ...(rosterSummary ? {
+        rosterSummary: {
+          added: rosterSummary.added.length,
+          updated: rosterSummary.updated.length,
+          conflicts: rosterSummary.conflicts.length,
+          failed: rosterSummary.failed.length,
+          conflictList: rosterSummary.conflicts,
+          failedList: rosterSummary.failed,
+        }
+      } : {})
+    });
   } catch (err: any) {
     console.error('Batch upload error:', err);
     res.status(500).json({ error: err.message });
@@ -9236,7 +9289,14 @@ app.get('/api/attendance', authenticateToken, checkSubscription, async (req: any
 app.get('/api/courses/roster', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const result = await pool.query('SELECT * FROM students_roster WHERE tenant_id = $1 ORDER BY name ASC', [req.tenant_id]);
+    const result = await pool.query(
+      `SELECT sr.*, sc.name as category_name
+       FROM students_roster sr
+       LEFT JOIN student_categories sc ON sc.id = sr.category_id
+       WHERE sr.tenant_id = $1
+       ORDER BY sr.name ASC`,
+      [req.tenant_id]
+    );
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch roster' });
@@ -9343,7 +9403,7 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
 
     await pool.query(
-      'INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      "INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id, email_status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')",
       [req.tenant_id, matricNumber, name, email, course || '', hashedPin, category_id]
     );
 
@@ -9361,26 +9421,28 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     // 6. Send email with auto-generated PIN
     try {
       const portalBranding = "Genius Academic Portal";
+      const fullWorkspaceLabel = `${workspaceName} (${workspaceId})`;
+      let emailStatus = 'sent';
       await sendResendEmail({
         fromName: portalBranding,
         to: email,
-        subject: `[${portalBranding}] Welcome ${name} - Your Access Credentials`,
+        subject: `[${portalBranding}] Welcome ${name} — Your Access Credentials`,
         html: `
 <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: 0 auto; line-height: 1.5;">
   <h2 style="color: #1a237e; margin-top: 0;">Welcome to Genius Academy</h2>
   <p>Hi <b>${name}</b>,</p>
   <p>You have been registered in the <b>${workspaceName}</b> workspace. Your account is ready!</p>
-  
+
   <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin: 25px 0;">
     <h3 style="margin-top: 0; color: #0f172a; font-size: 16px; text-transform: uppercase;">Your Access Credentials</h3>
     <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
-      <tr><td style="padding: 8px 0; color: #64748b;">Workspace ID:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${workspaceId}</td></tr>
+      <tr><td style="padding: 8px 0; color: #64748b;">Workspace ID:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${fullWorkspaceLabel}</td></tr>
       <tr><td style="padding: 8px 0; color: #64748b;">Reg. Number:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${matricNumber}</td></tr>
       <tr><td style="padding: 8px 0; color: #64748b;">Secure PIN:</td><td style="padding: 8px 0; text-align: right;"><span style="background: #e0e7ff; color: #3730a3; padding: 6px 12px; border-radius: 6px; font-weight: bold; letter-spacing: 2px;">${autoPin}</span></td></tr>
-      <tr><td style="padding: 8px 0; color: #64748b;">Department:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${workspaceName}</td></tr>
+      <tr><td style="padding: 8px 0; color: #64748b;">Institution:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${workspaceName}</td></tr>
     </table>
   </div>
-  
+
   <p style="color: #d97706; font-weight: bold; font-size: 14px; text-align: center;">🔒 Keep your PIN private. Do not share it.</p>
   
   <div style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #94a3b8; font-size: 12px;">
@@ -9389,8 +9451,10 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
 </div>
         `
       });
+      await pool.query("UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
     } catch (emailErr) {
       console.error('Onboarding email failed:', emailErr);
+      await pool.query("UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
     }
 
     res.json({ success: true, message: 'Student added and credentials sent.' });
@@ -9481,13 +9545,31 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
           continue;
         }
 
-        // Duplicate check
+        // Duplicate / conflict check
         const dup = await client.query(
-          'SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
+          'SELECT id, email FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
           [matricNumber, req.tenant_id]
         );
         if (dup.rows.length > 0) {
-          failed.push({ matric: matricNumber, reason: 'Already in roster' });
+          if (dup.rows[0].email.toLowerCase() === email.toLowerCase()) {
+            // Same student re-uploaded — update name/category silently
+            await client.query(
+              'UPDATE students_roster SET name = $1 WHERE matric_number = $2 AND tenant_id = $3',
+              [name, matricNumber, req.tenant_id]
+            );
+            failed.push({ matric: matricNumber, reason: 'Updated (already existed, same email)' });
+          } else {
+            failed.push({ matric: matricNumber, reason: `Conflict: matric already registered with different email (${dup.rows[0].email})` });
+          }
+          continue;
+        }
+        // Email uniqueness check within tenant
+        const emailDup = await client.query(
+          'SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2',
+          [email, req.tenant_id]
+        );
+        if (emailDup.rows.length > 0) {
+          failed.push({ matric: matricNumber, reason: `Conflict: email already belongs to matric ${emailDup.rows[0].matric_number}` });
           continue;
         }
 
@@ -9520,7 +9602,7 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
 
         // Insert roster entry
         await client.query(
-          'INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+          "INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id, email_status) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending')",
           [req.tenant_id, matricNumber, name, email, course, hashedPin, category_id]
         );
 
@@ -9546,7 +9628,8 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
       client.release();
     }
 
-    // Send onboarding emails after successful commit (fire-and-forget)
+    // Send onboarding emails after successful commit and track status
+    const fullWorkspaceLabel = `${workspaceName} (${workspaceId})`;
     for (const s of succeeded) {
       sendResendEmail({
         fromName: 'Genius Academic Portal',
@@ -9557,14 +9640,18 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
           <p>Hi <b>${s.name}</b>, you have been registered in the <b>${workspaceName}</b> workspace.</p>
           <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:20px;border-radius:12px;margin:20px 0">
             <table style="width:100%;font-size:15px">
-              <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${workspaceId}</td></tr>
+              <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${fullWorkspaceLabel}</td></tr>
               <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric}</td></tr>
               <tr><td style="color:#64748b;padding:6px 0">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${s.autoPin}</span></td></tr>
             </table>
           </div>
           <p style="color:#d97706;font-weight:bold;text-align:center">🔒 Keep your PIN private.</p>
         </div>`
-      }).catch(() => {});
+      }).then(() => {
+        pool.query("UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2", [s.matric, req.tenant_id]).catch(() => {});
+      }).catch(() => {
+        pool.query("UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2", [s.matric, req.tenant_id]).catch(() => {});
+      });
     }
 
     res.json({
@@ -9647,6 +9734,103 @@ app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, asyn
     res.json({ success: true, message: 'Student removed from workspace successfully' });
   } catch (err: any) {
     res.status(500).json({ error: 'Deletion failed' });
+  }
+});
+
+// Lecturer: Resend welcome email for a single student
+app.post('/api/courses/roster/:id/resend', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const studentRes = await pool.query(
+      'SELECT sr.*, sc.name as category_name FROM students_roster sr LEFT JOIN student_categories sc ON sc.id = sr.category_id WHERE sr.id = $1 AND sr.tenant_id = $2',
+      [id, req.tenant_id]
+    );
+    if (!studentRes.rows.length) return res.status(404).json({ error: 'Student not found' });
+    const s = studentRes.rows[0];
+
+    const tenantRes = await pool.query('SELECT workspace_id, name FROM tenants WHERE id = $1', [req.tenant_id]);
+    const workspaceId = tenantRes.rows[0]?.workspace_id || 'N/A';
+    const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
+    const fullWorkspaceLabel = `${workspaceName} (${workspaceId})`;
+
+    // Get plain PIN from users table (pin_code column)
+    const userRes = await pool.query('SELECT pin_code FROM users WHERE matric_number = $1 AND tenant_id = $2', [s.matric_number, req.tenant_id]);
+    const plainPin = userRes.rows[0]?.pin_code || '(contact your lecturer for PIN)';
+
+    await pool.query("UPDATE students_roster SET email_status = 'pending' WHERE id = $1", [id]);
+    await sendResendEmail({
+      fromName: 'Genius Academic Portal',
+      to: s.email,
+      subject: `[Genius Academy] Your Access Credentials — ${workspaceName}`,
+      html: `<div style="font-family:Arial,sans-serif;padding:20px;color:#333;max-width:600px;margin:0 auto;line-height:1.5">
+        <h2 style="color:#1a237e;margin-top:0">Genius Academy — Access Reminder</h2>
+        <p>Hi <b>${s.name}</b>, here are your login credentials for the <b>${workspaceName}</b> portal.</p>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:20px;border-radius:12px;margin:20px 0">
+          <table style="width:100%;font-size:15px">
+            <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${fullWorkspaceLabel}</td></tr>
+            <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric_number}</td></tr>
+            <tr><td style="color:#64748b;padding:6px 0">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${plainPin}</span></td></tr>
+          </table>
+        </div>
+        <p style="color:#d97706;font-weight:bold;text-align:center">🔒 Keep your PIN private.</p>
+        <div style="margin-top:40px;border-top:1px solid #e2e8f0;padding-top:20px;text-align:center;color:#94a3b8;font-size:12px">&copy; 2026 Genius Academic Publishing</div>
+      </div>`
+    });
+    await pool.query("UPDATE students_roster SET email_status = 'sent' WHERE id = $1", [id]);
+    res.json({ success: true, message: `Credentials resent to ${s.email}` });
+  } catch (err: any) {
+    await pool.query("UPDATE students_roster SET email_status = 'failed' WHERE id = $1", [req.params.id]).catch(() => {});
+    res.status(500).json({ error: 'Resend failed: ' + err.message });
+  }
+});
+
+// Lecturer: Bulk resend to all students with failed/pending email status in a category (or all)
+app.post('/api/courses/roster/bulk-resend', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { categoryId } = req.body;
+    const whereExtra = categoryId ? ' AND sr.category_id = $2' : '';
+    const params: any[] = categoryId ? [req.tenant_id, categoryId] : [req.tenant_id];
+    const studentRes = await pool.query(
+      `SELECT sr.* FROM students_roster sr WHERE sr.tenant_id = $1 AND (sr.email_status = 'failed' OR sr.email_status = 'pending')${whereExtra} ORDER BY sr.name ASC`,
+      params
+    );
+
+    const tenantRes = await pool.query('SELECT workspace_id, name FROM tenants WHERE id = $1', [req.tenant_id]);
+    const workspaceId = tenantRes.rows[0]?.workspace_id || 'N/A';
+    const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
+    const fullWorkspaceLabel = `${workspaceName} (${workspaceId})`;
+
+    let sentCount = 0;
+    for (const s of studentRes.rows) {
+      const userRes = await pool.query('SELECT pin_code FROM users WHERE matric_number = $1 AND tenant_id = $2', [s.matric_number, req.tenant_id]);
+      const plainPin = userRes.rows[0]?.pin_code || '(contact your lecturer)';
+      try {
+        await sendResendEmail({
+          fromName: 'Genius Academic Portal',
+          to: s.email,
+          subject: `[Genius Academy] Your Access Credentials — ${workspaceName}`,
+          html: `<div style="font-family:Arial,sans-serif;padding:20px;color:#333;max-width:600px;margin:0 auto;line-height:1.5">
+            <h2 style="color:#1a237e;margin-top:0">Genius Academy — Access Reminder</h2>
+            <p>Hi <b>${s.name}</b>, here are your login credentials for the <b>${workspaceName}</b> portal.</p>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:20px;border-radius:12px;margin:20px 0">
+              <table style="width:100%;font-size:15px">
+                <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${fullWorkspaceLabel}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric_number}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0">PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${plainPin}</span></td></tr>
+              </table>
+            </div>
+            <p style="color:#d97706;font-weight:bold;text-align:center">🔒 Keep your PIN private.</p>
+          </div>`
+        });
+        await pool.query("UPDATE students_roster SET email_status = 'sent' WHERE id = $1", [s.id]);
+        sentCount++;
+      } catch { await pool.query("UPDATE students_roster SET email_status = 'failed' WHERE id = $1", [s.id]); }
+    }
+    res.json({ success: true, sent: sentCount, total: studentRes.rows.length });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Bulk resend failed: ' + err.message });
   }
 });
 
