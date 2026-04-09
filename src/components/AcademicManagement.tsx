@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Users, 
-    ClipboardList, 
-    BrainCircuit, 
-    FileUp, 
-    GraduationCap, 
-    Upload, 
-    CheckCircle, 
+import {
+    Users,
+    ClipboardList,
+    BrainCircuit,
+    FileUp,
+    GraduationCap,
+    Upload,
+    CheckCircle,
     Search,
     Filter,
     MoreHorizontal,
@@ -23,6 +23,8 @@ import {
     Volume2,
     Coins,
     Eye,
+    Trash2,
+    Send,
     Download as DownloadIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -73,6 +75,27 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [assessInstructions, setAssessInstructions] = useState('');
     const [assessSlots, setAssessSlots] = useState<any[]>([]);
     const [viewingSlotsFor, setViewingSlotsFor] = useState<number | null>(null);
+
+    // Assignment-specific
+    const [assessDueDate, setAssessDueDate] = useState('');
+    const [assessSubmType, setAssessSubmType] = useState<'text'|'file'|'both'>('file');
+    const [assessAllowLate, setAssessAllowLate] = useState(false);
+    const [viewingSubsFor, setViewingSubsFor] = useState<number | null>(null);
+    const [submissions, setSubmissions] = useState<any[]>([]);
+    const [gradingSubId, setGradingSubId] = useState<number | null>(null);
+    const [gradeInput, setGradeInput] = useState('');
+    const [feedbackInput, setFeedbackInput] = useState('');
+
+    // Attendance session state
+    const [attendSessions, setAttendSessions] = useState<any[]>([]);
+    const [attendTitle, setAttendTitle] = useState('');
+    const [attendCourseCode, setAttendCourseCode] = useState('');
+    const [attendCategoryId, setAttendCategoryId] = useState('');
+    const [attendDate, setAttendDate] = useState('');
+    const [attendIsPaid, setAttendIsPaid] = useState(false);
+    const [attendPrice, setAttendPrice] = useState('0');
+    const [viewingRollFor, setViewingRollFor] = useState<number | null>(null);
+    const [rollRecords, setRollRecords] = useState<any[]>([]);
 
     useEffect(() => {
         if (token) {
@@ -176,7 +199,10 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 questions_count: parseInt(assessQuestionsCount) || 20,
                 batch_size: parseInt(assessBatchSize) || 10,
                 instructions: assessInstructions || null,
-                material_id: selectedHubResource?.id || null
+                material_id: selectedHubResource?.id || null,
+                due_date: assessDueDate || null,
+                submission_type: assessSubmType,
+                allow_late: assessAllowLate
             };
 
             const res = await fetch('/api/exams', {
@@ -192,6 +218,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 setAssessTitle(''); setAssessCategoryId(''); setAssessStartDate(''); setAssessEndDate('');
                 setAssessInstructions(''); setAssessDuration('60'); setAssessQuestionsCount('20');
                 setAssessBatchSize('10'); setAssessTimerMode('whole'); setSelectedHubResource(null);
+                setAssessDueDate(''); setAssessSubmType('file'); setAssessAllowLate(false);
             } else {
                 addToast(data.error || 'Failed to create assessment', 'error');
             }
@@ -211,6 +238,108 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             addToast('Failed to load slots', 'error');
         }
     };
+
+    const deleteRecord = async (id: number) => {
+        if (!confirm('Delete this record? This cannot be undone.')) return;
+        try {
+            await fetch(`/api/exams/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+            addToast('Deleted', 'info');
+            fetchRecords();
+        } catch { addToast('Delete failed', 'error'); }
+    };
+
+    const togglePublish = async (id: number, current: string) => {
+        const next = current === 'published' ? 'draft' : 'published';
+        try {
+            await fetch(`/api/exams/${id}/publish`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ published_status: next })
+            });
+            addToast(next === 'published' ? 'Published — students can now see it' : 'Unpublished', 'success');
+            fetchRecords();
+        } catch { addToast('Update failed', 'error'); }
+    };
+
+    const fetchAttendSessions = async () => {
+        try {
+            const res = await fetch('/api/attendance/sessions', { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            setAttendSessions(Array.isArray(data) ? data : []);
+        } catch { console.error('Failed to fetch attendance sessions'); }
+    };
+
+    const createAttendSession = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!attendTitle.trim() || !attendDate) return addToast('Title and date are required', 'error');
+        try {
+            const res = await fetch('/api/attendance/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ title: attendTitle, course_code: attendCourseCode, category_id: attendCategoryId || null, session_date: attendDate, is_paid: attendIsPaid, price: parseInt(attendPrice) || 0 })
+            });
+            if (res.ok) {
+                addToast('Session created', 'success');
+                setAttendTitle(''); setAttendCourseCode(''); setAttendCategoryId(''); setAttendDate(''); setAttendIsPaid(false); setAttendPrice('0');
+                fetchAttendSessions();
+            }
+        } catch { addToast('Failed to create session', 'error'); }
+    };
+
+    const updateAttendSession = async (id: number, fields: any) => {
+        try {
+            await fetch(`/api/attendance/sessions/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(fields)
+            });
+            fetchAttendSessions();
+        } catch { addToast('Update failed', 'error'); }
+    };
+
+    const deleteAttendSession = async (id: number) => {
+        if (!confirm('Delete this attendance session?')) return;
+        try {
+            await fetch(`/api/attendance/sessions/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+            addToast('Session deleted', 'info');
+            fetchAttendSessions();
+        } catch { addToast('Delete failed', 'error'); }
+    };
+
+    const loadRollCall = async (sessionId: number) => {
+        setViewingRollFor(sessionId);
+        try {
+            const res = await fetch(`/api/attendance/sessions/${sessionId}/records`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            setRollRecords(Array.isArray(data) ? data : []);
+        } catch { addToast('Failed to load roll call', 'error'); }
+    };
+
+    const loadSubmissions = async (examId: number) => {
+        setViewingSubsFor(examId);
+        try {
+            const res = await fetch(`/api/assignments/${examId}/submissions`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            setSubmissions(Array.isArray(data) ? data : []);
+        } catch { addToast('Failed to load submissions', 'error'); }
+    };
+
+    const gradeSubmission = async (subId: number) => {
+        try {
+            await fetch(`/api/assignments/submissions/${subId}/grade`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ grade: gradeInput, feedback: feedbackInput })
+            });
+            addToast('Graded', 'success');
+            setGradingSubId(null);
+            loadSubmissions(viewingSubsFor!);
+        } catch { addToast('Grade failed', 'error'); }
+    };
+
+    useEffect(() => {
+        if (mode === 'attendance') fetchAttendSessions();
+    }, [mode]);
 
     const updateSettings = async (itemId: number, isResource: boolean, settings: { price: number; is_available: boolean; is_paid: boolean }) => {
         try {
@@ -264,76 +393,169 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         );
     };
 
-    const renderAttendanceContent = () => {
-        const rosterCategory = selectedHubResource && selectedHubResource.category_id 
-            ? categories.find(c => c.id === selectedHubResource.category_id)?.name
-            : null;
-            
-        return (
-        <div className="space-y-8">
-            <div className="grid md:grid-cols-2 gap-8">
-                <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
-                    <h3 className="text-xl font-bold text-slate-900 mb-2">Student Whitelist</h3>
-                    <p className="text-sm text-slate-500 mb-6 font-medium">Link a roster to authorize students.</p>
-                    <div className="border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center hover:bg-blue-50 transition-all cursor-pointer group mb-6" onClick={handleOpenSelector}>
-                        <Upload className="mx-auto text-slate-300 group-hover:text-blue-500 mb-4" size={32} />
-                        <p className="font-bold text-slate-700">{selectedHubResource ? selectedHubResource.name : 'Click to select roster'}</p>
-                    </div>
-                    <button onClick={handleOpenSelector} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-2xl transition-all shadow-lg">
-                        {selectedHubResource ? 'Change Roster' : 'Link Hub Roster'}
-                    </button>
+    const renderRecordControls = (r: any) => (
+        <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+            <button onClick={() => updateSettings(r.id, false, { ...r, is_paid: !r.is_paid })}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${r.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                {r.is_paid ? 'Paid' : 'Free'}
+            </button>
+            {r.is_paid && (
+                <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-black text-slate-400">₦</span>
+                    <input type="number" defaultValue={r.price}
+                        onBlur={e => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
+                        className="w-20 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black" />
                 </div>
-                <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
-                    <h3 className="text-xl font-bold text-slate-900 mb-6 font-display">Access Statistics</h3>
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                            <span className="text-sm font-bold text-slate-500 uppercase">Authorized</span>
-                            <span className="text-2xl font-black text-blue-600">{students.length}</span>
-                        </div>
-                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                            <span className="text-sm font-bold text-slate-500 uppercase">Active Today</span>
-                            <span className="text-2xl font-black text-emerald-600">{students.length > 0 ? Math.floor(students.length * 0.8) : 0}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-8 border-b border-slate-100 flex items-center gap-3">
-                    <h3 className="text-lg font-bold text-slate-800">Student Roll Call</h3>
-                    {rosterCategory && (
-                        <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-black uppercase tracking-widest rounded-lg">
-                            {rosterCategory}
-                        </span>
-                    )}
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="bg-slate-50 border-b border-slate-100">
-                                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Student</th>
-                                <th className="px-4 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Matric Number</th>
-                                <th className="px-8 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {students.length === 0 ? (
-                                <tr><td colSpan={3} className="px-8 py-10 text-center text-slate-400 font-bold">No roster linked.</td></tr>
-                            ) : students.map((s, i) => (
-                                <tr key={i} className="border-b border-slate-50">
-                                    <td className="px-8 py-4 font-bold text-slate-900">{s.name || 'Anonymous'}</td>
-                                    <td className="px-4 py-4 font-mono text-sm text-slate-600">{s.matricNumber}</td>
-                                    <td className="px-8 py-4 text-right">
-                                        <span className="px-3 py-1 bg-slate-100 text-slate-400 rounded-lg text-[10px] font-black uppercase">Awaiting</span>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            )}
+            <button onClick={() => togglePublish(r.id, r.published_status || 'draft')}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${r.published_status === 'published' ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-white'}`}>
+                {r.published_status === 'published' ? '● Live' : '○ Draft'}
+            </button>
+            <button onClick={() => deleteRecord(r.id)}
+                className="ml-auto p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all">
+                <Trash2 size={14} />
+            </button>
         </div>
-        );
-    };
+    );
+
+    const renderAttendanceContent = () => (
+        <div className="space-y-8">
+            <div className="grid lg:grid-cols-2 gap-8">
+                {/* Create Session */}
+                <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
+                    <h3 className="text-xl font-bold text-slate-900 mb-1">Create Attendance Session</h3>
+                    <p className="text-xs text-slate-400 mb-6">Each session is one class/lecture date. Students mark themselves present when the session is open.</p>
+                    <form onSubmit={createAttendSession} className="space-y-4">
+                        <input value={attendTitle} onChange={e => setAttendTitle(e.target.value)} required
+                            placeholder="e.g. Week 5 — Introduction to Algorithms"
+                            className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400" />
+                        <div className="grid grid-cols-2 gap-3">
+                            <input value={attendCourseCode} onChange={e => setAttendCourseCode(e.target.value)}
+                                placeholder="Course Code (e.g. CSC301)"
+                                className="px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400" />
+                            <select value={attendCategoryId} onChange={e => setAttendCategoryId(e.target.value)}
+                                className="px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
+                                <option value="">All Categories</option>
+                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Session Date</label>
+                            <input type="date" value={attendDate} onChange={e => setAttendDate(e.target.value)} required
+                                className="w-full mt-1 px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400" />
+                        </div>
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="font-bold text-slate-700 text-sm">Paid Attendance</p>
+                                    <p className="text-[10px] text-slate-400">Charge students to mark their attendance</p>
+                                </div>
+                                <button type="button" onClick={() => setAttendIsPaid(!attendIsPaid)}
+                                    className={`w-12 h-6 rounded-full relative transition-all ${attendIsPaid ? 'bg-indigo-600' : 'bg-slate-300'}`}>
+                                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${attendIsPaid ? 'right-0.5' : 'left-0.5'}`} />
+                                </button>
+                            </div>
+                            {attendIsPaid && (
+                                <div className="mt-3 flex items-center gap-2">
+                                    <span className="font-black text-slate-400">₦</span>
+                                    <input type="number" value={attendPrice} onChange={e => setAttendPrice(e.target.value)}
+                                        className="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400" />
+                                </div>
+                            )}
+                        </div>
+                        <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl shadow-lg shadow-blue-200 transition-all">
+                            ＋ Create Session
+                        </button>
+                    </form>
+                </div>
+
+                {/* Session Statistics */}
+                <div className="space-y-3">
+                    <h3 className="text-xs font-black text-slate-400 uppercase px-2">Attendance Sessions</h3>
+                    {attendSessions.length === 0 && (
+                        <div className="bg-white rounded-[2rem] p-12 border border-slate-200 text-center text-slate-400">
+                            <ClipboardList size={40} className="mx-auto mb-3 opacity-30" />
+                            <p className="font-bold">No sessions yet. Create your first one.</p>
+                        </div>
+                    )}
+                    {attendSessions.map(s => (
+                        <div key={s.id} className="bg-white rounded-[2rem] p-5 border border-slate-200 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1">
+                                    <p className="font-bold text-slate-900 text-sm">{s.title}</p>
+                                    <div className="flex gap-3 mt-1 flex-wrap">
+                                        {s.course_code && <span className="text-[9px] font-black text-blue-600 uppercase bg-blue-50 px-2 py-0.5 rounded">{s.course_code}</span>}
+                                        {s.category_name && <span className="text-[9px] font-black text-amber-600 uppercase bg-amber-50 px-2 py-0.5 rounded">{s.category_name}</span>}
+                                        <span className="text-[9px] font-black text-slate-400 uppercase">{new Date(s.session_date).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <span className="text-2xl font-black text-emerald-600">{s.present_count || 0}</span>
+                                    <p className="text-[9px] text-slate-400 font-bold uppercase">Present</p>
+                                </div>
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                                <button onClick={() => updateAttendSession(s.id, { is_open: !s.is_open })}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.is_open ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                    {s.is_open ? '🟢 Open' : '⭕ Closed'}
+                                </button>
+                                <button onClick={() => updateAttendSession(s.id, { is_paid: !s.is_paid })}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                    {s.is_paid ? `Paid ₦${s.price}` : 'Free'}
+                                </button>
+                                <button onClick={() => loadRollCall(s.id)}
+                                    className="px-3 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-[10px] font-black uppercase transition-all">
+                                    Roll Call
+                                </button>
+                                <button onClick={() => deleteAttendSession(s.id)}
+                                    className="ml-auto p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all">
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Roll Call Modal */}
+            <AnimatePresence>
+                {viewingRollFor !== null && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onClick={() => setViewingRollFor(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl relative z-10 overflow-hidden max-h-[80vh] flex flex-col">
+                            <div className="p-6 border-b flex items-center justify-between">
+                                <h3 className="font-black text-slate-900">Roll Call — {attendSessions.find(s => s.id === viewingRollFor)?.title}</h3>
+                                <button onClick={() => setViewingRollFor(null)} className="text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+                            </div>
+                            <div className="overflow-y-auto flex-1">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 sticky top-0">
+                                        <tr>
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Student</th>
+                                            <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">Matric</th>
+                                            <th className="px-6 py-3 text-right text-[10px] font-black text-slate-400 uppercase">Time</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rollRecords.length === 0 && <tr><td colSpan={3} className="px-6 py-10 text-center text-slate-400">No attendance recorded yet.</td></tr>}
+                                        {rollRecords.map((r, i) => (
+                                            <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
+                                                <td className="px-6 py-3 font-bold text-slate-900 text-sm">{r.student_name || r.name}</td>
+                                                <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.matric_number}</td>
+                                                <td className="px-6 py-3 text-right text-xs text-slate-400">{new Date(r.marked_at).toLocaleTimeString()}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
 
     const renderAssessmentBuilder = (isExam: boolean) => (
         <form onSubmit={handleCreateAssessment} className="space-y-5">
@@ -489,27 +711,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                                     <span className="ml-auto">{r.questions_count}Q • {r.batch_size}/slot</span>
                                 </div>
                             )}
-                            <div className="pt-2 border-t border-slate-50 flex items-center gap-3 flex-wrap">
-                                <button onClick={() => updateSettings(r.id, false, { ...r, is_paid: !r.is_paid })}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${r.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                    {r.is_paid ? 'Paid' : 'Free'}
-                                </button>
-                                {r.is_paid && (
-                                    <div className="flex items-center gap-1">
-                                        <span className="text-[10px] font-black text-slate-400">₦</span>
-                                        <input type="number" defaultValue={r.price}
-                                            onBlur={e => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
-                                            className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold" />
-                                    </div>
-                                )}
-                                <div className="flex items-center gap-2 ml-auto">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase">{r.is_available ? 'Live' : 'Hidden'}</span>
-                                    <button onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
-                                        className={`w-10 h-5 rounded-full relative transition-colors ${r.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-                                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${r.is_available ? 'right-1' : 'left-1'}`} />
-                                    </button>
-                                </div>
-                            </div>
+                            {renderRecordControls(r)}
                         </div>
                     ))}
                 </div>
@@ -558,58 +760,172 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     const renderAssignmentsContent = () => (
         <div className="space-y-8">
-            <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
-                <h3 className="text-xl font-bold text-slate-900 mb-6">Task Dispatch</h3>
-                <form onSubmit={handleCreateAssessment} className="space-y-4">
-                    <input name="title" required placeholder="Assignment Title" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold" />
-                    <textarea name="description" placeholder="Instructions" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold min-h-[100px]" />
-                    <select name="category_id" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-600 mb-4 cursor-pointer">
-                        <option value="">Target Category (All)</option>
-                        {categories.map(cat => (
-                            <option key={cat.id} value={cat.id}>{cat.name}</option>
-                        ))}
-                    </select>
-                    <div className="flex gap-4">
-                         <button type="submit" disabled={isProcessing} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl disabled:opacity-50">Dispatch</button>
-                         <button type="button" onClick={handleOpenSelector} className="px-6 bg-slate-900 text-white rounded-2xl"><Database size={20} /></button>
-                    </div>
-                </form>
-            </div>
-            <div className="grid md:grid-cols-2 gap-6">
-                {records.map((r, i) => (
-                    <div key={i} className="bg-white p-6 rounded-3xl border border-slate-200 flex flex-col gap-4">
-                        <div className="flex justify-between items-center">
-                            <p className="font-bold text-slate-900">{r.title}</p>
-                            <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Active</span>
-                        </div>
-                        <div className="pt-4 border-t border-slate-50 flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase">Paid</label>
-                                <input 
-                                    type="checkbox" 
-                                    checked={r.is_paid} 
-                                    onChange={(e) => updateSettings(r.id, false, { ...r, is_paid: e.target.checked })}
-                                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                                />
+            <div className="grid lg:grid-cols-2 gap-8">
+                {/* Assignment Builder */}
+                <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
+                    <h3 className="text-xl font-bold text-slate-900 mb-1">Assignment Builder</h3>
+                    <p className="text-xs text-slate-400 mb-6">Assignments differ from tests — students write, upload or respond at their own pace within a deadline. No MCQ, no timer.</p>
+                    <form onSubmit={handleCreateAssessment} className="space-y-4">
+                        <input value={assessTitle} onChange={e => setAssessTitle(e.target.value)} required
+                            placeholder="Assignment Title"
+                            className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400" />
+                        <textarea value={assessInstructions} onChange={e => setAssessInstructions(e.target.value)}
+                            placeholder="Full instructions / question / task description — this is what the student will read and respond to..."
+                            rows={5}
+                            className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-400 resize-none" />
+                        <div className="grid grid-cols-2 gap-3">
+                            <select value={assessCategoryId} onChange={e => setAssessCategoryId(e.target.value)}
+                                className="px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
+                                <option value="">Target Category (All)</option>
+                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                            <div>
+                                <input type="datetime-local" value={assessDueDate} onChange={e => setAssessDueDate(e.target.value)}
+                                    className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-400" />
+                                <p className="text-[9px] text-slate-400 mt-1 ml-1">Submission Deadline</p>
                             </div>
-                            {r.is_paid && (
-                                <input 
-                                    type="number" 
-                                    value={r.price} 
-                                    onBlur={(e) => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
-                                    className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold"
-                                />
-                            )}
-                            <button 
-                                onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
-                                className={`w-10 h-5 rounded-full relative transition-colors ml-auto ${r.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                            >
-                                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${r.is_available ? 'right-1' : 'left-1'}`} />
+                        </div>
+
+                        {/* Submission type */}
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">How do students submit?</p>
+                            <div className="grid grid-cols-3 gap-2">
+                                {(['file','text','both'] as const).map(t => (
+                                    <button key={t} type="button" onClick={() => setAssessSubmType(t)}
+                                        className={`py-2.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${assessSubmType === t ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                        {t === 'file' ? '📎 File Upload' : t === 'text' ? '✏️ Text Answer' : '🔀 Both'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                            <div>
+                                <p className="font-bold text-slate-700 text-sm">Allow Late Submissions</p>
+                                <p className="text-[10px] text-slate-400">Students can still submit after the deadline</p>
+                            </div>
+                            <button type="button" onClick={() => setAssessAllowLate(!assessAllowLate)}
+                                className={`w-12 h-6 rounded-full relative transition-all ${assessAllowLate ? 'bg-amber-500' : 'bg-slate-300'}`}>
+                                <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${assessAllowLate ? 'right-0.5' : 'left-0.5'}`} />
                             </button>
                         </div>
-                    </div>
-                ))}
+
+                        {/* Optional material attachment */}
+                        <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-all" onClick={handleOpenSelector}>
+                            <Database size={18} className="mx-auto mb-1 text-slate-400" />
+                            <p className="font-bold text-slate-500 text-xs">{selectedHubResource ? `📎 ${selectedHubResource.name}` : 'Attach reference material (optional)'}</p>
+                        </div>
+
+                        <button type="submit" disabled={isProcessing || !assessTitle.trim()}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl disabled:opacity-40 transition-all shadow-lg shadow-blue-200">
+                            {isProcessing ? '⚙️ Creating...' : '🚀 Publish Assignment'}
+                        </button>
+                    </form>
+                </div>
+
+                {/* Assignment Records */}
+                <div className="space-y-4">
+                    <h3 className="text-xs font-black text-slate-400 uppercase px-2">Assignment Records</h3>
+                    {records.length === 0 && !isLoadingRecords && (
+                        <div className="bg-white rounded-[2rem] p-12 border border-slate-200 text-center text-slate-400">
+                            <FileUp size={40} className="mx-auto mb-3 opacity-30" />
+                            <p className="font-bold">No assignments yet.</p>
+                        </div>
+                    )}
+                    {records.map((r, i) => (
+                        <div key={i} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-3 flex-1">
+                                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0"><FileUp size={18} /></div>
+                                    <div>
+                                        <p className="font-bold text-slate-900 text-sm">{r.title}</p>
+                                        <div className="flex gap-2 mt-0.5 flex-wrap">
+                                            <span className="text-[9px] font-black text-slate-400 uppercase">{r.submission_type || 'file'} submission</span>
+                                            {r.due_date && <span className={`text-[9px] font-black uppercase ${new Date(r.due_date) < new Date() ? 'text-rose-500' : 'text-blue-500'}`}>
+                                                Due: {new Date(r.due_date).toLocaleDateString()}
+                                            </span>}
+                                            {r.allow_late && <span className="text-[9px] font-black text-amber-500 uppercase">Late OK</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onClick={() => loadSubmissions(r.id)}
+                                    className="px-3 py-1 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-[9px] font-black uppercase transition-all shrink-0">
+                                    Submissions
+                                </button>
+                            </div>
+                            {r.instructions && (
+                                <p className="text-xs text-slate-500 line-clamp-2 px-1">{r.instructions}</p>
+                            )}
+                            {renderRecordControls(r)}
+                        </div>
+                    ))}
+                </div>
             </div>
+
+            {/* Submissions Modal */}
+            <AnimatePresence>
+                {viewingSubsFor !== null && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onClick={() => { setViewingSubsFor(null); setGradingSubId(null); }}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl relative z-10 overflow-hidden max-h-[85vh] flex flex-col">
+                            <div className="p-6 border-b flex items-center justify-between">
+                                <h3 className="font-black text-slate-900">Submissions — {records.find(r => r.id === viewingSubsFor)?.title}</h3>
+                                <button onClick={() => { setViewingSubsFor(null); setGradingSubId(null); }} className="text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+                            </div>
+                            <div className="overflow-y-auto flex-1 p-6 space-y-4">
+                                {submissions.length === 0 && <p className="text-center text-slate-400 py-8">No submissions yet.</p>}
+                                {submissions.map(s => (
+                                    <div key={s.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div>
+                                                <p className="font-bold text-slate-900 text-sm">{s.student_name}</p>
+                                                <p className="text-[10px] text-slate-400">{s.student_email} · {new Date(s.submitted_at).toLocaleString()}</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {s.grade && <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-black rounded-lg">{s.grade}</span>}
+                                                {s.file_name && (
+                                                    <a href={`/api/assignments/submissions/${s.id}/file`} target="_blank"
+                                                        className="px-3 py-1 bg-blue-50 text-blue-600 text-xs font-black rounded-lg hover:bg-blue-100 transition-all flex items-center gap-1">
+                                                        <DownloadIcon size={12} /> {s.file_name}
+                                                    </a>
+                                                )}
+                                                <button onClick={() => { setGradingSubId(s.id); setGradeInput(s.grade || ''); setFeedbackInput(s.feedback || ''); }}
+                                                    className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-black rounded-lg transition-all">Grade</button>
+                                            </div>
+                                        </div>
+                                        {s.content && <p className="mt-3 text-sm text-slate-600 bg-white p-3 rounded-xl border border-slate-100">{s.content}</p>}
+                                        {s.feedback && <p className="mt-2 text-xs text-slate-500 italic">Feedback: {s.feedback}</p>}
+
+                                        {/* Inline grade form */}
+                                        {gradingSubId === s.id && (
+                                            <div className="mt-3 p-4 bg-white rounded-xl border border-blue-100 space-y-3">
+                                                <div className="flex gap-3">
+                                                    <input value={gradeInput} onChange={e => setGradeInput(e.target.value)}
+                                                        placeholder="Grade (e.g. A, 85/100, Pass)"
+                                                        className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400" />
+                                                </div>
+                                                <textarea value={feedbackInput} onChange={e => setFeedbackInput(e.target.value)}
+                                                    placeholder="Feedback to student..."
+                                                    rows={2}
+                                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 resize-none" />
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => gradeSubmission(s.id)}
+                                                        className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700 transition-all">Save Grade</button>
+                                                    <button onClick={() => setGradingSubId(null)}
+                                                        className="px-6 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-black hover:bg-slate-200 transition-all">Cancel</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 
@@ -654,24 +970,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                                     </button>
                                 )}
                             </div>
-                            <div className="pt-2 border-t border-slate-50 flex items-center gap-3 flex-wrap">
-                                <button onClick={() => updateSettings(r.id, false, { ...r, is_paid: !r.is_paid })}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${r.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                    {r.is_paid ? 'Paid' : 'Free'}
-                                </button>
-                                {r.is_paid && (
-                                    <div className="flex items-center gap-1">
-                                        <span className="text-[10px] font-black text-slate-400">₦</span>
-                                        <input type="number" defaultValue={r.price}
-                                            onBlur={e => updateSettings(r.id, false, { ...r, price: parseInt(e.target.value) || 0 })}
-                                            className="w-24 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black" />
-                                    </div>
-                                )}
-                                <button onClick={() => updateSettings(r.id, false, { ...r, is_available: !r.is_available })}
-                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ml-auto ${r.is_available ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
-                                    {r.is_available ? 'Live' : 'Hidden'}
-                                </button>
-                            </div>
+                            {renderRecordControls(r)}
                         </div>
                     ))}
                 </div>

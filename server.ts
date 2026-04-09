@@ -752,6 +752,57 @@ async function bootstrapDB() {
         submitted_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Assignment submissions (file or text)
+      CREATE TABLE IF NOT EXISTS assignment_submissions (
+        id SERIAL PRIMARY KEY,
+        exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+        tenant_id INTEGER REFERENCES tenants(id),
+        student_id INTEGER REFERENCES users(id),
+        student_name TEXT,
+        student_email TEXT,
+        submission_type TEXT DEFAULT 'text',
+        content TEXT,
+        file_blob BYTEA,
+        file_name TEXT,
+        mime_type TEXT,
+        grade TEXT,
+        feedback TEXT,
+        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Attendance sessions (one per class date/topic)
+      CREATE TABLE IF NOT EXISTS attendance_sessions (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id),
+        title TEXT NOT NULL,
+        course_code TEXT,
+        category_id INTEGER REFERENCES student_categories(id),
+        session_date DATE NOT NULL,
+        is_paid BOOLEAN DEFAULT FALSE,
+        price INTEGER DEFAULT 0,
+        is_open BOOLEAN DEFAULT FALSE,
+        status TEXT DEFAULT 'draft',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Per-student attendance records tied to a session
+      CREATE TABLE IF NOT EXISTS attendance_records (
+        id SERIAL PRIMARY KEY,
+        session_id INTEGER REFERENCES attendance_sessions(id) ON DELETE CASCADE,
+        tenant_id INTEGER REFERENCES tenants(id),
+        student_id INTEGER REFERENCES users(id),
+        student_name TEXT,
+        matric_number TEXT,
+        marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        payment_reference TEXT
+      );
+
+      -- New columns on exams for status lifecycle
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS published_status TEXT DEFAULT 'draft';
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS submission_type TEXT DEFAULT 'mcq';
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS due_date TIMESTAMP;
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS allow_late BOOLEAN DEFAULT FALSE;
     `);
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS payment_events_event_key_idx ON payment_events(event_key);`);
     console.log('--- DATABASE BOOTSTRAP SUCCESSFUL ---');
@@ -8614,7 +8665,7 @@ app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (
 app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
-      'SELECT id, title, questions, duration, created_at, is_available, price, is_paid FROM exams WHERE tenant_id = $1 ORDER BY created_at DESC',
+      'SELECT id, title, questions, duration, created_at, is_available, price, is_paid, type, start_date, end_date, timer_mode, questions_count, batch_size, instructions, published_status, submission_type, due_date, allow_late, category_id FROM exams WHERE tenant_id = $1 ORDER BY created_at DESC',
       [req.tenant_id]
     );
     res.json(result.rows);
@@ -9695,6 +9746,235 @@ app.get('/api/exams/:id/slots', authenticateToken, async (req: any, res) => {
     res.json(slots.rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch slots' });
+  }
+});
+
+// Lecturer: Delete exam/test/assignment
+app.delete('/api/exams/:id', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    await pool.query('DELETE FROM exams WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete' });
+  }
+});
+
+// Lecturer: Toggle publish status
+app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { published_status } = req.body; // 'published' | 'draft'
+    await pool.query(
+      'UPDATE exams SET published_status = $1, is_available = $2 WHERE id = $3 AND tenant_id = $4',
+      [published_status, published_status === 'published', req.params.id, req.tenant_id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update publish status' });
+  }
+});
+
+// Student: Submit assignment (text or file)
+app.post('/api/assignments/:id/submit', authenticateToken, upload.single('file'), async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const examRes = await pool.query('SELECT * FROM exams WHERE id = $1 AND tenant_id = $2 AND type = $3', [id, req.tenant_id, 'assignment']);
+    if (examRes.rows.length === 0) return res.status(404).json({ error: 'Assignment not found' });
+    const exam = examRes.rows[0];
+
+    if (!exam.is_available || exam.published_status !== 'published') return res.status(403).json({ error: 'Assignment is not open for submissions' });
+
+    // Check due date
+    if (exam.due_date && !exam.allow_late && new Date() > new Date(exam.due_date)) {
+      return res.status(403).json({ error: 'Submission deadline has passed' });
+    }
+
+    // Duplicate check
+    const dup = await pool.query('SELECT id FROM assignment_submissions WHERE exam_id = $1 AND student_id = $2', [id, req.user.id]);
+    if (dup.rows.length > 0) return res.status(409).json({ error: 'You have already submitted this assignment' });
+
+    const content = req.body.content || null;
+    const fileBlob = req.file?.buffer || null;
+    const fileName = req.file?.originalname || null;
+    const mimeType = req.file?.mimetype || null;
+    const submType = req.file ? 'file' : 'text';
+
+    await pool.query(
+      `INSERT INTO assignment_submissions (exam_id, tenant_id, student_id, student_name, student_email, submission_type, content, file_blob, file_name, mime_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [id, req.tenant_id, req.user.id, req.user.name, req.user.email, submType, content, fileBlob, fileName, mimeType]
+    );
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Lecturer: Get all submissions for an assignment
+app.get('/api/assignments/:id/submissions', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const subs = await pool.query(
+      `SELECT s.id, s.student_name, s.student_email, s.submission_type, s.content, s.file_name, s.grade, s.feedback, s.submitted_at
+       FROM assignment_submissions s WHERE s.exam_id = $1 AND s.tenant_id = $2 ORDER BY s.submitted_at DESC`,
+      [req.params.id, req.tenant_id]
+    );
+    res.json(subs.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch submissions' });
+  }
+});
+
+// Lecturer: Grade a submission
+app.put('/api/assignments/submissions/:subId/grade', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { grade, feedback } = req.body;
+    await pool.query(
+      'UPDATE assignment_submissions SET grade = $1, feedback = $2 WHERE id = $3 AND tenant_id = $4',
+      [grade, feedback, req.params.subId, req.tenant_id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to grade submission' });
+  }
+});
+
+// Download submission file
+app.get('/api/assignments/submissions/:subId/file', authenticateToken, async (req: any, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT file_blob, file_name, mime_type FROM assignment_submissions WHERE id = $1 AND tenant_id = $2',
+      [req.params.subId, req.tenant_id]
+    );
+    if (!result.rows.length || !result.rows[0].file_blob) return res.status(404).json({ error: 'File not found' });
+    const { file_blob, file_name, mime_type } = result.rows[0];
+    res.setHeader('Content-Type', mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${file_name}"`);
+    res.send(file_blob);
+  } catch (error) {
+    res.status(500).json({ error: 'Download failed' });
+  }
+});
+
+// ─── ATTENDANCE SESSIONS ─────────────────────────────────────────────────────
+
+// Lecturer: Create attendance session
+app.post('/api/attendance/sessions', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { title, course_code, category_id, session_date, is_paid, price } = req.body;
+    const result = await pool.query(
+      `INSERT INTO attendance_sessions (tenant_id, title, course_code, category_id, session_date, is_paid, price)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [req.tenant_id, title, course_code || null, category_id || null, session_date, !!is_paid, parseInt(price) || 0]
+    );
+    res.json({ success: true, id: result.rows[0].id });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Lecturer: Get all sessions
+app.get('/api/attendance/sessions', authenticateToken, async (req: any, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT s.*, sc.name as category_name,
+       (SELECT COUNT(*) FROM attendance_records r WHERE r.session_id = s.id) as present_count
+       FROM attendance_sessions s
+       LEFT JOIN student_categories sc ON sc.id = s.category_id
+       WHERE s.tenant_id = $1 ORDER BY s.session_date DESC`,
+      [req.tenant_id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch sessions' });
+  }
+});
+
+// Lecturer: Toggle session open/close or publish
+app.put('/api/attendance/sessions/:id', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const fields = req.body;
+    const sets: string[] = [];
+    const vals: any[] = [];
+    let idx = 1;
+    for (const [k, v] of Object.entries(fields)) {
+      if (['is_open','is_paid','price','status','title','course_code','category_id','session_date'].includes(k)) {
+        sets.push(`${k} = $${idx++}`); vals.push(v);
+      }
+    }
+    if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
+    vals.push(req.params.id, req.tenant_id);
+    await pool.query(`UPDATE attendance_sessions SET ${sets.join(',')} WHERE id = $${idx++} AND tenant_id = $${idx}`, vals);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Update failed' });
+  }
+});
+
+// Lecturer: Delete session
+app.delete('/api/attendance/sessions/:id', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    await pool.query('DELETE FROM attendance_sessions WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
+// Lecturer: Get records for a session (roll call)
+app.get('/api/attendance/sessions/:id/records', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const records = await pool.query(
+      `SELECT r.*, u.name, u.email FROM attendance_records r
+       LEFT JOIN users u ON u.id = r.student_id
+       WHERE r.session_id = $1 AND r.tenant_id = $2 ORDER BY r.marked_at ASC`,
+      [req.params.id, req.tenant_id]
+    );
+    res.json(records.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch records' });
+  }
+});
+
+// Student: Mark attendance for a session
+app.post('/api/attendance/sessions/:id/mark', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const session = await pool.query(
+      'SELECT * FROM attendance_sessions WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]
+    );
+    if (!session.rows.length) return res.status(404).json({ error: 'Session not found' });
+    const s = session.rows[0];
+    if (!s.is_open) return res.status(403).json({ error: 'This session is not open for attendance' });
+
+    if (s.is_paid) {
+      const paid = await pool.query(
+        `SELECT id FROM transactions WHERE user_id = $1 AND (metadata->>'session_id')::int = $2 AND status = 'success' LIMIT 1`,
+        [req.user.id, req.params.id]
+      );
+      if (!paid.rows.length) return res.status(402).json({ error: 'Payment required', price: s.price });
+    }
+
+    const dup = await pool.query('SELECT id FROM attendance_records WHERE session_id = $1 AND student_id = $2', [req.params.id, req.user.id]);
+    if (dup.rows.length) return res.status(409).json({ error: 'Already marked for this session' });
+
+    const userRes = await pool.query('SELECT matric_number FROM students_roster WHERE tenant_id = $1 AND email = $2 LIMIT 1', [req.tenant_id, req.user.email]);
+    const matric = userRes.rows[0]?.matric_number || '';
+
+    await pool.query(
+      'INSERT INTO attendance_records (session_id, tenant_id, student_id, student_name, matric_number) VALUES ($1,$2,$3,$4,$5)',
+      [req.params.id, req.tenant_id, req.user.id, req.user.name, matric]
+    );
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
