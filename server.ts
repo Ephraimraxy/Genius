@@ -15,22 +15,36 @@ import multer from 'multer';
 // @ts-ignore
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-// Use the inner lib directly — avoids the test-runner that fires on the main entry point
-// and causes "pdfParse is not a function" in some Node/tsx environments.
-const pdfParse: (buffer: Buffer, options?: any) => Promise<any> = (() => {
-  const candidates = [
-    () => require('pdf-parse/lib/pdf-parse.js'),
-    () => require('pdf-parse'),
-  ];
-  for (const loader of candidates) {
+// Lazy pdf-parse loader — resolved on first call to avoid ESM/CJS startup crashes on Node 22.
+let _pdfParseImpl: ((buffer: Buffer, options?: any) => Promise<any>) | null = null;
+async function pdfParse(buffer: Buffer, options?: any): Promise<any> {
+  if (!_pdfParseImpl) {
+    // 1. Try ESM dynamic import (works with pdf-parse v2 on Node 22)
     try {
-      const m = loader();
-      if (typeof m === 'function') return m;
-      if (typeof m?.default === 'function') return m.default;
+      const mod: any = await import('pdf-parse');
+      const fn = typeof mod?.default === 'function' ? mod.default
+               : typeof mod === 'function'          ? mod
+               : null;
+      if (fn) { _pdfParseImpl = fn; }
     } catch (_) {}
+
+    // 2. Fallback: CJS require paths
+    if (!_pdfParseImpl) {
+      for (const path of ['pdf-parse/lib/pdf-parse.js', 'pdf-parse']) {
+        try {
+          const m = require(path);
+          const fn = typeof m === 'function' ? m : (typeof m?.default === 'function' ? m.default : null);
+          if (fn) { _pdfParseImpl = fn; break; }
+        } catch (_) {}
+      }
+    }
+
+    if (!_pdfParseImpl) {
+      throw new Error('pdf-parse: no callable export found — PDF parsing unavailable.');
+    }
   }
-  throw new Error('pdf-parse: no callable export found');
-})();
+  return _pdfParseImpl(buffer, options);
+}
 import mammoth from 'mammoth';
 const WordExtractor = require('word-extractor');
 const officeParser = require('officeparser');
