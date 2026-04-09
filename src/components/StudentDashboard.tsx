@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, Calendar, Clock, CheckCircle2, AlertCircle, Download } from 'lucide-react';
+import { BookOpen, Calendar, Clock, CheckCircle2, AlertCircle, Download, Loader2 } from 'lucide-react';
 import { ToastType, useToasts } from './ToastSystem';
 import ExamProctoringModal from './ExamProctoringModal';
 import ActiveExamSession from './ActiveExamSession';
@@ -20,6 +20,8 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
     const [activeExamCourse, setActiveExamCourse] = useState<string | null>(null);
     const [showProctoringModal, setShowProctoringModal] = useState(false);
     
+    const [isDownloadingTranscript, setIsDownloadingTranscript] = useState(false);
+
     // Assessment Payment State
     const [showAssessmentPaymentModal, setShowAssessmentPaymentModal] = useState(false);
     const [selectedAssessmentForPayment, setSelectedAssessmentForPayment] = useState<any | null>(null);
@@ -127,18 +129,35 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                         • {profile?.user?.email}
                     </span>
                     <button
-                        onClick={() => {
-                            const a = document.createElement('a');
-                            a.href = `/api/transcripts/my?token=${encodeURIComponent(token || '')}`;
-                            a.setAttribute('download', 'my-transcript.pdf');
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
+                        disabled={isDownloadingTranscript}
+                        onClick={async () => {
+                            if (isDownloadingTranscript) return;
+                            setIsDownloadingTranscript(true);
+                            try {
+                                const res = await fetch('/api/transcripts/my', {
+                                    headers: { 'Authorization': `Bearer ${token}` }
+                                });
+                                if (!res.ok) throw new Error('Failed to generate transcript');
+                                const blob = await res.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'my-transcript.pdf';
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                window.URL.revokeObjectURL(url);
+                            } catch {
+                                addToast('Failed to download transcript', 'error');
+                            } finally {
+                                setIsDownloadingTranscript(false);
+                            }
                         }}
-                        className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-black uppercase tracking-wider hover:bg-emerald-100 transition-all border border-emerald-100"
+                        className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-black uppercase tracking-wider hover:bg-emerald-100 transition-all border border-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed"
                         title="Download your full transcript as PDF"
                     >
-                        <Download size={12} /> My Transcript
+                        {isDownloadingTranscript ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                        {isDownloadingTranscript ? 'Generating...' : 'My Transcript'}
                     </button>
                 </div>
             </header>
