@@ -60,6 +60,9 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import puppeteer from 'puppeteer-core';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
+import helmet from 'helmet';
 
 const JOURNAL_NAME = 'Genius Multidisciplinary International Journal Publication';
 const JOURNAL_DISPLAY_NAME = 'Genius Multidisciplinary International Journal';
@@ -100,6 +103,10 @@ const nsukLogoBase64 = getBase64Image(['Nasarawa-State-University.jpg', 'univers
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
+app.use(helmet({
+  contentSecurityPolicy: false, // Disabled — SPA sets its own CSP via meta tags
+  crossOriginEmbedderPolicy: false, // Required for PDF.js and embedded viewers
+}));
 app.use(cors());
 app.set('trust proxy', 1);
 
@@ -261,7 +268,15 @@ const globalLimiter = rateLimit({
 
 app.use('/api/', globalLimiter);
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+// diskStorage writes the file to /tmp during upload — avoids buffering 50 MB in Node heap.
+// req.file.buffer is unavailable with diskStorage; use req.file.path + fs.createReadStream instead.
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, '/tmp'),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`),
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 // Initialize OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -269,12 +284,76 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Initialize Database connection pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/scholar',
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+  statement_timeout: 30000,
 });
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || process.env.RESEND_FROM || 'onboarding@resend.dev';
 const APP_URL = normalizeBaseUrl(process.env.APP_URL || 'https://geniusapp.com');
+
+// ─── Cloudflare R2 Storage ───────────────────────────────────────────────────
+const R2_ENABLED = !!(
+  process.env.R2_ACCOUNT_ID &&
+  process.env.R2_ACCESS_KEY_ID &&
+  process.env.R2_SECRET_ACCESS_KEY &&
+  process.env.R2_BUCKET_NAME &&
+  process.env.R2_PUBLIC_URL
+);
+
+const r2 = R2_ENABLED ? new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  },
+}) : null;
+
+async function uploadToR2(key: string, body: Buffer | NodeJS.ReadableStream, mimeType: string, contentLength?: number): Promise<string> {
+  if (!r2 || !R2_ENABLED) throw new Error('R2 not configured');
+  // Use @aws-sdk/lib-storage Upload for automatic multipart streaming —
+  // avoids loading the entire file into memory at once for large files
+  const upload = new Upload({
+    client: r2,
+    params: {
+      Bucket: process.env.R2_BUCKET_NAME!,
+      Key: key,
+      Body: body,
+      ContentType: mimeType,
+      ...(contentLength ? { ContentLength: contentLength } : {}),
+    },
+    queueSize: 4,       // 4 concurrent parts
+    partSize: 5 * 1024 * 1024, // 5 MB parts (R2 minimum)
+  });
+  await upload.done();
+  return `${process.env.R2_PUBLIC_URL}/${key}`;
+}
+
+// On first download of a legacy BYTEA file: upload it to R2, store the URL, null out the blob
+async function lazyMigrateToR2(
+  table: string, id: number | string,
+  blobCol: string, urlCol: string,
+  mimeType: string, filename: string
+): Promise<string | null> {
+  if (!R2_ENABLED) return null;
+  try {
+    const res = await pool.query(`SELECT "${blobCol}" FROM ${table} WHERE id = $1`, [id]);
+    const blob: Buffer | null = res.rows[0]?.[blobCol];
+    if (!blob) return null;
+    const key = `${table}/${id}/${filename}`;
+    const url = await uploadToR2(key, Buffer.from(blob), mimeType);
+    await pool.query(`UPDATE ${table} SET "${urlCol}" = $1, "${blobCol}" = NULL WHERE id = $2`, [url, id]);
+    return url;
+  } catch (e) {
+    console.error(`[R2 migrate] ${table}/${id}:`, e);
+    return null;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 const ADMIN_ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL || 'burstbrainconcept@gmail.com';
 
 const buildPaymentReturnUrl = (reference: string, gateway: string, type: string) => {
@@ -397,8 +476,8 @@ async function handleTransactionSuccess(tx: any) {
     const student = userRes.rows[0];
     if (student) {
       const newPin = Math.floor(1000 + Math.random() * 9000).toString();
-      const hashedPin = await bcrypt.hash(newPin, 10);
-      await pool.query('UPDATE users SET password = $1, pin_code = $3 WHERE id = $2', [hashedPin, tx.user_id, newPin]);
+      const hashedPin = await hashPin(newPin);
+      await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPin, tx.user_id]);
       await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE matric_number = $2 AND tenant_id = $3',
         [hashedPin, student.matric_number, tx.tenant_id]);
 
@@ -1210,6 +1289,10 @@ async function initDB() {
   try { await pool.query('ALTER TABLE papers ADD COLUMN formatted_content TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN final_pdf BYTEA'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN final_pdf_filename TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN IF NOT EXISTS file_url TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE papers ADD COLUMN IF NOT EXISTS final_pdf_url TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_url TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS file_url TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN certificate_id TEXT'); } catch (e) { }
 
   try { await pool.query('ALTER TABLE exams ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
@@ -1262,6 +1345,42 @@ async function initDB() {
   // Seed gateway defaults if not set
   await pool.query(`INSERT INTO settings (key, value) VALUES ('gateway_paystack_enabled', 'true') ON CONFLICT (key) DO NOTHING`);
   await pool.query(`INSERT INTO settings (key, value) VALUES ('gateway_kora_enabled', 'true') ON CONFLICT (key) DO NOTHING`);
+
+  // ─── Performance indexes ─────────────────────────────────────────────────
+  // CREATE INDEX IF NOT EXISTS is idempotent — safe to run on every startup
+  const indexes = [
+    // papers — most-queried columns
+    `CREATE INDEX IF NOT EXISTS idx_papers_user_id       ON papers (user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_papers_status        ON papers (status)`,
+    `CREATE INDEX IF NOT EXISTS idx_papers_doi           ON papers (doi)`,
+    `CREATE INDEX IF NOT EXISTS idx_papers_volume_issue  ON papers (volume, issue)`,
+    `CREATE INDEX IF NOT EXISTS idx_papers_published_at  ON papers (published_at DESC)`,
+    // users — auth and roster lookups
+    `CREATE INDEX IF NOT EXISTS idx_users_matric_number  ON users (matric_number)`,
+    `CREATE INDEX IF NOT EXISTS idx_users_tenant_id      ON users (tenant_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_users_role           ON users (role)`,
+    `CREATE INDEX IF NOT EXISTS idx_users_email          ON users (email)`,
+    // students_roster — tenant-scoped queries on every dashboard load
+    `CREATE INDEX IF NOT EXISTS idx_roster_tenant_id     ON students_roster (tenant_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_roster_matric        ON students_roster (matric_number)`,
+    `CREATE INDEX IF NOT EXISTS idx_roster_category      ON students_roster (category_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_roster_email_status  ON students_roster (email_status)`,
+    // resources — lecturer material queries
+    `CREATE INDEX IF NOT EXISTS idx_resources_tenant_id  ON resources (tenant_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_resources_category   ON resources (category_id)`,
+    // exams / assignments
+    `CREATE INDEX IF NOT EXISTS idx_exams_tenant_id      ON exams (tenant_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_submissions_exam_id  ON assignment_submissions (exam_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_submissions_student  ON assignment_submissions (student_id)`,
+    // transactions — payment lookups
+    `CREATE INDEX IF NOT EXISTS idx_transactions_user_id   ON transactions (user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_reference ON transactions (reference)`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_status    ON transactions (status)`,
+  ];
+  for (const sql of indexes) {
+    try { await pool.query(sql); } catch (e) { /* index may already exist under different name */ }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 }
 initDB().catch(err => {
   console.error('CRITICAL: Database initialization failed');
@@ -1298,7 +1417,20 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-scholar-sync-key';
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start.');
+  process.exit(1);
+}
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// PIN pepper — prevents offline dictionary attacks against low-entropy 4-digit PINs.
+// Even if the DB is dumped, hashes cannot be cracked without this server-side secret.
+const PIN_PEPPER = process.env.PIN_PEPPER || '';
+if (!process.env.PIN_PEPPER) {
+  console.warn('[WARN] PIN_PEPPER env var is not set. PIN hashes have reduced security against offline attacks. Set PIN_PEPPER in Railway environment variables.');
+}
+const hashPin = (pin: string) => bcrypt.hash(pin + PIN_PEPPER, 10);
+const verifyPin = (pin: string, hash: string) => bcrypt.compare(pin + PIN_PEPPER, hash);
 
 // Middleware: Authenticate JWT
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -1361,8 +1493,9 @@ const loginSchema = z.object({
   password: z.string()
 });
 
-// Diagnostics Endpoint (Obfuscated)
-app.get('/api/diag', (req, res) => {
+// Diagnostics Endpoint (Obfuscated) — admin-only
+app.get('/api/diag', authenticateToken, (req: any, res: any) => {
+  if (req.user.role !== 'user' && req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Forbidden' });
   const obfuscate = (str: string | undefined) => {
     if (!str) return 'MISSING';
     if (str.includes('://')) { // Handle URLs
@@ -1654,7 +1787,7 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     const user = result.rows[0];
 
     // 2. Validate PIN (which is stored in the password field for students)
-    const validPin = await bcrypt.compare(pin, user.password);
+    const validPin = await verifyPin(pin, user.password);
     if (!validPin) return res.status(401).json({ error: 'Invalid matric number or PIN' });
 
 
@@ -1705,7 +1838,7 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
 });
 
 // Student: Recover PIN
-app.post('/api/auth/student/recover-pin', async (req, res) => {
+app.post('/api/auth/student/recover-pin', authLimiter, async (req, res) => {
   try {
     const { matricNumber, workspaceId } = req.body;
     if (!matricNumber || !workspaceId) return res.status(400).json({ error: 'Matric number and Workspace ID required' });
@@ -1727,7 +1860,7 @@ app.post('/api/auth/student/recover-pin', async (req, res) => {
   }
 });
 
-app.post('/api/payment/pin-recovery/initialize', async (req, res) => {
+app.post('/api/payment/pin-recovery/initialize', authLimiter, async (req, res) => {
   try {
     const { userId, matricNumber } = req.body;
     const priceRes = await pool.query("SELECT value FROM settings WHERE key = 'pin_recovery_price'");
@@ -2567,7 +2700,6 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
       '--disable-gpu',
       '--disable-software-rasterizer',
       '--disable-extensions',
-      '--single-process',
       '--no-zygote',
       '--font-render-hinting=none',
       '--force-color-profile=srgb',
@@ -2975,7 +3107,7 @@ app.post('/api/convert/doc-to-docx', authenticateToken, upload.single('file'), a
     // Extract text from .doc (OLE2 binary) using word-extractor
     let textContent = '';
     try {
-      const buf = Buffer.isBuffer(req.file.buffer) ? req.file.buffer : Buffer.from(req.file.buffer);
+      const buf = fs.readFileSync(req.file.path);
       const extractor = new WordExtractor();
       const extracted = await extractor.extract(buf);
       textContent = extracted.getBody() || '';
@@ -3026,7 +3158,7 @@ app.post('/api/convert/doc-to-pdf', authenticateToken, upload.single('file'), as
     // Extract text from .doc (OLE2 binary) using word-extractor
     let textContent = '';
     try {
-      const buf = Buffer.isBuffer(req.file.buffer) ? req.file.buffer : Buffer.from(req.file.buffer);
+      const buf = fs.readFileSync(req.file.path);
       const extractor = new WordExtractor();
       const extracted = await extractor.extract(buf);
       textContent = extracted.getBody() || '';
@@ -3148,16 +3280,19 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       });
     }
 
+    // Read file once from disk — avoids holding 50 MB in Node heap during the request
+    const fileBuffer = fs.readFileSync(req.file.path);
+
     if (req.file.mimetype === 'application/pdf') {
-      metadata = await parseWithGrobid(req.file.buffer);
-      const data = await pdfParse(req.file.buffer);
+      metadata = await parseWithGrobid(fileBuffer);
+      const data = await pdfParse(fileBuffer);
       textContent = data.text;
       if (!metadata) metadata = {};
       metadata.sourcePageCount = data.numpages;
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       let result;
       try {
-        result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        result = await mammoth.extractRawText({ buffer: fileBuffer });
       } catch (docxErr: any) {
         console.error('DOCX parse error:', docxErr?.message);
         return res.status(400).json({ error: 'The uploaded DOCX file appears to be corrupted or is not a valid Word document. Please re-save the file in Word and try again.' });
@@ -3251,8 +3386,19 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
     // while full objects are preserved in the metadata JSONB
     const authorNames = normalizeAuthorNames(metadata.authors);
 
+    // Upload file to R2 (streaming from disk) or fall back to BYTEA
+    let paperFileUrl: string | null = null;
+    let paperFileBlob: Buffer | null = R2_ENABLED ? null : fileBuffer;
+    if (R2_ENABLED) {
+      const safeFilename = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const r2Key = `papers/manuscripts/${Date.now()}-${safeFilename}`;
+      paperFileUrl = await uploadToR2(r2Key, fs.createReadStream(req.file.path), req.file.mimetype, req.file.size);
+    }
+    // Clean up temp file from disk regardless of outcome
+    fs.unlink(req.file.path, () => {});
+
     const result = await pool.query(
-      'INSERT INTO papers (user_id, title, authors, abstract, content, metadata, file_blob) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      'INSERT INTO papers (user_id, title, authors, abstract, content, metadata, file_blob, file_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
       [
         userId,
         metadata.title || 'Untitled',
@@ -3260,7 +3406,8 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
         metadata.abstract || '',
         textContent,
         JSON.stringify(metadata),
-        req.file.buffer
+        paperFileBlob,
+        paperFileUrl,
       ]
     );
 
@@ -3401,24 +3548,28 @@ app.put('/api/papers/:id/status', authenticateToken, async (req: any, res) => {
 app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const result = await pool.query('SELECT file_blob, title, metadata FROM papers WHERE id = $1', [id]);
+    const result = await pool.query('SELECT file_blob, file_url, title, metadata FROM papers WHERE id = $1', [id]);
     const paper = result.rows[0];
-
-    if (!paper || !paper.file_blob) {
-      return res.status(404).json({ error: 'File data not found on server' });
-    }
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const ext = metadata.mimetype === 'application/pdf' ? 'pdf' : 'docx';
-
-    // Sanitize filename to prevent header injection or invalid characters
     const safeTitle = (paper.title || 'manuscript').replace(/[^a-zA-Z0-9\s-_]/g, '').substring(0, 100);
-
     const mimetype = metadata.mimetype || (ext === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
-    res.setHeader('Content-Type', mimetype);
-    res.setHeader('Content-Disposition', `inline; filename="${safeTitle}.${ext}"`);
-    res.send(paper.file_blob);
+    // R2 URL — redirect directly to CDN
+    if (paper.file_url) return res.redirect(302, paper.file_url);
+
+    // Legacy BYTEA — serve and lazily migrate to R2
+    if (paper.file_blob) {
+      res.setHeader('Content-Type', mimetype);
+      res.setHeader('Content-Disposition', `inline; filename="${safeTitle}.${ext}"`);
+      res.send(paper.file_blob);
+      lazyMigrateToR2('papers', id, 'file_blob', 'file_url', mimetype, `manuscript.${ext}`).catch(() => {});
+      return;
+    }
+
+    return res.status(404).json({ error: 'File data not found on server' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -3459,7 +3610,7 @@ async function resequenceIssuePages(volume: string, issue: string): Promise<void
 
 async function generatePublishedArticlePDF(paperId: number | string): Promise<{ buffer: Buffer; filename: string }> {
   const result = await pool.query(
-    'SELECT id, title, authors, abstract, content, formatted_content, metadata, doi, volume, issue, issn, published_at, created_at, final_pdf, final_pdf_filename FROM papers WHERE id = $1',
+    'SELECT id, title, authors, abstract, content, formatted_content, metadata, doi, volume, issue, issn, published_at, created_at, final_pdf, final_pdf_filename, final_pdf_url FROM papers WHERE id = $1',
     [paperId]
   );
   const paper = result.rows[0];
@@ -3498,12 +3649,14 @@ async function generatePublishedArticlePDF(paperId: number | string): Promise<{ 
     return { buffer: Buffer.from(buffer), filename: `${(paper.title || 'article').replace(/[^a-z0-9]/gi, '_')}.pdf` };
   }
 
-  // Last resort: serve the stored final_pdf binary (only reached if no formatted_content and no AST)
+  // Last resort: serve the stored final_pdf (R2 URL or legacy BYTEA)
+  const fallbackFilename = paper.final_pdf_filename || `${buildSafeFilename(paper.title || 'article', '_Published.pdf')}`;
+  if (paper.final_pdf_url) {
+    const resp = await fetch(paper.final_pdf_url);
+    if (resp.ok) return { buffer: Buffer.from(await resp.arrayBuffer()), filename: fallbackFilename };
+  }
   if (paper.final_pdf) {
-    return {
-      buffer: Buffer.from(paper.final_pdf),
-      filename: paper.final_pdf_filename || `${buildSafeFilename(paper.title || 'article', '_Published.pdf')}`
-    };
+    return { buffer: Buffer.from(paper.final_pdf), filename: fallbackFilename };
   }
 
   const issn = paper.issn || '2971-7760';
@@ -5388,9 +5541,17 @@ const finalizePublicationFromRetry = async (paperId: number) => {
     journalConfig
   );
 
+  // Upload final PDF to R2 if configured, otherwise store as BYTEA
+  let storedFinalPdfBlob: Buffer | null = finalPdfBuffer;
+  let storedFinalPdfUrl: string | null = null;
+  if (R2_ENABLED) {
+    storedFinalPdfUrl = await uploadToR2(`papers/final/${paperId}/${finalFilename}`, finalPdfBuffer, 'application/pdf');
+    storedFinalPdfBlob = null;
+  }
+
   await pool.query(
-    "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4, issn = $5, published_at = $6, final_pdf = $7, final_pdf_filename = $8, certificate_id = $9, is_locked = TRUE WHERE id = $10",
-    [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), issn, publishedAt, finalPdfBuffer, finalFilename, certificateId, paperId]
+    "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4, issn = $5, published_at = $6, final_pdf = $7, final_pdf_filename = $8, certificate_id = $9, is_locked = TRUE, final_pdf_url = $11 WHERE id = $10",
+    [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), issn, publishedAt, storedFinalPdfBlob, finalFilename, certificateId, paperId, storedFinalPdfUrl]
   );
 
   const countRes = await pool.query("SELECT COUNT(*) FROM papers WHERE status = 'published' AND volume = $1 AND issue = $2", [vol.toString(), iss.toString()]);
@@ -6300,9 +6461,17 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       journalConfig
     );
 
+    // Upload final PDF to R2 if configured, otherwise store as BYTEA
+    let storedFinalPdfBlob: Buffer | null = finalPdfBuffer;
+    let storedFinalPdfUrl: string | null = null;
+    if (R2_ENABLED) {
+      storedFinalPdfUrl = await uploadToR2(`papers/final/${paperId}/${finalFilename}`, finalPdfBuffer, 'application/pdf');
+      storedFinalPdfBlob = null;
+    }
+
     await pool.query(
-      "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4, issn = $5, published_at = $6, final_pdf = $7, final_pdf_filename = $8, certificate_id = $9, is_locked = TRUE WHERE id = $10",
-      [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), issn, publishedAt, finalPdfBuffer, finalFilename, certificateId, paperId]
+      "UPDATE papers SET status = 'published', metadata = $1, doi = $2, volume = $3, issue = $4, issn = $5, published_at = $6, final_pdf = $7, final_pdf_filename = $8, certificate_id = $9, is_locked = TRUE, final_pdf_url = $11 WHERE id = $10",
+      [JSON.stringify(updatedMetadata), doi, vol.toString(), iss.toString(), issn, publishedAt, storedFinalPdfBlob, finalFilename, certificateId, paperId, storedFinalPdfUrl]
     );
 
     // 5. Volume/Issue Increment Logic
@@ -7114,23 +7283,32 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     // Only admins or the owner can view the file
-    const result = await pool.query('SELECT file_blob, title, metadata FROM papers WHERE id = $1', [id]);
+    const result = await pool.query('SELECT file_blob, file_url, title, metadata, user_id FROM papers WHERE id = $1', [id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const isOwnerResult = await pool.query('SELECT user_id FROM papers WHERE id = $1', [id]);
-    const isOwner = isOwnerResult.rows[0]?.user_id === req.user.id;
+    const isOwner = paper.user_id === req.user.id;
     const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
-
     if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Unauthorized' });
 
-    if (!paper.file_blob) {
-      return res.status(404).json({ error: 'PDF file not available for this paper. It may have been uploaded before file storage was enabled.' });
+    const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata || '{}') : (paper.metadata || {}));
+    const ext = metadata.mimetype === 'application/pdf' ? 'pdf' : 'docx';
+    const mimetype = metadata.mimetype || 'application/pdf';
+    const safeTitle = (paper.title || 'manuscript').replace(/[^a-zA-Z0-9]/g, '_');
+
+    // R2 URL — redirect directly to CDN
+    if (paper.file_url) return res.redirect(302, paper.file_url);
+
+    // Legacy BYTEA — serve and lazily migrate
+    if (paper.file_blob) {
+      res.setHeader('Content-Type', mimetype);
+      res.setHeader('Content-Disposition', `inline; filename="${safeTitle}.${ext}"`);
+      res.send(paper.file_blob);
+      lazyMigrateToR2('papers', id, 'file_blob', 'file_url', mimetype, `manuscript.${ext}`).catch(() => {});
+      return;
     }
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${paper.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
-    res.send(paper.file_blob);
+    return res.status(404).json({ error: 'PDF file not available for this paper.' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch file' });
   }
@@ -8704,19 +8882,24 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
       }
     }
 
-    // Re-query with file_blob and mime_type
+    // Re-query with file storage fields
     const fullResult = await pool.query(
-      'SELECT name, type, content, file_blob, mime_type FROM resources WHERE id = $1 AND tenant_id = $2',
+      'SELECT name, type, content, file_blob, file_url, mime_type FROM resources WHERE id = $1 AND tenant_id = $2',
       [req.params.id, req.tenant_id]
     );
     const row = fullResult.rows[0];
 
-    // Serve original binary if available
+    // R2 URL — redirect directly to CDN
+    if (row.file_url) return res.redirect(302, row.file_url);
+
+    // Legacy BYTEA — serve and lazily migrate to R2
     if (row.file_blob) {
       const mime = row.mime_type || 'application/octet-stream';
       res.setHeader('Content-Type', mime);
       res.setHeader('Content-Disposition', `attachment; filename="${row.name}"`);
-      return res.send(row.file_blob);
+      res.send(row.file_blob);
+      lazyMigrateToR2('resources', req.params.id, 'file_blob', 'file_url', mime, row.name).catch(() => {});
+      return;
     }
 
     // Fallback: serve extracted text
@@ -8776,30 +8959,32 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
     const { type, name, categoryName, categoryId, isPaidEntry, entryFee } = req.body;
     if (!type || !name) return res.status(400).json({ error: 'Missing required fields' });
 
+    // Read file once from disk into buffer for text extraction
+    const fileBuffer = fs.readFileSync(req.file.path);
+
     // Extract text content from binary file
     let textContent = '';
     const mime = req.file.mimetype;
     const origName = (req.file.originalname || '').toLowerCase();
 
     if (mime === 'application/pdf' || origName.endsWith('.pdf')) {
-      const data = await pdfParse(req.file.buffer);
+      const data = await pdfParse(fileBuffer);
       textContent = data.text || '';
     } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || origName.endsWith('.docx')) {
-      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      const result = await mammoth.extractRawText({ buffer: fileBuffer });
       textContent = result.value || '';
     } else if (mime === 'application/msword' || origName.endsWith('.doc')) {
       const extractor = new WordExtractor();
-      const extracted = await extractor.extract(req.file.buffer);
+      const extracted = await extractor.extract(fileBuffer);
       textContent = extracted.getBody() || '';
     } else if (
       mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
       origName.endsWith('.pptx')
     ) {
-      const pptxResult = await officeParser.parseOffice(req.file.buffer);
+      const pptxResult = await officeParser.parseOffice(fileBuffer);
       if (typeof pptxResult === 'string') {
         textContent = pptxResult;
       } else if (pptxResult && typeof pptxResult === 'object') {
-        // officeparser may return { text, slides, ... } — extract the string content
         const candidate = (pptxResult as any).text ?? (pptxResult as any).body ?? (pptxResult as any).content ?? (pptxResult as any).value;
         textContent = typeof candidate === 'string' ? candidate : JSON.stringify(pptxResult);
       } else {
@@ -8807,7 +8992,7 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
       }
     } else {
       // Plain text fallback
-      textContent = req.file.buffer.toString('utf8').replace(/\0/g, '');
+      textContent = fileBuffer.toString('utf8').replace(/\0/g, '');
     }
 
     // Sanitize: strip null bytes that PostgreSQL rejects
@@ -8828,12 +9013,19 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
       }
     }
 
-    // Store extracted text + original binary so download returns the real file
+    // Upload to R2 (streaming from disk) or fall back to BYTEA
     const contentJson = JSON.stringify({ text: textContent });
     const mimeType = req.file.mimetype || 'application/octet-stream';
+    let resourceFileBlob: Buffer | null = R2_ENABLED ? null : fileBuffer;
+    let resourceFileUrl: string | null = null;
+    if (R2_ENABLED) {
+      const safeFilename = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      resourceFileUrl = await uploadToR2(`resources/${req.tenant_id}/${Date.now()}-${safeFilename}`, fs.createReadStream(req.file.path), mimeType, req.file.size);
+    }
+    fs.unlink(req.file.path, () => {});
     const result = await pool.query(
-      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
-      [req.tenant_id, type, name, contentJson, 'ready', final_category_id, req.file.buffer, mimeType]
+      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type, file_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+      [req.tenant_id, type, name, contentJson, 'ready', final_category_id, resourceFileBlob, mimeType, resourceFileUrl]
     );
 
     res.json({ success: true, id: result.rows[0].id });
@@ -8979,17 +9171,9 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
           continue;
         }
 
-        // New student — resolve PIN and insert
-        let hashedPin = '';
-        let autoPin = '';
-        const globalUserCheck = await pool.query("SELECT password, pin_code FROM users WHERE matric_number = $1 AND role = 'student' LIMIT 1", [matricNumber]);
-        if (globalUserCheck.rows.length > 0) {
-          hashedPin = globalUserCheck.rows[0].password;
-          autoPin = globalUserCheck.rows[0].pin_code || '****';
-        } else {
-          autoPin = String(Math.floor(1000 + Math.random() * 9000));
-          hashedPin = await bcrypt.hash(autoPin, 10);
-        }
+        // New student — generate fresh PIN (never stored plain)
+        const autoPin = String(Math.floor(1000 + Math.random() * 9000));
+        const hashedPin = await hashPin(autoPin);
 
         await pool.query(
           "INSERT INTO students_roster (tenant_id, matric_number, name, email, pin_hash, category_id, email_status) VALUES ($1, $2, $3, $4, $5, $6, 'pending')",
@@ -8999,11 +9183,11 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
         if (userCheck.rows.length === 0) {
           await pool.query(
-            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-            [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, autoPin]
+            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id]
           );
         } else {
-          await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, autoPin, final_category_id]);
+          await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, final_category_id]);
         }
 
         // Send onboarding email and track status
@@ -9444,19 +9628,9 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
     if (existing.rows.length > 0) return res.status(400).json({ error: 'Student already in your roster.' });
 
-    // 2. Resolve Global Student User & PIN
-    let hashedPin = '';
-    let autoPin = '';
-
-    const globalUserCheck = await pool.query('SELECT password, pin_code FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matricNumber]);
-
-    if (globalUserCheck.rows.length > 0) {
-      hashedPin = globalUserCheck.rows[0].password;
-      autoPin = globalUserCheck.rows[0].pin_code || '****'; // Use existing if available
-    } else {
-      autoPin = String(Math.floor(1000 + Math.random() * 9000));
-      hashedPin = await bcrypt.hash(autoPin, 10);
-    }
+    // 2. Generate fresh PIN (never stored plain)
+    const autoPin = String(Math.floor(1000 + Math.random() * 9000));
+    const hashedPin = await hashPin(autoPin);
 
     // 3. Handle Category Logic (Price Lock)
     let category_id = null;
@@ -9487,11 +9661,11 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
     if (userCheck.rows.length === 0) {
       await pool.query(
-        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id, autoPin]
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id]
       );
     } else {
-      await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, autoPin, category_id]);
+      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, category_id]);
     }
 
     // 6. Send email with auto-generated PIN
@@ -9540,7 +9714,7 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
 });
 
 // Student: Set PIN using Invitation Token
-app.post('/api/student/setup-pin', async (req, res) => {
+app.post('/api/student/setup-pin', authLimiter, async (req, res) => {
   try {
     const { token, matric, pin } = req.body;
     if (!token || !matric || !pin) return res.status(400).json({ error: 'Token, Matric, and PIN are required.' });
@@ -9556,7 +9730,7 @@ app.post('/api/student/setup-pin', async (req, res) => {
     const student = result.rows[0];
 
     // 2. Hash PIN and Update Roster
-    const hashedPin = await bcrypt.hash(pin, 10);
+    const hashedPin = await hashPin(pin);
     await pool.query(
       'UPDATE students_roster SET pin_hash = $1, setup_token = NULL, token_expires = NULL WHERE id = $2',
       [hashedPin, student.id]
@@ -9566,11 +9740,11 @@ app.post('/api/student/setup-pin', async (req, res) => {
     const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matric]);
     if (userCheck.rows.length === 0) {
       await pool.query(
-        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [student.email, student.name, hashedPin, 'student', student.tenant_id, matric, student.category_id, pin]
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [student.email, student.name, hashedPin, 'student', student.tenant_id, matric, student.category_id]
       );
     } else {
-      await pool.query('UPDATE users SET password = $1, pin_code = $3, category_id = COALESCE(category_id, $4) WHERE id = $2', [hashedPin, userCheck.rows[0].id, pin, student.category_id]);
+      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, student.category_id]);
     }
 
     res.json({ success: true, message: 'PIN set successfully. You can now log in.' });
@@ -9618,6 +9792,23 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
     try {
       await client.query('BEGIN');
 
+      // ── Pre-fetch all existing conflicts in 2 queries (eliminates N+1) ──
+      const [existingRosterRes, existingUsersRes] = await Promise.all([
+        client.query('SELECT matric_number, email FROM students_roster WHERE tenant_id = $1', [req.tenant_id]),
+        client.query("SELECT matric_number FROM users WHERE tenant_id = $1 AND role = 'student'", [req.tenant_id]),
+      ]);
+      const existingByMatric = new Map<string, string>(); // matric → email
+      const existingByEmail = new Map<string, string>();  // email → matric
+      for (const row of existingRosterRes.rows) {
+        existingByMatric.set(row.matric_number.toLowerCase(), row.email.toLowerCase());
+        existingByEmail.set(row.email.toLowerCase(), row.matric_number);
+      }
+      const existingUserMatrics = new Set(existingUsersRes.rows.map((r: any) => r.matric_number.toLowerCase()));
+
+      // ── Validate and classify all students in-memory (no DB queries) ──
+      const toInsert: Array<{ matricNumber: string; name: string; email: string; course: string; category_id: number | null; autoPin: string; hashedPin?: string }> = [];
+      const toUpdateName: Array<{ matricNumber: string; name: string }> = [];
+
       for (const raw of dedupedStudents) {
         const matricNumber = clean(raw.matricNumber || raw.regNumber || raw.matric);
         const name = clean(raw.name || raw.studentName || raw.fullName);
@@ -9625,89 +9816,97 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
         const course = clean(raw.course || raw.department || '');
         const categoryName = clean(raw.categoryName || '');
 
-        // Validate
         if (!matricNumber || !name || !email) {
-          failed.push({ matric: matricNumber || '?', reason: 'Missing matric, name, or email' });
-          continue;
+          failed.push({ matric: matricNumber || '?', reason: 'Missing matric, name, or email' }); continue;
         }
         if (!email.includes('@') || email.length < 5) {
-          failed.push({ matric: matricNumber, reason: 'Invalid email address' });
-          continue;
+          failed.push({ matric: matricNumber, reason: 'Invalid email address' }); continue;
         }
 
-        // Duplicate / conflict check
-        const dup = await client.query(
-          'SELECT id, email FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
-          [matricNumber, req.tenant_id]
-        );
-        if (dup.rows.length > 0) {
-          if (dup.rows[0].email.toLowerCase() === email.toLowerCase()) {
-            // Same student re-uploaded — update name/category silently
-            await client.query(
-              'UPDATE students_roster SET name = $1 WHERE matric_number = $2 AND tenant_id = $3',
-              [name, matricNumber, req.tenant_id]
-            );
+        const mKey = matricNumber.toLowerCase();
+        const eKey = email.toLowerCase();
+
+        if (existingByMatric.has(mKey)) {
+          if (existingByMatric.get(mKey) === eKey) {
+            toUpdateName.push({ matricNumber, name });
             failed.push({ matric: matricNumber, reason: 'Updated (already existed, same email)' });
           } else {
-            failed.push({ matric: matricNumber, reason: `Conflict: matric already registered with different email (${dup.rows[0].email})` });
+            failed.push({ matric: matricNumber, reason: `Conflict: matric already registered with different email (${existingByMatric.get(mKey)})` });
           }
           continue;
         }
-        // Email uniqueness check within tenant
-        const emailDup = await client.query(
-          'SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2',
-          [email, req.tenant_id]
-        );
-        if (emailDup.rows.length > 0) {
-          failed.push({ matric: matricNumber, reason: `Conflict: email already belongs to matric ${emailDup.rows[0].matric_number}` });
-          continue;
+        if (existingByEmail.has(eKey)) {
+          failed.push({ matric: matricNumber, reason: `Conflict: email already belongs to matric ${existingByEmail.get(eKey)}` }); continue;
         }
 
-        // Category resolution (cached)
+        // Category resolution (cached — still 1 query per unique category name)
         let category_id: number | null = null;
         if (categoryName) {
           if (categoryCache[categoryName] !== undefined) {
             category_id = categoryCache[categoryName];
           } else {
-            const catCheck = await client.query(
-              'SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2',
-              [req.tenant_id, categoryName]
-            );
+            const catCheck = await client.query('SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName]);
             if (catCheck.rows.length > 0) {
               category_id = catCheck.rows[0].id;
             } else {
-              const catInsert = await client.query(
-                'INSERT INTO student_categories (tenant_id, name) VALUES ($1, $2) RETURNING id',
-                [req.tenant_id, categoryName]
-              );
+              const catInsert = await client.query('INSERT INTO student_categories (tenant_id, name) VALUES ($1, $2) RETURNING id', [req.tenant_id, categoryName]);
               category_id = catInsert.rows[0].id;
             }
             categoryCache[categoryName] = category_id!;
           }
         }
 
-        // PIN generation
         const autoPin = String(Math.floor(1000 + Math.random() * 9000));
-        const hashedPin = await bcrypt.hash(autoPin, 10);
+        toInsert.push({ matricNumber, name, email, course, category_id, autoPin });
+        // Mark as seen to prevent within-batch duplicates
+        existingByMatric.set(mKey, eKey);
+        existingByEmail.set(eKey, matricNumber);
+      }
 
-        // Insert roster entry
+      // ── Bulk name-updates for re-uploaded students (single query) ──
+      for (const u of toUpdateName) {
+        await client.query('UPDATE students_roster SET name = $1 WHERE matric_number = $2 AND tenant_id = $3', [u.name, u.matricNumber, req.tenant_id]);
+      }
+
+      // ── Hash PINs in parallel batches of 10 ──
+      const HASH_BATCH = 10;
+      for (let i = 0; i < toInsert.length; i += HASH_BATCH) {
+        await Promise.all(toInsert.slice(i, i + HASH_BATCH).map(async s => { s.hashedPin = await hashPin(s.autoPin); }));
+      }
+
+      // ── Single batch INSERT into students_roster ──
+      if (toInsert.length > 0) {
+        const rosterParams: any[] = [req.tenant_id];
+        const rosterValues: string[] = [];
+        let pi = 2;
+        for (const s of toInsert) {
+          rosterValues.push(`($1,$${pi},$${pi+1},$${pi+2},$${pi+3},$${pi+4},$${pi+5},'pending')`);
+          rosterParams.push(s.matricNumber, s.name, s.email, s.course, s.hashedPin, s.category_id);
+          pi += 6;
+        }
         await client.query(
-          "INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id, email_status) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending')",
-          [req.tenant_id, matricNumber, name, email, course, hashedPin, category_id]
+          `INSERT INTO students_roster (tenant_id,matric_number,name,email,course,pin_hash,category_id,email_status) VALUES ${rosterValues.join(',')}`,
+          rosterParams
         );
 
-        // Insert user account
-        const userCheck = await client.query(
-          'SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]
-        );
-        if (userCheck.rows.length === 0) {
+        // ── Single batch INSERT into users (new students only) ──
+        const newUsers = toInsert.filter(s => !existingUserMatrics.has(s.matricNumber.toLowerCase()));
+        if (newUsers.length > 0) {
+          const userParams: any[] = [req.tenant_id];
+          const userValues: string[] = [];
+          let ui = 2;
+          for (const s of newUsers) {
+            userValues.push(`($${ui},$${ui+1},$${ui+2},'student',$1,$${ui+3},$${ui+4})`);
+            userParams.push(s.email, s.name, s.hashedPin, s.matricNumber, s.category_id);
+            ui += 5;
+          }
           await client.query(
-            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, pin_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-            [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id, autoPin]
+            `INSERT INTO users (email,name,password,role,tenant_id,matric_number,category_id) VALUES ${userValues.join(',')}`,
+            userParams
           );
         }
 
-        succeeded.push({ matric: matricNumber, name, email, autoPin });
+        for (const s of toInsert) succeeded.push({ matric: s.matricNumber, name: s.name, email: s.email, autoPin: s.autoPin });
       }
 
       await client.query('COMMIT');
@@ -9718,32 +9917,7 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
       client.release();
     }
 
-    // Send onboarding emails after successful commit and track status
-    const fullWorkspaceLabel = `${workspaceName} (${workspaceId})`;
-    for (const s of succeeded) {
-      sendResendEmail({
-        fromName: 'Genius Academic Portal',
-        to: s.email,
-        subject: `[Genius Academy] Welcome ${s.name} — Your Access Credentials`,
-        html: `<div style="font-family:Arial,sans-serif;padding:20px;color:#333;max-width:600px;margin:0 auto">
-          <h2 style="color:#1a237e">Welcome to Genius Academy</h2>
-          <p>Hi <b>${s.name}</b>, you have been registered in the <b>${workspaceName}</b> workspace.</p>
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:20px;border-radius:12px;margin:20px 0">
-            <table style="width:100%;font-size:15px">
-              <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${fullWorkspaceLabel}</td></tr>
-              <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric}</td></tr>
-              <tr><td style="color:#64748b;padding:6px 0">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${s.autoPin}</span></td></tr>
-            </table>
-          </div>
-          <p style="color:#d97706;font-weight:bold;text-align:center">🔒 Keep your PIN private.</p>
-        </div>`
-      }).then(() => {
-        pool.query("UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2", [s.matric, req.tenant_id]).catch(() => {});
-      }).catch(() => {
-        pool.query("UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2", [s.matric, req.tenant_id]).catch(() => {});
-      });
-    }
-
+    // Respond immediately, then send emails and await status updates sequentially
     res.json({
       success: true,
       imported: succeeded.length,
@@ -9751,6 +9925,33 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
       succeeded: succeeded.map(s => ({ matric: s.matric, name: s.name })),
       failed
     });
+
+    // Send onboarding emails after response — status updates are awaited so failures are recorded
+    const fullWorkspaceLabel = `${workspaceName} (${workspaceId})`;
+    for (const s of succeeded) {
+      try {
+        await sendResendEmail({
+          fromName: 'Genius Academic Portal',
+          to: s.email,
+          subject: `[Genius Academy] Welcome ${s.name} — Your Access Credentials`,
+          html: `<div style="font-family:Arial,sans-serif;padding:20px;color:#333;max-width:600px;margin:0 auto">
+            <h2 style="color:#1a237e">Welcome to Genius Academy</h2>
+            <p>Hi <b>${s.name}</b>, you have been registered in the <b>${workspaceName}</b> workspace.</p>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:20px;border-radius:12px;margin:20px 0">
+              <table style="width:100%;font-size:15px">
+                <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${fullWorkspaceLabel}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${s.autoPin}</span></td></tr>
+              </table>
+            </div>
+            <p style="color:#d97706;font-weight:bold;text-align:center">🔒 Keep your PIN private.</p>
+          </div>`
+        });
+        await pool.query("UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2", [s.matric, req.tenant_id]);
+      } catch {
+        await pool.query("UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2", [s.matric, req.tenant_id]).catch(() => {});
+      }
+    }
   } catch (error: any) {
     console.error('Bulk roster import error:', error);
     res.status(500).json({ error: 'Bulk import failed: ' + error.message });
@@ -9844,9 +10045,11 @@ app.post('/api/courses/roster/:id/resend', authenticateToken, checkSubscription,
     const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
     const fullWorkspaceLabel = `${workspaceName} (${workspaceId})`;
 
-    // Get plain PIN from users table (pin_code column)
-    const userRes = await pool.query('SELECT pin_code FROM users WHERE matric_number = $1 AND tenant_id = $2', [s.matric_number, req.tenant_id]);
-    const plainPin = userRes.rows[0]?.pin_code || '(contact your lecturer for PIN)';
+    // Generate fresh PIN and update hash in DB (plain PIN never stored)
+    const plainPin = String(Math.floor(1000 + Math.random() * 9000));
+    const freshHash = await hashPin(plainPin);
+    await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE id = $2', [freshHash, s.id]);
+    await pool.query("UPDATE users SET password = $1 WHERE matric_number = $2 AND tenant_id = $3 AND role = 'student'", [freshHash, s.matric_number, req.tenant_id]);
 
     await pool.query("UPDATE students_roster SET email_status = 'pending' WHERE id = $1", [id]);
     await sendResendEmail({
@@ -9894,8 +10097,11 @@ app.post('/api/courses/roster/bulk-resend', authenticateToken, checkSubscription
 
     let sentCount = 0;
     for (const s of studentRes.rows) {
-      const userRes = await pool.query('SELECT pin_code FROM users WHERE matric_number = $1 AND tenant_id = $2', [s.matric_number, req.tenant_id]);
-      const plainPin = userRes.rows[0]?.pin_code || '(contact your lecturer)';
+      // Generate fresh PIN and update hash in DB (plain PIN never stored)
+      const plainPin = String(Math.floor(1000 + Math.random() * 9000));
+      const freshHash = await hashPin(plainPin);
+      await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE id = $2', [freshHash, s.id]);
+      await pool.query("UPDATE users SET password = $1 WHERE matric_number = $2 AND tenant_id = $3 AND role = 'student'", [freshHash, s.matric_number, req.tenant_id]);
       try {
         await sendResendEmail({
           fromName: 'Genius Academic Portal',
@@ -10305,15 +10511,26 @@ app.post('/api/assignments/:id/submit', authenticateToken, upload.single('file')
     if (dup.rows.length > 0) return res.status(409).json({ error: 'You have already submitted this assignment' });
 
     const content = req.body.content || null;
-    const fileBlob = req.file?.buffer || null;
     const fileName = req.file?.originalname || null;
     const mimeType = req.file?.mimetype || null;
     const submType = req.file ? 'file' : 'text';
 
+    let submFileBlob: Buffer | null = null;
+    let submFileUrl: string | null = null;
+    if (req.file) {
+      if (R2_ENABLED) {
+        const safeFilename = fileName!.replace(/[^a-zA-Z0-9._-]/g, '_');
+        submFileUrl = await uploadToR2(`submissions/${id}/${req.user.id}-${Date.now()}-${safeFilename}`, fs.createReadStream(req.file.path), mimeType!, req.file.size);
+      } else {
+        submFileBlob = fs.readFileSync(req.file.path);
+      }
+      fs.unlink(req.file.path, () => {});
+    }
+
     await pool.query(
-      `INSERT INTO assignment_submissions (exam_id, tenant_id, student_id, student_name, student_email, submission_type, content, file_blob, file_name, mime_type)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, req.tenant_id, req.user.id, req.user.name, req.user.email, submType, content, fileBlob, fileName, mimeType]
+      `INSERT INTO assignment_submissions (exam_id, tenant_id, student_id, student_name, student_email, submission_type, content, file_blob, file_name, mime_type, file_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, req.tenant_id, req.user.id, req.user.name, req.user.email, submType, content, submFileBlob, fileName, mimeType, submFileUrl]
     );
     res.json({ success: true });
   } catch (error: any) {
@@ -10357,7 +10574,7 @@ app.put('/api/assignments/submissions/:subId/grade', authenticateToken, async (r
     if (subRes.rows.length > 0) {
       const { student_email, student_name, assignment_title } = subRes.rows[0];
       if (student_email) {
-        sendResendEmail({
+        await sendResendEmail({
           to: student_email,
           subject: `📝 Your Assignment Has Been Graded — ${assignment_title}`,
           html: `
@@ -10394,14 +10611,25 @@ app.put('/api/assignments/submissions/:subId/grade', authenticateToken, async (r
 app.get('/api/assignments/submissions/:subId/file', authenticateToken, async (req: any, res) => {
   try {
     const result = await pool.query(
-      'SELECT file_blob, file_name, mime_type FROM assignment_submissions WHERE id = $1 AND tenant_id = $2',
+      'SELECT file_blob, file_url, file_name, mime_type FROM assignment_submissions WHERE id = $1 AND tenant_id = $2',
       [req.params.subId, req.tenant_id]
     );
-    if (!result.rows.length || !result.rows[0].file_blob) return res.status(404).json({ error: 'File not found' });
-    const { file_blob, file_name, mime_type } = result.rows[0];
-    res.setHeader('Content-Type', mime_type || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${file_name}"`);
-    res.send(file_blob);
+    if (!result.rows.length) return res.status(404).json({ error: 'File not found' });
+    const { file_blob, file_url, file_name, mime_type } = result.rows[0];
+
+    // R2 URL — redirect directly to CDN
+    if (file_url) return res.redirect(302, file_url);
+
+    // Legacy BYTEA — serve and lazily migrate
+    if (file_blob) {
+      res.setHeader('Content-Type', mime_type || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${file_name}"`);
+      res.send(file_blob);
+      lazyMigrateToR2('assignment_submissions', req.params.subId, 'file_blob', 'file_url', mime_type || 'application/octet-stream', file_name).catch(() => {});
+      return;
+    }
+
+    return res.status(404).json({ error: 'File not found' });
   } catch (error) {
     res.status(500).json({ error: 'Download failed' });
   }
@@ -11092,7 +11320,7 @@ async function generateTranscriptPDF(html: string): Promise<Buffer> {
 
   const browser = await puppeteer.launch({
     executablePath: activePath, headless: true,
-    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--single-process','--no-zygote']
+    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote']
   });
   const page = await browser.newPage();
   try {
@@ -11523,9 +11751,37 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
+let httpServer: ReturnType<typeof app.listen> | null = null;
+
 startServer();
+
+// Graceful shutdown — Railway sends SIGTERM then SIGKILL after 10s
+process.on('SIGTERM', () => {
+  console.log('[Shutdown] SIGTERM received, stopping HTTP server...');
+  const forceExit = setTimeout(() => {
+    console.error('[Shutdown] Timed out — forcing exit.');
+    process.exit(1);
+  }, 9000);
+  forceExit.unref(); // Don't let this timer keep the process alive
+
+  const finish = async () => {
+    try {
+      await pool.end();
+      console.log('[Shutdown] DB pool closed. Exiting cleanly.');
+    } catch (e) {
+      console.error('[Shutdown] Pool drain error:', e);
+    }
+    process.exit(0);
+  };
+
+  if (httpServer) {
+    httpServer.close(() => finish()); // Stop accepting new connections, then drain DB
+  } else {
+    finish();
+  }
+});
