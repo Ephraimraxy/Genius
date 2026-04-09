@@ -8708,7 +8708,7 @@ app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (
 app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
-      'SELECT id, title, questions, duration, created_at, is_available, price, is_paid, type, start_date, end_date, timer_mode, questions_count, batch_size, instructions, published_status, submission_type, due_date, allow_late, category_id FROM exams WHERE tenant_id = $1 ORDER BY created_at DESC',
+      'SELECT id, title, duration, created_at, is_available, price, is_paid, type, start_date, end_date, timer_mode, questions_count, batch_size, instructions, published_status, submission_type, due_date, allow_late, category_id, difficulty, blooms_level, max_attempts, is_pool, pool_size, material_id FROM exams WHERE tenant_id = $1 ORDER BY created_at DESC',
       [req.tenant_id]
     );
     res.json(result.rows);
@@ -9728,7 +9728,7 @@ STUDY MATERIAL:
 ${materialText.slice(0, 12000)}`;
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.7,
     max_tokens: 4000,
@@ -10685,6 +10685,354 @@ app.delete('/api/exams/:id/results/:studentId', authenticateToken, async (req: a
     );
     res.json({ success: true, message: 'Result cleared — student may retake.' });
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── TRANSCRIPT PDF GENERATOR ────────────────────────────────────────
+function gradeColor(grade: string): string {
+  if (!grade) return '#64748b';
+  if (grade === 'A+' || grade === 'A') return '#16a34a';
+  if (grade === 'B') return '#2563eb';
+  if (grade === 'C') return '#d97706';
+  if (grade === 'D') return '#ea580c';
+  return '#dc2626';
+}
+
+function transcriptHeaderHTML(tenantName: string, title: string, subtitle: string, generatedAt: string): string {
+  return `
+  <div style="background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:36px 40px 28px;color:#fff;border-radius:0 0 24px 24px;margin-bottom:32px;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+      <div>
+        <div style="font-size:11px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">Official Academic Transcript</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:-0.5px;">${tenantName}</div>
+        <div style="font-size:15px;font-weight:600;color:#bfdbfe;margin-top:4px;">${title}</div>
+        <div style="font-size:11px;color:#93c5fd;margin-top:2px;">${subtitle}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:10px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Generated</div>
+        <div style="font-size:12px;color:#fff;font-weight:700;margin-top:2px;">${generatedAt}</div>
+        <div style="width:52px;height:4px;background:rgba(255,255,255,0.25);border-radius:2px;margin:10px 0 0 auto;"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function scoreBarHTML(score: number): string {
+  const pct = Math.min(100, Math.max(0, score));
+  const color = score >= 70 ? '#16a34a' : score >= 50 ? '#d97706' : '#dc2626';
+  return `<div style="height:6px;background:#e2e8f0;border-radius:3px;margin:6px 0 2px;overflow:hidden;">
+    <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width 0.3s;"></div>
+  </div>`;
+}
+
+async function generateTranscriptPDF(html: string): Promise<Buffer> {
+  const fullHTML = `<!DOCTYPE html><html><head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { max-width: 820px; margin: 0 auto; background: #fff; min-height: 100vh; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f1f5f9; color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; padding: 10px 14px; text-align: left; border-bottom: 2px solid #e2e8f0; }
+    td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; font-size: 12px; }
+    tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-weight: 800; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .summary-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 22px; margin: 0 20px 24px; }
+    .section-title { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: #94a3b8; padding: 0 20px; margin-bottom: 12px; }
+    .card { border: 1px solid #e2e8f0; border-radius: 14px; margin: 0 20px 20px; overflow: hidden; }
+    .footer { text-align: center; padding: 24px; color: #94a3b8; font-size: 10px; border-top: 1px solid #f1f5f9; margin-top: 24px; }
+  </style>
+  </head><body><div class="page">${html}</div></body></html>`;
+
+  // Reuse the same chromium-path resolution as other PDF generators
+  const { execSync } = require('child_process');
+  const executablePaths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_PATH,
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome-stable',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  ].filter(Boolean) as string[];
+  let activePath = executablePaths.find((p: string) => require('fs').existsSync(p));
+  if (!activePath) {
+    try { activePath = execSync('which chromium || which chromium-browser || which google-chrome-stable || which google-chrome', { encoding: 'utf-8' }).trim(); } catch {}
+  }
+  if (!activePath) throw new Error('Chromium not found for transcript PDF generation.');
+
+  const browser = await puppeteer.launch({
+    executablePath: activePath, headless: true,
+    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--single-process','--no-zygote']
+  });
+  const page = await browser.newPage();
+  try {
+    await page.setContent(fullHTML, { waitUntil: 'networkidle0' });
+    const buffer = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '0px', bottom: '20px', left: '0px', right: '0px' } });
+    return Buffer.from(buffer);
+  } finally {
+    await page.close();
+    await browser.close();
+  }
+}
+
+// ─── Transcript: Lecturer — all students for one exam ──────────────
+app.get('/api/transcripts/exam/:examId', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { examId } = req.params;
+    const tenantRes = await pool.query('SELECT name FROM tenants WHERE id = $1', [req.tenant_id]);
+    const tenantName = tenantRes.rows[0]?.name || 'Institution';
+
+    const examRes = await pool.query('SELECT title, type, duration, questions_count FROM exams WHERE id = $1 AND tenant_id = $2', [examId, req.tenant_id]);
+    if (!examRes.rows.length) return res.status(404).json({ error: 'Exam not found' });
+    const exam = examRes.rows[0];
+
+    const results = await pool.query(
+      `SELECT er.score, er.grade, er.total_earned, er.total_possible, er.risk_score, er.violations, er.attempt_number, er.submitted_at,
+              u.name as student_name, u.email as student_email,
+              (SELECT matric_number FROM students_roster WHERE email = u.email AND tenant_id = $2 LIMIT 1) as matric
+       FROM exam_results er
+       LEFT JOIN users u ON u.id = er.user_id
+       WHERE er.exam_id = $1 AND er.tenant_id = $2
+       ORDER BY er.score::int DESC, u.name`,
+      [examId, req.tenant_id]
+    );
+    const rows = results.rows;
+
+    const avgScore = rows.length ? Math.round(rows.reduce((s: number, r: any) => s + parseInt(r.score || 0), 0) / rows.length) : 0;
+    const passCount = rows.filter((r: any) => parseInt(r.score) >= 50).length;
+    const now = new Date().toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+
+    const tableRows = rows.map((r: any, i: number) => {
+      const score = parseInt(r.score || '0');
+      const grade = r.grade || 'F';
+      const riskBadge = r.risk_score > 0 ? `<span style="color:#ef4444;font-weight:800;font-size:10px;">⚠ ${r.risk_score}</span>` : '<span style="color:#94a3b8;">—</span>';
+      const violations: string[] = Array.isArray(r.violations) ? r.violations : (JSON.parse(r.violations || '[]'));
+      return `<tr>
+        <td style="font-weight:700;color:#1e293b;">${i + 1}</td>
+        <td><div style="font-weight:700;color:#1e293b;">${r.student_name || '—'}</div><div style="font-size:10px;color:#94a3b8;">${r.student_email || ''}</div></td>
+        <td style="color:#64748b;font-size:11px;">${r.matric || '—'}</td>
+        <td>
+          ${scoreBarHTML(score)}
+          <div style="font-weight:800;font-size:14px;color:${gradeColor(grade)};">${score}%</div>
+          <div style="font-size:10px;color:#64748b;">${r.total_earned || 0} / ${r.total_possible || 0} pts</div>
+        </td>
+        <td><span class="badge" style="background:${gradeColor(grade)}1a;color:${gradeColor(grade)};">${grade}</span></td>
+        <td>${riskBadge}${violations.length > 0 ? `<div style="font-size:9px;color:#94a3b8;margin-top:2px;">${violations.slice(0,2).join('; ')}</div>` : ''}</td>
+        <td style="font-size:10px;color:#64748b;">${r.submitted_at ? new Date(r.submitted_at).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Africa/Lagos' }) : '—'}</td>
+      </tr>`;
+    }).join('');
+
+    const html = `
+      ${transcriptHeaderHTML(tenantName, `${exam.type === 'exam' ? 'Examination' : 'Test'} Results — ${exam.title}`, `${exam.questions_count || '—'} Questions • ${exam.duration || '—'} Minutes`, now)}
+      <div class="summary-box" style="display:flex;gap:24px;flex-wrap:wrap;">
+        ${[
+          ['Total Submitted', rows.length],
+          ['Class Average', avgScore + '%'],
+          ['Pass Rate', rows.length ? Math.round((passCount / rows.length) * 100) + '%' : '—'],
+          ['Highest Score', rows.length ? Math.max(...rows.map((r: any) => parseInt(r.score || 0))) + '%' : '—'],
+          ['Lowest Score', rows.length ? Math.min(...rows.map((r: any) => parseInt(r.score || 0))) + '%' : '—'],
+        ].map(([label, val]) => `<div style="flex:1;min-width:120px;text-align:center;"><div style="font-size:22px;font-weight:900;color:#1e40af;">${val}</div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-top:2px;">${label}</div></div>`).join('')}
+      </div>
+      ${rows.length === 0 ? '<p style="text-align:center;color:#94a3b8;padding:40px;">No submissions yet.</p>' : `
+      <p class="section-title" style="margin-top:8px;">Student Results</p>
+      <div class="card">
+        <table>
+          <thead><tr><th>#</th><th>Student</th><th>Matric No.</th><th>Score</th><th>Grade</th><th>Integrity</th><th>Submitted</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>`}
+      <div class="footer">This is an official computer-generated academic transcript. • ${tenantName} • Generated ${now}</div>`;
+
+    const pdfBuf = await generateTranscriptPDF(html);
+    const filename = `${exam.title.replace(/[^a-z0-9]/gi, '_')}_Results.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdfBuf);
+  } catch (err: any) {
+    console.error('[Transcript Exam]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Transcript: Lecturer — full record for one specific student ────
+app.get('/api/transcripts/student/:studentId', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { studentId } = req.params;
+    const tenantRes = await pool.query('SELECT name FROM tenants WHERE id = $1', [req.tenant_id]);
+    const tenantName = tenantRes.rows[0]?.name || 'Institution';
+
+    const studentRes = await pool.query('SELECT name, email FROM users WHERE id = $1 AND tenant_id = $2', [studentId, req.tenant_id]);
+    if (!studentRes.rows.length) return res.status(404).json({ error: 'Student not found' });
+    const student = studentRes.rows[0];
+
+    const matricRes = await pool.query('SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2 LIMIT 1', [student.email, req.tenant_id]);
+    const matric = matricRes.rows[0]?.matric_number || '—';
+
+    // MCQ exam results
+    const examResults = await pool.query(
+      `SELECT er.score, er.grade, er.total_earned, er.total_possible, er.risk_score, er.attempt_number, er.submitted_at,
+              e.title, e.type, e.duration, e.questions_count
+       FROM exam_results er
+       LEFT JOIN exams e ON e.id = er.exam_id
+       WHERE er.user_id = $1 AND er.tenant_id = $2
+       ORDER BY er.submitted_at DESC`,
+      [studentId, req.tenant_id]
+    );
+
+    // Assignment submissions
+    const assignments = await pool.query(
+      `SELECT s.grade, s.feedback, s.submitted_at, s.graded_at, e.title
+       FROM assignment_submissions s
+       LEFT JOIN exams e ON e.id = s.exam_id
+       WHERE s.student_id = $1 AND s.tenant_id = $2
+       ORDER BY s.submitted_at DESC`,
+      [studentId, req.tenant_id]
+    );
+
+    const now = new Date().toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+    const allScores = examResults.rows.map((r: any) => parseInt(r.score || 0));
+    const gpa = allScores.length ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1) : '—';
+
+    const examRows = examResults.rows.map((r: any) => {
+      const score = parseInt(r.score || '0');
+      const grade = r.grade || 'F';
+      return `<tr>
+        <td><div style="font-weight:700;">${r.title}</div><div style="font-size:10px;color:#94a3b8;">${r.type?.toUpperCase()} • ${r.duration}min • ${r.questions_count}Q</div></td>
+        <td>${scoreBarHTML(score)}<div style="font-weight:800;font-size:14px;color:${gradeColor(grade)};">${score}%</div></td>
+        <td><span class="badge" style="background:${gradeColor(grade)}1a;color:${gradeColor(grade)};">${grade}</span></td>
+        <td style="font-size:10px;color:#64748b;">${r.submitted_at ? new Date(r.submitted_at).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Africa/Lagos' }) : '—'}</td>
+      </tr>`;
+    }).join('');
+
+    const assignRows = assignments.rows.map((r: any) => `<tr>
+      <td style="font-weight:700;">${r.title}</td>
+      <td style="font-weight:800;color:${gradeColor('')};font-size:14px;">${r.grade || '<span style="color:#94a3b8;font-size:11px;">Not graded</span>'}</td>
+      <td style="font-size:11px;color:#64748b;">${r.feedback || '—'}</td>
+      <td style="font-size:10px;color:#64748b;">${r.submitted_at ? new Date(r.submitted_at).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Africa/Lagos' }) : '—'}</td>
+    </tr>`).join('');
+
+    const html = `
+      ${transcriptHeaderHTML(tenantName, student.name, `${student.email} • Matric: ${matric}`, now)}
+      <div class="summary-box" style="display:flex;gap:24px;flex-wrap:wrap;">
+        ${[
+          ['Overall Avg', gpa + (gpa !== '—' ? '%' : '')],
+          ['Tests & Exams', examResults.rows.length],
+          ['Assignments', assignments.rows.length],
+          ['Graded', assignments.rows.filter((r: any) => r.grade).length],
+        ].map(([label, val]) => `<div style="flex:1;min-width:100px;text-align:center;"><div style="font-size:22px;font-weight:900;color:#1e40af;">${val}</div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-top:2px;">${label}</div></div>`).join('')}
+      </div>
+      ${examResults.rows.length > 0 ? `
+        <p class="section-title" style="margin-top:8px;">Tests & Examinations</p>
+        <div class="card"><table>
+          <thead><tr><th>Assessment</th><th>Score</th><th>Grade</th><th>Submitted</th></tr></thead>
+          <tbody>${examRows}</tbody>
+        </table></div>` : ''}
+      ${assignments.rows.length > 0 ? `
+        <p class="section-title">Assignments</p>
+        <div class="card"><table>
+          <thead><tr><th>Assignment</th><th>Grade</th><th>Feedback</th><th>Submitted</th></tr></thead>
+          <tbody>${assignRows}</tbody>
+        </table></div>` : ''}
+      <div class="footer">Official transcript for ${student.name} • ${tenantName} • Generated ${now}</div>`;
+
+    const pdfBuf = await generateTranscriptPDF(html);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${student.name.replace(/\s+/g, '_')}_Transcript.pdf"`);
+    res.send(pdfBuf);
+  } catch (err: any) {
+    console.error('[Transcript Student]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Transcript: Student — their own results (view + download) ──────
+app.get('/api/transcripts/my', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const tenantRes = await pool.query('SELECT name FROM tenants WHERE id = $1', [req.tenant_id]);
+    const tenantName = tenantRes.rows[0]?.name || 'Institution';
+    const matricRes = await pool.query('SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2 LIMIT 1', [req.user.email, req.tenant_id]);
+    const matric = matricRes.rows[0]?.matric_number || '—';
+
+    const examResults = await pool.query(
+      `SELECT er.score, er.grade, er.total_earned, er.total_possible, er.attempt_number, er.submitted_at,
+              e.title, e.type, e.duration, e.questions_count
+       FROM exam_results er
+       LEFT JOIN exams e ON e.id = er.exam_id
+       WHERE er.user_id = $1 AND er.tenant_id = $2
+       ORDER BY er.submitted_at DESC`,
+      [req.user.id, req.tenant_id]
+    );
+
+    const assignments = await pool.query(
+      `SELECT s.grade, s.feedback, s.submitted_at, e.title
+       FROM assignment_submissions s
+       LEFT JOIN exams e ON e.id = s.exam_id
+       WHERE s.student_id = $1 AND s.tenant_id = $2
+       ORDER BY s.submitted_at DESC`,
+      [req.user.id, req.tenant_id]
+    );
+
+    // If ?format=json, return raw data for the student portal to display inline
+    if (req.query.format === 'json') {
+      return res.json({ examResults: examResults.rows, assignments: assignments.rows });
+    }
+
+    const now = new Date().toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+    const allScores = examResults.rows.map((r: any) => parseInt(r.score || 0));
+    const gpa = allScores.length ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1) : '—';
+
+    const examRows = examResults.rows.map((r: any) => {
+      const score = parseInt(r.score || '0');
+      const grade = r.grade || 'F';
+      return `<tr>
+        <td><div style="font-weight:700;">${r.title}</div><div style="font-size:10px;color:#94a3b8;">${r.type?.toUpperCase()} • ${r.duration}min • ${r.questions_count}Q</div></td>
+        <td>${scoreBarHTML(score)}<div style="font-weight:800;font-size:14px;color:${gradeColor(grade)};">${score}%</div><div style="font-size:10px;color:#64748b;">${r.total_earned || 0}/${r.total_possible || 0} pts</div></td>
+        <td><span class="badge" style="background:${gradeColor(grade)}1a;color:${gradeColor(grade)};">${grade}</span></td>
+        <td style="font-size:10px;color:#64748b;">${r.submitted_at ? new Date(r.submitted_at).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Africa/Lagos' }) : '—'}</td>
+      </tr>`;
+    }).join('');
+
+    const assignRows = assignments.rows.map((r: any) => `<tr>
+      <td style="font-weight:700;">${r.title}</td>
+      <td style="font-weight:800;font-size:14px;color:${r.grade ? '#16a34a' : '#94a3b8'};">${r.grade || 'Pending'}</td>
+      <td style="font-size:11px;color:#64748b;">${r.feedback || '—'}</td>
+      <td style="font-size:10px;color:#64748b;">${r.submitted_at ? new Date(r.submitted_at).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Africa/Lagos' }) : '—'}</td>
+    </tr>`).join('');
+
+    const html = `
+      ${transcriptHeaderHTML(tenantName, req.user.name, `${req.user.email} • Matric: ${matric}`, now)}
+      <div class="summary-box" style="display:flex;gap:24px;flex-wrap:wrap;">
+        ${[
+          ['Average Score', gpa + (gpa !== '—' ? '%' : '')],
+          ['Tests Taken', examResults.rows.length],
+          ['Assignments', assignments.rows.length],
+          ['Graded', assignments.rows.filter((r: any) => r.grade).length],
+        ].map(([label, val]) => `<div style="flex:1;min-width:100px;text-align:center;"><div style="font-size:22px;font-weight:900;color:#1e40af;">${val}</div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-top:2px;">${label}</div></div>`).join('')}
+      </div>
+      ${examResults.rows.length > 0 ? `
+        <p class="section-title" style="margin-top:8px;">Tests & Examinations</p>
+        <div class="card"><table>
+          <thead><tr><th>Assessment</th><th>Score</th><th>Grade</th><th>Date</th></tr></thead>
+          <tbody>${examRows}</tbody>
+        </table></div>` : ''}
+      ${assignments.rows.length > 0 ? `
+        <p class="section-title">Assignments</p>
+        <div class="card"><table>
+          <thead><tr><th>Assignment</th><th>Grade</th><th>Feedback</th><th>Submitted</th></tr></thead>
+          <tbody>${assignRows}</tbody>
+        </table></div>` : ''}
+      <div class="footer">Personal Academic Transcript • ${tenantName} • Generated ${now} • Confidential</div>`;
+
+    const pdfBuf = await generateTranscriptPDF(html);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="My_Academic_Transcript.pdf"`);
+    res.send(pdfBuf);
+  } catch (err: any) {
+    console.error('[Transcript My]', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(wc -l \"d:\\\\Junks\\\\TODAY\\\\Publish AI/src/components\"/*.tsx)",
-      "Bash(npm list:*)"
+      "Bash(npm list:*)",
+      "Bash(ls \"d:/Junks/TODAY/Publish AI/\"*.ts)"
     ]
   }
 }
