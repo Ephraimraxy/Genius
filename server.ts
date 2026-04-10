@@ -10723,6 +10723,112 @@ app.get('/api/attendance/sessions/:id/records', authenticateToken, async (req: a
   }
 });
 
+// Lecturer: Download roll call as PDF
+app.get('/api/attendance/sessions/:id/records/pdf', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const sessionRes = await pool.query(
+      `SELECT s.*, t.name as tenant_name, sc.name as category_name
+       FROM attendance_sessions s
+       JOIN tenants t ON t.id = s.tenant_id
+       LEFT JOIN student_categories sc ON sc.id = s.category_id
+       WHERE s.id = $1 AND s.tenant_id = $2`,
+      [req.params.id, req.tenant_id]
+    );
+    if (sessionRes.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
+    const session = sessionRes.rows[0];
+
+    const recordsRes = await pool.query(
+      `SELECT r.student_name, r.matric_number, r.marked_at, u.email
+       FROM attendance_records r
+       LEFT JOIN users u ON u.id = r.student_id
+       WHERE r.session_id = $1 ORDER BY r.marked_at ASC`,
+      [req.params.id]
+    );
+    const records = recordsRes.rows;
+
+    const sessionDate = session.session_date ? new Date(session.session_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A';
+    const generatedAt = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    const rowsHTML = records.length === 0
+      ? `<tr><td colspan="4" style="text-align:center;padding:32px;color:#94a3b8;font-size:13px;">No attendance records found for this session.</td></tr>`
+      : records.map((r, i) => `
+        <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+          <td style="padding:11px 18px;font-size:13px;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;">${i + 1}</td>
+          <td style="padding:11px 18px;font-size:13px;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;">${r.student_name || '—'}</td>
+          <td style="padding:11px 18px;font-size:12px;color:#475569;font-family:monospace;border-bottom:1px solid #f1f5f9;">${r.matric_number || '—'}</td>
+          <td style="padding:11px 18px;font-size:12px;color:#64748b;border-bottom:1px solid #f1f5f9;">${new Date(r.marked_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+        </tr>`).join('');
+
+    const html = `
+    <div style="background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:36px 40px 28px;color:#fff;border-radius:0 0 24px 24px;margin-bottom:32px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+        <div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">Official Attendance Record</div>
+          <div style="font-size:24px;font-weight:900;letter-spacing:-0.5px;">${session.tenant_name}</div>
+          <div style="font-size:15px;font-weight:600;color:#bfdbfe;margin-top:4px;">${session.title}</div>
+          <div style="font-size:11px;color:#93c5fd;margin-top:2px;">${session.course_code || ''} ${session.category_name ? '· ' + session.category_name : ''}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:10px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Session Date</div>
+          <div style="font-size:13px;color:#fff;font-weight:700;margin-top:2px;">${sessionDate}</div>
+          <div style="font-size:10px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:8px;">Generated</div>
+          <div style="font-size:11px;color:#fff;font-weight:600;">${generatedAt}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:16px;margin:0 40px 28px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:100px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:14px;padding:16px 20px;">
+        <div style="font-size:28px;font-weight:900;color:#16a34a;">${records.length}</div>
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#16a34a;">Students Present</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:14px;padding:16px 20px;">
+        <div style="font-size:28px;font-weight:900;color:#2563eb;">${session.is_paid ? '₦' + (session.price || 0).toLocaleString() : 'Free'}</div>
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#2563eb;">Attendance Type</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:${session.is_open ? '#f0fdf4' : '#fef2f2'};border:1.5px solid ${session.is_open ? '#bbf7d0' : '#fecaca'};border-radius:14px;padding:16px 20px;">
+        <div style="font-size:28px;font-weight:900;color:${session.is_open ? '#16a34a' : '#dc2626'};">${session.is_open ? 'Open' : 'Closed'}</div>
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:${session.is_open ? '#16a34a' : '#dc2626'};">Session Status</div>
+      </div>
+    </div>
+
+    <div style="margin:0 40px 32px;">
+      <table style="width:100%;border-collapse:collapse;border-radius:16px;overflow:hidden;border:1.5px solid #e2e8f0;">
+        <thead>
+          <tr style="background:linear-gradient(90deg,#1e40af,#2563eb);">
+            <th style="padding:13px 18px;text-align:left;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;">#</th>
+            <th style="padding:13px 18px;text-align:left;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;">Student Name</th>
+            <th style="padding:13px 18px;text-align:left;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;">Matric No.</th>
+            <th style="padding:13px 18px;text-align:left;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;">Time Marked</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHTML}</tbody>
+      </table>
+    </div>
+
+    <div style="margin:0 40px;padding:20px 24px;background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:16px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:14px;font-weight:900;color:#fff;letter-spacing:-0.3px;">Genius</div>
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#64748b;margin-top:1px;">Academic Portal Platform</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:9px;color:#475569;font-weight:600;">This document is system-generated and digitally verified.</div>
+        <div style="font-size:9px;color:#334155;font-weight:700;margin-top:2px;">Powered by Genius Academic Suite · ${new Date().getFullYear()}</div>
+      </div>
+    </div>`;
+
+    const pdfBuffer = await generateTranscriptPDF(html);
+    const safeName = session.title.replace(/[^a-zA-Z0-9\s-]/g, '').trim().replace(/\s+/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="RollCall_${safeName}_${sessionDate.replace(/\s/g, '-')}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error: any) {
+    console.error('Roll call PDF error:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+});
+
 // Student: Get open attendance sessions (for banner display)
 app.get('/api/student/attendance/open-sessions', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
@@ -11311,7 +11417,19 @@ async function generateTranscriptPDF(html: string): Promise<Buffer> {
     .card { border: 1px solid #e2e8f0; border-radius: 14px; margin: 0 20px 20px; overflow: hidden; }
     .footer { text-align: center; padding: 24px; color: #94a3b8; font-size: 10px; border-top: 1px solid #f1f5f9; margin-top: 24px; }
   </style>
-  </head><body><div class="page">${html}</div></body></html>`;
+  </head><body><div class="page">${html}
+  <div style="margin:32px 20px 0;padding:18px 24px;background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:14px;display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <div style="font-size:15px;font-weight:900;color:#fff;letter-spacing:-0.3px;">Genius</div>
+      <div style="font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#475569;margin-top:1px;">Academic Portal Platform</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:8px;color:#64748b;font-weight:600;">This document is system-generated and digitally verified.</div>
+      <div style="font-size:8px;color:#334155;font-weight:700;margin-top:2px;">Powered by Genius Academic Suite · ${new Date().getFullYear()}</div>
+    </div>
+  </div>
+  <div style="text-align:center;padding:14px;color:#cbd5e1;font-size:9px;">genius-academic.app</div>
+  </div></body></html>`;
 
   // Reuse the same chromium-path resolution as other PDF generators
   const { execSync } = require('child_process');

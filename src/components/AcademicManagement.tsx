@@ -26,7 +26,8 @@ import {
     Trash2,
     Send,
     Download as DownloadIcon,
-    Save
+    Save,
+    Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import FilePreviewModal from './FilePreviewModal';
@@ -118,6 +119,8 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [attendPrice, setAttendPrice] = useState('0');
     const [viewingRollFor, setViewingRollFor] = useState<number | null>(null);
     const [rollRecords, setRollRecords] = useState<any[]>([]);
+    const [sessionPriceInputs, setSessionPriceInputs] = useState<Record<number, string>>({});
+    const [isDownloadingRoll, setIsDownloadingRoll] = useState(false);
 
     useEffect(() => {
         if (token) {
@@ -515,7 +518,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     );
 
     const renderAttendanceContent = () => (
-        <div className="space-y-8">
+        <div className="space-y-8 relative min-h-[600px]">
             <div className="grid lg:grid-cols-2 gap-8">
                 {/* Create Session */}
                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
@@ -590,65 +593,156 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                                     <p className="text-[9px] text-slate-400 font-bold uppercase">Present</p>
                                 </div>
                             </div>
-                            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap">
-                                <button onClick={() => updateAttendSession(s.id, { is_open: !s.is_open })}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.is_open ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                    {s.is_open ? '🟢 Open' : '⭕ Closed'}
-                                </button>
-                                <button onClick={() => updateAttendSession(s.id, { is_paid: !s.is_paid })}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                    {s.is_paid ? `Paid ₦${s.price}` : 'Free'}
-                                </button>
-                                <button onClick={() => loadRollCall(s.id)}
-                                    className="px-3 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-[10px] font-black uppercase transition-all">
-                                    Roll Call
-                                </button>
-                                <button onClick={() => deleteAttendSession(s.id)}
-                                    className="ml-auto p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all">
-                                    <Trash2 size={14} />
-                                </button>
+                            <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <button onClick={() => updateAttendSession(s.id, { is_open: !s.is_open })}
+                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.is_open ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                        {s.is_open ? '🟢 Open' : '⭕ Closed'}
+                                    </button>
+                                    <button onClick={() => {
+                                        if (s.is_paid) {
+                                            updateAttendSession(s.id, { is_paid: false, price: 0 });
+                                            setSessionPriceInputs(prev => { const n = { ...prev }; delete n[s.id]; return n; });
+                                        } else {
+                                            setAttendSessions(prev => prev.map(x => x.id === s.id ? { ...x, is_paid: true } : x));
+                                            if (!(s.id in sessionPriceInputs)) setSessionPriceInputs(prev => ({ ...prev, [s.id]: String(s.price || '') }));
+                                        }
+                                    }}
+                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${s.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                        {s.is_paid ? `Paid${s.price ? ' ₦' + s.price : ''}` : 'Free'}
+                                    </button>
+                                    <button onClick={() => loadRollCall(s.id)}
+                                        className="px-3 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-[10px] font-black uppercase transition-all">
+                                        Roll Call
+                                    </button>
+                                    <button onClick={() => deleteAttendSession(s.id)}
+                                        className="ml-auto p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all">
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                                {s.is_paid && (
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={sessionPriceInputs[s.id] ?? String(s.price || '')}
+                                            onChange={e => setSessionPriceInputs(prev => ({ ...prev, [s.id]: e.target.value }))}
+                                            placeholder="Enter price"
+                                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black focus:outline-none focus:border-indigo-400 transition-all"
+                                        />
+                                        <button onClick={() => {
+                                            const price = parseInt(sessionPriceInputs[s.id] || '0') || 0;
+                                            updateAttendSession(s.id, { is_paid: true, price });
+                                            setSessionPriceInputs(prev => ({ ...prev, [s.id]: String(price) }));
+                                        }} className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap">
+                                            <Save size={12} /> Save
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* Roll Call Modal */}
+            {/* Roll Call Inline Page */}
             <AnimatePresence>
-                {viewingRollFor !== null && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                            onClick={() => setViewingRollFor(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                            className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl relative z-10 overflow-hidden max-h-[80vh] flex flex-col">
-                            <div className="p-6 border-b flex items-center justify-between">
-                                <h3 className="font-black text-slate-900">Roll Call — {attendSessions.find(s => s.id === viewingRollFor)?.title}</h3>
-                                <button onClick={() => setViewingRollFor(null)} className="text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+                {viewingRollFor !== null && (() => {
+                    const session = attendSessions.find(s => s.id === viewingRollFor);
+                    return (
+                        <motion.div
+                            key="rollcall"
+                            initial={{ opacity: 0, x: 40 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 40 }}
+                            className="absolute inset-0 bg-slate-50 z-50 overflow-y-auto"
+                        >
+                            {/* Top bar */}
+                            <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={() => setViewingRollFor(null)}
+                                        className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-black uppercase tracking-wider transition-all"
+                                    >
+                                        ← Back
+                                    </button>
+                                    <div>
+                                        <p className="font-black text-slate-900 text-base">{session?.title}</p>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                            {session?.course_code} · {session?.session_date ? new Date(session.session_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        setIsDownloadingRoll(true);
+                                        try {
+                                            const res = await fetch(`/api/attendance/sessions/${viewingRollFor}/records/pdf`, {
+                                                headers: { 'Authorization': `Bearer ${token}` }
+                                            });
+                                            if (!res.ok) throw new Error('Failed to generate PDF');
+                                            const blob = await res.blob();
+                                            const url = URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = `RollCall_${session?.title || 'session'}.pdf`;
+                                            a.click();
+                                            URL.revokeObjectURL(url);
+                                        } catch { addToast('Failed to download PDF', 'error'); }
+                                        setIsDownloadingRoll(false);
+                                    }}
+                                    disabled={isDownloadingRoll}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl text-sm font-black uppercase tracking-wider transition-all shadow-lg shadow-blue-200"
+                                >
+                                    {isDownloadingRoll ? <><Loader2 size={16} className="animate-spin" /> Generating...</> : <><DownloadIcon size={16} /> Download PDF</>}
+                                </button>
                             </div>
-                            <div className="overflow-y-auto flex-1">
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-50 sticky top-0">
-                                        <tr>
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Student</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">Matric</th>
-                                            <th className="px-6 py-3 text-right text-[10px] font-black text-slate-400 uppercase">Time</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {rollRecords.length === 0 && <tr><td colSpan={3} className="px-6 py-10 text-center text-slate-400">No attendance recorded yet.</td></tr>}
-                                        {rollRecords.map((r, i) => (
-                                            <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
-                                                <td className="px-6 py-3 font-bold text-slate-900 text-sm">{r.student_name || r.name}</td>
-                                                <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.matric_number}</td>
-                                                <td className="px-6 py-3 text-right text-xs text-slate-400">{new Date(r.marked_at).toLocaleTimeString()}</td>
+
+                            {/* Stats */}
+                            <div className="p-6 grid grid-cols-3 gap-4 max-w-3xl mx-auto">
+                                {[
+                                    { label: 'Present', value: rollRecords.length, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
+                                    { label: 'Access', value: session?.is_paid ? `₦${(session.price || 0).toLocaleString()}` : 'Free', color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200' },
+                                    { label: 'Status', value: session?.is_open ? 'Open' : 'Closed', color: session?.is_open ? 'text-emerald-600' : 'text-rose-600', bg: session?.is_open ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200' },
+                                ].map((s, i) => (
+                                    <div key={i} className={`rounded-2xl border p-4 ${s.bg}`}>
+                                        <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{s.label}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Table */}
+                            <div className="px-6 pb-10 max-w-3xl mx-auto">
+                                <div className="bg-white rounded-[1.5rem] border border-slate-200 overflow-hidden shadow-sm">
+                                    <table className="w-full text-left">
+                                        <thead>
+                                            <tr className="bg-slate-900">
+                                                <th className="px-5 py-3.5 text-[9px] font-black text-slate-400 uppercase tracking-widest">#</th>
+                                                <th className="px-5 py-3.5 text-[9px] font-black text-slate-400 uppercase tracking-widest">Student Name</th>
+                                                <th className="px-5 py-3.5 text-[9px] font-black text-slate-400 uppercase tracking-widest">Matric No.</th>
+                                                <th className="px-5 py-3.5 text-right text-[9px] font-black text-slate-400 uppercase tracking-widest">Time</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody>
+                                            {rollRecords.length === 0 && (
+                                                <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-bold">No attendance recorded yet.</td></tr>
+                                            )}
+                                            {rollRecords.map((r, i) => (
+                                                <tr key={i} className={`border-b border-slate-50 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                                                    <td className="px-5 py-3 text-xs font-black text-slate-400">{i + 1}</td>
+                                                    <td className="px-5 py-3 font-bold text-slate-900 text-sm">{r.student_name || r.name}</td>
+                                                    <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.matric_number || '—'}</td>
+                                                    <td className="px-5 py-3 text-right text-xs text-slate-400">{new Date(r.marked_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </motion.div>
-                    </div>
-                )}
+                    );
+                })()}
             </AnimatePresence>
         </div>
     );
