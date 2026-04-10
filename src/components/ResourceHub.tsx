@@ -525,7 +525,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 <input
                                     type="file"
                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                    accept={uploadType === 'roster' ? '.csv' : uploadType === 'audio' ? '.mp3,.wav,.flac,.aac,.ogg,.opus,.m4a,.wma,.aiff,.aif,.amr,.3gp,.webm,.caf,.ra,.rm,audio/*' : '.pdf,.docx,.doc,.pptx'}
+                                    accept={uploadType === 'roster' ? '.csv' : uploadType === 'audio' ? '.mp3,.wav,.flac,.aac,.ogg,.opus,.m4a,.wma,.aiff,.aif,.amr,.webm,.caf' : '.pdf,.docx,.doc,.pptx'}
                                     onChange={handleFileUpload}
                                     disabled={isUploading}
                                 />
