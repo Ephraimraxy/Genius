@@ -412,10 +412,10 @@ export default function App() {
                   className="relative w-full max-w-5xl bg-white rounded-[2.5rem] shadow-2xl border border-white/10 overflow-hidden flex flex-col md:flex-row min-h-[500px]"
                 >
                   {/* Left Side: Branding (Refined for Spacing) */}
-                  <div className="hidden md:flex md:w-1/2 bg-[#800000] relative overflow-hidden flex-col p-8 text-white">
-                     <div className="absolute inset-0 bg-slate-900/20" />
+                  <div className="hidden md:flex md:w-1/2 bg-blue-700 relative overflow-hidden flex-col p-8 text-white">
+                     <div className="absolute inset-0 bg-slate-900/10" />
                      <div className="absolute top-0 left-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -ml-32 -mt-32" />
-                     <div className="absolute bottom-0 right-0 w-80 h-80 bg-rose-500/10 rounded-full blur-3xl -mr-40 -mb-40" />
+                     <div className="absolute bottom-0 right-0 w-80 h-80 bg-blue-400/10 rounded-full blur-3xl -mr-40 -mb-40" />
                      
                      <div className="relative z-10 flex flex-col items-center justify-center h-full text-center">
                         <motion.div
@@ -427,7 +427,7 @@ export default function App() {
 
                         <div className="mb-8">
                            <span className="font-black tracking-[0.2em] text-[10px] md:text-xs uppercase opacity-50">Genius Academy</span>
-                           <div className="h-0.5 w-12 bg-[#ff4d4d] mx-auto mt-2" />
+                           <div className="h-0.5 w-12 bg-blue-300 mx-auto mt-2" />
                         </div>
 
                         <h2 className="text-3xl md:text-4xl font-black mb-4 tracking-tight">Academic Portal</h2>
