@@ -1376,6 +1376,8 @@ async function initDB() {
   try { await pool.query('ALTER TABLE resources ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE resources ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE resources ADD COLUMN is_paid BOOLEAN DEFAULT FALSE'); } catch (e) { }
+  try { await pool.query("ALTER TABLE resources ADD COLUMN IF NOT EXISTS ai_fitness_status TEXT DEFAULT 'unchecked'"); } catch (e) { }
+  try { await pool.query('ALTER TABLE resources ADD COLUMN IF NOT EXISTS ai_fitness_reason TEXT'); } catch (e) { }
 
   // Migration: Global Student Uniqueness (Matric + Role)
   try {
@@ -8848,7 +8850,7 @@ app.get('/api/tenant/info', authenticateToken, async (req: any, res) => {
 app.get('/api/resources', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
-      'SELECT id, type, name, status, created_at, is_available, price, is_paid, category_id FROM resources WHERE tenant_id = $1 ORDER BY created_at DESC',
+      'SELECT id, type, name, status, created_at, is_available, price, is_paid, category_id, ai_fitness_status, ai_fitness_reason FROM resources WHERE tenant_id = $1 ORDER BY created_at DESC',
       [req.tenant_id]
     );
     res.json(result.rows);
@@ -9025,6 +9027,46 @@ app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req:
   }
 });
 
+// ─── Background AI fitness check for uploaded materials ───────────────────────
+async function checkMaterialAiFitness(resourceId: number, text: string) {
+  try {
+    await pool.query(
+      "UPDATE resources SET ai_fitness_status = 'checking' WHERE id = $1",
+      [resourceId]
+    );
+
+    if (!text || text.trim().length < 100) {
+      await pool.query(
+        "UPDATE resources SET ai_fitness_status = 'unfit', ai_fitness_reason = $1 WHERE id = $2",
+        ['The material is too short to generate assessment questions from. Upload a more detailed document.', resourceId]
+      );
+      return;
+    }
+
+    // Try generating a small sample — reuses the same function used at publish time
+    const sampleText = text.slice(0, 28000);
+    const rawQuestions = await generateQuestionsFromMaterial(sampleText, 3, 'medium', 'mixed', false, 0);
+    const validQuestions = sanitizeGeneratedQuestions(rawQuestions);
+
+    if (validQuestions.length === 0) {
+      await pool.query(
+        "UPDATE resources SET ai_fitness_status = 'unfit', ai_fitness_reason = $1 WHERE id = $2",
+        ['AI returned no valid questions from this material. The material may not contain enough academic content. Try uploading a more detailed resource.', resourceId]
+      );
+    } else {
+      await pool.query(
+        "UPDATE resources SET ai_fitness_status = 'fit' WHERE id = $1",
+        [resourceId]
+      );
+    }
+  } catch (err: any) {
+    await pool.query(
+      "UPDATE resources SET ai_fitness_status = 'unfit', ai_fitness_reason = $1 WHERE id = $2",
+      [`AI fitness check failed: ${err?.message || 'Unknown error'}`, resourceId]
+    );
+  }
+}
+
 // File-based material upload — extracts text from PDF/DOCX before storing
 app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (req: any, res: any, next: any) => {
   upload.single('file')(req, res, (err: any) => {
@@ -9112,8 +9154,14 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
       'INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type, file_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
       [req.tenant_id, type, name, contentJson, 'ready', final_category_id, resourceFileBlob, mimeType, resourceFileUrl]
     );
+    const newResourceId = result.rows[0].id;
 
-    res.json({ success: true, id: result.rows[0].id });
+    // Fire AI fitness check in background (only for text-extractable materials)
+    if (type === 'material' && !isVideoOrAudio && textContent) {
+      checkMaterialAiFitness(newResourceId, textContent).catch(() => {});
+    }
+
+    res.json({ success: true, id: newResourceId });
   } catch (err: any) {
     console.error('File material upload error:', err?.message);
     res.status(500).json({ error: err.message });
@@ -10930,7 +10978,7 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
           for (let i = 0; i < students.length; i++) {
             const batchIndex = Math.floor(i / batchSz);
             const scheduledAt = new Date(startMs + batchIndex * intervalMs);
-            const windowEnd = new Date(scheduledAt.getTime() + durationMin * 60 * 1000 + 30 * 60 * 1000);
+            const windowEnd = new Date(scheduledAt.getTime() + durationMin * 60 * 1000);
             const slotInsert = await pool.query(
               `INSERT INTO exam_slots (exam_id, tenant_id, student_id, student_email, student_name, scheduled_at, window_end, notification_status)
                VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING id`,
@@ -11698,6 +11746,12 @@ app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
       const attemptsSoFar = parseInt(attemptsRes.rows[0].cnt) || 0;
       if (attemptsSoFar >= maxAttempts) {
         return res.status(409).json({ error: `You have used all ${maxAttempts} attempt(s) for this assessment.` });
+      }
+
+      // Hard cutoff: if the exam has an overall end_date and it has passed, block all students
+      if (exam.end_date && new Date() > new Date(exam.end_date)) {
+        const endLabel = new Date(exam.end_date).toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+        return res.status(403).json({ error: `This assessment has ended. The deadline was ${endLabel}. Contact your lecturer if you believe this is an error.` });
       }
 
       // Enforce slot window if slots exist for this exam

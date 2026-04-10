@@ -43,6 +43,8 @@ interface Resource {
     is_available?: boolean;
     price?: number;
     is_paid?: boolean;
+    ai_fitness_status?: 'unchecked' | 'checking' | 'fit' | 'unfit';
+    ai_fitness_reason?: string;
 }
 
 interface AcademicManagementProps {
@@ -1760,17 +1762,45 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             <div className="p-6 max-h-[400px] overflow-y-auto space-y-2">
                                 {hubResources.map(res => {
                                     const isSelected = selectedMaterialResources.some(item => item.id === res.id);
+                                    const isUnfit = isAssessmentMaterialSelector && res.type === 'material' && res.ai_fitness_status === 'unfit';
+                                    const isChecking = isAssessmentMaterialSelector && res.type === 'material' && res.ai_fitness_status === 'checking';
+                                    const unfitReason = res.ai_fitness_reason || 'This material cannot be used to set up assessments.';
                                     return (
                                     <div
                                         key={res.id}
-                                        onClick={() => isAssessmentMaterialSelector ? toggleMaterialResource(res) : selectSingleResource(res)}
-                                        className={`p-4 rounded-2xl cursor-pointer flex justify-between items-center group border transition-all ${isSelected ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-transparent hover:bg-blue-50'}`}
+                                        onClick={() => {
+                                            if (isUnfit || isChecking) return;
+                                            isAssessmentMaterialSelector ? toggleMaterialResource(res) : selectSingleResource(res);
+                                        }}
+                                        className={`p-4 rounded-2xl flex flex-col gap-1 border transition-all ${
+                                            isUnfit
+                                                ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed'
+                                                : isChecking
+                                                    ? 'bg-amber-50 border-amber-100 opacity-70 cursor-not-allowed'
+                                                    : isSelected
+                                                        ? 'bg-blue-50 border-blue-200 cursor-pointer'
+                                                        : 'bg-slate-50 border-transparent hover:bg-blue-50 cursor-pointer group'
+                                        }`}
                                     >
-                                        <div className="flex items-center gap-3">
-                                            {res.type === 'roster' ? <Users size={18} /> : <FileText size={18} />}
-                                            <span className="font-bold text-sm">{res.name}</span>
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-3">
+                                                {res.type === 'roster' ? <Users size={18} className={isUnfit ? 'text-slate-400' : ''} /> : <FileText size={18} className={isUnfit ? 'text-slate-400' : ''} />}
+                                                <span className={`font-bold text-sm ${isUnfit ? 'text-slate-400' : ''}`}>{res.name}</span>
+                                            </div>
+                                            {isChecking ? (
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">Checking…</span>
+                                            ) : isUnfit ? (
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-red-400">Unfit</span>
+                                            ) : (
+                                                <CheckCircle className={`text-emerald-500 transition-all ${isAssessmentMaterialSelector ? (isSelected ? 'opacity-100' : 'opacity-20 group-hover:opacity-70') : 'opacity-0 group-hover:opacity-100'}`} />
+                                            )}
                                         </div>
-                                        <CheckCircle className={`text-emerald-500 transition-all ${isAssessmentMaterialSelector ? (isSelected ? 'opacity-100' : 'opacity-20 group-hover:opacity-70') : 'opacity-0 group-hover:opacity-100'}`} />
+                                        {isUnfit && (
+                                            <p className="text-[11px] text-red-400 leading-snug pl-7">{unfitReason}</p>
+                                        )}
+                                        {isChecking && (
+                                            <p className="text-[11px] text-amber-500 leading-snug pl-7">AI fitness check in progress — check back shortly.</p>
+                                        )}
                                     </div>
                                 )})}
                                 {hubResources.length === 0 && <p className="text-center py-10 text-slate-400">No resources found.</p>}
