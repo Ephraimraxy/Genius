@@ -439,7 +439,7 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
                                         <input
                                             ref={fileInputRef}
                                             type="file"
-                                            accept=".mp4,.mov,.mkv,.webm,.avi,.flv,.wmv,.m4v,.3gp,.3g2,.ogv,.ts,.mts,.m2ts,.mpeg,.mpg,.hevc,.h264,.h265,.asf,.divx,.rmvb,.vob"
+                                            accept=".mp4,.mov,.mkv,.webm,.avi,.flv,.wmv,.m4v,.3gp,.3g2,.ogv,.ts,.mts,.m2ts,.mpeg,.mpg,.hevc,.h264,.h265,.asf,.divx,.rmvb,.vob,video/*"
                                             className="hidden"
                                             onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
                                         />
