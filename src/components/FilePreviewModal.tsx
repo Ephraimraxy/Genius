@@ -311,9 +311,9 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
               </div>
 
               <div className="w-full space-y-2 relative z-10">
-                <audio 
-                  src={typeof file === 'string' ? file : URL.createObjectURL(file as Blob)} 
-                  controls 
+                <audio
+                  src={previewBlobUrl || (typeof file !== 'string' ? URL.createObjectURL(file as Blob) : undefined)}
+                  controls
                   className="w-full h-14 rounded-2xl"
                   onLoadedMetadata={() => setLoading(false)}
                 />
@@ -335,9 +335,9 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
       case 'avi':
         return (
           <div className="w-full h-full flex items-center justify-center bg-black p-4">
-            <video 
-              src={typeof file === 'string' ? file : URL.createObjectURL(file as Blob)} 
-              controls 
+            <video
+              src={previewBlobUrl || (typeof file !== 'string' ? URL.createObjectURL(file as Blob) : undefined)}
+              controls
               className="max-w-full max-h-full rounded-xl"
               onLoadedMetadata={() => setLoading(false)}
             />

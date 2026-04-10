@@ -1,18 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-    Video, 
-    Upload, 
-    Trash2, 
-    Eye, 
+import {
+    Video,
+    Upload,
+    Trash2,
     Play,
     Loader2,
     Film,
-    Clock,
-    HardDrive,
     Plus,
     X,
-    Coins,
-    BarChart3,
     CheckCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -20,17 +15,14 @@ import { ToastType } from './ToastSystem';
 import { friendlyError } from '../utils/friendlyError';
 
 interface VideoItem {
-    guid: string;
-    title: string;
-    status: number; // 0=created, 1=uploaded, 2=processing, 3=transcoding, 4=finished, 5=error
-    length: number;
-    views: number;
-    dateUploaded: string;
-    storageSize: number;
-    thumbnailUrl: string;
-    is_available?: boolean;
-    is_paid?: boolean;
-    price?: number;
+    id: number;
+    name: string;
+    file_url: string | null;
+    mime_type: string | null;
+    is_paid: boolean;
+    price: number;
+    is_available: boolean;
+    created_at: string;
 }
 
 interface VideoLecturesProps {
@@ -38,20 +30,8 @@ interface VideoLecturesProps {
     token: string | null;
 }
 
-
-const statusMap: Record<number, { label: string; color: string }> = {
-    0: { label: 'Created', color: 'bg-slate-100 text-slate-500' },
-    1: { label: 'Uploaded', color: 'bg-blue-50 text-blue-600' },
-    2: { label: 'Processing', color: 'bg-amber-50 text-amber-600' },
-    3: { label: 'Transcoding', color: 'bg-indigo-50 text-indigo-600' },
-    4: { label: 'Ready', color: 'bg-emerald-50 text-emerald-600' },
-    5: { label: 'Error', color: 'bg-rose-50 text-rose-600' },
-};
-
 export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
     const [videos, setVideos] = useState<VideoItem[]>([]);
-    const [cdnHost, setCdnHost] = useState('');
-    const [libraryId, setLibraryId] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
@@ -74,9 +54,7 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
             });
             const data = await res.json();
             setVideos(data.videos || []);
-            if (data.cdnHost) setCdnHost(data.cdnHost);
-            if (data.libraryId) setLibraryId(data.libraryId);
-        } catch (err) {
+        } catch {
             addToast('Failed to load videos', 'error');
         }
         setIsLoading(false);
@@ -92,20 +70,11 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
         setUploadProgress(0);
 
         try {
-            // Step 1: Create video entry on server (which creates it on Bunny)
-            const createRes = await fetch('/api/videos/create', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
-                },
-                body: JSON.stringify({ title: videoTitle })
-            });
-            
-            const { videoId, uploadUrl } = await createRes.json();
-            if (!videoId) throw new Error('Failed to create video entry');
+            const formData = new FormData();
+            formData.append('file', videoFile);
+            formData.append('type', 'video');
+            formData.append('name', videoTitle.trim());
 
-            // Step 2: Upload the actual file via XMLHttpRequest for progress tracking
             const xhr = new XMLHttpRequest();
             xhr.upload.addEventListener('progress', (e) => {
                 if (e.lengthComputable) {
@@ -116,15 +85,22 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
             await new Promise<void>((resolve, reject) => {
                 xhr.onload = () => {
                     if (xhr.status >= 200 && xhr.status < 300) resolve();
-                    else reject(new Error(`Upload failed: ${xhr.status}`));
+                    else {
+                        try {
+                            const err = JSON.parse(xhr.responseText);
+                            reject(new Error(err.error || `Upload failed: ${xhr.status}`));
+                        } catch {
+                            reject(new Error(`Upload failed: ${xhr.status}`));
+                        }
+                    }
                 };
-                xhr.onerror = () => reject(new Error('Network error'));
-                xhr.open('PUT', uploadUrl);
+                xhr.onerror = () => reject(new Error('Network error during upload'));
+                xhr.open('POST', '/api/resources/upload/file');
                 xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-                xhr.send(videoFile);
+                xhr.send(formData);
             });
 
-            addToast('Video uploaded successfully! Processing will begin shortly.', 'success');
+            addToast('Video uploaded successfully!', 'success');
             setShowUploadModal(false);
             setVideoTitle('');
             setVideoFile(null);
@@ -135,51 +111,41 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
         setIsUploading(false);
     };
 
-    const handleDelete = async (guid: string) => {
+    const handleDelete = async (id: number) => {
         try {
-            await fetch(`/api/videos/${guid}`, {
+            await fetch(`/api/videos/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             addToast('Video deleted', 'success');
             fetchVideos();
-        } catch (err) {
+        } catch {
             addToast('Failed to delete video', 'error');
         }
     };
 
-    const updateSettings = async (guid: string, settings: { price?: number; is_available?: boolean; is_paid?: boolean }) => {
+    const updateSettings = async (id: number, settings: { price?: number; is_available?: boolean; is_paid?: boolean }) => {
         try {
-            await fetch(`/api/videos/${guid}/settings`, {
+            await fetch(`/api/videos/${id}/settings`, {
                 method: 'PUT',
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(settings)
             });
-            addToast('Settings updated', 'success');
-            fetchVideos();
-        } catch (err) {
+            setVideos(prev => prev.map(v => v.id === id ? { ...v, ...settings } : v));
+        } catch {
             addToast('Update failed', 'error');
         }
     };
 
-    const formatDuration = (seconds: number) => {
-        const m = Math.floor(seconds / 60);
-        const s = Math.floor(seconds % 60);
-        return `${m}:${s.toString().padStart(2, '0')}`;
-    };
-
     const formatSize = (bytes: number) => {
+        if (!bytes) return '—';
         if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
         if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
         return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
     };
-
-    const totalStorage = videos.reduce((sum, v) => sum + (v.storageSize || 0), 0);
-    const totalViews = videos.reduce((sum, v) => sum + (v.views || 0), 0);
-    const readyCount = videos.filter(v => v.status === 4).length;
 
     return (
         <div className="p-6 md:p-10 max-w-7xl mx-auto pb-32 lg:pb-10">
@@ -191,7 +157,7 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
                     </div>
                     <div>
                         <h2 className="text-3xl font-black text-slate-900 tracking-tight">Video Lectures</h2>
-                        <p className="text-slate-500 font-medium">Upload, manage, and stream lecture videos powered by Bunny Stream</p>
+                        <p className="text-slate-500 font-medium">Upload and manage lecture video recordings</p>
                     </div>
                 </div>
                 <button
@@ -203,12 +169,11 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
             </div>
 
             {/* Stats Bar */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-10">
                 {[
                     { label: 'Total Videos', value: videos.length, icon: Film, color: 'bg-violet-50 text-violet-600' },
-                    { label: 'Ready to Stream', value: readyCount, icon: CheckCircle, color: 'bg-emerald-50 text-emerald-600' },
-                    { label: 'Total Views', value: totalViews, icon: BarChart3, color: 'bg-blue-50 text-blue-600' },
-                    { label: 'Storage Used', value: formatSize(totalStorage), icon: HardDrive, color: 'bg-amber-50 text-amber-600' },
+                    { label: 'Available', value: videos.filter(v => v.is_available).length, icon: CheckCircle, color: 'bg-emerald-50 text-emerald-600' },
+                    { label: 'Paid Videos', value: videos.filter(v => v.is_paid).length, icon: Video, color: 'bg-amber-50 text-amber-600' },
                 ].map((stat, i) => (
                     <div key={i} className="bg-white rounded-[1.5rem] p-5 border border-slate-100 shadow-sm">
                         <div className={`w-10 h-10 ${stat.color} rounded-xl flex items-center justify-center mb-3`}>
@@ -239,108 +204,78 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
                 </div>
             ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {videos.map((video) => {
-                        const status = statusMap[video.status] || statusMap[0];
-                        return (
-                            <motion.div
-                                key={video.guid}
-                                layout
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden group hover:shadow-lg hover:border-violet-200 transition-all"
+                    {videos.map((video) => (
+                        <motion.div
+                            key={video.id}
+                            layout
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden group hover:shadow-lg hover:border-violet-200 transition-all"
+                        >
+                            {/* Thumbnail / Play area */}
+                            <div
+                                className="relative h-44 bg-slate-900 cursor-pointer overflow-hidden"
+                                onClick={() => { setSelectedVideo(video); setShowPlayer(true); }}
                             >
-                                {/* Thumbnail */}
-                                <div 
-                                    className="relative h-44 bg-slate-900 cursor-pointer overflow-hidden"
-                                    onClick={() => { 
-                                        if (video.status === 4) { setSelectedVideo(video); setShowPlayer(true); }
-                                    }}
-                                >
-                                    {video.thumbnailUrl ? (
-                                        <img 
-                                            src={video.thumbnailUrl} 
-                                            alt={video.title} 
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                        />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center">
-                                            <Film className="text-slate-700" size={48} />
-                                        </div>
-                                    )}
-                                    
-                                    {/* Play overlay */}
-                                    {video.status === 4 && (
-                                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center shadow-2xl">
-                                                <Play className="text-violet-600 ml-1" size={28} />
+                                <div className="w-full h-full flex items-center justify-center">
+                                    <Film className="text-slate-700" size={48} />
+                                </div>
+                                <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center shadow-2xl">
+                                        <Play className="text-violet-600 ml-1" size={28} />
+                                    </div>
+                                </div>
+                                <div className="absolute top-3 left-3 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-600">
+                                    Ready
+                                </div>
+                            </div>
+
+                            {/* Info */}
+                            <div className="p-5">
+                                <h4 className="font-bold text-slate-900 mb-1 truncate">{video.name}</h4>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+                                    {new Date(video.created_at).toLocaleDateString()}
+                                </p>
+
+                                {/* Controls */}
+                                <div className="flex items-center gap-2 pt-4 border-t border-slate-100">
+                                    <div className="flex items-center gap-2 flex-1">
+                                        <button
+                                            onClick={() => updateSettings(video.id, { is_paid: !video.is_paid })}
+                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+                                                video.is_paid ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-400'
+                                            }`}
+                                        >
+                                            {video.is_paid ? 'Paid' : 'Free'}
+                                        </button>
+                                        {video.is_paid && (
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[10px] font-black text-slate-400">₦</span>
+                                                <input
+                                                    type="number"
+                                                    defaultValue={video.price || 0}
+                                                    onBlur={(e) => updateSettings(video.id, { price: parseInt(e.target.value) || 0 })}
+                                                    className="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold"
+                                                />
                                             </div>
-                                        </div>
-                                    )}
-
-                                    {/* Duration badge */}
-                                    {video.length > 0 && (
-                                        <div className="absolute bottom-3 right-3 bg-black/70 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5">
-                                            <Clock size={12} /> {formatDuration(video.length)}
-                                        </div>
-                                    )}
-
-                                    {/* Status badge */}
-                                    <div className={`absolute top-3 left-3 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${status.color}`}>
-                                        {status.label}
+                                        )}
                                     </div>
+                                    <button
+                                        onClick={() => updateSettings(video.id, { is_available: !video.is_available })}
+                                        className={`w-10 h-5 rounded-full relative transition-colors ${video.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                    >
+                                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${video.is_available ? 'right-1' : 'left-1'}`} />
+                                    </button>
+                                    <button
+                                        onClick={() => handleDelete(video.id)}
+                                        className="p-2 text-slate-300 hover:text-rose-600 transition-all"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
                                 </div>
-
-                                {/* Info */}
-                                <div className="p-5">
-                                    <h4 className="font-bold text-slate-900 mb-1 truncate">{video.title}</h4>
-                                    <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
-                                        <span>{video.views} views</span>
-                                        <span>•</span>
-                                        <span>{formatSize(video.storageSize)}</span>
-                                        <span>•</span>
-                                        <span>{new Date(video.dateUploaded).toLocaleDateString()}</span>
-                                    </div>
-
-                                    {/* Controls */}
-                                    <div className="flex items-center gap-2 pt-4 border-t border-slate-100">
-                                        <div className="flex items-center gap-2 flex-1">
-                                            <button
-                                                onClick={() => updateSettings(video.guid, { is_paid: !video.is_paid })}
-                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
-                                                    video.is_paid ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-400'
-                                                }`}
-                                            >
-                                                {video.is_paid ? 'Paid' : 'Free'}
-                                            </button>
-                                            {video.is_paid && (
-                                                <div className="flex items-center gap-1">
-                                                    <span className="text-[10px] font-black text-slate-400">₦</span>
-                                                    <input
-                                                        type="number"
-                                                        defaultValue={video.price || 0}
-                                                        onBlur={(e) => updateSettings(video.guid, { price: parseInt(e.target.value) || 0 })}
-                                                        className="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold"
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <button
-                                            onClick={() => updateSettings(video.guid, { is_available: !video.is_available })}
-                                            className={`w-10 h-5 rounded-full relative transition-colors ${video.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                                        >
-                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${video.is_available ? 'right-1' : 'left-1'}`} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(video.guid)}
-                                            className="p-2 text-slate-300 hover:text-rose-600 transition-all"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </motion.div>
-                        );
-                    })}
+                            </div>
+                        </motion.div>
+                    ))}
                 </div>
             )}
 
@@ -357,7 +292,7 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
                             <div className="p-8 border-b bg-violet-50 flex justify-between items-center">
                                 <div>
                                     <h3 className="text-xl font-black text-slate-900">Upload Lecture Video</h3>
-                                    <p className="text-sm text-slate-500 font-medium mt-1">Supports MP4, MOV, MKV, AVI</p>
+                                    <p className="text-sm text-slate-500 font-medium mt-1">Supports MP4, MOV, MKV, WebM, AVI</p>
                                 </div>
                                 <button onClick={() => setShowUploadModal(false)} className="p-2 text-slate-400 hover:text-slate-900 transition-all">
                                     <X size={20} />
@@ -376,7 +311,7 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 block">Video File</label>
-                                    <div 
+                                    <div
                                         onClick={() => fileInputRef.current?.click()}
                                         className="border-2 border-dashed border-slate-200 rounded-[2rem] p-10 text-center hover:bg-violet-50 hover:border-violet-300 transition-all cursor-pointer group"
                                     >
@@ -402,7 +337,7 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
                                 {isUploading && (
                                     <div className="space-y-2">
                                         <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                            <span>Uploading to Bunny Stream...</span>
+                                            <span>Uploading to Cloud Storage...</span>
                                             <span>{uploadProgress}%</span>
                                         </div>
                                         <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
@@ -451,25 +386,23 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
                             className="relative w-full max-w-5xl bg-black rounded-[2rem] overflow-hidden shadow-2xl"
                         >
                             <div className="flex items-center justify-between px-6 py-4 bg-slate-900 border-b border-slate-800">
-                                <div>
-                                    <h3 className="text-white font-bold truncate">{selectedVideo.title}</h3>
-                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                                        Bunny Stream &bull; Adaptive Playback
-                                    </p>
-                                </div>
+                                <h3 className="text-white font-bold truncate">{selectedVideo.name}</h3>
                                 <button onClick={() => setShowPlayer(false)} className="p-2 text-slate-400 hover:text-white transition-all">
                                     <X size={20} />
                                 </button>
                             </div>
-                            <div className="relative" style={{ paddingBottom: '56.25%' }}>
-                                <iframe
-                                    src={`https://iframe.mediadelivery.net/embed/${libraryId}/${selectedVideo.guid}?autoplay=true&loop=false&muted=false&preload=true`}
-                                    loading="lazy"
-                                    className="absolute inset-0 w-full h-full border-none"
-                                    allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
-                                    allowFullScreen
+                            {selectedVideo.file_url ? (
+                                <video
+                                    src={selectedVideo.file_url}
+                                    controls
+                                    autoPlay
+                                    className="w-full max-h-[70vh]"
                                 />
-                            </div>
+                            ) : (
+                                <div className="flex items-center justify-center h-48 text-slate-500">
+                                    Video not available
+                                </div>
+                            )}
                         </motion.div>
                     </div>
                 )}

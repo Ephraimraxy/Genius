@@ -191,45 +191,27 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
 
         setIsUploading(true);
 
-        // ─── AUDIO: Upload to Bunny Stream (same path as video) ───
+        // ─── AUDIO: Upload directly to R2 via file upload endpoint ───
         if (uploadType === 'audio') {
             try {
-                // Step 1: Create entry on Bunny Stream
-                const createRes = await fetch('/api/videos/create', {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}` 
-                    },
-                    body: JSON.stringify({ title: `[Audio] ${fileHandle.name}` })
-                });
-                const { videoId, uploadUrl, cdnHost } = await createRes.json();
-                if (!videoId) throw new Error('Failed to create audio entry');
+                const formData = new FormData();
+                formData.append('file', fileHandle);
+                formData.append('type', 'audio');
+                formData.append('name', fileHandle.name);
+                if (selectedCatId) formData.append('categoryId', String(selectedCatId));
+                if (newCatName) formData.append('categoryName', newCatName);
+                if (isPaidEntry) formData.append('isPaidEntry', 'true');
+                if (entryFee) formData.append('entryFee', String(entryFee));
 
-                // Step 2: Upload audio file to Bunny
-                const uploadRes = await fetch(uploadUrl, {
-                    method: 'PUT',
+                const res = await fetch('/api/resources/upload/file', {
+                    method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}` },
-                    body: fileHandle
+                    body: formData
                 });
-                if (!uploadRes.ok) throw new Error('Bunny upload failed');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Upload failed');
 
-                // Step 3: Save reference in resources table (URL only, not the file)
-                const bunnyStreamUrl = `https://${cdnHost || 'vz-3d11f78c-1a6.b-cdn.net'}/${videoId}/play.mp4`;
-                await fetch('/api/resources/upload', {
-                    method: 'POST',
-                    headers: { 
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        type: 'audio',
-                        name: fileHandle.name,
-                        content: JSON.stringify({ bunnyId: videoId, streamUrl: bunnyStreamUrl })
-                    })
-                });
-
-                addToast('Audio uploaded to Bunny Stream CDN successfully!', 'success');
+                addToast('Audio uploaded successfully!', 'success');
                 fetchResources();
                 setFileHandle(null);
             } catch (err: any) {

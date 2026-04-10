@@ -52,6 +52,21 @@ const officeParser = require('officeparser');
 const JSZip = require('jszip');
 import { XMLParser as FastXMLParser } from 'fast-xml-parser';
 
+// Recursively extract plain text from officeParser structured JSON output
+function extractTextFromOfficeParserJson(node: any): string {
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) return node.map(extractTextFromOfficeParserJson).filter(Boolean).join('\n');
+  if (node && typeof node === 'object') {
+    if (typeof node.text === 'string') return node.text;
+    return Object.values(node)
+      .filter(v => typeof v !== 'number' && typeof v !== 'boolean')
+      .map(extractTextFromOfficeParserJson)
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
+}
+
 // Extract text from PPTX by reading slide XML files directly
 async function extractPptxText(buffer: Buffer): Promise<string> {
   const zip = await JSZip.loadAsync(buffer);
@@ -312,7 +327,7 @@ const upload = multer({
     destination: (_req, _file, cb) => cb(null, '/tmp'),
     filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`),
   }),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB — covers large video files
 });
 
 // Initialize OpenAI
@@ -2348,7 +2363,7 @@ app.get('/api/admin/lecturer-material-stats', authenticateToken, async (req: any
         (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'test' AND is_paid = true) as test_count,
         (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'assignment' AND is_paid = true) as assignment_count,
         (SELECT COUNT(*) FROM exams WHERE tenant_id = u.tenant_id AND type = 'exam' AND is_paid = true) as exam_count,
-        (SELECT COUNT(*) FROM videos WHERE tenant_id = u.tenant_id AND is_paid = true) as video_count,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = u.tenant_id AND type = 'video' AND is_paid = true) as video_count,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'material_access') as material_revenue,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'assessment_access') as assessment_revenue,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = u.tenant_id AND status = 'success' AND type = 'portal_entry') as access_fee_revenue
@@ -2375,7 +2390,7 @@ app.get('/api/lecturer/my-stats', authenticateToken, checkSubscription, async (r
         (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'test' AND is_paid = true) as test_count,
         (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'assignment' AND is_paid = true) as assignment_count,
         (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'exam' AND is_paid = true) as exam_count,
-        (SELECT COUNT(*) FROM videos WHERE tenant_id = $1 AND is_paid = true) as video_count,
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = $1 AND type = 'video' AND is_paid = true) as video_count,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'material_access') as material_revenue,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'assessment_access') as assessment_revenue,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE tenant_id = $1 AND status = 'success' AND type = 'portal_entry') as access_fee_revenue,
@@ -2384,7 +2399,7 @@ app.get('/api/lecturer/my-stats', authenticateToken, checkSubscription, async (r
         (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'test' AND is_paid = false) as free_test_count,
         (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'assignment' AND is_paid = false) as free_assignment_count,
         (SELECT COUNT(*) FROM exams WHERE tenant_id = $1 AND type = 'exam' AND is_paid = false) as free_exam_count,
-        (SELECT COUNT(*) FROM videos WHERE tenant_id = $1 AND is_paid = false) as free_video_count
+        (SELECT COUNT(*) FROM resources WHERE tenant_id = $1 AND type = 'video' AND is_paid = false) as free_video_count
     `, [tid]);
     res.json(result.rows[0] || {});
   } catch (error) {
@@ -7283,7 +7298,7 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
 
       if (scope.deleteMaterials) {
         await pool.query('DELETE FROM resources WHERE tenant_id = $1', [tid]);
-        await pool.query('DELETE FROM videos WHERE tenant_id = $1', [tid]);
+        // videos are now stored in resources table — no separate videos table delete needed
       }
 
       if (scope.deleteTransactions) {
@@ -8715,143 +8730,43 @@ app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
   res.json({ success: true });
 });
 
-// ─── BUNNY STREAM VIDEO ENDPOINTS ───────────────────────────────────
-const BUNNY_STREAM_API_KEY = process.env.BUNNY_STREAM_API_KEY || '';
-const BUNNY_STREAM_LIBRARY_ID = process.env.BUNNY_STREAM_LIBRARY_ID || '620384';
-const BUNNY_CDN_HOST = process.env.BUNNY_CDN_HOST || 'vz-3d11f78c-1a6.b-cdn.net';
+// ─── VIDEO ENDPOINTS (R2 Storage) ───────────────────────────────────
+// Videos are stored in the resources table (type='video') and served via R2.
 
-// Webhook for Bunny Stream processing updates
-app.post('/api/webhooks/bunny', async (req: any, res: any) => {
-  try {
-    const { VideoGuid, Status, LibraryId } = req.body;
-    console.log(`[Bunny Stream Webhook] Video ${VideoGuid} in Library ${LibraryId} changed to status: ${Status}`);
-
-    // In a full production app with a dedicated videos table, we'd do:
-    // await pool.query('UPDATE videos SET status = $1 WHERE guid = $2', [Status, VideoGuid]);
-
-    res.json({ success: true, message: 'Webhook received' });
-  } catch (err: any) {
-    console.error('Bunny Webhook Error:', err);
-    res.status(500).json({ error: 'Webhook processing failed' });
-  }
-});
-
-// List all videos
+// List all videos for lecturer portal
 app.get('/api/videos', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
-    const bunnyRes = await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos?page=1&itemsPerPage=100&orderBy=date`, {
-      headers: { 'AccessKey': BUNNY_STREAM_API_KEY }
-    });
-    const data = await bunnyRes.json();
-    const videos = (data.items || []).map((v: any) => ({
-      guid: v.guid,
-      title: v.title,
-      status: v.status,
-      length: v.length,
-      views: v.views,
-      dateUploaded: v.dateUploaded,
-      storageSize: v.storageSize,
-      thumbnailUrl: v.status === 4 ? `https://${BUNNY_CDN_HOST}/${v.guid}/thumbnail.jpg` : '',
-      is_available: v.metaTags?.find((t: any) => t.property === 'is_available')?.value === 'true',
-      is_paid: v.metaTags?.find((t: any) => t.property === 'is_paid')?.value === 'true',
-      price: parseInt(v.metaTags?.find((t: any) => t.property === 'price')?.value || '0'),
-    }));
-    res.json({ videos, cdnHost: BUNNY_CDN_HOST, libraryId: BUNNY_STREAM_LIBRARY_ID });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Create video entry + return upload URL
-app.post('/api/videos/create', authenticateToken, checkSubscription, async (req: any, res: any) => {
-  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
-  try {
-    const { title } = req.body;
-    const bunnyRes = await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos`, {
-      method: 'POST',
-      headers: {
-        'AccessKey': BUNNY_STREAM_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ title })
-    });
-    const data = await bunnyRes.json();
-    // Persist guid ↔ tenant mapping so admin stats can count per lecturer
-    await pool.query(
-      'INSERT INTO videos (guid, tenant_id, title) VALUES ($1, $2, $3) ON CONFLICT (guid) DO NOTHING',
-      [data.guid, req.tenant_id, title]
+    const result = await pool.query(
+      `SELECT id, name, file_url, mime_type, is_paid, price, is_available, created_at
+       FROM resources WHERE tenant_id = $1 AND type = 'video' ORDER BY created_at DESC`,
+      [req.tenant_id]
     );
-    res.json({
-      videoId: data.guid,
-      uploadUrl: `/api/videos/${data.guid}/upload`,
-      cdnHost: BUNNY_CDN_HOST
-    });
+    res.json({ videos: result.rows });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Upload video file (proxy to Bunny)
-app.put('/api/videos/:guid/upload', authenticateToken, async (req: any, res: any) => {
-  try {
-    const { guid } = req.params;
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', async () => {
-      const body = Buffer.concat(chunks);
-      const bunnyRes = await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos/${guid}`, {
-        method: 'PUT',
-        headers: { 'AccessKey': BUNNY_STREAM_API_KEY },
-        body: body
-      });
-      if (bunnyRes.ok) {
-        res.json({ success: true });
-      } else {
-        res.status(bunnyRes.status).json({ error: 'Upload to Bunny failed' });
-      }
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Delete video
-app.delete('/api/videos/:guid', authenticateToken, checkSubscription, async (req: any, res: any) => {
+// Delete video (stored as resource)
+app.delete('/api/videos/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos/${req.params.guid}`, {
-      method: 'DELETE',
-      headers: { 'AccessKey': BUNNY_STREAM_API_KEY }
-    });
-    await pool.query('DELETE FROM videos WHERE guid = $1 AND tenant_id = $2', [req.params.guid, req.tenant_id]);
+    await pool.query('DELETE FROM resources WHERE id = $1 AND tenant_id = $2 AND type = $3',
+      [req.params.id, req.tenant_id, 'video']);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Update video settings (monetization metadata stored as metaTags + mirrored in DB)
-app.put('/api/videos/:guid/settings', authenticateToken, checkSubscription, async (req: any, res: any) => {
+// Update video settings (monetization)
+app.put('/api/videos/:id/settings', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { price, is_available, is_paid } = req.body;
-    const metaTags = [
-      { property: 'is_available', value: String(is_available ?? true) },
-      { property: 'is_paid', value: String(is_paid ?? false) },
-      { property: 'price', value: String(price ?? 0) },
-    ];
-    await fetch(`https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos/${req.params.guid}`, {
-      method: 'POST',
-      headers: {
-        'AccessKey': BUNNY_STREAM_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ metaTags })
-    });
-    // Mirror in DB so stats can filter by is_paid
     await pool.query(
-      'UPDATE videos SET price = $1, is_paid = $2, is_available = $3 WHERE guid = $4 AND tenant_id = $5',
-      [price ?? 0, is_paid ?? false, is_available ?? true, req.params.guid, req.tenant_id]
+      'UPDATE resources SET price = $1, is_paid = $2, is_available = $3 WHERE id = $4 AND tenant_id = $5 AND type = $6',
+      [price ?? 0, is_paid ?? false, is_available ?? true, req.params.id, req.tenant_id, 'video']
     );
     res.json({ success: true });
   } catch (err: any) {
@@ -8980,10 +8895,24 @@ app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const c = result.rows[0].content;
-    let raw: any = typeof c === 'object' && c !== null ? (c?.text ?? c?.content ?? c) : c;
-    // officeparser may return nested objects — keep drilling until we have a primitive
-    if (typeof raw === 'object' && raw !== null) raw = raw?.text ?? raw?.content ?? JSON.stringify(raw);
-    const text = typeof raw === 'string' ? raw : (raw != null ? String(raw) : '');
+    // Content may be stored as a JSON string (text column) or already parsed (jsonb column)
+    let parsed: any;
+    if (typeof c === 'string') {
+      try { parsed = JSON.parse(c); } catch { parsed = c; }
+    } else {
+      parsed = c;
+    }
+    let text = '';
+    if (typeof parsed === 'string') {
+      text = parsed;
+    } else if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.text === 'string') {
+        text = parsed.text; // standard { text: "..." } format
+      } else {
+        // officeParser structured JSON — walk recursively to collect all text nodes
+        text = extractTextFromOfficeParserJson(parsed);
+      }
+    }
     res.json({ name: result.rows[0].name, text });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -9009,41 +8938,40 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
     const { type, name, categoryName, categoryId, isPaidEntry, entryFee } = req.body;
     if (!type || !name) return res.status(400).json({ error: 'Missing required fields' });
 
-    // Read file once from disk into buffer for text extraction
-    const fileBuffer = fs.readFileSync(req.file.path);
-
-    // Extract text content from binary file
-    let textContent = '';
     const mime = req.file.mimetype;
     const origName = (req.file.originalname || '').toLowerCase();
+    const isVideoOrAudio = mime.startsWith('video/') || mime.startsWith('audio/') ||
+      ['.mp4', '.mov', '.webm', '.mkv', '.avi', '.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac']
+        .some(ext => origName.endsWith(ext));
 
-    if (mime === 'application/pdf' || origName.endsWith('.pdf')) {
-      const data = await pdfParse(fileBuffer);
-      textContent = data.text || '';
-    } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || origName.endsWith('.docx')) {
-      const result = await mammoth.extractRawText({ buffer: fileBuffer });
-      textContent = result.value || '';
-    } else if (mime === 'application/msword' || origName.endsWith('.doc')) {
-      const extractor = new WordExtractor();
-      const extracted = await extractor.extract(fileBuffer);
-      textContent = extracted.getBody() || '';
-    } else if (
-      mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
-      origName.endsWith('.pptx')
-    ) {
-      textContent = await extractPptxText(fileBuffer);
-      // fallback to officeParser if zip approach yields nothing
-      if (!textContent.trim()) {
-        const pptxResult = await officeParser.parseOffice(fileBuffer).catch(() => '');
-        textContent = typeof pptxResult === 'string' ? pptxResult : '';
+    // Read file buffer only when text extraction is needed (skip for video/audio)
+    let textContent = '';
+    if (!isVideoOrAudio) {
+      const fileBuffer = fs.readFileSync(req.file.path);
+
+      if (mime === 'application/pdf' || origName.endsWith('.pdf')) {
+        const data = await pdfParse(fileBuffer);
+        textContent = data.text || '';
+      } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || origName.endsWith('.docx')) {
+        const result = await mammoth.extractRawText({ buffer: fileBuffer });
+        textContent = result.value || '';
+      } else if (mime === 'application/msword' || origName.endsWith('.doc')) {
+        const extractor = new WordExtractor();
+        const extracted = await extractor.extract(fileBuffer);
+        textContent = extracted.getBody() || '';
+      } else if (
+        mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+        origName.endsWith('.pptx')
+      ) {
+        textContent = await extractPptxText(fileBuffer);
+        if (!textContent.trim()) {
+          const pptxResult = await officeParser.parseOffice(fileBuffer).catch(() => '');
+          textContent = typeof pptxResult === 'string' ? pptxResult : '';
+        }
       }
-    } else {
-      // Plain text fallback
-      textContent = fileBuffer.toString('utf8').replace(/\0/g, '');
+      // Sanitize: strip null bytes that PostgreSQL rejects
+      textContent = textContent.replace(/\0/g, '');
     }
-
-    // Sanitize: strip null bytes that PostgreSQL rejects
-    textContent = textContent.replace(/\0/g, '');
 
     // Handle category
     let final_category_id = categoryId ? parseInt(categoryId) : null;
@@ -10974,37 +10902,20 @@ app.get('/api/student/assessments', authenticateToken, async (req: any, res) => 
   }
 });
 
-// ─── FIX 4: Student video access ────────────────────────────────────
+// ─── Student video access ────────────────────────────────────────────
 app.get('/api/student/videos', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    // Get all videos for this tenant from the DB mirror (respects is_available)
-    const dbVideos = await pool.query(
-      `SELECT v.*,
+    const result = await pool.query(
+      `SELECT r.id, r.name, r.file_url, r.is_paid, r.price, r.created_at,
        EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'video_access'
-              AND (metadata->>'guid') = v.guid AND status = 'success') as "hasPaid"
-       FROM videos v
-       WHERE v.tenant_id = $2 AND v.is_available = true
-       ORDER BY v.created_at DESC`,
+              AND (metadata->>'resource_id')::int = r.id AND status = 'success') as "hasPaid"
+       FROM resources r
+       WHERE r.tenant_id = $2 AND r.type = 'video' AND r.is_available = true
+       ORDER BY r.created_at DESC`,
       [req.user.id, req.tenant_id]
     );
-
-    if (dbVideos.rows.length === 0) return res.json({ success: true, videos: [] });
-
-    // Enrich with Bunny stream embed URLs (no upload key needed — just CDN host)
-    const BUNNY_CDN_HOST_VAL = process.env.BUNNY_CDN_HOST || BUNNY_CDN_HOST;
-    const videos = dbVideos.rows.map((v: any) => ({
-      guid: v.guid,
-      title: v.title,
-      is_paid: v.is_paid,
-      price: v.price,
-      hasPaid: v.hasPaid,
-      thumbnailUrl: `https://${BUNNY_CDN_HOST_VAL}/${v.guid}/thumbnail.jpg`,
-      embedUrl: `https://iframe.mediadelivery.net/embed/${BUNNY_STREAM_LIBRARY_ID}/${v.guid}?autoplay=false`,
-      created_at: v.created_at
-    }));
-
-    res.json({ success: true, videos });
+    res.json({ success: true, videos: result.rows });
   } catch (error: any) {
     console.error('Student videos error:', error);
     res.status(500).json({ error: 'Failed to fetch videos' });

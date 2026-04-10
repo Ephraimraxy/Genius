@@ -17,13 +17,12 @@ interface Material {
 }
 
 interface VideoItem {
-    guid: string;
-    title: string;
+    id: number;
+    name: string;
+    file_url: string | null;
     is_paid: boolean;
     price: number;
     hasPaid: boolean;
-    thumbnailUrl: string;
-    embedUrl: string;
     created_at: string;
 }
 
@@ -372,19 +371,23 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
                                     className="bg-slate-900 rounded-3xl overflow-hidden w-full max-w-4xl shadow-2xl"
                                 >
                                     <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-                                        <p className="font-black text-white truncate">{activeVideo.title}</p>
+                                        <p className="font-black text-white truncate">{activeVideo.name}</p>
                                         <button onClick={() => setActiveVideo(null)} className="p-2 rounded-xl hover:bg-white/10 text-white transition-colors">
                                             <X size={20} />
                                         </button>
                                     </div>
-                                    <div className="relative" style={{ paddingTop: '56.25%' }}>
-                                        <iframe
-                                            src={activeVideo.embedUrl}
-                                            className="absolute inset-0 w-full h-full"
-                                            allowFullScreen
-                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    {activeVideo.file_url ? (
+                                        <video
+                                            src={activeVideo.file_url}
+                                            controls
+                                            autoPlay
+                                            className="w-full max-h-[70vh]"
                                         />
-                                    </div>
+                                    ) : (
+                                        <div className="flex items-center justify-center h-48 text-slate-400">
+                                            Video not available
+                                        </div>
+                                    )}
                                 </motion.div>
                             </motion.div>
                         )}
@@ -393,22 +396,14 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {videos.map((vid) => (
                             <motion.div
-                                key={vid.guid}
+                                key={vid.id}
                                 layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                                 className="bg-white rounded-[2.5rem] overflow-hidden border border-slate-200 hover:border-indigo-200 hover:shadow-2xl hover:shadow-indigo-100 transition-all group"
                             >
-                                {/* Thumbnail */}
-                                <div className="relative aspect-video bg-slate-900 overflow-hidden">
-                                    <img
-                                        src={vid.thumbnailUrl}
-                                        alt={vid.title}
-                                        className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                    />
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-2 border-white/40 group-hover:scale-110 transition-transform">
-                                            <Play size={22} className="text-white ml-1" />
-                                        </div>
+                                {/* Thumbnail placeholder */}
+                                <div className="relative aspect-video bg-slate-900 overflow-hidden flex items-center justify-center">
+                                    <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-2 border-white/40 group-hover:scale-110 transition-transform">
+                                        <Play size={22} className="text-white ml-1" />
                                     </div>
                                     {vid.is_paid && !vid.hasPaid && (
                                         <div className="absolute top-3 right-3 bg-slate-900/80 text-amber-400 text-[10px] font-black px-2 py-1 rounded-lg backdrop-blur-sm">
@@ -417,7 +412,7 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
                                     )}
                                 </div>
                                 <div className="p-6">
-                                    <h4 className="font-black text-slate-900 mb-1 leading-tight">{vid.title}</h4>
+                                    <h4 className="font-black text-slate-900 mb-1 leading-tight">{vid.name}</h4>
                                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">
                                         {new Date(vid.created_at).toLocaleDateString()}
                                     </p>
