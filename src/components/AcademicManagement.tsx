@@ -25,7 +25,8 @@ import {
     Eye,
     Trash2,
     Send,
-    Download as DownloadIcon
+    Download as DownloadIcon,
+    Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import FilePreviewModal from './FilePreviewModal';
@@ -54,6 +55,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [showResourceSelector, setShowResourceSelector] = useState(false);
     const [hubResources, setHubResources] = useState<Resource[]>([]);
     const [isLoadingHub, setIsLoadingHub] = useState(false);
+    const [audioPriceInputs, setAudioPriceInputs] = useState<Record<number, string>>({});
     const [selectedHubResource, setSelectedHubResource] = useState<Resource | null>(null);
     const [records, setRecords] = useState<any[]>([]);
     const [students, setStudents] = useState<any[]>([]);
@@ -1391,47 +1393,69 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-50">
+                        <div className="pt-6 border-t border-slate-50 space-y-4">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Access Status</label>
                                 <div className="flex items-center gap-3">
-                                    <button 
-                                        onClick={() => updateSettings(item.id, true, { ...item, is_paid: false } as any)}
+                                    <button
+                                        onClick={() => {
+                                            updateSettings(item.id, true, { ...item, is_paid: false, price: 0 } as any);
+                                            setAudioPriceInputs(prev => { const n = { ...prev }; delete n[item.id]; return n; });
+                                        }}
                                         className={`flex-1 py-3 px-3 rounded-xl text-[10px] font-bold border transition-all ${!item.is_paid ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-200' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200'}`}
                                     >
                                         Free
                                     </button>
-                                    <button 
-                                        onClick={() => updateSettings(item.id, true, { ...item, is_paid: true } as any)}
+                                    <button
+                                        onClick={() => {
+                                            // Just flip UI to paid — don't save yet
+                                            setHubResources(prev => prev.map(r => r.id === item.id ? { ...r, is_paid: true } : r));
+                                            if (!(item.id in audioPriceInputs)) {
+                                                setAudioPriceInputs(prev => ({ ...prev, [item.id]: String(item.price || '') }));
+                                            }
+                                        }}
                                         className={`flex-1 py-3 px-3 rounded-xl text-[10px] font-bold border transition-all ${item.is_paid ? 'bg-rose-600 border-rose-600 text-white shadow-lg shadow-rose-200' : 'bg-white border-slate-200 text-slate-400 hover:border-rose-200'}`}
                                     >
                                         Paid
                                     </button>
                                 </div>
                             </div>
-                            
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Monetization (₦)</label>
-                                <div className="relative">
-                                    <Coins className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                                    <input 
-                                        type="number"
-                                        disabled={!item.is_paid}
-                                        value={item.price || 0}
-                                        onBlur={(e) => updateSettings(item.id, true, { ...item, price: parseInt(e.target.value) || 0 } as any)}
-                                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-900 outline-none focus:border-rose-400 disabled:opacity-40 transition-all"
-                                    />
-                                </div>
-                            </div>
 
-                            <div className="col-span-2 pt-4">
-                                <button 
-                                    onClick={() => updateSettings(item.id, true, { ...item, is_available: !item.is_available } as any)}
-                                    className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${item.is_available ? 'bg-slate-900 text-white' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-200'}`}
-                                >
-                                    {item.is_available ? 'Set Record Private' : 'Publish to Students'}
-                                </button>
-                            </div>
+                            {item.is_paid && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Monetization (₦)</label>
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative flex-1">
+                                            <Coins className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={audioPriceInputs[item.id] ?? String(item.price || '')}
+                                                onChange={(e) => setAudioPriceInputs(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                                placeholder="Enter price"
+                                                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-900 outline-none focus:border-rose-400 transition-all"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const price = parseInt(audioPriceInputs[item.id] || '0') || 0;
+                                                updateSettings(item.id, true, { ...item, is_paid: true, price } as any);
+                                                setAudioPriceInputs(prev => ({ ...prev, [item.id]: String(price) }));
+                                            }}
+                                            className="flex items-center gap-1.5 px-4 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap"
+                                        >
+                                            <Save size={12} /> Save Price
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            <button
+                                onClick={() => updateSettings(item.id, true, { ...item, is_available: !item.is_available } as any)}
+                                className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${item.is_available ? 'bg-slate-900 text-white' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-200'}`}
+                            >
+                                {item.is_available ? 'Set Record Private' : 'Publish to Students'}
+                            </button>
                         </div>
                     </motion.div>
                 ))}
