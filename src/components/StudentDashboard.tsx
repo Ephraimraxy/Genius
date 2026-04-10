@@ -117,12 +117,28 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
         setActiveExamStartDate(null);
     };
 
-    if (activeExamId && activeExamCourse && !showProctoringModal) {
-        return <ActiveExamSession 
+    if (showProctoringModal && activeExamId && activeExamCourse) {
+        return (
+            <ExamProctoringModal
+                courseName={activeExamCourse}
+                startDate={activeExamStartDate}
+                onCancel={() => {
+                    setShowProctoringModal(false);
+                    setActiveExamId(null);
+                    setActiveExamCourse(null);
+                    setActiveExamStartDate(null);
+                }}
+                onStartExam={() => setShowProctoringModal(false)}
+            />
+        );
+    }
+
+    if (activeExamId && activeExamCourse) {
+        return <ActiveExamSession
             examId={activeExamId}
             courseName={activeExamCourse}
             matricNumber={profile?.user?.matricNumber || 'GUEST'}
-            addToast={addToast} 
+            addToast={addToast}
             onExamSubmit={handleExamSubmit}
             token={token}
             confirm={confirm}
@@ -371,22 +387,6 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                   <img src="/gmijp-logo.png" alt="Genius Portal" className="w-full h-full object-contain" />
                 </div>
             </div>
-
-            {/* Proctoring Warning Modal Overlay */}
-            <AnimatePresence>
-                {showProctoringModal && activeExamCourse && (
-                    <ExamProctoringModal
-                        courseName={activeExamCourse}
-                        startDate={activeExamStartDate}
-                        onCancel={() => {
-                            setShowProctoringModal(false);
-                            setActiveExamCourse(null);
-                            setActiveExamStartDate(null);
-                        }}
-                        onStartExam={() => setShowProctoringModal(false)}
-                    />
-                )}
-            </AnimatePresence>
 
             {/* Portal Entry Payment Blocker — hidden when payment modal is open */}
             <AnimatePresence>
