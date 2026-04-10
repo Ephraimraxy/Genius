@@ -1853,12 +1853,23 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
 
     const user = result.rows[0];
 
-    // 2. Validate PIN (which is stored in the password field for students)
+    // 2. Check suspension before anything else
+    const suspendedCheck = await pool.query(
+      'SELECT is_suspended FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
+      [matricNumber, tenantId]
+    );
+    if (suspendedCheck.rows[0]?.is_suspended || user.is_suspended) {
+      return res.status(403).json({
+        error: 'Your account has been suspended by your lecturer. Please contact them directly to resolve this.',
+        suspended: true
+      });
+    }
+
+    // 3. Validate PIN (which is stored in the password field for students)
     const validPin = await verifyPin(pin, user.password);
     if (!validPin) return res.status(401).json({ error: 'Invalid matric number or PIN' });
 
-
-    // 3. Generate Token
+    // 4. Generate Token
     const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: 'student', tenant_id: user.tenant_id, category_id: user.category_id }, JWT_SECRET, { expiresIn: '7d' });
 
     // 4. Resolve Category and Check for Entry Fee requirement (Source of Truth: students_roster)

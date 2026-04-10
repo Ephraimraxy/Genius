@@ -76,7 +76,14 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             });
 
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Login failed');
+
+            if (!res.ok) {
+                // Always show the exact server message — it's already user-facing
+                const msg = data.error || 'Login failed';
+                setError(msg);
+                addToast(msg, 'error');
+                return;
+            }
 
             localStorage.setItem('token', data.token);
             localStorage.setItem('user', JSON.stringify(data.user));
@@ -84,8 +91,10 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             onAuthSuccess(data.token, data.user);
 
         } catch (err: any) {
-            setError(friendlyError(err, 'auth'));
-            addToast(friendlyError(err, 'auth'), 'error');
+            // Only reach here on actual network failure (fetch threw)
+            const msg = friendlyError(err, 'auth');
+            setError(msg);
+            addToast(msg, 'error');
         } finally {
             setLoading(false);
         }
