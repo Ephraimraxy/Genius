@@ -10387,93 +10387,10 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
     );
     const examId = result.rows[0].id;
 
-    // Questions are NOT generated at creation — they are generated when the lecturer publishes.
-    // This ensures students never wait for AI generation during the exam.
+    // Questions and slot assignments happen only when the lecturer publishes.
+    // This guarantees students are never notified until the exam is fully ready and live.
 
-    // ── Scheduling: if a time window + category provided, assign student slots ──
-    if (start_date && end_date && category_id) {
-      const studentsRes = await pool.query(
-        `SELECT id, name, email FROM users
-         WHERE tenant_id = $1 AND category_id = $2 AND role = 'student'
-         ORDER BY id`,
-        [req.tenant_id, category_id]
-      );
-      const students = studentsRes.rows;
-
-      if (students.length > 0) {
-        const batchSz = Math.max(1, parseInt(batch_size) || 10);
-        const durationMin = parseInt(duration) || 60;
-        const startMs = new Date(start_date).getTime();
-        const endMs   = new Date(end_date).getTime();
-        const totalBatches = Math.ceil(students.length / batchSz);
-        const intervalMs = Math.max((endMs - startMs) / totalBatches, durationMin * 60 * 1000 + 30 * 60 * 1000);
-
-        for (let i = 0; i < students.length; i++) {
-          const batchIndex = Math.floor(i / batchSz);
-          const scheduledAt = new Date(startMs + batchIndex * intervalMs);
-          const windowEnd   = new Date(scheduledAt.getTime() + durationMin * 60 * 1000 + 30 * 60 * 1000);
-
-          const slotInsert = await pool.query(
-            `INSERT INTO exam_slots (exam_id, tenant_id, student_id, student_email, student_name, scheduled_at, window_end, notification_status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING id`,
-            [examId, req.tenant_id, students[i].id, students[i].email, students[i].name, scheduledAt, windowEnd]
-          );
-          const slotId = slotInsert.rows[0].id;
-
-          // Notify student of their slot and track per-slot delivery status
-          if (students[i].email) {
-            const slotLabel = scheduledAt.toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
-            const endLabel  = windowEnd.toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
-            const typeLabel = type === 'exam' ? 'Examination' : 'Test';
-            try {
-              await sendResendEmail({
-                to: students[i].email,
-                subject: `📋 Your ${typeLabel} Schedule — ${title}`,
-                html: `
-<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;color:#1a202c;line-height:1.7;">
-  <div style="border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
-    <div style="padding:24px 32px;background:linear-gradient(135deg,#eff6ff 0%,#fff 70%);border-bottom:3px solid #2563eb;">
-      <h2 style="margin:0;color:#1e40af;font-size:20px;">📋 ${typeLabel} Schedule Notice</h2>
-      <p style="margin:4px 0 0;color:#64748b;font-size:13px;">${title}</p>
-    </div>
-    <div style="padding:28px 32px;">
-      <p>Dear <strong>${students[i].name}</strong>,</p>
-      <p>Your ${typeLabel.toLowerCase()} has been scheduled. Please read all details carefully.</p>
-      <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8fafc;border-radius:8px;overflow:hidden;">
-        <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Assessment</td><td style="padding:10px 16px;font-weight:bold;">${title}</td></tr>
-        <tr style="background:#f1f5f9;"><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Your Slot</td><td style="padding:10px 16px;color:#1d4ed8;font-weight:bold;">${slotLabel}</td></tr>
-        <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Deadline</td><td style="padding:10px 16px;color:#dc2626;font-weight:bold;">${endLabel}</td></tr>
-        <tr style="background:#f1f5f9;"><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Duration</td><td style="padding:10px 16px;">${durationMin} minutes</td></tr>
-      </table>
-      ${instructions ? `<div style="background:#fefce8;border-left:4px solid #ca8a04;padding:16px 20px;border-radius:8px;margin:16px 0;"><p style="margin:0;font-weight:bold;color:#92400e;">📌 Instructions from your Lecturer</p><p style="margin:8px 0 0;color:#78350f;">${instructions}</p></div>` : ''}
-      <div style="background:#fef2f2;border-left:4px solid #ef4444;padding:16px 20px;border-radius:8px;margin:16px 0;">
-        <p style="margin:0;font-weight:bold;color:#991b1b;">⚠️ Important Rules</p>
-        <ul style="margin:8px 0 0;padding-left:18px;color:#7f1d1d;">
-          <li>You may ONLY take this ${typeLabel.toLowerCase()} during your assigned time slot.</li>
-          <li>Do NOT attempt to access it before or after your window — access will be blocked.</li>
-          <li>Do NOT switch browser tabs or windows during the assessment.</li>
-          <li>Do NOT close the browser or refresh the page — your session will end.</li>
-          <li>Ensure you have a stable internet connection before starting.</li>
-          <li>Once submitted, you cannot retake or modify your answers.</li>
-          <li>Any detected misbehaviour will be logged and flagged to your lecturer.</li>
-        </ul>
-      </div>
-      <p style="color:#64748b;font-size:12px;margin-top:24px;">This is an automated schedule notification. Do not reply to this email.</p>
-    </div>
-  </div>
-</div>`
-              });
-              await pool.query(`UPDATE exam_slots SET notification_status = 'sent', notification_sent = TRUE WHERE id = $1`, [slotId]);
-            } catch (err: any) {
-              console.error(`[Slot Notify] Failed for ${students[i].email}:`, err.message);
-              await pool.query(`UPDATE exam_slots SET notification_status = 'failed' WHERE id = $1`, [slotId]);
-            }
-          }
-        }
-      }
-    }
-
-    res.json({ id: examId, success: true, message: 'Assessment created and students notified.' });
+    res.json({ id: examId, success: true, message: 'Assessment created as draft. Publish it to generate questions and notify students.' });
   } catch (error: any) {
     console.error('[Create Exam]', error);
     res.status(500).json({ error: 'Failed to create exam: ' + error.message });
