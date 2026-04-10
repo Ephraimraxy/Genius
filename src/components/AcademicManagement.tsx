@@ -77,7 +77,6 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [assessStartTime, setAssessStartTime] = useState('08:00');
     const [assessEndDate, setAssessEndDate] = useState('');
     const [assessEndTime, setAssessEndTime] = useState('18:00');
-    const [scheduleMode, setScheduleMode] = useState<'global' | 'custom'>('global');
     const [customStartVal, setCustomStartVal] = useState('');
     const [customStartUnit, setCustomStartUnit] = useState<'seconds'|'minutes'|'hours'|'days'>('minutes');
     const [customDurVal, setCustomDurVal] = useState('');
@@ -226,7 +225,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             let resolvedStartDate: string | null = null;
             let resolvedEndDate: string | null = null;
 
-            if (scheduleMode === 'custom') {
+            {
                 const now = Date.now();
                 if (customStartVal) {
                     const startMs = now + toMs(customStartVal, customStartUnit);
@@ -236,9 +235,6 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                     const base = resolvedStartDate ? new Date(resolvedStartDate).getTime() : now;
                     resolvedEndDate = new Date(base + toMs(customDurVal, customDurUnit)).toISOString();
                 }
-            } else {
-                resolvedStartDate = assessStartDate ? `${assessStartDate}T${assessStartTime || '08:00'}` : null;
-                resolvedEndDate = assessEndDate ? `${assessEndDate}T${assessEndTime || '18:00'}` : null;
             }
 
             const body = {
@@ -835,144 +831,84 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 )}
             </div>
 
-            {/* Scheduling Mode Toggle + Window */}
+            {/* Schedule Window */}
             <div className={`p-4 rounded-2xl border ${isExam ? 'bg-blue-500/20 border-blue-400/30' : 'bg-blue-50 border-blue-100'}`}>
-                <div className="flex items-center justify-between mb-3">
+                <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${isExam ? 'text-blue-300' : 'text-blue-600'}`}>📅 Schedule Window</p>
+
+                <div className="space-y-3">
+                    {/* Start offset */}
                     <div>
-                        <p className={`text-[10px] font-black uppercase tracking-widest ${isExam ? 'text-blue-300' : 'text-blue-600'}`}>📅 Schedule Window</p>
-                        <p className={`text-[10px] mt-0.5 ${isExam ? 'text-white/40' : 'text-slate-400'}`}>
-                            {scheduleMode === 'global' ? 'Pick exact date & time' : 'Set relative time from now'}
-                        </p>
-                    </div>
-                    {/* Global / Custom toggle pill */}
-                    <div className={`flex p-0.5 rounded-xl gap-0.5 ${isExam ? 'bg-white/10' : 'bg-slate-200'}`}>
-                        {(['global', 'custom'] as const).map(m => (
-                            <button
-                                key={m}
-                                type="button"
-                                onClick={() => setScheduleMode(m)}
-                                className={`px-3 py-1.5 rounded-[10px] text-[10px] font-black uppercase tracking-widest transition-all ${
-                                    scheduleMode === m
-                                        ? isExam ? 'bg-blue-500 text-white shadow' : 'bg-white text-blue-600 shadow'
-                                        : isExam ? 'text-white/40 hover:text-white/70' : 'text-slate-500 hover:text-slate-700'
-                                }`}
+                        <label className={`text-[10px] font-black uppercase ml-1 mb-1 block ${isExam ? 'text-white/60' : 'text-slate-500'}`}>
+                            Starts in
+                        </label>
+                        <div className="flex gap-2">
+                            <input
+                                type="number"
+                                min="0"
+                                value={customStartVal}
+                                onChange={e => setCustomStartVal(e.target.value)}
+                                placeholder="e.g. 10"
+                                className={`flex-1 px-4 py-3 rounded-xl font-black text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white placeholder:text-white/30' : 'bg-white border border-slate-200 text-slate-700'}`}
+                            />
+                            <select
+                                value={customStartUnit}
+                                onChange={e => setCustomStartUnit(e.target.value as any)}
+                                className={`px-3 py-3 rounded-xl font-black text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
                             >
-                                {m}
-                            </button>
-                        ))}
+                                <option value="seconds">Seconds</option>
+                                <option value="minutes">Minutes</option>
+                                <option value="hours">Hours</option>
+                                <option value="days">Days</option>
+                            </select>
+                        </div>
                     </div>
+
+                    {/* Duration */}
+                    <div>
+                        <label className={`text-[10px] font-black uppercase ml-1 mb-1 block ${isExam ? 'text-white/60' : 'text-slate-500'}`}>
+                            Ends after (duration from start)
+                        </label>
+                        <div className="flex gap-2">
+                            <input
+                                type="number"
+                                min="0"
+                                value={customDurVal}
+                                onChange={e => setCustomDurVal(e.target.value)}
+                                placeholder="e.g. 2"
+                                className={`flex-1 px-4 py-3 rounded-xl font-black text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white placeholder:text-white/30' : 'bg-white border border-slate-200 text-slate-700'}`}
+                            />
+                            <select
+                                value={customDurUnit}
+                                onChange={e => setCustomDurUnit(e.target.value as any)}
+                                className={`px-3 py-3 rounded-xl font-black text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
+                            >
+                                <option value="seconds">Seconds</option>
+                                <option value="minutes">Minutes</option>
+                                <option value="hours">Hours</option>
+                                <option value="days">Days</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Live preview */}
+                    {(customStartVal || customDurVal) && (() => {
+                        const toMs = (v: string, u: string) => {
+                            const n = parseFloat(v) || 0;
+                            const m: Record<string,number> = { seconds: 1000, minutes: 60000, hours: 3600000, days: 86400000 };
+                            return n * (m[u] || 60000);
+                        };
+                        const now = Date.now();
+                        const startMs = customStartVal ? now + toMs(customStartVal, customStartUnit) : now;
+                        const endMs = customDurVal ? startMs + toMs(customDurVal, customDurUnit) : null;
+                        const fmt = (ms: number) => new Date(ms).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+                        return (
+                            <div className={`p-3 rounded-xl text-[10px] font-bold space-y-1 ${isExam ? 'bg-white/10 text-white/70' : 'bg-blue-100 text-blue-700'}`}>
+                                <p>🟢 Starts: <span className="font-black">{customStartVal ? fmt(startMs) : 'immediately'}</span></p>
+                                {endMs && <p>🔴 Ends: <span className="font-black">{fmt(endMs)}</span></p>}
+                            </div>
+                        );
+                    })()}
                 </div>
-
-                {/* ── GLOBAL MODE ── */}
-                {scheduleMode === 'global' && (
-                    <>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>Start Date</label>
-                                <input type="date" value={assessStartDate} onChange={e => setAssessStartDate(e.target.value)}
-                                    className={`w-full mt-1 px-4 py-3 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
-                                <input type="time" value={assessStartTime} onChange={e => setAssessStartTime(e.target.value)}
-                                    className={`w-full mt-1 px-4 py-2 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
-                            </div>
-                            <div>
-                                <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>End Date</label>
-                                <input type="date" value={assessEndDate} onChange={e => setAssessEndDate(e.target.value)}
-                                    className={`w-full mt-1 px-4 py-3 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
-                                <input type="time" value={assessEndTime} onChange={e => setAssessEndTime(e.target.value)}
-                                    className={`w-full mt-1 px-4 py-2 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`} />
-                            </div>
-                        </div>
-                        {assessStartDate && assessEndDate && (
-                            <div className="mt-3">
-                                <label className={`text-[10px] font-black uppercase ml-1 ${isExam ? 'text-white/50' : 'text-slate-400'}`}>Students Per Slot</label>
-                                <input type="number" min="1" max="50" value={assessBatchSize} onChange={e => setAssessBatchSize(e.target.value)}
-                                    className={`w-full mt-1 px-4 py-3 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white placeholder:text-white/30' : 'bg-white border border-slate-200 text-slate-700'}`}
-                                    placeholder="e.g. 10 (students sharing same slot time)" />
-                                <p className={`text-[10px] mt-1 ml-1 ${isExam ? 'text-white/40' : 'text-slate-400'}`}>
-                                    The system distributes students evenly — each group gets a unique start time within the window.
-                                </p>
-                            </div>
-                        )}
-                    </>
-                )}
-
-                {/* ── CUSTOM MODE ── */}
-                {scheduleMode === 'custom' && (
-                    <div className="space-y-3 mt-1">
-                        {/* Start offset */}
-                        <div>
-                            <label className={`text-[10px] font-black uppercase ml-1 mb-1 block ${isExam ? 'text-white/60' : 'text-slate-500'}`}>
-                                Starts in
-                            </label>
-                            <div className="flex gap-2">
-                                <input
-                                    type="number"
-                                    min="0"
-                                    value={customStartVal}
-                                    onChange={e => setCustomStartVal(e.target.value)}
-                                    placeholder="e.g. 10"
-                                    className={`flex-1 px-4 py-3 rounded-xl font-black text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white placeholder:text-white/30' : 'bg-white border border-slate-200 text-slate-700'}`}
-                                />
-                                <select
-                                    value={customStartUnit}
-                                    onChange={e => setCustomStartUnit(e.target.value as any)}
-                                    className={`px-3 py-3 rounded-xl font-black text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
-                                >
-                                    <option value="seconds">Seconds</option>
-                                    <option value="minutes">Minutes</option>
-                                    <option value="hours">Hours</option>
-                                    <option value="days">Days</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Duration */}
-                        <div>
-                            <label className={`text-[10px] font-black uppercase ml-1 mb-1 block ${isExam ? 'text-white/60' : 'text-slate-500'}`}>
-                                Ends after (duration from start)
-                            </label>
-                            <div className="flex gap-2">
-                                <input
-                                    type="number"
-                                    min="0"
-                                    value={customDurVal}
-                                    onChange={e => setCustomDurVal(e.target.value)}
-                                    placeholder="e.g. 2"
-                                    className={`flex-1 px-4 py-3 rounded-xl font-black text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white placeholder:text-white/30' : 'bg-white border border-slate-200 text-slate-700'}`}
-                                />
-                                <select
-                                    value={customDurUnit}
-                                    onChange={e => setCustomDurUnit(e.target.value as any)}
-                                    className={`px-3 py-3 rounded-xl font-black text-sm focus:outline-none focus:border-blue-400 ${isExam ? 'bg-white/10 border border-white/20 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
-                                >
-                                    <option value="seconds">Seconds</option>
-                                    <option value="minutes">Minutes</option>
-                                    <option value="hours">Hours</option>
-                                    <option value="days">Days</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Live preview */}
-                        {(customStartVal || customDurVal) && (() => {
-                            const toMs = (v: string, u: string) => {
-                                const n = parseFloat(v) || 0;
-                                const m: Record<string,number> = { seconds: 1000, minutes: 60000, hours: 3600000, days: 86400000 };
-                                return n * (m[u] || 60000);
-                            };
-                            const now = Date.now();
-                            const startMs = customStartVal ? now + toMs(customStartVal, customStartUnit) : now;
-                            const endMs = customDurVal ? startMs + toMs(customDurVal, customDurUnit) : null;
-                            const fmt = (ms: number) => new Date(ms).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
-                            return (
-                                <div className={`p-3 rounded-xl text-[10px] font-bold space-y-1 ${isExam ? 'bg-white/10 text-white/70' : 'bg-blue-100 text-blue-700'}`}>
-                                    <p>🟢 Starts: <span className="font-black">{customStartVal ? fmt(startMs) : 'immediately'}</span></p>
-                                    {endMs && <p>🔴 Ends: <span className="font-black">{fmt(endMs)}</span></p>}
-                                </div>
-                            );
-                        })()}
-                    </div>
-                )}
             </div>
 
             {/* Instructions to include in notification email */}
