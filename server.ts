@@ -8991,7 +8991,7 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
     // Upload to R2 (streaming from disk) or fall back to BYTEA
     const contentJson = JSON.stringify({ text: textContent });
     const mimeType = req.file.mimetype || 'application/octet-stream';
-    let resourceFileBlob: Buffer | null = R2_ENABLED ? null : fileBuffer;
+    let resourceFileBlob: Buffer | null = R2_ENABLED ? null : (isVideoOrAudio ? null : fs.readFileSync(req.file.path));
     let resourceFileUrl: string | null = null;
     if (R2_ENABLED) {
       const safeFilename = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
