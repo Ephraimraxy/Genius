@@ -112,7 +112,7 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import puppeteer from 'puppeteer-core';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import helmet from 'helmet';
 
@@ -383,6 +383,19 @@ async function uploadToR2(key: string, body: Buffer | Readable, mimeType: string
   });
   await upload.done();
   return `${process.env.R2_PUBLIC_URL}/${key}`;
+}
+
+// Delete a file from R2 by its public URL (extracts key from URL path)
+async function deleteFromR2(fileUrl: string): Promise<void> {
+  if (!r2 || !R2_ENABLED || !fileUrl) return;
+  try {
+    const publicBase = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+    const key = publicBase ? fileUrl.replace(publicBase + '/', '') : new URL(fileUrl).pathname.replace(/^\//, '');
+    await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key }));
+  } catch (err: any) {
+    console.error('[R2 delete error]', err?.message);
+    // Non-fatal: log but don't throw — DB row is still deleted
+  }
 }
 
 // On first download of a legacy BYTEA file: upload it to R2, store the URL, null out the blob
@@ -8747,12 +8760,16 @@ app.get('/api/videos', authenticateToken, checkSubscription, async (req: any, re
   }
 });
 
-// Delete video (stored as resource)
+// Delete video (stored as resource) — also removes file from R2
 app.delete('/api/videos/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const row = await pool.query('SELECT file_url FROM resources WHERE id = $1 AND tenant_id = $2 AND type = $3',
+      [req.params.id, req.tenant_id, 'video']);
+    const fileUrl: string | null = row.rows[0]?.file_url || null;
     await pool.query('DELETE FROM resources WHERE id = $1 AND tenant_id = $2 AND type = $3',
       [req.params.id, req.tenant_id, 'video']);
+    if (fileUrl) deleteFromR2(fileUrl);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -9241,7 +9258,10 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
 
 app.delete('/api/resources/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
+    const row = await pool.query('SELECT file_url FROM resources WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    const fileUrl: string | null = row.rows[0]?.file_url || null;
     await pool.query('DELETE FROM resources WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    if (fileUrl) deleteFromR2(fileUrl); // fire-and-forget, non-fatal
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
