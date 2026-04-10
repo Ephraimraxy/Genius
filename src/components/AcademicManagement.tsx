@@ -72,6 +72,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [assessDuration, setAssessDuration] = useState('60');
     const [assessTimerMode, setAssessTimerMode] = useState<'whole' | 'per_question'>('whole');
     const [assessQuestionsCount, setAssessQuestionsCount] = useState('20');
+    const [publishingId, setPublishingId] = useState<number | null>(null);
     const [assessBatchSize, setAssessBatchSize] = useState('10');
     const [assessStartDate, setAssessStartDate] = useState('');
     const [assessStartTime, setAssessStartTime] = useState('08:00');
@@ -332,20 +333,32 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     const togglePublish = async (id: number, current: string) => {
         const next = current === 'published' ? 'draft' : 'published';
+        if (publishingId !== null) return; // prevent double-click
+        setPublishingId(id);
         try {
             const res = await fetch(`/api/exams/${id}/publish`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ published_status: next })
+                body: JSON.stringify({ published_status: next }),
+                // AI generation can take up to 60s — use a long timeout via signal
+                signal: AbortSignal.timeout(90000)
             });
             const data = await res.json();
             if (!res.ok) {
-                addToast(data.error || 'Update failed', 'error');
+                addToast(data.error || 'Publishing failed', 'error');
                 return;
             }
-            addToast(next === 'published' ? 'Published — students can now see it' : 'Moved to draft', 'success');
+            addToast(data.message || (next === 'published' ? 'Published — students can now see it' : 'Moved to draft'), 'success');
             fetchRecords();
-        } catch { addToast('Update failed', 'error'); }
+        } catch (err: any) {
+            if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+                addToast('Publishing timed out. AI question generation is taking too long — please try again or check your material.', 'error');
+            } else {
+                addToast('Network error during publishing. Please try again.', 'error');
+            }
+        } finally {
+            setPublishingId(null);
+        }
     };
 
     const fetchAttendSessions = async () => {
@@ -530,9 +543,24 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                         className="w-20 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black" />
                 </div>
             )}
-            <button onClick={() => togglePublish(r.id, r.published_status || 'draft')}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${r.published_status === 'published' ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-white'}`}>
-                {r.published_status === 'published' ? '● Live' : '○ Draft'}
+            <button
+                onClick={() => togglePublish(r.id, r.published_status || 'draft')}
+                disabled={publishingId !== null}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-1.5 ${
+                    publishingId === r.id
+                        ? 'bg-indigo-500 text-white cursor-wait'
+                        : r.published_status === 'published'
+                        ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                        : 'bg-amber-400 text-white hover:bg-amber-500'
+                } disabled:opacity-60`}
+            >
+                {publishingId === r.id ? (
+                    <><Loader2 size={11} className="animate-spin" /> Generating…</>
+                ) : r.published_status === 'published' ? (
+                    '● Live'
+                ) : (
+                    '○ Draft'
+                )}
             </button>
             {/* GAP 6: Results button — only for tests/exams (not assignments) */}
             {r.type !== 'assignment' && (

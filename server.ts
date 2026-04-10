@@ -10325,49 +10325,8 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
     );
     const examId = result.rows[0].id;
 
-    // ── GAP 2: AI Question Generation ───────────────────────────────────
-    if (material_id && type !== 'assignment') {
-      try {
-        const matRes = await pool.query(
-          'SELECT content FROM resources WHERE id = $1 AND tenant_id = $2',
-          [material_id, req.tenant_id]
-        );
-        if (matRes.rows.length > 0) {
-          const c = matRes.rows[0].content;
-          let materialText = '';
-          if (typeof c === 'string') {
-            materialText = c;
-          } else if (c && typeof c === 'object') {
-            const raw = c.text ?? c.content ?? c.body ?? JSON.stringify(c);
-            materialText = typeof raw === 'string' ? raw : String(raw);
-          }
-          materialText = materialText.replace(/\0/g, '').trim();
-
-          if (materialText.length > 100) {
-            const aiQuestions = await generateQuestionsFromMaterial(
-              materialText, qCount,
-              difficulty || 'medium',
-              blooms_level || 'mixed',
-              isPool, poolSz
-            );
-
-            if (aiQuestions.length > 0) {
-              for (const q of aiQuestions) {
-                await pool.query(
-                  `INSERT INTO questions (exam_id, text, options, correct_answer, type, points)
-                   VALUES ($1,$2,$3,$4,'static',$5)`,
-                  [examId, q.text, JSON.stringify(q.options), q.correct_answer, q.points || 10]
-                );
-              }
-              console.log(`[AI] Generated ${aiQuestions.length} questions for exam ${examId}`);
-            }
-          }
-        }
-      } catch (aiErr: any) {
-        console.error('[AI Question Gen] Failed:', aiErr.message);
-        // Non-fatal — exam is created, questions will be empty
-      }
-    }
+    // Questions are NOT generated at creation — they are generated when the lecturer publishes.
+    // This ensures students never wait for AI generation during the exam.
 
     // ── Scheduling: if a time window + category provided, assign student slots ──
     if (start_date && end_date && category_id) {
@@ -10546,30 +10505,203 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { published_status } = req.body; // 'published' | 'draft'
+    const examId = parseInt(req.params.id);
 
-    // Gate: cannot publish an exam/test that has no questions
-    if (published_status === 'published') {
-      const examRow = await pool.query('SELECT type FROM exams WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
-      if (examRow.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
+    // ── UNPUBLISH: simple toggle back to draft ──
+    if (published_status !== 'published') {
+      await pool.query(
+        'UPDATE exams SET published_status = $1, is_available = FALSE WHERE id = $2 AND tenant_id = $3',
+        ['draft', examId, req.tenant_id]
+      );
+      return res.json({ success: true, message: 'Moved back to draft.' });
+    }
 
-      // Only enforce question check for exam/test (not assignments which are text/file-based)
-      if (examRow.rows[0].type !== 'assignment') {
-        const qCount = await pool.query('SELECT COUNT(*) FROM questions WHERE exam_id = $1', [req.params.id]);
-        if (parseInt(qCount.rows[0].count) === 0) {
-          return res.status(422).json({
-            error: 'Cannot publish — no questions have been generated yet. The exam will remain as a draft until AI question generation completes.'
-          });
+    // ── PUBLISH: run checks and generation before going live ──
+    const examRow = await pool.query(
+      `SELECT id, title, type, material_id, questions_count, difficulty, blooms_level,
+              is_pool, pool_size, duration, timer_mode, batch_size, instructions,
+              start_date, end_date, category_id
+       FROM exams WHERE id = $1 AND tenant_id = $2`,
+      [examId, req.tenant_id]
+    );
+    if (examRow.rows.length === 0) return res.status(404).json({ error: 'Assessment not found.' });
+    const exam = examRow.rows[0];
+
+    // Assignments don't need questions — publish directly
+    if (exam.type === 'assignment') {
+      await pool.query(
+        'UPDATE exams SET published_status = $1, is_available = TRUE WHERE id = $2 AND tenant_id = $3',
+        ['published', examId, req.tenant_id]
+      );
+      return res.json({ success: true, message: 'Assignment published.' });
+    }
+
+    // ── Check if questions already exist (re-publish after unpublish) ──
+    const existingQ = await pool.query('SELECT COUNT(*) FROM questions WHERE exam_id = $1', [examId]);
+    const alreadyHasQuestions = parseInt(existingQ.rows[0].count) > 0;
+
+    if (!alreadyHasQuestions) {
+      // ── Verify material is linked ──
+      if (!exam.material_id) {
+        return res.status(422).json({
+          error: 'No study material is linked to this assessment. Please edit it and link a material so AI can generate questions.',
+          code: 'NO_MATERIAL'
+        });
+      }
+
+      // ── Fetch material content ──
+      const matRes = await pool.query(
+        'SELECT content FROM resources WHERE id = $1 AND tenant_id = $2',
+        [exam.material_id, req.tenant_id]
+      );
+      if (matRes.rows.length === 0) {
+        return res.status(422).json({
+          error: 'The linked study material no longer exists. Please re-link a valid material and try again.',
+          code: 'MATERIAL_NOT_FOUND'
+        });
+      }
+
+      const c = matRes.rows[0].content;
+      let materialText = '';
+      if (typeof c === 'string') {
+        materialText = c;
+      } else if (c && typeof c === 'object') {
+        const raw = c.text ?? c.content ?? c.body ?? JSON.stringify(c);
+        materialText = typeof raw === 'string' ? raw : String(raw);
+      }
+      materialText = materialText.replace(/\0/g, '').trim();
+
+      if (materialText.length < 100) {
+        return res.status(422).json({
+          error: 'The linked study material is too short (under 100 characters). Add more content to the material so AI can generate meaningful questions.',
+          code: 'MATERIAL_TOO_SHORT'
+        });
+      }
+
+      // ── Generate questions via AI ──
+      const qCount = parseInt(exam.questions_count) || 20;
+      const isPool = !!exam.is_pool;
+      const poolSz = parseInt(exam.pool_size) || 0;
+
+      let aiQuestions: Array<{ text: string; options: string[]; correct_answer: string; points: number }>;
+      try {
+        aiQuestions = await generateQuestionsFromMaterial(
+          materialText, qCount,
+          exam.difficulty || 'medium',
+          exam.blooms_level || 'mixed',
+          isPool, poolSz
+        );
+      } catch (aiErr: any) {
+        console.error('[Publish AI Gen] Failed:', aiErr.message);
+        return res.status(422).json({
+          error: `AI question generation failed: ${aiErr.message || 'Unknown AI error'}. Check your OpenAI configuration or try again.`,
+          code: 'AI_GENERATION_FAILED'
+        });
+      }
+
+      if (aiQuestions.length === 0) {
+        return res.status(422).json({
+          error: 'AI returned no valid questions from the material. The material may not contain enough academic content. Try linking a more detailed resource.',
+          code: 'NO_QUESTIONS_GENERATED'
+        });
+      }
+
+      // ── Save questions ──
+      for (const q of aiQuestions) {
+        await pool.query(
+          `INSERT INTO questions (exam_id, text, options, correct_answer, type, points)
+           VALUES ($1,$2,$3,$4,'static',$5)`,
+          [examId, q.text, JSON.stringify(q.options), q.correct_answer, q.points || 10]
+        );
+      }
+      console.log(`[Publish] Generated and saved ${aiQuestions.length} questions for exam ${examId}`);
+    }
+
+    // ── Go live ──
+    await pool.query(
+      'UPDATE exams SET published_status = $1, is_available = TRUE WHERE id = $2 AND tenant_id = $3',
+      ['published', examId, req.tenant_id]
+    );
+
+    // ── Assign student slots if schedule window + category exist (and not already assigned) ──
+    const existingSlots = await pool.query('SELECT COUNT(*) FROM exam_slots WHERE exam_id = $1', [examId]);
+    if (parseInt(existingSlots.rows[0].count) === 0 && exam.start_date && exam.end_date && exam.category_id) {
+      try {
+        const studentsRes = await pool.query(
+          `SELECT id, name, email FROM users WHERE tenant_id = $1 AND category_id = $2 AND role = 'student' ORDER BY id`,
+          [req.tenant_id, exam.category_id]
+        );
+        const students = studentsRes.rows;
+        if (students.length > 0) {
+          const batchSz = Math.max(1, parseInt(exam.batch_size) || 10);
+          const durationMin = parseInt(exam.duration) || 60;
+          const startMs = new Date(exam.start_date).getTime();
+          const endMs = new Date(exam.end_date).getTime();
+          const totalBatches = Math.ceil(students.length / batchSz);
+          const intervalMs = Math.max((endMs - startMs) / totalBatches, durationMin * 60 * 1000 + 30 * 60 * 1000);
+
+          for (let i = 0; i < students.length; i++) {
+            const batchIndex = Math.floor(i / batchSz);
+            const scheduledAt = new Date(startMs + batchIndex * intervalMs);
+            const windowEnd = new Date(scheduledAt.getTime() + durationMin * 60 * 1000 + 30 * 60 * 1000);
+            const slotInsert = await pool.query(
+              `INSERT INTO exam_slots (exam_id, tenant_id, student_id, student_email, student_name, scheduled_at, window_end, notification_status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING id`,
+              [examId, req.tenant_id, students[i].id, students[i].email, students[i].name, scheduledAt, windowEnd]
+            );
+            const slotId = slotInsert.rows[0].id;
+            if (students[i].email) {
+              const typeLabel = exam.type === 'exam' ? 'Examination' : 'Test';
+              const slotLabel = scheduledAt.toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+              const endLabel = windowEnd.toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
+              try {
+                await sendResendEmail({
+                  to: students[i].email,
+                  subject: `📋 Your ${typeLabel} Schedule — ${exam.title}`,
+                  html: `<div style="font-family:Georgia,serif;max-width:620px;margin:0 auto;color:#1a202c;line-height:1.7;">
+  <div style="border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <div style="padding:24px 32px;background:linear-gradient(135deg,#eff6ff 0%,#fff 70%);border-bottom:3px solid #2563eb;">
+      <h2 style="margin:0;color:#1e40af;font-size:20px;">📋 ${typeLabel} Schedule Notice</h2>
+      <p style="margin:4px 0 0;color:#64748b;font-size:13px;">${exam.title}</p>
+    </div>
+    <div style="padding:28px 32px;">
+      <p>Dear <strong>${students[i].name}</strong>,</p>
+      <p>Your ${typeLabel.toLowerCase()} has been scheduled. Please read all details carefully.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8fafc;border-radius:8px;overflow:hidden;">
+        <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Assessment</td><td style="padding:10px 16px;font-weight:bold;">${exam.title}</td></tr>
+        <tr style="background:#f1f5f9;"><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Your Slot</td><td style="padding:10px 16px;color:#1d4ed8;font-weight:bold;">${slotLabel}</td></tr>
+        <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Deadline</td><td style="padding:10px 16px;color:#dc2626;font-weight:bold;">${endLabel}</td></tr>
+        <tr style="background:#f1f5f9;"><td style="padding:10px 16px;font-size:12px;color:#64748b;font-weight:bold;text-transform:uppercase;">Duration</td><td style="padding:10px 16px;">${durationMin} minutes</td></tr>
+      </table>
+      ${exam.instructions ? `<div style="background:#fefce8;border-left:4px solid #ca8a04;padding:16px 20px;border-radius:8px;margin:16px 0;"><p style="margin:0;font-weight:bold;color:#92400e;">📌 Instructions</p><p style="margin:8px 0 0;color:#78350f;">${exam.instructions}</p></div>` : ''}
+      <p style="color:#64748b;font-size:12px;margin-top:24px;">This is an automated notification. Do not reply.</p>
+    </div>
+  </div>
+</div>`
+                });
+                await pool.query(`UPDATE exam_slots SET notification_status = 'sent', notification_sent = TRUE WHERE id = $1`, [slotId]);
+              } catch (emailErr: any) {
+                await pool.query(`UPDATE exam_slots SET notification_status = 'failed' WHERE id = $1`, [slotId]);
+              }
+            }
+          }
         }
+      } catch (slotErr: any) {
+        console.error('[Publish Slots]', slotErr.message);
+        // Non-fatal — exam is live, slots failed
       }
     }
 
-    await pool.query(
-      'UPDATE exams SET published_status = $1, is_available = $2 WHERE id = $3 AND tenant_id = $4',
-      [published_status, published_status === 'published', req.params.id, req.tenant_id]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update publish status' });
+    const qFinal = await pool.query('SELECT COUNT(*) FROM questions WHERE exam_id = $1', [examId]);
+    res.json({
+      success: true,
+      message: `Published successfully with ${qFinal.rows[0].count} questions ready for students.`,
+      questionsGenerated: parseInt(qFinal.rows[0].count)
+    });
+
+  } catch (error: any) {
+    console.error('[Publish Exam]', error);
+    res.status(500).json({ error: 'An unexpected error occurred during publishing: ' + error.message });
   }
 });
 
