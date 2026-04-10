@@ -1322,6 +1322,8 @@ async function initDB() {
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN token_expires TIMESTAMP'); } catch (e) { }
   try { await pool.query("ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS email_status VARCHAR(20) DEFAULT 'pending'"); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id)'); } catch (e) { }
+  try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE'); } catch (e) { }
+  try { await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN is_subscribed BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
@@ -6634,11 +6636,20 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
     let entryFee = 0;
 
     if (freshUser.role === 'student' && freshUser.tenant_id) {
+      // Check suspension
+      if (freshUser.is_suspended) {
+        return res.status(403).json({ error: 'Your account has been suspended. Contact your lecturer.' });
+      }
+
       // Resolve current matric number and category from roster (Source of Truth for Workspace)
       const rosterRes = await pool.query(
-        'SELECT matric_number, category_id FROM students_roster WHERE email = $1 AND tenant_id = $2',
+        'SELECT matric_number, category_id, is_suspended FROM students_roster WHERE email = $1 AND tenant_id = $2',
         [freshUser.email, freshUser.tenant_id]
       );
+
+      if (rosterRes.rows.length > 0 && rosterRes.rows[0].is_suspended) {
+        return res.status(403).json({ error: 'Your account has been suspended. Contact your lecturer.' });
+      }
 
       let currentMatric = freshUser.matric_number;
       let currentCatId = freshUser.category_id;
@@ -10082,6 +10093,46 @@ app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, asyn
     res.json({ success: true, message: 'Student removed from workspace successfully' });
   } catch (err: any) {
     res.status(500).json({ error: 'Deletion failed' });
+  }
+});
+
+// Lecturer: Suspend / unsuspend a single student
+app.put('/api/courses/roster/:id/suspend', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const { suspend } = req.body; // true = suspend, false = unsuspend
+    const row = await pool.query('SELECT matric_number FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    if (row.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
+    const matric = row.rows[0].matric_number;
+    await pool.query('UPDATE students_roster SET is_suspended = $1 WHERE id = $2 AND tenant_id = $3', [!!suspend, id, req.tenant_id]);
+    await pool.query("UPDATE users SET is_suspended = $1 WHERE matric_number = $2 AND tenant_id = $3 AND role = 'student'", [!!suspend, matric, req.tenant_id]);
+    res.json({ success: true, is_suspended: !!suspend });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update suspension status' });
+  }
+});
+
+// Lecturer: Bulk suspend / unsuspend students
+app.post('/api/courses/roster/bulk-suspend', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { ids, suspend } = req.body; // ids: number[], suspend: boolean
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
+    const safeIds = ids.map(Number).filter(Boolean);
+    // Get matric numbers for linked user update
+    const rows = await pool.query(
+      `SELECT matric_number FROM students_roster WHERE id = ANY($1) AND tenant_id = $2`,
+      [safeIds, req.tenant_id]
+    );
+    const matrics = rows.rows.map((r: any) => r.matric_number);
+    await pool.query(`UPDATE students_roster SET is_suspended = $1 WHERE id = ANY($2) AND tenant_id = $3`, [!!suspend, safeIds, req.tenant_id]);
+    if (matrics.length > 0) {
+      await pool.query(`UPDATE users SET is_suspended = $1 WHERE matric_number = ANY($2) AND tenant_id = $3 AND role = 'student'`, [!!suspend, matrics, req.tenant_id]);
+    }
+    res.json({ success: true, updated: safeIds.length });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Bulk suspend failed' });
   }
 });
 

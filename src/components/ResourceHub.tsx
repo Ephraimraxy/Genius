@@ -17,7 +17,12 @@ import {
     Eye,
     AlertCircle,
     Wifi,
-    X as XIcon
+    X as XIcon,
+    ArrowLeft,
+    ShieldOff,
+    ShieldAlert,
+    Mail,
+    Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import FilePreviewModal from './FilePreviewModal';
@@ -88,6 +93,16 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [rosterSearch, setRosterSearch] = useState('');
     const [resendingId, setResendingId] = useState<number | null>(null);
     const [bulkResending, setBulkResending] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [editingStudent, setEditingStudent] = useState<any | null>(null);
+    const [editName, setEditName] = useState('');
+    const [editEmail, setEditEmail] = useState('');
+    const [editMatric, setEditMatric] = useState('');
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
+    const [deletingId, setDeletingId] = useState<number | null>(null);
+    const [bulkDeleting, setBulkDeleting] = useState(false);
+    const [suspendingId, setSuspendingId] = useState<number | null>(null);
+    const [bulkSuspending, setBulkSuspending] = useState(false);
 
     useEffect(() => {
         fetchResources();
@@ -181,6 +196,124 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             }
         } catch { addToast('Network error', 'error'); }
         setBulkResending(false);
+    };
+
+    const deleteStudent = async (id: number) => {
+        setDeletingId(id);
+        try {
+            const res = await fetch(`/api/courses/roster/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (res.ok) {
+                addToast('Student removed', 'success');
+                setRosterStudents(prev => prev.filter(s => s.id !== id));
+                setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+            } else {
+                addToast(data.error || 'Delete failed', 'error');
+            }
+        } catch { addToast('Network error', 'error'); }
+        setDeletingId(null);
+    };
+
+    const bulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        setBulkDeleting(true);
+        const ids = Array.from(selectedIds);
+        let done = 0;
+        for (const id of ids) {
+            try {
+                await fetch(`/api/courses/roster/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                done++;
+            } catch {}
+        }
+        addToast(`Deleted ${done} student(s)`, 'success');
+        setRosterStudents(prev => prev.filter(s => !selectedIds.has(s.id)));
+        setSelectedIds(new Set());
+        setBulkDeleting(false);
+    };
+
+    const toggleSuspend = async (student: any) => {
+        setSuspendingId(student.id);
+        const newState = !student.is_suspended;
+        try {
+            const res = await fetch(`/api/courses/roster/${student.id}/suspend`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ suspend: newState })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                addToast(newState ? 'Student suspended' : 'Student unsuspended', 'success');
+                setRosterStudents(prev => prev.map(s => s.id === student.id ? { ...s, is_suspended: newState } : s));
+            } else {
+                addToast(data.error || 'Failed', 'error');
+            }
+        } catch { addToast('Network error', 'error'); }
+        setSuspendingId(null);
+    };
+
+    const bulkSuspend = async (suspend: boolean) => {
+        if (selectedIds.size === 0) return;
+        setBulkSuspending(true);
+        try {
+            const res = await fetch('/api/courses/roster/bulk-suspend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ ids: Array.from(selectedIds), suspend })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                addToast(`${suspend ? 'Suspended' : 'Unsuspended'} ${data.updated} student(s)`, 'success');
+                setRosterStudents(prev => prev.map(s => selectedIds.has(s.id) ? { ...s, is_suspended: suspend } : s));
+                setSelectedIds(new Set());
+            } else {
+                addToast(data.error || 'Failed', 'error');
+            }
+        } catch { addToast('Network error', 'error'); }
+        setBulkSuspending(false);
+    };
+
+    const saveEdit = async () => {
+        if (!editingStudent) return;
+        setIsSavingEdit(true);
+        try {
+            const res = await fetch(`/api/courses/roster/${editingStudent.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ name: editName, email: editEmail, matric_number: editMatric })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                addToast('Student updated', 'success');
+                setRosterStudents(prev => prev.map(s => s.id === editingStudent.id ? { ...s, name: editName, email: editEmail, matric_number: editMatric } : s));
+                setEditingStudent(null);
+            } else {
+                addToast(data.error || 'Update failed', 'error');
+            }
+        } catch { addToast('Network error', 'error'); }
+        setIsSavingEdit(false);
+    };
+
+    const toggleSelect = (id: number) => {
+        setSelectedIds(prev => {
+            const n = new Set(prev);
+            n.has(id) ? n.delete(id) : n.add(id);
+            return n;
+        });
+    };
+
+    const toggleSelectAll = (visible: any[]) => {
+        const allSelected = visible.every(s => selectedIds.has(s.id));
+        if (allSelected) {
+            setSelectedIds(prev => { const n = new Set(prev); visible.forEach(s => n.delete(s.id)); return n; });
+        } else {
+            setSelectedIds(prev => { const n = new Set(prev); visible.forEach(s => n.add(s.id)); return n; });
+        }
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -467,7 +600,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     };
 
     return (
-        <div className="space-y-8 pb-12">
+        <div className="space-y-8 pb-12 relative min-h-screen">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
                     <h2 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
@@ -1119,89 +1252,225 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 )}
             </AnimatePresence>
 
-            {/* ── Roster Viewer Modal ── */}
+            {/* ── Roster Viewer — Inline Full Page ── */}
             <AnimatePresence>
                 {showRosterViewer && (
-                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                            onClick={() => setShowRosterViewer(false)}
-                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                            className="bg-white w-full max-w-3xl rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden max-h-[90vh] flex flex-col">
-                            <div className="bg-slate-900 p-6 text-white">
-                                <div className="flex items-center justify-between mb-3">
-                                    <div>
-                                        <h3 className="font-black text-lg flex items-center gap-2"><Users size={20} className="text-blue-400" /> Enrolled Students</h3>
-                                        <p className="text-slate-400 text-xs mt-1">{rosterStudents.length} total · email delivery status per student</p>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => bulkResend()}
-                                            disabled={bulkResending}
-                                            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
-                                        >
-                                            {bulkResending ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
-                                            Resend Failed
-                                        </button>
-                                        <button onClick={() => setShowRosterViewer(false)} className="text-white/50 hover:text-white text-xl font-bold">✕</button>
-                                    </div>
+                    <motion.div
+                        key="roster-page"
+                        initial={{ opacity: 0, x: 40 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 40 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                        className="absolute inset-0 bg-slate-50 z-50 overflow-y-auto"
+                    >
+                        {/* Sticky top bar */}
+                        <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 md:px-8 py-3 flex items-center gap-3 shadow-sm">
+                            <button
+                                onClick={() => { setShowRosterViewer(false); setSelectedIds(new Set()); setEditingStudent(null); }}
+                                className="flex items-center gap-2 text-slate-500 hover:text-slate-800 font-bold text-sm transition-colors shrink-0"
+                            >
+                                <ArrowLeft size={18} /> Back
+                            </button>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Enrolled Students</p>
+                                <p className="text-sm font-black text-slate-900 truncate">
+                                    {rosterStudents.length} total
+                                    {selectedIds.size > 0 && <span className="text-blue-600"> · {selectedIds.size} selected</span>}
+                                </p>
+                            </div>
+                            {/* Bulk actions — appear when items selected */}
+                            {selectedIds.size > 0 && (
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        onClick={() => bulkSuspend(true)}
+                                        disabled={bulkSuspending}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                                    >
+                                        {bulkSuspending ? <RefreshCw size={11} className="animate-spin" /> : <ShieldOff size={11} />}
+                                        Suspend
+                                    </button>
+                                    <button
+                                        onClick={() => bulkDelete()}
+                                        disabled={bulkDeleting}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                                    >
+                                        {bulkDeleting ? <RefreshCw size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                                        Delete
+                                    </button>
                                 </div>
+                            )}
+                            <button
+                                onClick={() => bulkResend()}
+                                disabled={bulkResending}
+                                className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                            >
+                                {bulkResending ? <RefreshCw size={11} className="animate-spin" /> : <Mail size={11} />}
+                                Resend Failed
+                            </button>
+                        </div>
+
+                        <div className="p-4 md:p-8 max-w-6xl mx-auto pb-24 space-y-4">
+                            {/* Search */}
+                            <div className="relative">
+                                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                                 <input
                                     type="text"
                                     placeholder="Search by name, matric or email…"
                                     value={rosterSearch}
                                     onChange={e => setRosterSearch(e.target.value)}
-                                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/40 outline-none focus:border-blue-400"
+                                    className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 placeholder-slate-400 outline-none focus:border-blue-400 transition-all shadow-sm"
                                 />
                             </div>
-                            <div className="overflow-y-auto flex-1 p-4 space-y-2">
-                                {rosterLoading && (
-                                    <div className="flex justify-center py-12">
+
+                            {/* Inline edit form */}
+                            <AnimatePresence>
+                                {editingStudent && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -8 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -8 }}
+                                        className="p-5 bg-white border border-blue-200 rounded-2xl shadow-sm space-y-3"
+                                    >
+                                        <p className="text-xs font-black text-blue-600 uppercase tracking-widest">Editing — {editingStudent.name}</p>
+                                        <div className="grid sm:grid-cols-3 gap-3">
+                                            <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Full Name"
+                                                className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:border-blue-400" />
+                                            <input value={editMatric} onChange={e => setEditMatric(e.target.value)} placeholder="Matric Number"
+                                                className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:border-blue-400" />
+                                            <input value={editEmail} onChange={e => setEditEmail(e.target.value)} placeholder="Email"
+                                                className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:border-blue-400" />
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={saveEdit} disabled={isSavingEdit}
+                                                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-1.5">
+                                                {isSavingEdit ? <RefreshCw size={11} className="animate-spin" /> : <CheckCircle size={11} />} Save
+                                            </button>
+                                            <button onClick={() => setEditingStudent(null)}
+                                                className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black uppercase tracking-widest transition-all">
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* Student cards / table */}
+                            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+                                {rosterLoading ? (
+                                    <div className="flex justify-center py-20">
                                         <RefreshCw className="animate-spin text-slate-400" size={28} />
                                     </div>
-                                )}
-                                {!rosterLoading && rosterStudents.length === 0 && (
-                                    <p className="text-center text-slate-400 py-12 font-medium">No students enrolled yet.</p>
-                                )}
-                                {!rosterLoading && rosterStudents
-                                    .filter(s => {
+                                ) : (() => {
+                                    const visible = rosterStudents.filter(s => {
                                         const q = rosterSearch.toLowerCase();
                                         return !q || s.name?.toLowerCase().includes(q) || s.matric_number?.toLowerCase().includes(q) || s.email?.toLowerCase().includes(q);
-                                    })
-                                    .map(s => {
-                                        const statusColor = s.email_status === 'sent' ? 'bg-emerald-100 text-emerald-700'
-                                            : s.email_status === 'failed' ? 'bg-rose-100 text-rose-700'
-                                            : 'bg-amber-100 text-amber-700';
-                                        const statusLabel = s.email_status === 'sent' ? '✓ Email Sent'
-                                            : s.email_status === 'failed' ? '✗ Email Failed'
-                                            : '⏳ Pending';
-                                        return (
-                                            <div key={s.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="font-bold text-slate-900 text-sm truncate">{s.name}</p>
-                                                    <p className="text-[10px] text-slate-400 truncate">{s.matric_number} · {s.email}</p>
-                                                    {s.category_name && <p className="text-[9px] text-indigo-500 font-black uppercase tracking-widest mt-0.5">{s.category_name}</p>}
-                                                </div>
-                                                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${statusColor}`}>{statusLabel}</span>
-                                                <button
-                                                    onClick={() => resendOne(s.id)}
-                                                    disabled={resendingId === s.id}
-                                                    className={`shrink-0 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all disabled:opacity-50 flex items-center gap-1 ${
-                                                        s.email_status === 'sent'
-                                                            ? 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                                            : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                                                    }`}
-                                                >
-                                                    {resendingId === s.id ? <RefreshCw size={10} className="animate-spin" /> : null}
-                                                    {s.email_status === 'sent' ? 'Re-send' : 'Resend'}
-                                                </button>
-                                            </div>
-                                        );
-                                    })
-                                }
+                                    });
+                                    const allSelected = visible.length > 0 && visible.every(s => selectedIds.has(s.id));
+                                    if (visible.length === 0) return (
+                                        <p className="text-center text-slate-400 py-20 font-medium">
+                                            {rosterStudents.length === 0 ? 'No students enrolled yet.' : 'No results match your search.'}
+                                        </p>
+                                    );
+                                    return (
+                                        <table className="w-full text-left">
+                                            <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-100">
+                                                    <th className="px-5 py-4 w-10">
+                                                        <input type="checkbox" checked={allSelected}
+                                                            onChange={() => toggleSelectAll(visible)}
+                                                            className="w-4 h-4 rounded accent-blue-600 cursor-pointer" />
+                                                    </th>
+                                                    <th className="px-4 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Student</th>
+                                                    <th className="px-4 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:table-cell">Matric</th>
+                                                    <th className="px-4 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest hidden md:table-cell">Category</th>
+                                                    <th className="px-4 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
+                                                    <th className="px-4 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {visible.map(s => {
+                                                    const emailColor = s.email_status === 'sent' ? 'bg-emerald-100 text-emerald-700'
+                                                        : s.email_status === 'failed' ? 'bg-rose-100 text-rose-700'
+                                                        : 'bg-amber-100 text-amber-700';
+                                                    const emailLabel = s.email_status === 'sent' ? '✓ Sent'
+                                                        : s.email_status === 'failed' ? '✗ Failed'
+                                                        : '⏳ Pending';
+                                                    const isSelected = selectedIds.has(s.id);
+                                                    const isSuspended = !!s.is_suspended;
+                                                    return (
+                                                        <tr key={s.id} className={`transition-colors group ${isSuspended ? 'bg-amber-50/60' : isSelected ? 'bg-blue-50' : 'hover:bg-slate-50/50'}`}>
+                                                            <td className="px-5 py-3">
+                                                                <input type="checkbox" checked={isSelected}
+                                                                    onChange={() => toggleSelect(s.id)}
+                                                                    className="w-4 h-4 rounded accent-blue-600 cursor-pointer" />
+                                                            </td>
+                                                            <td className="px-4 py-3 min-w-[160px]">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div>
+                                                                        <p className={`font-bold text-sm ${isSuspended ? 'text-amber-700 line-through' : 'text-slate-900'}`}>{s.name}</p>
+                                                                        <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{s.email}</p>
+                                                                    </div>
+                                                                    {isSuspended && (
+                                                                        <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 bg-amber-200 text-amber-800 rounded-md shrink-0">Suspended</span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3 hidden sm:table-cell text-xs font-bold text-slate-500 font-mono">{s.matric_number}</td>
+                                                            <td className="px-4 py-3 hidden md:table-cell">
+                                                                {s.category_name && <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-wide">{s.category_name}</span>}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-center">
+                                                                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${emailColor}`}>{emailLabel}</span>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right">
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    {/* Edit */}
+                                                                    <button
+                                                                        onClick={() => { setEditingStudent(s); setEditName(s.name); setEditEmail(s.email); setEditMatric(s.matric_number); }}
+                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                                                                        title="Edit student"
+                                                                    >
+                                                                        <Pencil size={14} />
+                                                                    </button>
+                                                                    {/* Resend email */}
+                                                                    <button
+                                                                        onClick={() => resendOne(s.id)}
+                                                                        disabled={resendingId === s.id}
+                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all disabled:opacity-40"
+                                                                        title="Resend credentials"
+                                                                    >
+                                                                        {resendingId === s.id ? <RefreshCw size={14} className="animate-spin" /> : <Mail size={14} />}
+                                                                    </button>
+                                                                    {/* Suspend / Unsuspend */}
+                                                                    <button
+                                                                        onClick={() => toggleSuspend(s)}
+                                                                        disabled={suspendingId === s.id}
+                                                                        className={`p-1.5 rounded-lg transition-all disabled:opacity-40 ${isSuspended ? 'text-emerald-600 hover:bg-emerald-50' : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'}`}
+                                                                        title={isSuspended ? 'Unsuspend student' : 'Suspend student'}
+                                                                    >
+                                                                        {suspendingId === s.id ? <RefreshCw size={14} className="animate-spin" /> : isSuspended ? <ShieldAlert size={14} /> : <ShieldOff size={14} />}
+                                                                    </button>
+                                                                    {/* Delete */}
+                                                                    <button
+                                                                        onClick={() => deleteStudent(s.id)}
+                                                                        disabled={deletingId === s.id}
+                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all disabled:opacity-40"
+                                                                        title="Delete student"
+                                                                    >
+                                                                        {deletingId === s.id ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    );
+                                })()}
                             </div>
-                        </motion.div>
-                    </div>
+                        </div>
+                    </motion.div>
                 )}
             </AnimatePresence>
         </div>
