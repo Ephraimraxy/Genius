@@ -10168,7 +10168,11 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
     const catCheck = await pool.query('SELECT id FROM student_categories WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
     if (catCheck.rows.length === 0) return res.status(404).json({ error: 'Category not found' });
 
-    // 2. Delete all students in this category (clear all FK dependencies first)
+    // 2. Delete attendance sessions linked to this category (records cascade via ON DELETE CASCADE)
+    await pool.query('DELETE FROM attendance_records WHERE session_id IN (SELECT id FROM attendance_sessions WHERE category_id = $1 AND tenant_id = $2)', [id, req.tenant_id]);
+    await pool.query('DELETE FROM attendance_sessions WHERE category_id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+
+    // 3. Delete all students in this category (clear remaining FK dependencies first)
     await pool.query("DELETE FROM transactions WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM exam_results WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM reviews WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
@@ -10178,7 +10182,7 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
     await pool.query("DELETE FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student'", [id, req.tenant_id]);
     await pool.query('DELETE FROM students_roster WHERE category_id = $1 AND tenant_id = $2', [id, req.tenant_id]);
 
-    // 3. Delete the category itself
+    // 4. Delete the category itself
     await pool.query('DELETE FROM student_categories WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
 
     res.json({ success: true, message: 'Batch category and all associated student records deleted successfully' });
