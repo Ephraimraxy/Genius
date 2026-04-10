@@ -36,6 +36,7 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
     const questionStartTime = useRef<number>(Date.now());
     const lastActivityTime = useRef<number>(Date.now());
     const devToolsCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
 
     const examContainerRef = useRef<HTMLDivElement>(null);
 

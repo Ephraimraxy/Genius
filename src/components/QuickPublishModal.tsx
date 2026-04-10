@@ -90,7 +90,7 @@ export default function QuickPublishModal({
       if (!formatRes.ok) {
         const errData = await formatRes.json().catch(() => ({}));
         console.warn('Quick publish formatting failed, continuing with structural pipeline.', errData);
-        addToast('Formatting skipped due to a processing error. Publishing will continue with structural layout.', 'warning');
+        addToast('Formatting skipped due to a processing error. Publishing will continue with structural layout.', 'info');
       } else {
         await formatRes.json();
       }

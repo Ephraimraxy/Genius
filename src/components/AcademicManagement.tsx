@@ -58,6 +58,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [isLoadingHub, setIsLoadingHub] = useState(false);
     const [audioPriceInputs, setAudioPriceInputs] = useState<Record<number, string>>({});
     const [selectedHubResource, setSelectedHubResource] = useState<Resource | null>(null);
+    const [selectedMaterialResources, setSelectedMaterialResources] = useState<Resource[]>([]);
     const [records, setRecords] = useState<any[]>([]);
     const [students, setStudents] = useState<any[]>([]);
     const [isLoadingRecords, setIsLoadingRecords] = useState(false);
@@ -65,6 +66,8 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [previewName, setPreviewName] = useState<string>('');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [categories, setCategories] = useState<{id: number, name: string}[]>([]);
+    const isAssessmentMaterialSelector = mode === 'tests' || mode === 'exams' || mode === 'assignments';
+    const assessmentMaterialIds = selectedMaterialResources.map(resource => resource.id);
 
     // Assessment builder state
     const [assessTitle, setAssessTitle] = useState('');
@@ -202,7 +205,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         setShowResourceSelector(true);
     };
 
-    const selectResource = (res: Resource) => {
+    const selectSingleResource = (res: Resource) => {
         setSelectedHubResource(res);
         setShowResourceSelector(false);
         addToast(`Linked to resource: ${res.name}`, 'success');
@@ -211,9 +214,29 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         }
     };
 
+    const toggleMaterialResource = (res: Resource) => {
+        setSelectedMaterialResources(prev => {
+            const exists = prev.some(item => item.id === res.id);
+            if (exists) {
+                return prev.filter(item => item.id !== res.id);
+            }
+            return [...prev, res];
+        });
+    };
+
+    const confirmMaterialSelection = () => {
+        setShowResourceSelector(false);
+        if (selectedMaterialResources.length > 0) {
+            addToast(`Linked ${selectedMaterialResources.length} lecture material(s) for AI generation`, 'success');
+        }
+    };
+
     const handleCreateAssessment = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!assessTitle.trim()) return addToast('Please enter an assessment title', 'error');
+        if ((mode === 'tests' || mode === 'exams') && assessmentMaterialIds.length === 0) {
+            return addToast('Link at least one lecture material for AI question generation', 'error');
+        }
 
         setIsProcessing(true);
         try {
@@ -250,7 +273,8 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 questions_count: parseInt(assessQuestionsCount) || 20,
                 batch_size: parseInt(assessBatchSize) || 10,
                 instructions: assessInstructions || null,
-                material_id: selectedHubResource?.id || null,
+                material_id: assessmentMaterialIds[0] || null,
+                material_ids: assessmentMaterialIds,
                 due_date: assessDueDate || null,
                 submission_type: assessSubmType,
                 allow_late: assessAllowLate,
@@ -273,11 +297,11 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 fetchRecords();
                 setAssessTitle(''); setAssessCategoryId(''); setAssessStartDate(''); setAssessStartTime('08:00'); setAssessEndDate(''); setAssessEndTime('18:00');
                 setAssessInstructions(''); setAssessDuration('60'); setAssessQuestionsCount('20');
-                setAssessBatchSize('10'); setAssessTimerMode('whole'); setSelectedHubResource(null);
+                setAssessBatchSize('10'); setAssessTimerMode('whole'); setSelectedHubResource(null); setSelectedMaterialResources([]);
                 setAssessDueDate(''); setAssessSubmType('file'); setAssessAllowLate(false);
                 setAssessDifficulty('medium'); setAssessBlooms('mixed'); setAssessMaxAttempts('1');
                 setAssessIsPool(false); setAssessPoolSize('40');
-                setScheduleMode('global'); setCustomStartVal(''); setCustomStartUnit('minutes'); setCustomDurVal(''); setCustomDurUnit('hours');
+                setCustomStartVal(''); setCustomStartUnit('minutes'); setCustomDurVal(''); setCustomDurUnit('hours');
             } else {
                 addToast(data.error || 'Failed to create assessment', 'error');
             }
@@ -1004,11 +1028,33 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             {/* Link Material */}
             <div className="border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all border-slate-200 hover:border-blue-300 hover:bg-blue-50" onClick={handleOpenSelector}>
                 <Database size={20} className="mx-auto mb-2 text-slate-400" />
-                <p className="font-bold text-sm text-slate-500">{selectedHubResource ? `📎 ${selectedHubResource.name}` : 'Link Lecture Material (AI generates questions from it)'}</p>
-                <p className="text-[10px] text-slate-400 mt-1">AI reads this material and generates all questions automatically</p>
+                <p className="font-bold text-sm text-slate-500">
+                    {selectedMaterialResources.length > 0
+                        ? `📎 ${selectedMaterialResources.length} lecture material(s) linked`
+                        : 'Link Lecture Materials (AI generates questions from all selected files)'}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-1">AI reads every linked material before generating the final question set</p>
+                {selectedMaterialResources.length > 0 && (
+                    <div className="mt-3 flex flex-wrap justify-center gap-2">
+                        {selectedMaterialResources.map(resource => (
+                            <button
+                                key={resource.id}
+                                type="button"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    toggleMaterialResource(resource);
+                                }}
+                                className="px-3 py-1 rounded-full bg-white border border-blue-100 text-[10px] font-black text-blue-700 hover:bg-blue-100 transition-all"
+                                title="Remove material"
+                            >
+                                {resource.name}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
-            <button type="submit" disabled={isProcessing || !selectedHubResource}
+            <button type="submit" disabled={isProcessing || selectedMaterialResources.length === 0}
                 className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-4 rounded-2xl disabled:opacity-40 transition-all shadow-xl">
                 {isProcessing ? '⚙️ AI Generating Questions & Notifying Students...' : `🚀 Create ${isExam ? 'Examination' : 'Test'} & Schedule`}
             </button>
@@ -1299,7 +1345,30 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                         {/* Optional material attachment */}
                         <div className="border-2 border-dashed border-slate-200 rounded-2xl p-4 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-all" onClick={handleOpenSelector}>
                             <Database size={18} className="mx-auto mb-1 text-slate-400" />
-                            <p className="font-bold text-slate-500 text-xs">{selectedHubResource ? `📎 ${selectedHubResource.name}` : 'Attach reference material (optional)'}</p>
+                            <p className="font-bold text-slate-500 text-xs">
+                                {selectedMaterialResources.length > 0
+                                    ? `📎 ${selectedMaterialResources.length} lecture material(s) linked`
+                                    : 'Attach lecture materials (optional AI assignment drafting)'}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-1">Leave the instructions light and let AI draft the assignment from all linked materials if you want.</p>
+                            {selectedMaterialResources.length > 0 && (
+                                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                                    {selectedMaterialResources.map(resource => (
+                                        <button
+                                            key={resource.id}
+                                            type="button"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                toggleMaterialResource(resource);
+                                            }}
+                                            className="px-3 py-1 rounded-full bg-white border border-blue-100 text-[10px] font-black text-blue-700 hover:bg-blue-100 transition-all"
+                                            title="Remove material"
+                                        >
+                                            {resource.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         <button type="submit" disabled={isProcessing || !assessTitle.trim()}
@@ -1678,21 +1747,52 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
                         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden">
                             <div className="p-8 border-b bg-slate-50 flex justify-between items-center">
-                                <h3 className="font-bold text-xl">Select Resource</h3>
+                                <div>
+                                    <h3 className="font-bold text-xl">{isAssessmentMaterialSelector ? 'Select Lecture Materials' : 'Select Resource'}</h3>
+                                    {isAssessmentMaterialSelector && (
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">
+                                            {selectedMaterialResources.length} selected for AI
+                                        </p>
+                                    )}
+                                </div>
                                 <button onClick={() => setShowResourceSelector(false)}><MoreHorizontal /></button>
                             </div>
                             <div className="p-6 max-h-[400px] overflow-y-auto space-y-2">
-                                {hubResources.map(res => (
-                                    <div key={res.id} onClick={() => selectResource(res)} className="p-4 bg-slate-50 rounded-2xl hover:bg-blue-50 cursor-pointer flex justify-between items-center group">
+                                {hubResources.map(res => {
+                                    const isSelected = selectedMaterialResources.some(item => item.id === res.id);
+                                    return (
+                                    <div
+                                        key={res.id}
+                                        onClick={() => isAssessmentMaterialSelector ? toggleMaterialResource(res) : selectSingleResource(res)}
+                                        className={`p-4 rounded-2xl cursor-pointer flex justify-between items-center group border transition-all ${isSelected ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-transparent hover:bg-blue-50'}`}
+                                    >
                                         <div className="flex items-center gap-3">
                                             {res.type === 'roster' ? <Users size={18} /> : <FileText size={18} />}
                                             <span className="font-bold text-sm">{res.name}</span>
                                         </div>
-                                        <CheckCircle className="text-emerald-500 opacity-0 group-hover:opacity-100" />
+                                        <CheckCircle className={`text-emerald-500 transition-all ${isAssessmentMaterialSelector ? (isSelected ? 'opacity-100' : 'opacity-20 group-hover:opacity-70') : 'opacity-0 group-hover:opacity-100'}`} />
                                     </div>
-                                ))}
+                                )})}
                                 {hubResources.length === 0 && <p className="text-center py-10 text-slate-400">No resources found.</p>}
                             </div>
+                            {isAssessmentMaterialSelector && (
+                                <div className="p-6 border-t bg-slate-50 flex items-center gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowResourceSelector(false)}
+                                        className="flex-1 px-4 py-3 rounded-2xl border border-slate-200 text-slate-500 font-black text-xs uppercase tracking-widest hover:bg-white transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={confirmMaterialSelection}
+                                        className="flex-1 px-4 py-3 rounded-2xl bg-blue-600 text-white font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all"
+                                    >
+                                        Use Selected
+                                    </button>
+                                </div>
+                            )}
                         </motion.div>
                     </div>
                 )}

@@ -78,8 +78,11 @@ export default function StudentAuth({ onAuthSuccess, addToast, onBackToMain }: S
             const data = await res.json();
 
             if (!res.ok) {
+                const isSuspended = !!data?.suspended || data?.code === 'ACCOUNT_SUSPENDED';
                 // Always show the exact server message — it's already user-facing
-                const msg = data.error || 'Login failed';
+                const msg = isSuspended
+                    ? (data.error || 'Account suspended. Please contact your lecturer.')
+                    : (data.error || 'Login failed');
                 setError(msg);
                 addToast(msg, 'error');
                 return;

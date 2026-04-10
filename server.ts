@@ -1324,6 +1324,14 @@ async function initDB() {
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id)'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE'); } catch (e) { }
+  try { await pool.query(`CREATE TABLE IF NOT EXISTS exam_materials (
+    id SERIAL PRIMARY KEY,
+    exam_id INTEGER NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
+    material_id INTEGER NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+    tenant_id INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(exam_id, material_id)
+  )`); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN is_subscribed BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_price INTEGER DEFAULT 0'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN subscription_expiry TIMESTAMP'); } catch (e) { }
@@ -1834,14 +1842,29 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     const { matricNumber, pin, workspaceId } = req.body;
     if (!matricNumber || !pin || !workspaceId) return res.status(400).json({ error: 'Matric number, Workspace ID, and 4-digit PIN required' });
 
+    const normalizedMatric = String(matricNumber).trim().toUpperCase();
+    const normalizedWorkspaceId = String(workspaceId).trim().toUpperCase();
+
     // 0. Resolve tenantId from workspaceId
-    const tResult = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [workspaceId.toUpperCase()]);
+    const tResult = await pool.query('SELECT id FROM tenants WHERE workspace_id = $1', [normalizedWorkspaceId]);
     if (tResult.rows.length === 0) return res.status(401).json({ error: 'Invalid Workspace ID' });
     const tenantId = tResult.rows[0].id;
 
+    const rosterRes = await pool.query(
+      'SELECT category_id, is_suspended FROM students_roster WHERE UPPER(matric_number) = $1 AND tenant_id = $2 ORDER BY id DESC LIMIT 1',
+      [normalizedMatric, tenantId]
+    );
+    if (rosterRes.rows[0]?.is_suspended) {
+      return res.status(403).json({
+        error: 'Account suspended. Your lecturer has disabled this account. Please contact them directly to resolve this.',
+        suspended: true,
+        code: 'ACCOUNT_SUSPENDED'
+      });
+    }
+
     // 1. Find user (Student)
-    let query = 'SELECT * FROM users WHERE matric_number = $1 AND role = \'student\'';
-    let params = [matricNumber];
+    let query = 'SELECT * FROM users WHERE UPPER(matric_number) = $1 AND role = \'student\'';
+    let params = [normalizedMatric];
     if (tenantId) {
       query += ' AND tenant_id = $2';
       params.push(tenantId);
@@ -1854,14 +1877,11 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     const user = result.rows[0];
 
     // 2. Check suspension before anything else
-    const suspendedCheck = await pool.query(
-      'SELECT is_suspended FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
-      [matricNumber, tenantId]
-    );
-    if (suspendedCheck.rows[0]?.is_suspended || user.is_suspended) {
+    if (user.is_suspended) {
       return res.status(403).json({
-        error: 'Your account has been suspended by your lecturer. Please contact them directly to resolve this.',
-        suspended: true
+        error: 'Account suspended. Your lecturer has disabled this account. Please contact them directly to resolve this.',
+        suspended: true,
+        code: 'ACCOUNT_SUSPENDED'
       });
     }
 
@@ -1877,7 +1897,6 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     let entryFee = 0;
 
     // Always fetch the category from the roster for this specifics workspace
-    const rosterRes = await pool.query('SELECT category_id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, tenantId]);
     const rosterCategory = rosterRes.rows[0]?.category_id;
 
     if (rosterCategory) {
@@ -8961,7 +8980,43 @@ app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (
 app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
-      'SELECT id, title, duration, created_at, is_available, price, is_paid, type, start_date, end_date, timer_mode, questions_count, batch_size, instructions, published_status, submission_type, due_date, allow_late, category_id, difficulty, blooms_level, max_attempts, is_pool, pool_size, material_id FROM exams WHERE tenant_id = $1 ORDER BY created_at DESC',
+      `SELECT
+         e.id,
+         e.title,
+         e.duration,
+         e.created_at,
+         e.is_available,
+         e.price,
+         e.is_paid,
+         e.type,
+         e.start_date,
+         e.end_date,
+         e.timer_mode,
+         e.questions_count,
+         e.batch_size,
+         e.instructions,
+         e.published_status,
+         e.submission_type,
+         e.due_date,
+         e.allow_late,
+         e.category_id,
+         e.difficulty,
+         e.blooms_level,
+         e.max_attempts,
+         e.is_pool,
+         e.pool_size,
+         e.material_id,
+         COALESCE(
+           (SELECT json_agg(em.material_id ORDER BY em.id) FROM exam_materials em WHERE em.exam_id = e.id AND em.tenant_id = e.tenant_id),
+           CASE WHEN e.material_id IS NULL THEN '[]'::json ELSE json_build_array(e.material_id) END
+         ) AS material_ids,
+         COALESCE(
+           (SELECT COUNT(*) FROM exam_materials em WHERE em.exam_id = e.id AND em.tenant_id = e.tenant_id),
+           CASE WHEN e.material_id IS NULL THEN 0 ELSE 1 END
+         ) AS linked_material_count
+       FROM exams e
+       WHERE e.tenant_id = $1
+       ORDER BY e.created_at DESC`,
       [req.tenant_id]
     );
     res.json(result.rows);
@@ -10284,6 +10339,143 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
 });
 
 // ─── Helper: AI question generation ─────────────────────────────────
+type LinkedMaterialSource = {
+  id: number;
+  name: string;
+  text: string;
+};
+
+function normalizeMaterialIds(materialIds: any, materialId?: any): number[] {
+  const rawIds = Array.isArray(materialIds) && materialIds.length > 0
+    ? materialIds
+    : materialId ? [materialId] : [];
+
+  return Array.from(new Set(
+    rawIds
+      .map((value: any) => parseInt(String(value), 10))
+      .filter((value: number) => Number.isFinite(value) && value > 0)
+  ));
+}
+
+function extractTextFromResourceContent(content: any): string {
+  let resolved = content;
+  if (typeof resolved === 'string') {
+    const trimmed = resolved.trim();
+    if (
+      (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+    ) {
+      resolved = safeJsonParse<any>(trimmed, trimmed);
+    }
+  }
+
+  const visit = (node: any): string => {
+    if (typeof node === 'string') return node;
+    if (typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(visit).filter(Boolean).join('\n');
+    if (node && typeof node === 'object') {
+      const preferred = [node.text, node.content, node.body, node.value]
+        .map(visit)
+        .filter(Boolean);
+      if (preferred.length > 0) return preferred.join('\n');
+      return Object.values(node).map(visit).filter(Boolean).join('\n');
+    }
+    return '';
+  };
+
+  return visit(resolved)
+    .replace(/\0/g, ' ')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+async function fetchLinkedMaterialSources(
+  examId: number,
+  tenantId: number,
+  fallbackMaterialId?: number | null
+): Promise<LinkedMaterialSource[]> {
+  const linkedRows = await pool.query(
+    `SELECT r.id, r.name, r.content
+     FROM exam_materials em
+     JOIN resources r
+       ON r.id = em.material_id
+      AND r.tenant_id = em.tenant_id
+     WHERE em.exam_id = $1 AND em.tenant_id = $2
+     ORDER BY em.id ASC`,
+    [examId, tenantId]
+  );
+
+  let rows = linkedRows.rows;
+  if (rows.length === 0 && fallbackMaterialId) {
+    const fallbackRows = await pool.query(
+      'SELECT id, name, content FROM resources WHERE id = $1 AND tenant_id = $2',
+      [fallbackMaterialId, tenantId]
+    );
+    rows = fallbackRows.rows;
+  }
+
+  return rows
+    .map((row: any) => ({
+      id: row.id,
+      name: row.name || `Material ${row.id}`,
+      text: extractTextFromResourceContent(row.content)
+    }))
+    .filter((row: LinkedMaterialSource) => row.text.length > 0);
+}
+
+function buildCombinedMaterialPrompt(materials: LinkedMaterialSource[], maxChars = 28000): string {
+  if (materials.length === 0) return '';
+
+  const charsPerMaterial = Math.max(1500, Math.floor(maxChars / materials.length));
+  const sections = materials.map((material, index) => {
+    const trimmedText = material.text.slice(0, charsPerMaterial).trim();
+    return `[Material ${index + 1}: ${material.name}]\n${trimmedText}`;
+  });
+
+  return sections.join('\n\n---\n\n').slice(0, maxChars).trim();
+}
+
+function sanitizeGeneratedQuestions(
+  questions: any[]
+): Array<{ text: string; options: string[]; correct_answer: string; points: number }> {
+  const seen = new Set<string>();
+  const sanitized: Array<{ text: string; options: string[]; correct_answer: string; points: number }> = [];
+
+  for (const question of questions || []) {
+    const text = String(question?.text || '').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+
+    const options = Array.isArray(question?.options)
+      ? question.options
+          .map((option: any) => String(option || '').replace(/\s+/g, ' ').trim())
+          .filter(Boolean)
+          .filter((option: string, index: number, arr: string[]) =>
+            arr.findIndex(candidate => candidate.toLowerCase() === option.toLowerCase()) === index
+          )
+      : [];
+
+    if (options.length !== 4) continue;
+
+    const normalizedCorrect = String(question?.correct_answer || '').replace(/\s+/g, ' ').trim();
+    const exactCorrect = options.find(option => option.toLowerCase() === normalizedCorrect.toLowerCase());
+    if (!exactCorrect) continue;
+
+    const dedupeKey = text.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    sanitized.push({
+      text,
+      options,
+      correct_answer: exactCorrect,
+      points: Math.max(1, parseInt(String(question?.points), 10) || 10)
+    });
+  }
+
+  return sanitized;
+}
 async function generateQuestionsFromMaterial(
   materialText: string,
   count: number,
@@ -10310,30 +10502,33 @@ async function generateQuestionsFromMaterial(
   const diffDesc = difficultyMap[difficulty] || difficultyMap.medium;
   const bloomsDesc = bloomsMap[bloomsLevel] || bloomsMap.mixed;
 
-  const prompt = `You are an expert academic question setter. Generate exactly ${totalToGenerate} high-quality multiple-choice questions from the study material below.
+  const prompt = `You are an expert academic question setter. Generate exactly ${totalToGenerate} high-quality multiple-choice questions from the study materials below.
 
 REQUIREMENTS:
 - Difficulty: ${diffDesc}
 - Cognitive level (Bloom's Taxonomy): ${bloomsDesc}
-- Each question must have exactly 4 options (A, B, C, D)
+- Each question must have exactly 4 options
 - Only ONE option is correct per question
 - The correct answer must be the EXACT text of the correct option
-- Questions must be directly based on the provided material — no general knowledge
-- Vary question styles: some should be scenario-based, some definition-based, some application-based
-- Do NOT number the options with A/B/C/D — just provide the plain text
+- Questions must be directly based on the provided materials — no general knowledge
+- Cover the linked materials fairly instead of ignoring later materials
+- Do not combine unrelated facts from different materials unless the relationship is explicitly stated
+- Vary question styles: some scenario-based, some definition-based, some application-based
 
-OUTPUT FORMAT (JSON array only, no markdown, no explanation):
-[
-  {
-    "text": "Question text here?",
-    "options": ["Option 1 text", "Option 2 text", "Option 3 text", "Option 4 text"],
-    "correct_answer": "Option 1 text",
-    "points": 10
-  }
-]
+OUTPUT FORMAT (JSON object only, no markdown, no explanation):
+{
+  "questions": [
+    {
+      "text": "Question text here?",
+      "options": ["Option 1 text", "Option 2 text", "Option 3 text", "Option 4 text"],
+      "correct_answer": "Option 1 text",
+      "points": 10
+    }
+  ]
+}
 
-STUDY MATERIAL:
-${materialText.slice(0, 12000)}`;
+STUDY MATERIALS:
+${materialText}`;
 
   const completion = await openai.chat.completions.create({
     model: 'gpt-4o',
@@ -10348,13 +10543,73 @@ ${materialText.slice(0, 12000)}`;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    // Try to extract JSON array from the text
     const match = raw.match(/\[[\s\S]*\]/);
     parsed = match ? JSON.parse(match[0]) : [];
   }
 
   const questions = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.questions) ? parsed.questions : []);
-  return questions.filter((q: any) => q.text && Array.isArray(q.options) && q.options.length >= 2 && q.correct_answer);
+  return sanitizeGeneratedQuestions(questions);
+}
+
+async function generateAssignmentInstructionsFromMaterials(
+  materialText: string,
+  submissionType: string,
+  lecturerNotes: string
+): Promise<string> {
+  const submissionModeMap: Record<string, string> = {
+    file: 'Students will submit a file upload, so mention any expected report or document structure.',
+    text: 'Students will submit a text answer directly in the portal, so keep the response suitable for typed submission.',
+    both: 'Students may submit typed text or upload a file, so the deliverables must work for both formats.'
+  };
+
+  const prompt = `You are an expert university lecturer creating a student-facing assignment brief from the study materials below.
+
+REQUIREMENTS:
+- Base the assignment strictly on the provided materials
+- Produce one cohesive assignment brief, not multiple alternatives
+- Start with a short overview sentence
+- Include 3 to 5 numbered tasks or questions
+- Include a short "Deliverable" note at the end
+- Submission guidance: ${submissionModeMap[submissionType] || submissionModeMap.file}
+- If lecturer notes are provided, treat them as mandatory constraints
+- Do not mention AI, source extraction, or hidden notes
+
+OUTPUT FORMAT (JSON object only, no markdown, no explanation):
+{
+  "instructions": "Full assignment brief here"
+}
+
+LECTURER NOTES:
+${lecturerNotes?.trim() || 'None'}
+
+STUDY MATERIALS:
+${materialText}`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.5,
+    max_tokens: 1400,
+    response_format: { type: 'json_object' }
+  });
+
+  const raw = completion.choices[0]?.message?.content || '{}';
+  const parsed = safeJsonParse<any>(raw, {});
+  const instructions = String(parsed?.instructions || '').replace(/\r/g, '').trim();
+  if (!instructions) throw new Error('AI did not return assignment instructions.');
+  return instructions;
+}
+
+async function syncExamMaterialLinks(client: any, examId: number, tenantId: number, materialIds: number[]) {
+  await client.query('DELETE FROM exam_materials WHERE exam_id = $1 AND tenant_id = $2', [examId, tenantId]);
+  for (const materialId of materialIds) {
+    await client.query(
+      `INSERT INTO exam_materials (exam_id, material_id, tenant_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (exam_id, material_id) DO NOTHING`,
+      [examId, materialId, tenantId]
+    );
+  }
 }
 
 // Lecturer: Create Exam/Test with scheduling
@@ -10364,28 +10619,64 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
     const {
       title, description, duration, type, category_id,
       start_date, end_date, timer_mode, questions_count, batch_size, instructions,
-      material_id, difficulty, blooms_level, max_attempts, is_pool, pool_size,
+      material_id, material_ids, difficulty, blooms_level, max_attempts, is_pool, pool_size,
       submission_type, due_date, allow_late
     } = req.body;
+
+    const allMaterialIds = normalizeMaterialIds(material_ids, material_id);
 
     const isPool = !!is_pool;
     const poolSz = parseInt(pool_size) || 0;
     const qCount = parseInt(questions_count) || 20;
 
-    const result = await pool.query(
-      `INSERT INTO exams (tenant_id, title, description, duration, type, category_id,
-        start_date, end_date, timer_mode, questions_count, batch_size, instructions,
-        material_id, difficulty, blooms_level, ai_generated, max_attempts, is_pool, pool_size,
-        submission_type, due_date, allow_late)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id`,
-      [req.tenant_id, title, description, duration || 60, type || 'test', category_id || null,
-       start_date || null, end_date || null, timer_mode || 'whole',
-       qCount, batch_size || 10, instructions || null,
-       material_id || null, difficulty || 'medium', blooms_level || 'mixed',
-       !!material_id, parseInt(max_attempts) || 1, isPool, poolSz,
-       submission_type || 'mcq', due_date || null, !!allow_late]
-    );
-    const examId = result.rows[0].id;
+    const client = await pool.connect();
+    let examId: number;
+    try {
+      await client.query('BEGIN');
+
+      let verifiedMaterialIds: number[] = [];
+      if (allMaterialIds.length > 0) {
+        const materialsRes = await client.query(
+          `SELECT id
+           FROM resources
+           WHERE tenant_id = $1 AND type = 'material' AND id = ANY($2::int[])`,
+          [req.tenant_id, allMaterialIds]
+        );
+        const validIdSet = new Set<number>(materialsRes.rows.map((row: any) => Number(row.id)));
+        verifiedMaterialIds = allMaterialIds.filter(id => validIdSet.has(id));
+        if (verifiedMaterialIds.length !== allMaterialIds.length) {
+          await client.query('ROLLBACK');
+          return res.status(422).json({ error: 'One or more linked lecture materials could not be found. Please reselect them and try again.' });
+        }
+      }
+
+      const primaryMaterialId = verifiedMaterialIds[0] || null;
+      const result = await client.query(
+        `INSERT INTO exams (tenant_id, title, description, duration, type, category_id,
+          start_date, end_date, timer_mode, questions_count, batch_size, instructions,
+          material_id, difficulty, blooms_level, ai_generated, max_attempts, is_pool, pool_size,
+          submission_type, due_date, allow_late)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id`,
+        [req.tenant_id, title, description, duration || 60, type || 'test', category_id || null,
+         start_date || null, end_date || null, timer_mode || 'whole',
+         qCount, batch_size || 10, instructions || null,
+         primaryMaterialId, difficulty || 'medium', blooms_level || 'mixed',
+         verifiedMaterialIds.length > 0, parseInt(max_attempts) || 1, isPool, poolSz,
+         submission_type || 'mcq', due_date || null, !!allow_late]
+      );
+      examId = result.rows[0].id;
+
+      if (verifiedMaterialIds.length > 0) {
+        await syncExamMaterialLinks(client, examId, req.tenant_id, verifiedMaterialIds);
+      }
+
+      await client.query('COMMIT');
+    } catch (txError) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txError;
+    } finally {
+      client.release();
+    }
 
     // Questions and slot assignments happen only when the lecturer publishes.
     // This guarantees students are never notified until the exam is fully ready and live.
@@ -10499,15 +10790,50 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
     const examRow = await pool.query(
       `SELECT id, title, type, material_id, questions_count, difficulty, blooms_level,
               is_pool, pool_size, duration, timer_mode, batch_size, instructions,
-              start_date, end_date, category_id
+              start_date, end_date, category_id, submission_type
        FROM exams WHERE id = $1 AND tenant_id = $2`,
       [examId, req.tenant_id]
     );
     if (examRow.rows.length === 0) return res.status(404).json({ error: 'Assessment not found.' });
     const exam = examRow.rows[0];
 
-    // Assignments don't need questions — publish directly
     if (exam.type === 'assignment') {
+      const materialSources = await fetchLinkedMaterialSources(examId, req.tenant_id, exam.material_id);
+
+      if (materialSources.length > 0) {
+        const materialText = buildCombinedMaterialPrompt(materialSources);
+        if (materialText.length < 100) {
+          return res.status(422).json({
+            error: 'The linked lecture materials are too short for AI to draft a strong assignment. Add more content and try again.',
+            code: 'MATERIAL_TOO_SHORT'
+          });
+        }
+
+        let generatedInstructions = '';
+        try {
+          generatedInstructions = await generateAssignmentInstructionsFromMaterials(
+            materialText,
+            exam.submission_type || 'file',
+            exam.instructions || ''
+          );
+        } catch (aiErr: any) {
+          console.error('[Publish Assignment AI Gen] Failed:', aiErr.message);
+          return res.status(422).json({
+            error: `AI assignment generation failed: ${aiErr.message || 'Unknown AI error'}. Check your OpenAI configuration or try again.`,
+            code: 'AI_GENERATION_FAILED'
+          });
+        }
+
+        await pool.query(
+          'UPDATE exams SET instructions = $1, published_status = $2, is_available = TRUE WHERE id = $3 AND tenant_id = $4',
+          [generatedInstructions, 'published', examId, req.tenant_id]
+        );
+        return res.json({
+          success: true,
+          message: `Assignment published with AI instructions drafted from ${materialSources.length} linked material${materialSources.length === 1 ? '' : 's'}.`
+        });
+      }
+
       await pool.query(
         'UPDATE exams SET published_status = $1, is_available = TRUE WHERE id = $2 AND tenant_id = $3',
         ['published', examId, req.tenant_id]
@@ -10521,38 +10847,20 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
 
     if (!alreadyHasQuestions) {
       // ── Verify material is linked ──
-      if (!exam.material_id) {
+      const materialSources = await fetchLinkedMaterialSources(examId, req.tenant_id, exam.material_id);
+      if (materialSources.length === 0) {
         return res.status(422).json({
-          error: 'No study material is linked to this assessment. Please edit it and link a material so AI can generate questions.',
+          error: 'No lecture materials are linked to this assessment. Please link at least one material so AI can generate questions.',
           code: 'NO_MATERIAL'
         });
       }
 
       // ── Fetch material content ──
-      const matRes = await pool.query(
-        'SELECT content FROM resources WHERE id = $1 AND tenant_id = $2',
-        [exam.material_id, req.tenant_id]
-      );
-      if (matRes.rows.length === 0) {
-        return res.status(422).json({
-          error: 'The linked study material no longer exists. Please re-link a valid material and try again.',
-          code: 'MATERIAL_NOT_FOUND'
-        });
-      }
-
-      const c = matRes.rows[0].content;
-      let materialText = '';
-      if (typeof c === 'string') {
-        materialText = c;
-      } else if (c && typeof c === 'object') {
-        const raw = c.text ?? c.content ?? c.body ?? JSON.stringify(c);
-        materialText = typeof raw === 'string' ? raw : String(raw);
-      }
-      materialText = materialText.replace(/\0/g, '').trim();
+      const materialText = buildCombinedMaterialPrompt(materialSources);
 
       if (materialText.length < 100) {
         return res.status(422).json({
-          error: 'The linked study material is too short (under 100 characters). Add more content to the material so AI can generate meaningful questions.',
+          error: 'The linked lecture materials are too short. Add more content so AI can generate meaningful questions.',
           code: 'MATERIAL_TOO_SHORT'
         });
       }
@@ -10580,7 +10888,7 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
 
       if (aiQuestions.length === 0) {
         return res.status(422).json({
-          error: 'AI returned no valid questions from the material. The material may not contain enough academic content. Try linking a more detailed resource.',
+          error: 'AI returned no valid questions from the linked materials. The materials may not contain enough academic content. Try linking more detailed resources.',
           code: 'NO_QUESTIONS_GENERATED'
         });
       }

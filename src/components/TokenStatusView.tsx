@@ -53,7 +53,7 @@ interface TokenStatusViewProps {
 
 function SummaryCard({ label, value, icon, color, border, delay }: {
   label: string; value: string; icon: React.ReactNode;
-  color: string; border: string; delay: number;
+  color: string; border: string; delay: number; key?: React.Key;
 }) {
   return (
     <motion.div
