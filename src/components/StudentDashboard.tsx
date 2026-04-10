@@ -18,6 +18,7 @@ interface StudentDashboardProps {
 export default function StudentDashboard({ profile, onNavigate, addToast, view, token, confirm }: StudentDashboardProps) {
     const [activeExamId, setActiveExamId] = useState<number | null>(null);
     const [activeExamCourse, setActiveExamCourse] = useState<string | null>(null);
+    const [activeExamStartDate, setActiveExamStartDate] = useState<string | null>(null);
     const [showProctoringModal, setShowProctoringModal] = useState(false);
     
     const [isDownloadingTranscript, setIsDownloadingTranscript] = useState(false);
@@ -93,6 +94,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
         }
         setActiveExamId(exam.id);
         setActiveExamCourse(exam.course);
+        setActiveExamStartDate(exam.start_date ?? null);
         setShowProctoringModal(true);
     };
 
@@ -112,6 +114,7 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
         
         setActiveExamId(null);
         setActiveExamCourse(null);
+        setActiveExamStartDate(null);
     };
 
     if (activeExamId && activeExamCourse && !showProctoringModal) {
@@ -250,7 +253,10 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                             const msLeft = startsAt !== null ? startsAt - now : null;
                             // Ready to start: has a start_date AND that time has passed
                             const isReady = msLeft !== null && msLeft <= 0;
+                            // Imminent: within last hour (for amber styling)
                             const isImminent = msLeft !== null && msLeft > 0 && msLeft < 3600000;
+                            // Pre-open window: show "Get Ready" button 3 min before actual start
+                            const isPreOpen = msLeft !== null && msLeft > 0 && msLeft <= 180000;
                             const countdownLabel = msLeft !== null && msLeft > 0 ? formatCountdown(msLeft) : null;
 
                             return (
@@ -260,16 +266,22 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                                 className={`p-5 md:p-6 border rounded-[1.5rem] md:rounded-[2rem] shadow-sm transition-all group ${
                                     isReady
                                         ? 'bg-gradient-to-br from-rose-50 to-red-50 border-red-200 shadow-red-100'
+                                        : isPreOpen
+                                        ? 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-amber-100'
                                         : 'bg-white border-slate-200 hover:shadow-md'
                                 }`}
                             >
                                 <div className="flex justify-between items-start mb-4">
-                                    <div className={`p-3 rounded-xl transition-colors shadow-sm border ${isReady ? 'bg-red-100 border-red-200' : 'bg-white border-indigo-100 group-hover:border-indigo-600'}`}>
+                                    <div className={`p-3 rounded-xl transition-colors shadow-sm border ${isReady ? 'bg-red-100 border-red-200' : isPreOpen ? 'bg-amber-100 border-amber-200' : 'bg-white border-indigo-100 group-hover:border-indigo-600'}`}>
                                         <img src="/gmijp-logo.png" alt="Logo" className="w-5 h-5 object-contain" />
                                     </div>
                                     {isReady ? (
                                         <span className="px-3 py-1 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest rounded-lg animate-pulse">
                                             Ready to Start
+                                        </span>
+                                    ) : isPreOpen ? (
+                                        <span className="px-3 py-1 bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest rounded-lg animate-pulse">
+                                            Starting Soon
                                         </span>
                                     ) : (
                                         <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest rounded-lg">
@@ -284,8 +296,8 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                                     <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 rounded-md">{exam.totalQuestions} Qs</span>
                                 </div>
 
-                                {/* Countdown bar — only while still waiting */}
-                                {countdownLabel && (
+                                {/* Countdown bar — only while still waiting outside the pre-open window */}
+                                {countdownLabel && !isPreOpen && (
                                     <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-black ${isImminent ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'}`}>
                                         <Clock size={13} className={isImminent ? 'animate-pulse' : ''} />
                                         <span className="uppercase tracking-wider">Starts in:</span>
@@ -293,14 +305,30 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                                     </div>
                                 )}
 
-                                {/* Start button — appears when time is up */}
-                                {isReady && (
+                                {/* Pre-open prompt — tells student to open and read rules */}
+                                {isPreOpen && (
+                                    <div className="mt-3 px-3 py-2 rounded-xl text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-2">
+                                        <Clock size={13} className="animate-pulse shrink-0" />
+                                        <span>Exam starts in <span className="font-mono font-black">{countdownLabel}</span> — open the rules now and get ready</span>
+                                    </div>
+                                )}
+
+                                {/* Start / Get Ready button */}
+                                {(isReady || isPreOpen) && (
                                     <button
                                         onClick={() => handleStartExamClick(exam)}
-                                        className="mt-4 w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl uppercase tracking-[0.12em] text-sm shadow-lg shadow-red-200 transition-all flex items-center justify-center gap-2"
+                                        className={`mt-4 w-full py-3.5 font-black rounded-2xl uppercase tracking-[0.12em] text-sm shadow-lg transition-all flex items-center justify-center gap-2 ${
+                                            isReady
+                                                ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-200'
+                                                : 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-200'
+                                        }`}
                                     >
                                         <AlertCircle size={16} className="animate-pulse" />
-                                        {exam.is_paid && !exam.hasPaid ? 'Unlock & Start' : `Start ${activeType.charAt(0).toUpperCase() + activeType.slice(1)} Now`}
+                                        {exam.is_paid && !exam.hasPaid
+                                            ? 'Unlock & Start'
+                                            : isReady
+                                            ? `Start ${activeType.charAt(0).toUpperCase() + activeType.slice(1)} Now`
+                                            : 'Get Ready — Read Rules'}
                                     </button>
                                 )}
                             </motion.div>
@@ -347,11 +375,13 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
             {/* Proctoring Warning Modal Overlay */}
             <AnimatePresence>
                 {showProctoringModal && activeExamCourse && (
-                    <ExamProctoringModal 
+                    <ExamProctoringModal
                         courseName={activeExamCourse}
+                        startDate={activeExamStartDate}
                         onCancel={() => {
                             setShowProctoringModal(false);
                             setActiveExamCourse(null);
+                            setActiveExamStartDate(null);
                         }}
                         onStartExam={() => setShowProctoringModal(false)}
                     />

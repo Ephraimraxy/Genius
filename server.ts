@@ -10029,6 +10029,34 @@ app.get('/api/student/materials/:id/preview', authenticateToken, async (req: any
 });
 
 // Lecturer: Delete Student from Roster
+app.put('/api/courses/roster/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = req.params;
+    const { name, email, matric_number } = req.body;
+    if (!name || !email || !matric_number) return res.status(400).json({ error: 'name, email, and matric_number are required' });
+
+    // Get current matric to find linked user
+    const existingRes = await pool.query('SELECT matric_number FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    if (existingRes.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
+    const oldMatric = existingRes.rows[0].matric_number;
+
+    await pool.query(
+      'UPDATE students_roster SET name=$1, email=$2, matric_number=$3 WHERE id=$4 AND tenant_id=$5',
+      [name, email, matric_number, id, req.tenant_id]
+    );
+    await pool.query(
+      "UPDATE users SET name=$1, email=$2, matric_number=$3 WHERE matric_number=$4 AND tenant_id=$5 AND role='student'",
+      [name, email, matric_number, oldMatric, req.tenant_id]
+    );
+
+    res.json({ success: true });
+  } catch (err: any) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Matric number or email already in use' });
+    res.status(500).json({ error: 'Update failed' });
+  }
+});
+
 app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
@@ -10040,6 +10068,7 @@ app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, asyn
     const matric = studentRes.rows[0].matric_number;
 
     // 2. Delete from users (clear all FK dependencies first)
+    await pool.query("DELETE FROM attendance_records WHERE student_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
     await pool.query("DELETE FROM transactions WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
     await pool.query("DELETE FROM exam_results WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
     await pool.query("DELETE FROM reviews WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
