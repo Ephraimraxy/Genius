@@ -327,7 +327,7 @@ const upload = multer({
     destination: (_req, _file, cb) => cb(null, '/tmp'),
     filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`),
   }),
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB — covers large video files
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2 GB — covers large video files
 });
 
 // Initialize OpenAI
@@ -8949,7 +8949,17 @@ app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req:
 });
 
 // File-based material upload — extracts text from PDF/DOCX before storing
-app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upload.single('file'), async (req: any, res: any) => {
+app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (req: any, res: any, next: any) => {
+  upload.single('file')(req, res, (err: any) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File is too large. Maximum allowed size is 2 GB for video and 500 MB for audio.' });
+      }
+      return res.status(400).json({ error: err.message || 'File upload error.' });
+    }
+    next();
+  });
+}, async (req: any, res: any) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file provided.' });
     const { type, name, categoryName, categoryId, isPaidEntry, entryFee } = req.body;
@@ -8958,8 +8968,14 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, upl
     const mime = req.file.mimetype;
     const origName = (req.file.originalname || '').toLowerCase();
     const isVideoOrAudio = mime.startsWith('video/') || mime.startsWith('audio/') ||
-      ['.mp4', '.mov', '.webm', '.mkv', '.avi', '.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac']
-        .some(ext => origName.endsWith(ext));
+      [
+        // Video
+        '.mp4', '.mov', '.mkv', '.webm', '.avi', '.flv', '.wmv', '.m4v', '.3gp', '.3g2',
+        '.ogv', '.ts', '.mts', '.m2ts', '.mpeg', '.mpg', '.hevc', '.h264', '.h265', '.asf', '.divx',
+        // Audio
+        '.mp3', '.wav', '.flac', '.aac', '.ogg', '.opus', '.m4a', '.wma', '.aiff', '.aif',
+        '.amr', '.3gp', '.caf', '.ra', '.rm'
+      ].some(ext => origName.endsWith(ext));
 
     // Read file buffer only when text extraction is needed (skip for video/audio)
     let textContent = '';
@@ -9491,18 +9507,30 @@ app.post('/api/attendance/mark', authenticateToken, async (req: any, res) => {
   }
 });
 
-// Student: View own attendance history
+// Student: View own attendance history (from attendance_records via sessions)
 app.get('/api/student/attendance', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const result = await pool.query(
-      `SELECT a.id, a.course_id, a.attended_at, a.reference
-       FROM attendance a
-       WHERE a.user_id = $1 AND a.tenant_id = $2
-       ORDER BY a.attended_at DESC`,
+      `SELECT ar.id, ar.session_id, ar.marked_at,
+              s.title as topic, s.course_code, s.session_date, s.is_paid, s.price
+       FROM attendance_records ar
+       JOIN attendance_sessions s ON s.id = ar.session_id
+       WHERE ar.student_id = $1 AND ar.tenant_id = $2
+       ORDER BY s.session_date DESC, ar.marked_at DESC`,
       [req.user.id, req.tenant_id]
     );
-    res.json({ success: true, attendance: result.rows });
+    const records = result.rows.map((r: any) => ({
+      session_id: r.session_id,
+      course_code: r.course_code || '—',
+      course_name: r.topic || '',
+      session_date: r.session_date,
+      topic: r.topic || '',
+      status: 'present',
+      access_type: r.is_paid ? 'paid' : 'free',
+      marked_at: r.marked_at
+    }));
+    res.json({ success: true, records });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch attendance' });
   }
@@ -10829,6 +10857,81 @@ app.get('/api/attendance/sessions/:id/records/pdf', authenticateToken, async (re
   }
 });
 
+// Student: Download own attendance records as PDF
+app.get('/api/student/attendance/pdf', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query(
+      `SELECT ar.student_name, ar.matric_number, ar.marked_at,
+              s.title as session_title, s.course_code, s.session_date, s.is_paid, s.price,
+              t.name as tenant_name
+       FROM attendance_records ar
+       JOIN attendance_sessions s ON s.id = ar.session_id
+       JOIN tenants t ON t.id = ar.tenant_id
+       WHERE ar.student_id = $1 AND ar.tenant_id = $2
+       ORDER BY ar.marked_at DESC`,
+      [req.user.id, req.tenant_id]
+    );
+    const rows = result.rows;
+    const studentName = rows[0]?.student_name || req.user.name || 'Student';
+    const tenantName = rows[0]?.tenant_name || 'Academic Portal';
+    const matric = rows[0]?.matric_number || '';
+    const now = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    const tableRows = rows.length === 0
+      ? `<tr><td colspan="5" style="text-align:center;padding:32px;color:#94a3b8;">No attendance records found.</td></tr>`
+      : rows.map((r, i) => `
+        <tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'};">
+          <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;">${i + 1}</td>
+          <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9;">${r.session_title}</td>
+          <td style="padding:10px 16px;font-size:11px;color:#475569;border-bottom:1px solid #f1f5f9;">${r.course_code || '—'}</td>
+          <td style="padding:10px 16px;font-size:11px;color:#64748b;border-bottom:1px solid #f1f5f9;">${r.session_date ? new Date(r.session_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
+          <td style="padding:10px 16px;font-size:11px;color:#64748b;border-bottom:1px solid #f1f5f9;">${new Date(r.marked_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
+        </tr>`).join('');
+
+    const html = `
+    <div style="background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:36px 40px 28px;color:#fff;border-radius:0 0 24px 24px;margin-bottom:32px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+        <div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:#93c5fd;margin-bottom:6px;">Student Attendance Report</div>
+          <div style="font-size:24px;font-weight:900;">${tenantName}</div>
+          <div style="font-size:15px;font-weight:600;color:#bfdbfe;margin-top:4px;">${studentName}</div>
+          <div style="font-size:11px;color:#93c5fd;margin-top:2px;">${matric ? 'Matric: ' + matric : ''}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:10px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Generated</div>
+          <div style="font-size:12px;color:#fff;font-weight:700;margin-top:2px;">${now}</div>
+          <div style="margin-top:10px;background:rgba(255,255,255,0.15);border-radius:10px;padding:8px 14px;text-align:center;">
+            <div style="font-size:24px;font-weight:900;color:#fff;">${rows.length}</div>
+            <div style="font-size:9px;color:#bfdbfe;font-weight:800;text-transform:uppercase;letter-spacing:1px;">Sessions Attended</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="margin:0 40px 32px;">
+      <table style="width:100%;border-collapse:collapse;border-radius:14px;overflow:hidden;border:1.5px solid #e2e8f0;">
+        <thead>
+          <tr style="background:linear-gradient(90deg,#1e40af,#2563eb);">
+            <th style="padding:12px 16px;text-align:left;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;">#</th>
+            <th style="padding:12px 16px;text-align:left;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;">Session</th>
+            <th style="padding:12px 16px;text-align:left;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;">Course Code</th>
+            <th style="padding:12px 16px;text-align:left;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;">Date</th>
+            <th style="padding:12px 16px;text-align:left;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;">Time Marked</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+
+    const pdfBuffer = await generateTranscriptPDF(html);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Attendance_${studentName.replace(/\s+/g, '_')}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to generate attendance PDF' });
+  }
+});
+
 // Student: Get open attendance sessions (for banner display)
 app.get('/api/student/attendance/open-sessions', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
@@ -10964,24 +11067,51 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
       };
     });
 
-    // 4. Dynamic Skills (Simplified: assign skills based on average scores in different types)
+    // 4. Skills based on actual type performance
+    const typeGroups: Record<string, number[]> = {};
+    for (const r of results.rows) {
+      const t = r.type || 'test';
+      if (!typeGroups[t]) typeGroups[t] = [];
+      typeGroups[t].push(Number(r.score) || 0);
+    }
+    const typeAvg = (type: string) => {
+      const arr = typeGroups[type] || [];
+      return arr.length ? arr.reduce((a: number, b: number) => a + b, 0) / arr.length : 0;
+    };
     const skills = [
-      { name: 'Practical Application', percent: Math.round(avgScore * 0.9 + 5), color: 'bg-emerald-500' },
-      { name: 'Theory & Logic', percent: Math.round(avgScore), color: 'bg-indigo-500' },
-      { name: 'Research Accuracy', percent: Math.round(avgScore * 0.8 + 10), color: 'bg-amber-500' },
-    ];
+      { name: 'Tests', percent: Math.round(typeAvg('test')), color: 'bg-indigo-500' },
+      { name: 'Assignments', percent: Math.round(typeAvg('assignment')), color: 'bg-emerald-500' },
+      { name: 'Exams', percent: Math.round(typeAvg('exam')), color: 'bg-amber-500' },
+    ].filter(s => s.percent > 0);
+
+    // 5. Real improvement: compare avg of first half vs second half of submissions
+    let improvement = 0;
+    if (results.rows.length >= 2) {
+      const sorted = [...results.rows].sort((a: any, b: any) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime());
+      const half = Math.floor(sorted.length / 2);
+      const earlier = sorted.slice(0, half).reduce((s: number, r: any) => s + (Number(r.score) || 0), 0) / half;
+      const later = sorted.slice(half).reduce((s: number, r: any) => s + (Number(r.score) || 0), 0) / (sorted.length - half);
+      improvement = earlier > 0 ? Math.round(((later - earlier) / earlier) * 100) : 0;
+    }
+
+    // 6. Attendance count
+    const attendanceRes = await pool.query(
+      'SELECT COUNT(*) as count FROM attendance_records WHERE student_id = $1 AND tenant_id = $2',
+      [req.user.id, req.tenant_id]
+    );
+    const attendanceCount = parseInt(attendanceRes.rows[0]?.count || '0');
 
     res.json({
       success: true,
       stats: [
-        { label: 'CGPA', value: cgpa, type: 'gpa' },
-        { label: 'Courses Passed', value: totalExams.toString(), type: 'count' },
+        { label: 'Avg Score', value: avgScore > 0 ? Math.round(avgScore) + '%' : '—', type: 'gpa' },
+        { label: 'Assessments', value: totalExams.toString(), type: 'count' },
         { label: 'Global Rank', value: globalRank, type: 'rank' },
-        { label: 'Total Credits', value: totalCredits.toString(), type: 'credits' }
+        { label: 'Attendance', value: attendanceCount.toString(), type: 'credits' }
       ],
-      records: records.slice(0, 5), // Latest 5
-      improvement: 12, // Placeholder
-      skills: skills || []
+      records,
+      improvement,
+      skills: skills.length > 0 ? skills : []
     });
   } catch (error) {
     console.error('Performance stats error:', error);

@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { 
-    Upload, 
-    Database, 
-    FileText, 
-    Users, 
-    CheckCircle, 
-    AlertTriangle, 
-    Trash2, 
+import React, { useState, useEffect, useRef } from 'react';
+import {
+    Upload,
+    Database,
+    FileText,
+    Users,
+    CheckCircle,
+    AlertTriangle,
+    Trash2,
     Search,
     RefreshCw,
     ShieldCheck,
@@ -14,12 +14,16 @@ import {
     Download,
     Mic,
     Volume2,
-    Eye
+    Eye,
+    AlertCircle,
+    Wifi,
+    X as XIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import FilePreviewModal from './FilePreviewModal';
 import { ToastType } from './ToastSystem';
 import { friendlyError } from '../utils/friendlyError';
+import { analyzeFile, FileAnalysis, formatFileSize } from '../utils/fileValidation';
 
 interface Resource {
     id: number;
@@ -42,6 +46,11 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [editingPrice, setEditingPrice] = useState<{id: number, val: string} | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadStatusMsg, setUploadStatusMsg] = useState('');
+    const [audioAnalysis, setAudioAnalysis] = useState<FileAnalysis | null>(null);
+    const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
+    const audioXhrRef = useRef<XMLHttpRequest | null>(null);
     const [uploadType, setUploadType] = useState<'roster' | 'material' | 'audio'>('roster');
     const [fileHandle, setFileHandle] = useState<File | null>(null);
     const [previewFile, setPreviewFile] = useState<File | string | null>(null);
@@ -175,8 +184,23 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setFileHandle(e.target.files[0]);
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setFileHandle(file);
+        setAudioAnalysis(null);
+        setAudioUploadError(null);
+        setUploadProgress(0);
+        setUploadStatusMsg('');
+
+        if (uploadType === 'audio') {
+            // Small delay for visual "analysing" feedback
+            setTimeout(() => {
+                const analysis = analyzeFile(file, 'audio');
+                setAudioAnalysis(analysis);
+                if (analysis.error) {
+                    setAudioUploadError(analysis.error);
+                }
+            }, 300);
         }
     };
 
@@ -189,9 +213,30 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             return;
         }
 
-        setIsUploading(true);
+        // Validate audio before uploading
+        if (uploadType === 'audio') {
+            if (audioAnalysis?.error) {
+                addToast(audioAnalysis.error, 'error');
+                return;
+            }
+            if (!audioAnalysis) {
+                // run analysis now if not yet done
+                const analysis = analyzeFile(fileHandle, 'audio');
+                setAudioAnalysis(analysis);
+                if (analysis.error) {
+                    setAudioUploadError(analysis.error);
+                    addToast(analysis.error, 'error');
+                    return;
+                }
+            }
+        }
 
-        // ─── AUDIO: Upload directly to R2 via file upload endpoint ───
+        setIsUploading(true);
+        setUploadProgress(0);
+        setAudioUploadError(null);
+        setUploadStatusMsg('Preparing upload...');
+
+        // ─── AUDIO: Upload directly to R2 via XHR for progress tracking ───
         if (uploadType === 'audio') {
             try {
                 const formData = new FormData();
@@ -203,19 +248,59 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 if (isPaidEntry) formData.append('isPaidEntry', 'true');
                 if (entryFee) formData.append('entryFee', String(entryFee));
 
-                const res = await fetch('/api/resources/upload/file', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: formData
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Upload failed');
+                await new Promise<void>((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    audioXhrRef.current = xhr;
 
-                addToast('Audio uploaded successfully!', 'success');
+                    xhr.upload.addEventListener('progress', (e) => {
+                        if (e.lengthComputable) {
+                            const pct = Math.round((e.loaded / e.total) * 100);
+                            setUploadProgress(pct);
+                            if (pct < 30) setUploadStatusMsg('Starting upload...');
+                            else if (pct < 70) setUploadStatusMsg('Uploading to cloud storage...');
+                            else if (pct < 95) setUploadStatusMsg('Almost there...');
+                            else setUploadStatusMsg('Finalising...');
+                        }
+                    });
+
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve();
+                        } else {
+                            let msg = `Upload failed (${xhr.status})`;
+                            try {
+                                const err = JSON.parse(xhr.responseText);
+                                if (err.error) msg = err.error;
+                                else if (xhr.status === 413) msg = 'File is too large. Maximum is 500 MB for audio.';
+                                else if (xhr.status === 415) msg = 'File format rejected by server. Try converting to MP3 or WAV.';
+                                else if (xhr.status === 500) msg = 'Server error during upload. Please try again.';
+                            } catch {
+                                if (xhr.status === 413) msg = 'File is too large. Maximum is 500 MB for audio.';
+                            }
+                            reject(new Error(msg));
+                        }
+                    };
+                    xhr.onerror = () => reject(new Error('Network error — check your internet connection.'));
+                    xhr.ontimeout = () => reject(new Error('Upload timed out. Try a smaller file or check your connection.'));
+                    xhr.timeout = 20 * 60 * 1000;
+
+                    xhr.open('POST', '/api/resources/upload/file');
+                    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                    xhr.send(formData);
+                });
+
+                setUploadStatusMsg('Upload complete!');
+                addToast(`"${fileHandle.name}" uploaded successfully!`, 'success');
                 fetchResources();
                 setFileHandle(null);
+                setAudioAnalysis(null);
+                setUploadProgress(0);
+                setUploadStatusMsg('');
             } catch (err: any) {
-                addToast(friendlyError(err, 'upload'), 'error');
+                const msg = err?.message || 'Upload failed. Please try again.';
+                setAudioUploadError(msg);
+                setUploadStatusMsg('');
+                addToast(msg, 'error');
             }
             setIsUploading(false);
             return;
@@ -415,43 +500,53 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                          
                          <div className="space-y-4 relative z-10">
                             <div className="flex p-1 bg-white/10 rounded-2xl border border-white/10">
-                                <button 
-                                    onClick={() => setUploadType('roster')}
-                                    className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${uploadType === 'roster' ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white'}`}
-                                >
-                                    Student Data
-                                </button>
-                                <button 
-                                    onClick={() => setUploadType('material')}
-                                    className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${uploadType === 'material' ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white'}`}
-                                >
-                                    Lecture Material
-                                </button>
-                                <button 
-                                    onClick={() => setUploadType('audio')}
-                                    className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${uploadType === 'audio' ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white'}`}
-                                >
-                                    Audio Record
-                                </button>
+                                {(['roster', 'material', 'audio'] as const).map(t => (
+                                    <button
+                                        key={t}
+                                        onClick={() => {
+                                            setUploadType(t);
+                                            setFileHandle(null);
+                                            setAudioAnalysis(null);
+                                            setAudioUploadError(null);
+                                            setUploadProgress(0);
+                                            setUploadStatusMsg('');
+                                        }}
+                                        className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${uploadType === t ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white'}`}
+                                    >
+                                        {t === 'roster' ? 'Student Data' : t === 'material' ? 'Lecture Material' : 'Audio Record'}
+                                    </button>
+                                ))}
                             </div>
 
-                            <div className="border-2 border-dashed border-white/20 rounded-[2rem] p-10 text-center hover:border-blue-400 hover:bg-white/5 transition-all cursor-pointer relative group">
+                            <div className={`border-2 border-dashed rounded-[2rem] p-8 text-center transition-all cursor-pointer relative group
+                                ${audioAnalysis?.error && uploadType === 'audio' ? 'border-rose-400/50 bg-rose-900/10' :
+                                  audioAnalysis && !audioAnalysis.error && uploadType === 'audio' ? 'border-indigo-400/60 bg-indigo-900/10' :
+                                  'border-white/20 hover:border-blue-400 hover:bg-white/5'}`}>
                                 <input
                                     type="file"
                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                    accept={uploadType === 'roster' ? '.csv,text/csv' : uploadType === 'audio' ? 'audio/*' : '.pdf,.docx,.doc,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.presentationml.presentation'}
+                                    accept={uploadType === 'roster' ? '.csv,text/csv' : uploadType === 'audio' ? 'audio/*,.mp3,.wav,.flac,.aac,.ogg,.opus,.m4a,.wma,.aiff,.amr,.3gp,.webm,.caf' : '.pdf,.docx,.doc,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.presentationml.presentation'}
                                     onChange={handleFileUpload}
+                                    disabled={isUploading}
                                 />
-                                <Upload className="mx-auto text-white/30 group-hover:text-blue-400 mb-4" size={32} />
+                                <Upload className={`mx-auto mb-3 transition-colors ${audioAnalysis?.error && uploadType === 'audio' ? 'text-rose-400' : audioAnalysis && uploadType === 'audio' ? 'text-indigo-400' : 'text-white/30 group-hover:text-blue-400'}`} size={28} />
                                 <p className="font-bold text-sm">
                                     {fileHandle ? fileHandle.name : 'Choose File'}
                                 </p>
-                                {uploadType === 'roster' && (
+                                {fileHandle && uploadType === 'audio' && (
+                                    <p className="text-[10px] text-white/50 mt-1">{formatFileSize(fileHandle.size)}</p>
+                                )}
+                                {uploadType === 'roster' && !fileHandle && (
                                     <p className="text-[10px] text-white/40 mt-2 text-center">
-                                        Support 3 columns: <span className="text-white/60 font-bold">Full Name, Matric, Email</span> for personalized onboarding.
+                                        3 columns: <span className="text-white/60 font-bold">Full Name, Matric, Email</span>
                                     </p>
                                 )}
-                                {fileHandle && (
+                                {uploadType === 'audio' && !fileHandle && (
+                                    <p className="text-[10px] text-white/40 mt-2">
+                                        MP3, WAV, FLAC, AAC, OGG, M4A, OPUS and more
+                                    </p>
+                                )}
+                                {fileHandle && uploadType !== 'audio' && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -466,13 +561,98 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 )}
                             </div>
 
+                            {/* Audio analysis feedback panel */}
+                            <AnimatePresence>
+                                {uploadType === 'audio' && fileHandle && audioAnalysis && !isUploading && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 6 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0 }}
+                                        className={`rounded-2xl p-4 space-y-2 ${audioAnalysis.error ? 'bg-rose-900/20 border border-rose-500/30' : audioAnalysis.warning ? 'bg-amber-900/20 border border-amber-500/30' : 'bg-emerald-900/20 border border-emerald-500/30'}`}
+                                    >
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="bg-white/10 rounded-xl p-2">
+                                                <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mb-0.5">Format</p>
+                                                <p className="text-sm font-black text-white">{audioAnalysis.formatLabel}</p>
+                                            </div>
+                                            <div className="bg-white/10 rounded-xl p-2">
+                                                <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mb-0.5">Size</p>
+                                                <p className="text-sm font-black text-white">{audioAnalysis.sizeFormatted}</p>
+                                            </div>
+                                        </div>
+                                        {audioAnalysis.error ? (
+                                            <div className="flex items-start gap-2 p-2.5 bg-rose-500/20 rounded-xl">
+                                                <AlertCircle size={14} className="text-rose-400 shrink-0 mt-0.5" />
+                                                <p className="text-[11px] font-bold text-rose-300">{audioAnalysis.error}</p>
+                                            </div>
+                                        ) : audioAnalysis.warning ? (
+                                            <div className="flex items-start gap-2 p-2.5 bg-amber-500/20 rounded-xl">
+                                                <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                                                <p className="text-[11px] font-bold text-amber-300">{audioAnalysis.warning}</p>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2 p-2.5 bg-emerald-500/20 rounded-xl">
+                                                <CheckCircle size={14} className="text-emerald-400 shrink-0" />
+                                                <p className="text-[11px] font-bold text-emerald-300">File is compatible and ready to upload.</p>
+                                            </div>
+                                        )}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* Audio upload progress */}
+                            <AnimatePresence>
+                                {uploadType === 'audio' && isUploading && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 4 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0 }}
+                                        className="bg-indigo-900/30 border border-indigo-500/30 rounded-2xl p-4 space-y-2"
+                                    >
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Wifi className="text-indigo-400 animate-pulse shrink-0" size={14} />
+                                            <p className="text-xs font-bold text-white flex-1">{uploadStatusMsg}</p>
+                                            <span className="text-sm font-black text-indigo-400">{uploadProgress}%</span>
+                                        </div>
+                                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                            <motion.div
+                                                className="h-full bg-indigo-500 rounded-full"
+                                                animate={{ width: `${uploadProgress}%` }}
+                                                transition={{ ease: 'linear', duration: 0.3 }}
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-white/40 truncate">{fileHandle?.name}</p>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* Audio upload error */}
+                            <AnimatePresence>
+                                {uploadType === 'audio' && audioUploadError && !isUploading && !audioAnalysis?.error && (
+                                    <motion.div
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        className="flex items-start gap-2 p-3 bg-rose-900/20 border border-rose-500/30 rounded-2xl"
+                                    >
+                                        <AlertCircle size={14} className="text-rose-400 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-[11px] font-black text-rose-300">Upload Failed</p>
+                                            <p className="text-[10px] text-rose-400">{audioUploadError}</p>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
                             <button
                                 onClick={processUpload}
-                                disabled={!fileHandle || isUploading}
-                                className={`w-full ${uploadType === 'audio' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'} text-white font-black py-4 rounded-2xl transition-all disabled:opacity-40 shadow-xl flex items-center justify-center gap-2`}
+                                disabled={!fileHandle || isUploading || (uploadType === 'audio' && !!audioAnalysis?.error)}
+                                className={`w-full ${uploadType === 'audio' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'} text-white font-black py-4 rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-xl flex items-center justify-center gap-2`}
                             >
                                 {isUploading ? <RefreshCw className="animate-spin" size={20} /> : (uploadType === 'audio' ? <Mic size={20} /> : <ShieldCheck size={20} />)}
-                                {isUploading ? (uploadType === 'audio' ? 'Neural Refining...' : 'Sanitizing...') : (uploadType === 'audio' ? 'Upload & Refine' : 'Upload & Sanitize')}
+                                {isUploading
+                                    ? (uploadType === 'audio' ? `Uploading ${uploadProgress}%...` : 'Sanitizing...')
+                                    : (uploadType === 'audio' ? (audioUploadError ? 'Retry Upload' : 'Upload Audio') : 'Upload & Sanitize')}
                             </button>
                             {uploadType === 'roster' && (
                                 <button

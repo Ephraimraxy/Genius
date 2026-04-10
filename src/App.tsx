@@ -27,6 +27,7 @@ import ToastSystem, { useToasts } from './components/ToastSystem';
 import StudentAuth from './components/StudentAuth';
 import StudentDashboard from './components/StudentDashboard';
 import StudentPerformance from './components/StudentPerformance';
+import StudentAttendancePage from './components/StudentAttendancePage';
 import SecurityGuidelines from './components/SecurityGuidelines';
 import CourseManagement from './components/CourseManagement';
 import PINSetup from './components/PINSetup';
@@ -564,6 +565,7 @@ export default function App() {
     if (isStudent && activeTab !== 'profile') {
         switch (activeTab) {
             case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
+            case 'attendance': return <StudentAttendancePage token={token!} addToast={addToast} onNavigate={setActiveTab} />;
             case 'guidelines': return <SecurityGuidelines onNavigate={setActiveTab} />;
             case 'materials': return <StudentMaterialView addToast={addToast} token={token} />;
             default: return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} confirm={confirm} />;
