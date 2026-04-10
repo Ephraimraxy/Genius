@@ -333,12 +333,17 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const togglePublish = async (id: number, current: string) => {
         const next = current === 'published' ? 'draft' : 'published';
         try {
-            await fetch(`/api/exams/${id}/publish`, {
+            const res = await fetch(`/api/exams/${id}/publish`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ published_status: next })
             });
-            addToast(next === 'published' ? 'Published — students can now see it' : 'Unpublished', 'success');
+            const data = await res.json();
+            if (!res.ok) {
+                addToast(data.error || 'Update failed', 'error');
+                return;
+            }
+            addToast(next === 'published' ? 'Published — students can now see it' : 'Moved to draft', 'success');
             fetchRecords();
         } catch { addToast('Update failed', 'error'); }
     };

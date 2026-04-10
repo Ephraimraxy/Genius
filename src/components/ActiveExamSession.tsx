@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, Save, ShieldAlert, CheckCircle2, ChevronRight, ChevronLeft, Maximize2, Video, Mic, AlertTriangle, Camera, Eye, EyeOff, XCircle } from 'lucide-react';
+import { Clock, Save, ShieldAlert, CheckCircle2, ChevronRight, ChevronLeft, Maximize2, AlertTriangle, Eye, EyeOff, XCircle } from 'lucide-react';
 import { ToastType } from './ToastSystem';
 import { friendlyError } from '../utils/friendlyError';
 
@@ -14,11 +14,11 @@ interface ActiveExamSessionProps {
     confirm?: (config: any) => Promise<boolean>;
 }
 
-type ExamPhase = 'briefing' | 'av_check' | 'av_denied' | 'active';
+type ExamPhase = 'loading' | 'active';
 
 export default function ActiveExamSession({ examId, courseName, matricNumber, addToast, onExamSubmit, token, confirm }: ActiveExamSessionProps) {
-    const [examPhase, setExamPhase] = useState<ExamPhase>('briefing');
-    const [avDeniedReason, setAvDeniedReason] = useState('');
+    const [examPhase, setExamPhase] = useState<ExamPhase>('loading');
+
 
     const [timeLeft, setTimeLeft] = useState(3600);
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -37,14 +37,9 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
     const lastActivityTime = useRef<number>(Date.now());
     const devToolsCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const analyserRef = useRef<AnalyserNode | null>(null);
-    const avStreamRef = useRef<MediaStream | null>(null);
-    const reqFrameRef = useRef<number>(0);
     const examContainerRef = useRef<HTMLDivElement>(null);
-    const videoRef = useRef<HTMLVideoElement>(null);
 
-    // ─── Fetch exam data on mount (while still in briefing) ──────────
+    // ─── Fetch exam data and auto-start immediately (no briefing screen) ──
     useEffect(() => {
         const initializeExam = async () => {
             if (!token) return;
@@ -74,8 +69,11 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
                     } else {
                         if (exam.duration) setTimeLeft(exam.duration * 60);
                     }
+                    // Auto-start: enter fullscreen and go active immediately
+                    try { await document.documentElement.requestFullscreen(); } catch (e) {}
+                    setExamPhase('active');
                 } else {
-                    addToast('Failed to load exam questions.', 'error');
+                    addToast('Exam has no questions. Contact your lecturer.', 'error');
                 }
             } catch (err: any) {
                 addToast(friendlyError(err, 'load'), 'error');
@@ -134,56 +132,9 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
         });
     }, [triggerAutoSubmit, addToast]);
 
-    // ─── AV Monitoring ───────────────────────────────────────────────
-    const stopAVMonitoring = () => {
-        if (reqFrameRef.current) cancelAnimationFrame(reqFrameRef.current);
-        if (avStreamRef.current) avStreamRef.current.getTracks().forEach(t => t.stop());
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') audioContextRef.current.close();
-    };
+    const stopAVMonitoring = () => { /* AV monitoring removed */ };
 
-    const startAVMonitoring = async (stream: MediaStream) => {
-        avStreamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
-        try {
-            audioContextRef.current = new window.AudioContext();
-            analyserRef.current = audioContextRef.current.createAnalyser();
-            analyserRef.current.fftSize = 256;
-            const source = audioContextRef.current.createMediaStreamSource(stream);
-            source.connect(analyserRef.current);
-            const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-            const checkVolume = () => {
-                if (!analyserRef.current) return;
-                analyserRef.current.getByteFrequencyData(dataArray);
-                const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-                if (avg > 85) incrementRisk(5, 'Speech or loud audio detected near device');
-                reqFrameRef.current = requestAnimationFrame(checkVolume);
-            };
-            checkVolume();
-        } catch (e) { console.error('Audio analysis failed', e); }
-    };
-
-    // ─── Request AV and start exam ───────────────────────────────────
-    const requestAVAndStart = async () => {
-        setExamPhase('av_check');
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            await startAVMonitoring(stream);
-            // Enter fullscreen first
-            try {
-                await document.documentElement.requestFullscreen();
-            } catch (e) { /* some browsers need the element */ }
-            setExamPhase('active');
-        } catch (err: any) {
-            const msg = err?.name === 'NotAllowedError'
-                ? 'Camera and microphone access was denied. You must allow both to take this exam.'
-                : err?.name === 'NotFoundError'
-                ? 'No camera or microphone found on this device. Both are required.'
-                : `Could not access camera/microphone: ${err?.message}`;
-            setAvDeniedReason(msg);
-            setExamPhase('av_denied');
-        }
-    };
-
+    // ─── Start exam (no AV required) ────────────────────────────────
     // ─── Security event listeners (active phase only) ─────────────────
     useEffect(() => {
         if (examPhase !== 'active') return;
@@ -374,113 +325,16 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
     const watermarkPattern = Array(200).fill(matricNumber).join('        ');
 
     // ═══════════════════════════════════════════════════════════════
-    // PHASE: BRIEFING
+    // PHASE: LOADING (questions fetching in background)
     // ═══════════════════════════════════════════════════════════════
-    if (examPhase === 'briefing') {
+    if (examPhase === 'loading') {
         return (
-            <div className="fixed inset-0 bg-slate-950 z-[200] flex items-center justify-center p-4 overflow-y-auto">
-                <motion.div
-                    initial={{ opacity: 0, y: 24 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="w-full max-w-2xl"
-                >
-                    {/* Header */}
-                    <div className="text-center mb-8">
-                        <div className="w-20 h-20 bg-rose-500/20 border-2 border-rose-500/40 rounded-3xl flex items-center justify-center mx-auto mb-5">
-                            <ShieldAlert size={40} className="text-rose-400" />
-                        </div>
-                        <h1 className="text-3xl font-black text-white tracking-tight">Secure Exam Environment</h1>
-                        <p className="text-slate-400 mt-2 font-medium">{courseName}</p>
-                    </div>
-
-                    {/* Rules panel */}
-                    <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 mb-6 space-y-4">
-                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-5">Read carefully before proceeding</p>
-
-                        {[
-                            { icon: Camera, color: 'text-rose-400', title: 'Camera & Microphone Required', desc: 'Your camera and microphone MUST be active throughout the entire exam. Denying access will prevent you from starting.' },
-                            { icon: Maximize2, color: 'text-indigo-400', title: 'Fullscreen Lock', desc: 'The exam runs in fullscreen mode. Exiting fullscreen at any point will immediately auto-submit your exam, regardless of progress.' },
-                            { icon: Eye, color: 'text-amber-400', title: 'Tab Switching & Window Minimising', desc: 'Switching to another browser tab, another app, or minimising this window will trigger an immediate auto-submission.' },
-                            { icon: XCircle, color: 'text-rose-400', title: 'Right-Click & Inspect Disabled', desc: 'Right-clicking, keyboard shortcuts (Ctrl+C, F12, Ctrl+Shift+I, PrintScreen) and all developer tools are fully blocked. Attempting to open them auto-submits your exam.' },
-                            { icon: Mic, color: 'text-emerald-400', title: 'Audio Monitoring Active', desc: 'Ambient audio is monitored in real-time. Loud or suspicious speech near your device will be flagged and scored against you.' },
-                            { icon: AlertTriangle, color: 'text-amber-400', title: 'Behaviour Integrity Scoring', desc: 'Every unusual action increases your risk score. At 25 points, your exam auto-submits and the violation log is sent to your lecturer.' },
-                        ].map(({ icon: Icon, color, title, desc }) => (
-                            <div key={title} className="flex items-start gap-4 p-4 bg-slate-800/60 rounded-2xl border border-slate-700/50">
-                                <Icon size={22} className={`${color} shrink-0 mt-0.5`} />
-                                <div>
-                                    <p className="font-bold text-white text-sm">{title}</p>
-                                    <p className="text-slate-400 text-xs mt-1 leading-relaxed">{desc}</p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Consent banner */}
-                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 mb-6">
-                        <p className="text-amber-300 text-sm font-bold text-center leading-relaxed">
-                            By proceeding, you confirm that you are alone in a quiet environment, your device is connected to the internet, and you are ready to complete this exam without interruption.
-                        </p>
-                    </div>
-
-                    <button
-                        onClick={requestAVAndStart}
-                        disabled={shuffledQuestions.length === 0}
-                        className="w-full py-5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-black text-base uppercase tracking-widest rounded-2xl transition-all shadow-2xl shadow-indigo-900/40 flex items-center justify-center gap-3"
-                    >
-                        <Camera size={20} />
-                        {shuffledQuestions.length === 0 ? 'Loading Exam...' : 'I Understand — Enable Camera & Start Exam'}
-                    </button>
-                </motion.div>
-            </div>
-        );
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // PHASE: AV CHECK (requesting permissions)
-    // ═══════════════════════════════════════════════════════════════
-    if (examPhase === 'av_check') {
-        return (
-            <div className="fixed inset-0 bg-slate-950 z-[200] flex items-center justify-center p-6">
+            <div className="fixed inset-0 bg-slate-950 z-[200] flex flex-col items-center justify-center gap-5">
+                <div className="w-14 h-14 rounded-full border-4 border-indigo-500/30 border-t-indigo-500 animate-spin" />
                 <div className="text-center">
-                    <div className="w-24 h-24 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
-                        <Camera size={44} className="text-indigo-400" />
-                    </div>
-                    <h2 className="text-2xl font-black text-white mb-3">Requesting Access…</h2>
-                    <p className="text-slate-400 text-sm max-w-sm mx-auto">Please allow camera and microphone access in the browser prompt above. This is required to continue.</p>
+                    <p className="text-white font-black text-lg">Preparing Your Exam</p>
+                    <p className="text-slate-400 text-sm mt-1">{courseName}</p>
                 </div>
-            </div>
-        );
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // PHASE: AV DENIED
-    // ═══════════════════════════════════════════════════════════════
-    if (examPhase === 'av_denied') {
-        return (
-            <div className="fixed inset-0 bg-slate-950 z-[200] flex items-center justify-center p-6">
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md text-center">
-                    <div className="w-24 h-24 bg-rose-500/20 border-2 border-rose-500/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <XCircle size={48} className="text-rose-400" />
-                    </div>
-                    <h2 className="text-2xl font-black text-white mb-3">Access Denied</h2>
-                    <p className="text-slate-300 text-sm mb-2 leading-relaxed">{avDeniedReason}</p>
-                    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 mt-5 mb-6 text-left space-y-2">
-                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">How to fix this</p>
-                        <p className="text-slate-300 text-xs leading-relaxed">1. Click the <strong className="text-white">camera icon</strong> (🔒) in your browser's address bar.</p>
-                        <p className="text-slate-300 text-xs leading-relaxed">2. Set both <strong className="text-white">Camera</strong> and <strong className="text-white">Microphone</strong> to <strong className="text-emerald-400">Allow</strong>.</p>
-                        <p className="text-slate-300 text-xs leading-relaxed">3. Click <strong className="text-white">Try Again</strong> below.</p>
-                    </div>
-                    <div className="flex gap-3">
-                        <button onClick={() => onExamSubmit('left', 'Left before starting')}
-                            className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all">
-                            Leave Exam
-                        </button>
-                        <button onClick={requestAVAndStart}
-                            className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl transition-all">
-                            Try Again
-                        </button>
-                    </div>
-                </motion.div>
             </div>
         );
     }

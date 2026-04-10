@@ -10546,6 +10546,23 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { published_status } = req.body; // 'published' | 'draft'
+
+    // Gate: cannot publish an exam/test that has no questions
+    if (published_status === 'published') {
+      const examRow = await pool.query('SELECT type FROM exams WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+      if (examRow.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
+
+      // Only enforce question check for exam/test (not assignments which are text/file-based)
+      if (examRow.rows[0].type !== 'assignment') {
+        const qCount = await pool.query('SELECT COUNT(*) FROM questions WHERE exam_id = $1', [req.params.id]);
+        if (parseInt(qCount.rows[0].count) === 0) {
+          return res.status(422).json({
+            error: 'Cannot publish — no questions have been generated yet. The exam will remain as a draft until AI question generation completes.'
+          });
+        }
+      }
+    }
+
     await pool.query(
       'UPDATE exams SET published_status = $1, is_available = $2 WHERE id = $3 AND tenant_id = $4',
       [published_status, published_status === 'published', req.params.id, req.tenant_id]
