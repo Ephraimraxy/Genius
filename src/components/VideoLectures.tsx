@@ -8,7 +8,8 @@ import {
     Film,
     Plus,
     X,
-    CheckCircle
+    CheckCircle,
+    Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ToastType } from './ToastSystem';
@@ -34,6 +35,7 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
     const [videos, setVideos] = useState<VideoItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isUploading, setIsUploading] = useState(false);
+    const [priceInputs, setPriceInputs] = useState<Record<number, string>>({});
     const [uploadProgress, setUploadProgress] = useState(0);
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
@@ -238,40 +240,63 @@ export default function VideoLectures({ addToast, token }: VideoLecturesProps) {
                                 </p>
 
                                 {/* Controls */}
-                                <div className="flex items-center gap-2 pt-4 border-t border-slate-100">
-                                    <div className="flex items-center gap-2 flex-1">
+                                <div className="pt-4 border-t border-slate-100 space-y-3">
+                                    <div className="flex items-center gap-2">
                                         <button
-                                            onClick={() => updateSettings(video.id, { is_paid: !video.is_paid })}
+                                            onClick={() => {
+                                                const becomingPaid = !video.is_paid;
+                                                if (!becomingPaid) {
+                                                    // switching to free — save immediately
+                                                    updateSettings(video.id, { is_paid: false, price: 0 });
+                                                    setPriceInputs(prev => { const n = { ...prev }; delete n[video.id]; return n; });
+                                                } else {
+                                                    // switching to paid — just flip UI, wait for save
+                                                    setVideos(prev => prev.map(v => v.id === video.id ? { ...v, is_paid: true } : v));
+                                                    setPriceInputs(prev => ({ ...prev, [video.id]: String(video.price || '') }));
+                                                }
+                                            }}
                                             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
                                                 video.is_paid ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-400'
                                             }`}
                                         >
                                             {video.is_paid ? 'Paid' : 'Free'}
                                         </button>
-                                        {video.is_paid && (
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-[10px] font-black text-slate-400">₦</span>
-                                                <input
-                                                    type="number"
-                                                    defaultValue={video.price || 0}
-                                                    onBlur={(e) => updateSettings(video.id, { price: parseInt(e.target.value) || 0 })}
-                                                    className="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold"
-                                                />
-                                            </div>
-                                        )}
+                                        <div className="flex-1" />
+                                        <button
+                                            onClick={() => updateSettings(video.id, { is_available: !video.is_available })}
+                                            className={`w-10 h-5 rounded-full relative transition-colors flex-shrink-0 ${video.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                        >
+                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${video.is_available ? 'right-1' : 'left-1'}`} />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(video.id)}
+                                            className="p-2 text-slate-300 hover:text-rose-600 transition-all"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
                                     </div>
-                                    <button
-                                        onClick={() => updateSettings(video.id, { is_available: !video.is_available })}
-                                        className={`w-10 h-5 rounded-full relative transition-colors ${video.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                                    >
-                                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${video.is_available ? 'right-1' : 'left-1'}`} />
-                                    </button>
-                                    <button
-                                        onClick={() => handleDelete(video.id)}
-                                        className="p-2 text-slate-300 hover:text-rose-600 transition-all"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
+                                    {video.is_paid && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] font-black text-slate-400">₦</span>
+                                            <input
+                                                type="number"
+                                                value={priceInputs[video.id] ?? String(video.price || '')}
+                                                onChange={(e) => setPriceInputs(prev => ({ ...prev, [video.id]: e.target.value }))}
+                                                placeholder="Enter price"
+                                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:border-violet-400 transition-all"
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    const price = parseInt(priceInputs[video.id] || '0') || 0;
+                                                    updateSettings(video.id, { is_paid: true, price });
+                                                    setPriceInputs(prev => ({ ...prev, [video.id]: String(price) }));
+                                                }}
+                                                className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"
+                                            >
+                                                <Save size={12} /> Save
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </motion.div>
