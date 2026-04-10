@@ -10173,8 +10173,9 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
     await pool.query("DELETE FROM exam_results WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM reviews WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM chat_messages WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
+    await pool.query("DELETE FROM attendance_records WHERE student_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM profiles WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
-    await pool.query('DELETE FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = \'student\'', [id, req.tenant_id]);
+    await pool.query("DELETE FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student'", [id, req.tenant_id]);
     await pool.query('DELETE FROM students_roster WHERE category_id = $1 AND tenant_id = $2', [id, req.tenant_id]);
 
     // 3. Delete the category itself
