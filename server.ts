@@ -7342,6 +7342,7 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
         await pool.query('UPDATE users SET category_id = NULL WHERE tenant_id = $1', [tid]);
         // Clear all FK dependencies before deleting student users
         await pool.query("DELETE FROM transactions WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1 AND role = 'student')", [tid]);
+        await pool.query("DELETE FROM exam_answers WHERE student_id IN (SELECT id FROM users WHERE tenant_id = $1 AND role = 'student')", [tid]);
         await pool.query("DELETE FROM exam_results WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1 AND role = 'student')", [tid]);
         await pool.query("DELETE FROM reviews WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1 AND role = 'student')", [tid]);
         await pool.query("DELETE FROM chat_messages WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1 AND role = 'student')", [tid]);
@@ -7367,6 +7368,7 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
 
     // Finally delete the lecturer user account (clear all FK dependencies first)
     await pool.query('DELETE FROM transactions WHERE user_id = $1', [id]);
+    await pool.query('DELETE FROM exam_answers WHERE student_id = $1', [id]);
     await pool.query('DELETE FROM exam_results WHERE user_id = $1', [id]);
     await pool.query('DELETE FROM reviews WHERE user_id = $1', [id]);
     await pool.query('DELETE FROM chat_messages WHERE user_id = $1', [id]);
@@ -10195,6 +10197,7 @@ app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, asyn
     // 2. Delete from users (clear all FK dependencies first)
     await pool.query("DELETE FROM attendance_records WHERE student_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
     await pool.query("DELETE FROM transactions WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
+    await pool.query("DELETE FROM exam_answers WHERE student_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
     await pool.query("DELETE FROM exam_results WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
     await pool.query("DELETE FROM reviews WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
     await pool.query("DELETE FROM chat_messages WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
@@ -10368,6 +10371,7 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
 
     // 3. Delete all students in this category (clear remaining FK dependencies first)
     await pool.query("DELETE FROM transactions WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
+    await pool.query("DELETE FROM exam_answers WHERE student_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM exam_results WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM reviews WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM chat_messages WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
@@ -12504,7 +12508,8 @@ async function startServer() {
         const fs = (await import('fs')).default;
         const path = (await import('path')).default;
         const assetPath = path.join(process.cwd(), 'dist/assets', req.path);
-        if (!fs.existsSync(assetPath)) {
+        const isLegacyAsset = ['/js/qr_modal.js', '/js/auth.js', '/js/message.js'].includes(req.path);
+        if (!fs.existsSync(assetPath) && !isLegacyAsset) {
           console.warn(`[Static Asset 404]: ${req.path} not found at ${assetPath}`);
         }
       } catch (e) {
