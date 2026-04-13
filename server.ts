@@ -10380,7 +10380,10 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
     await pool.query("DELETE FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student'", [id, req.tenant_id]);
     await pool.query('DELETE FROM students_roster WHERE category_id = $1 AND tenant_id = $2', [id, req.tenant_id]);
 
-    // 4. Delete the category itself
+    // 4. Delete resources referencing this category (resources_category_id_fkey)
+    await pool.query('DELETE FROM resources WHERE category_id = $1', [id]);
+
+    // 5. Delete the category itself
     await pool.query('DELETE FROM student_categories WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
 
     res.json({ success: true, message: 'Batch category and all associated student records deleted successfully' });
@@ -12509,7 +12512,9 @@ async function startServer() {
         const path = (await import('path')).default;
         const assetPath = path.join(process.cwd(), 'dist/assets', req.path);
         const isLegacyAsset = ['/js/qr_modal.js', '/js/auth.js', '/js/message.js'].includes(req.path);
-        if (!fs.existsSync(assetPath) && !isLegacyAsset) {
+        // Suppress noisy 404s for .env probes and .map sourcemap requests
+        const isSuppressed = req.path.endsWith('.map') || req.path === '/.env' || req.path.endsWith('.env');
+        if (!fs.existsSync(assetPath) && !isLegacyAsset && !isSuppressed) {
           console.warn(`[Static Asset 404]: ${req.path} not found at ${assetPath}`);
         }
       } catch (e) {
