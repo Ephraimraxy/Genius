@@ -16,28 +16,35 @@ import multer from 'multer';
 // @ts-ignore
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-// Lazy pdf-parse loader — resolved on first call to avoid ESM/CJS startup crashes on Node 22.
+// Lazy pdf-parse loader — resolved on first call to avoid ESM/CJS startup crashes on Node 22+.
 let _pdfParseImpl: ((buffer: Buffer, options?: any) => Promise<any>) | null = null;
 async function pdfParse(buffer: Buffer, options?: any): Promise<any> {
   if (!_pdfParseImpl) {
-    // 1. Try ESM dynamic import (works with pdf-parse v2 on Node 22)
-    try {
-      const mod: any = await import('pdf-parse');
-      const fn = typeof mod?.default === 'function' ? mod.default
-               : typeof mod === 'function'          ? mod
-               : null;
-      if (fn) { _pdfParseImpl = fn; }
-    } catch (_) {}
+    // Helper: pick the first callable out of any module shape
+    const pickFn = (m: any): ((buf: Buffer, opts?: any) => Promise<any>) | null => {
+      if (typeof m === 'function') return m;
+      if (typeof m?.default === 'function') return m.default;
+      // pdf-parse v2 wraps with a second .default layer in some bundlers
+      if (typeof m?.default?.default === 'function') return m.default.default;
+      if (typeof m?.parse === 'function') return m.parse;
+      return null;
+    };
 
-    // 2. Fallback: CJS require paths
+    // 1. CJS require — most reliable in tsx/ts-node hybrid environments
+    for (const p of ['pdf-parse/lib/pdf-parse.js', 'pdf-parse']) {
+      try {
+        const fn = pickFn(require(p));
+        if (fn) { _pdfParseImpl = fn; break; }
+      } catch (_) {}
+    }
+
+    // 2. ESM dynamic import fallback (pdf-parse v2 pure-ESM builds)
     if (!_pdfParseImpl) {
-      for (const path of ['pdf-parse/lib/pdf-parse.js', 'pdf-parse']) {
-        try {
-          const m = require(path);
-          const fn = typeof m === 'function' ? m : (typeof m?.default === 'function' ? m.default : null);
-          if (fn) { _pdfParseImpl = fn; break; }
-        } catch (_) {}
-      }
+      try {
+        const mod: any = await import('pdf-parse');
+        const fn = pickFn(mod);
+        if (fn) { _pdfParseImpl = fn; }
+      } catch (_) {}
     }
 
     if (!_pdfParseImpl) {
@@ -7325,11 +7332,15 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req: any, res) => {
       const tid = user.tenant_id;
 
       if (scope.deleteExams) {
-        // exam_results has no ON DELETE CASCADE — must delete manually first
+        // Must delete all child rows in dependency order before deleting exams
         await pool.query('DELETE FROM exam_results WHERE exam_id IN (SELECT id FROM exams WHERE tenant_id = $1)', [tid]);
         await pool.query('DELETE FROM exam_results WHERE tenant_id = $1', [tid]);
+        await pool.query('DELETE FROM exam_answers WHERE exam_id IN (SELECT id FROM exams WHERE tenant_id = $1)', [tid]);
         await pool.query('DELETE FROM exam_answers WHERE tenant_id = $1', [tid]);
-        // exams cascade-deletes: questions, exam_slots, assignment_submissions
+        await pool.query('DELETE FROM assignment_submissions WHERE exam_id IN (SELECT id FROM exams WHERE tenant_id = $1)', [tid]);
+        await pool.query('DELETE FROM exam_slots WHERE exam_id IN (SELECT id FROM exams WHERE tenant_id = $1)', [tid]);
+        await pool.query('DELETE FROM exam_materials WHERE exam_id IN (SELECT id FROM exams WHERE tenant_id = $1)', [tid]);
+        await pool.query('DELETE FROM questions WHERE exam_id IN (SELECT id FROM exams WHERE tenant_id = $1)', [tid]);
         await pool.query('DELETE FROM exams WHERE tenant_id = $1', [tid]);
       }
 
@@ -10372,6 +10383,7 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
     // 3. Delete all students in this category (clear remaining FK dependencies first)
     await pool.query("DELETE FROM transactions WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM exam_answers WHERE student_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
+    await pool.query("DELETE FROM exam_slots WHERE student_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM exam_results WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM reviews WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
     await pool.query("DELETE FROM chat_messages WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
