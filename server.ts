@@ -8676,9 +8676,20 @@ app.get('/api/payment/verify/:reference', authenticateToken, async (req: any, re
 // Check if the user has an unused publication credit (paid but not yet linked to a paper)
 app.get('/api/payment/credit', authenticateToken, async (req: any, res) => {
   try {
+    // Self-heal: if a paper was deleted externally (paper_id cleared) but consumed flag
+    // was never reset, the credit is stranded. Fix it here so the user isn't blocked.
+    await pool.query(
+      `UPDATE transactions
+       SET metadata = metadata || '{"consumed": false}'::jsonb
+       WHERE user_id = $1 AND type = 'publication' AND status = 'success'
+         AND paper_id IS NULL AND (metadata->>'consumed')::boolean IS TRUE`,
+      [req.user.id]
+    );
+
     const result = await pool.query(
-      `SELECT reference FROM transactions 
-       WHERE user_id = $1 AND type = 'publication' AND status = 'success' AND paper_id IS NULL
+      `SELECT reference FROM transactions
+       WHERE user_id = $1 AND type = 'publication' AND status = 'success'
+         AND paper_id IS NULL AND (metadata->>'consumed')::boolean IS NOT TRUE
        ORDER BY created_at DESC LIMIT 1`,
       [req.user.id]
     );
