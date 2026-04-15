@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { friendlyError } from '../utils/friendlyError';
 import {
     Upload,
     Database,
@@ -171,9 +172,9 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 addToast(data.message, 'success');
                 setRosterStudents(prev => prev.map(s => s.id === studentId ? { ...s, email_status: 'sent' } : s));
             } else {
-                addToast(data.error || 'Resend failed', 'error');
+                addToast(friendlyError({ message: data.error }, 'generic'), 'error');
             }
-        } catch { addToast('Network error', 'error'); }
+        } catch { addToast(friendlyError(new Error('network error'), 'generic'), 'error'); }
         setResendingId(null);
     };
 
@@ -192,9 +193,9 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 const r2 = await fetch('/api/courses/roster', { headers: { 'Authorization': `Bearer ${token}` } });
                 setRosterStudents(await r2.json());
             } else {
-                addToast(data.error || 'Bulk resend failed', 'error');
+                addToast(friendlyError({ message: data.error }, 'generic'), 'error');
             }
-        } catch { addToast('Network error', 'error'); }
+        } catch { addToast(friendlyError(new Error('network error'), 'generic'), 'error'); }
         setBulkResending(false);
     };
 
@@ -211,9 +212,9 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 setRosterStudents(prev => prev.filter(s => s.id !== id));
                 setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
             } else {
-                addToast(data.error || 'Delete failed', 'error');
+                addToast(friendlyError({ message: data.error }, 'delete'), 'error');
             }
-        } catch { addToast('Network error', 'error'); }
+        } catch { addToast(friendlyError(new Error('network error'), 'generic'), 'error'); }
         setDeletingId(null);
     };
 
@@ -251,9 +252,9 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 addToast(newState ? 'Student suspended' : 'Student unsuspended', 'success');
                 setRosterStudents(prev => prev.map(s => s.id === student.id ? { ...s, is_suspended: newState } : s));
             } else {
-                addToast(data.error || 'Failed', 'error');
+                addToast(friendlyError({ message: data.error }, 'save'), 'error');
             }
-        } catch { addToast('Network error', 'error'); }
+        } catch { addToast(friendlyError(new Error('network error'), 'generic'), 'error'); }
         setSuspendingId(null);
     };
 
@@ -272,9 +273,9 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 setRosterStudents(prev => prev.map(s => selectedIds.has(s.id) ? { ...s, is_suspended: suspend } : s));
                 setSelectedIds(new Set());
             } else {
-                addToast(data.error || 'Failed', 'error');
+                addToast(friendlyError({ message: data.error }, 'save'), 'error');
             }
-        } catch { addToast('Network error', 'error'); }
+        } catch { addToast(friendlyError(new Error('network error'), 'generic'), 'error'); }
         setBulkSuspending(false);
     };
 
@@ -293,9 +294,9 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 setRosterStudents(prev => prev.map(s => s.id === editingStudent.id ? { ...s, name: editName, email: editEmail, matric_number: editMatric } : s));
                 setEditingStudent(null);
             } else {
-                addToast(data.error || 'Update failed', 'error');
+                addToast(friendlyError({ message: data.error }, 'save'), 'error');
             }
-        } catch { addToast('Network error', 'error'); }
+        } catch { addToast(friendlyError(new Error('network error'), 'generic'), 'error'); }
         setIsSavingEdit(false);
     };
 
@@ -476,7 +477,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                         setSelectedCatId('');
                         setNewCatName('');
                     } else {
-                        addToast(data.error || 'Upload failed', 'error');
+                        addToast(friendlyError({ message: data.error }, 'upload'), 'error');
                     }
                 } catch (err) {
                     addToast('Network error during upload', 'error');
@@ -509,7 +510,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 fetchResources();
                 setFileHandle(null);
             } else {
-                addToast(data.error || 'Upload failed', 'error');
+                addToast(friendlyError({ message: data.error }, 'upload'), 'error');
             }
         } catch (err) {
             addToast('Network error during upload', 'error');

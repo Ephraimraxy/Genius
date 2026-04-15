@@ -53,6 +53,38 @@ async function pdfParse(buffer: Buffer, options?: any): Promise<any> {
   }
   return _pdfParseImpl(buffer, options);
 }
+// ─── Server-side friendly error sanitizer ────────────────────────────────────
+// Converts raw DB/system errors into safe, human-readable messages.
+// Never exposes stack traces, constraint names, or internal details to clients.
+function friendlyServerError(err: any): string {
+  const code: string = err?.code || '';
+  const msg: string = String(err?.message || '').toLowerCase();
+
+  // PostgreSQL error codes
+  if (code === '23503') return 'This action could not be completed because some linked records still exist. Please remove them first.';
+  if (code === '23505') return 'This record already exists and cannot be duplicated.';
+  if (code === '23502') return 'A required field is missing. Please fill in all required information.';
+  if (code === '42703') return 'A data configuration issue occurred. Please contact support.';
+  if (code === '08006' || code === '08001' || code === '08004') return 'Could not connect to the database. Please try again in a moment.';
+
+  // File / PDF issues
+  if (msg.includes('pdf-parse') || msg.includes('pdf parsing') || msg.includes('no callable export')) return 'The uploaded file could not be read. Please re-save it and try again.';
+  if (msg.includes('enoent') || msg.includes('no such file')) return 'The requested file could not be found. It may have been moved or deleted.';
+  if (msg.includes('body element') || msg.includes('corrupt')) return 'The file appears to be corrupted. Please re-save it and upload again.';
+
+  // Auth / permission
+  if (msg.includes('jwt') || msg.includes('token') || msg.includes('unauthorized')) return 'Your session has expired. Please log in again.';
+
+  // JSON / parse
+  if (msg.includes('json') && msg.includes('parse')) return 'Invalid data received. Please refresh and try again.';
+
+  // Network / timeout
+  if (msg.includes('timeout') || msg.includes('timed out')) return 'The request took too long. Please try again.';
+  if (msg.includes('econnrefused') || msg.includes('network')) return 'A connection error occurred. Please try again.';
+
+  return 'Something went wrong on our end. Please try again.';
+}
+
 import mammoth from 'mammoth';
 const WordExtractor = require('word-extractor');
 const officeParser = require('officeparser');
@@ -2081,7 +2113,7 @@ app.post('/api/payment/portal-entry/initialize', authenticateToken, async (req: 
     });
   } catch (err: any) {
     console.error('Portal entry payment init error:', err);
-    res.status(500).json({ error: 'Payment initialization failed', details: err.message });
+    res.status(500).json({ error: 'Payment could not be initialized. Please try again or contact support.' });
   }
 });
 
@@ -7516,8 +7548,21 @@ app.delete('/api/admin/papers/:id', authenticateToken, async (req: any, res) => 
     // Cascade delete in correct order to avoid FK violations
     await pool.query('DELETE FROM paper_references WHERE paper_id = $1', [id]);
     await pool.query('DELETE FROM reviews WHERE paper_id = $1', [id]);
-    // Nullify paper_id on ALL transactions (including successful ones) to release FK
-    await pool.query('UPDATE transactions SET paper_id = NULL WHERE paper_id = $1', [id]);
+    // Nullify paper_id and restore the publication credit so the user can re-submit.
+    // The 'consumed' flag must be cleared — otherwise the credit check sees paper_id IS NULL
+    // (restored by this update) but the upload check still sees consumed=true and returns 402.
+    await pool.query(
+      `UPDATE transactions
+       SET paper_id = NULL,
+           metadata = metadata || '{"consumed": false}'::jsonb
+       WHERE paper_id = $1 AND type = 'publication' AND status = 'success'`,
+      [id]
+    );
+    // For non-publication transactions just clear the FK
+    await pool.query(
+      `UPDATE transactions SET paper_id = NULL WHERE paper_id = $1 AND (type != 'publication' OR status != 'success')`,
+      [id]
+    );
     await pool.query('DELETE FROM papers WHERE id = $1', [id]);
 
     console.log(`[Admin] Paper #${id} ("${title}") permanently deleted by user #${req.user.id}`);
@@ -7735,7 +7780,7 @@ app.get('/api/admin/config/journal-stats', authenticateToken, async (req: any, r
       papers: paperList,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -8255,7 +8300,7 @@ app.post('/api/payment/initialize', authenticateToken, async (req: any, res) => 
     });
   } catch (err: any) {
     console.error('Payment initialization error:', err);
-    res.status(500).json({ error: 'Payment initialization failed', details: err.message });
+    res.status(500).json({ error: 'Payment could not be initialized. Please try again or contact support.' });
   }
 });
 
@@ -8338,7 +8383,7 @@ app.post('/api/payment/attendance/initialize', authenticateToken, async (req: an
     });
   } catch (err: any) {
     console.error('Attendance Payment initialization error:', err);
-    res.status(500).json({ error: 'Attendance payment initialization failed', details: err.message });
+    res.status(500).json({ error: 'Payment could not be initialized. Please try again or contact support.' });
   }
 });
 
@@ -8464,7 +8509,7 @@ app.post('/api/payment/topup', authenticateToken, async (req: any, res) => {
     });
   } catch (err: any) {
     console.error('Topup payment init error:', err);
-    res.status(500).json({ error: 'Topup initialization failed', details: err.message });
+    res.status(500).json({ error: 'Top-up could not be initialized. Please try again.' });
   }
 });
 
@@ -8812,7 +8857,7 @@ app.get('/api/videos', authenticateToken, checkSubscription, async (req: any, re
     );
     res.json({ videos: result.rows });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -8828,7 +8873,7 @@ app.delete('/api/videos/:id', authenticateToken, checkSubscription, async (req: 
     if (fileUrl) deleteFromR2(fileUrl);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -8843,7 +8888,7 @@ app.put('/api/videos/:id/settings', authenticateToken, checkSubscription, async 
     );
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -8868,7 +8913,7 @@ app.get('/api/resources', authenticateToken, checkSubscription, async (req: any,
     );
     res.json(result.rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -8881,7 +8926,7 @@ app.get('/api/resources/:id', authenticateToken, checkSubscription, async (req: 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Resource not found' });
     res.json(result.rows[0]);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -8955,7 +9000,7 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
     return res.send(JSON.stringify(c, null, 2));
 
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -8988,7 +9033,7 @@ app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (
     }
     res.json({ name: result.rows[0].name, text });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -9036,7 +9081,7 @@ app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req:
     );
     res.json(result.rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -9177,7 +9222,7 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
     res.json({ success: true, id: newResourceId });
   } catch (err: any) {
     console.error('File material upload error:', err?.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -9406,7 +9451,7 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
     });
   } catch (err: any) {
     console.error('Batch upload error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -9418,7 +9463,7 @@ app.delete('/api/resources/:id', authenticateToken, checkSubscription, async (re
     if (fileUrl) deleteFromR2(fileUrl); // fire-and-forget, non-fatal
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -9434,7 +9479,7 @@ app.put('/api/resources/:id/settings', authenticateToken, checkSubscription, asy
     );
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -9450,7 +9495,7 @@ app.put('/api/exams/:id/settings', authenticateToken, checkSubscription, async (
     );
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -9527,7 +9572,7 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
       message: `Transfer ₦${Number(amount).toLocaleString()} to access this material.`
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Payment initialization failed', details: err.message });
+    res.status(500).json({ error: 'Payment could not be initialized. Please try again or contact support.' });
   }
 });
 
@@ -9604,7 +9649,7 @@ app.post('/api/payment/assessment/initialize', authenticateToken, async (req: an
       message: `Transfer ₦${Number(amount).toLocaleString()} to access this assessment.`
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Payment initialization failed', details: err.message });
+    res.status(500).json({ error: 'Payment could not be initialized. Please try again or contact support.' });
   }
 });
 
@@ -10310,7 +10355,7 @@ app.post('/api/courses/roster/:id/resend', authenticateToken, checkSubscription,
     res.json({ success: true, message: `Credentials resent to ${s.email}` });
   } catch (err: any) {
     await pool.query("UPDATE students_roster SET email_status = 'failed' WHERE id = $1", [req.params.id]).catch(() => {});
-    res.status(500).json({ error: 'Resend failed: ' + err.message });
+    res.status(500).json({ error: 'Notification could not be resent. Please try again.' });
   }
 });
 
@@ -10362,7 +10407,7 @@ app.post('/api/courses/roster/bulk-resend', authenticateToken, checkSubscription
     }
     res.json({ success: true, sent: sentCount, total: studentRes.rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: 'Bulk resend failed: ' + err.message });
+    res.status(500).json({ error: 'Bulk notifications could not be sent. Please try again.' });
   }
 });
 
@@ -10822,7 +10867,7 @@ app.post('/api/exams/:id/slots/:slotId/resend', authenticateToken, async (req: a
     res.json({ success: true });
   } catch (err: any) {
     await pool.query(`UPDATE exam_slots SET notification_status = 'failed' WHERE id = $1`, [req.params.slotId]).catch(() => {});
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -11990,7 +12035,7 @@ app.get('/api/exams/:id/results', authenticateToken, async (req: any, res) => {
     );
     res.json(results.rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -12009,7 +12054,7 @@ app.get('/api/exams/:id/answers/:studentId', authenticateToken, async (req: any,
     );
     res.json(rows.rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -12032,7 +12077,7 @@ app.delete('/api/exams/:id/results/:studentId', authenticateToken, async (req: a
     );
     res.json({ success: true, message: 'Result cleared — student may retake.' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -12211,7 +12256,7 @@ app.get('/api/transcripts/exam/:examId', authenticateToken, async (req: any, res
     res.send(pdfBuf);
   } catch (err: any) {
     console.error('[Transcript Exam]', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -12303,7 +12348,7 @@ app.get('/api/transcripts/student/:studentId', authenticateToken, async (req: an
     res.send(pdfBuf);
   } catch (err: any) {
     console.error('[Transcript Student]', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 
@@ -12392,7 +12437,7 @@ app.get('/api/transcripts/my', authenticateToken, async (req: any, res) => {
     res.send(pdfBuf);
   } catch (err: any) {
     console.error('[Transcript My]', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: friendlyServerError(err) });
   }
 });
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { friendlyError } from '../utils/friendlyError';
 import {
     Users,
     ClipboardList,
@@ -305,10 +306,10 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 setAssessIsPool(false); setAssessPoolSize('40');
                 setCustomStartVal(''); setCustomStartUnit('minutes'); setCustomDurVal(''); setCustomDurUnit('hours');
             } else {
-                addToast(data.error || 'Failed to create assessment', 'error');
+                addToast(friendlyError({ message: data.error }, 'assessment'), 'error');
             }
-        } catch (err) {
-            addToast('Network error', 'error');
+        } catch (err: any) {
+            addToast(friendlyError(err, 'assessment'), 'error');
         }
         setIsProcessing(false);
     };
@@ -336,7 +337,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 setAssessSlots(prev => prev.map(s => s.id === slotId ? { ...s, notification_status: 'sent', notification_sent: true } : s));
                 addToast('Notification re-sent', 'success');
             } else {
-                addToast(data.error || 'Resend failed', 'error');
+                addToast(friendlyError({ message: data.error }, 'generic'), 'error');
             }
         } catch {
             addToast('Network error', 'error');
@@ -371,7 +372,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             });
             const data = await res.json();
             if (!res.ok) {
-                addToast(data.error || 'Publishing failed', 'error');
+                addToast(friendlyError({ message: data.error }, 'assessment'), 'error');
                 return;
             }
             addToast(data.message || (next === 'published' ? 'Published — students can now see it' : 'Moved to draft'), 'success');
