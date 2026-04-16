@@ -20,21 +20,27 @@ const require = createRequire(import.meta.url);
 let _pdfParseImpl: ((buffer: Buffer, options?: any) => Promise<any>) | null = null;
 async function pdfParse(buffer: Buffer, options?: any): Promise<any> {
   if (!_pdfParseImpl) {
-    // Helper: pick the first callable out of any module shape
+    // Helper: pick the first callable out of any module shape (handles v1, v2, bundler variants)
     const pickFn = (m: any): ((buf: Buffer, opts?: any) => Promise<any>) | null => {
       if (typeof m === 'function') return m;
       if (typeof m?.default === 'function') return m.default;
-      // pdf-parse v2 wraps with a second .default layer in some bundlers
       if (typeof m?.default?.default === 'function') return m.default.default;
       if (typeof m?.parse === 'function') return m.parse;
+      if (typeof m?.default?.parse === 'function') return m.default.parse;
       return null;
     };
 
-    // 1. CJS require — most reliable in tsx/ts-node hybrid environments
-    for (const p of ['pdf-parse/lib/pdf-parse.js', 'pdf-parse']) {
+    // 1. CJS require paths — covers pdf-parse v1 (lib/pdf-parse.js) and v2 (index.js)
+    const cjsPaths = [
+      'pdf-parse/lib/pdf-parse.js',
+      'pdf-parse/src/pdf-parse.js',
+      'pdf-parse',
+    ];
+    for (const p of cjsPaths) {
       try {
-        const fn = pickFn(require(p));
-        if (fn) { _pdfParseImpl = fn; break; }
+        const mod = require(p);
+        const fn = pickFn(mod);
+        if (fn) { _pdfParseImpl = fn; console.log(`[pdf-parse] loaded via require('${p}')`); break; }
       } catch (_) {}
     }
 
@@ -43,11 +49,13 @@ async function pdfParse(buffer: Buffer, options?: any): Promise<any> {
       try {
         const mod: any = await import('pdf-parse');
         const fn = pickFn(mod);
-        if (fn) { _pdfParseImpl = fn; }
+        if (fn) { _pdfParseImpl = fn; console.log('[pdf-parse] loaded via ESM import'); }
       } catch (_) {}
     }
 
     if (!_pdfParseImpl) {
+      // Log full resolution details to help diagnose future failures
+      console.error('[pdf-parse] All load strategies failed. Paths tried:', cjsPaths);
       throw new Error('pdf-parse: no callable export found — PDF parsing unavailable.');
     }
   }
@@ -3423,10 +3431,16 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
 
     if (req.file.mimetype === 'application/pdf') {
       metadata = await parseWithGrobid(fileBuffer);
-      const data = await pdfParse(fileBuffer);
-      textContent = data.text;
+      let pdfData: any;
+      try {
+        pdfData = await pdfParse(fileBuffer);
+      } catch (pdfErr: any) {
+        console.error('[manuscript upload] PDF parse failed:', pdfErr?.message || pdfErr);
+        return res.status(400).json({ error: 'Your PDF could not be read. Please re-save it using a standard PDF export (e.g. "Save as PDF" or "Export to PDF") and try again.' });
+      }
+      textContent = pdfData.text;
       if (!metadata) metadata = {};
-      metadata.sourcePageCount = data.numpages;
+      metadata.sourcePageCount = pdfData.numpages;
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       let result;
       try {
@@ -9171,23 +9185,40 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
       const fileBuffer = fs.readFileSync(req.file.path);
 
       if (mime === 'application/pdf' || origName.endsWith('.pdf')) {
-        const data = await pdfParse(fileBuffer);
-        textContent = data.text || '';
+        try {
+          const data = await pdfParse(fileBuffer);
+          textContent = data.text || '';
+        } catch (pdfErr: any) {
+          console.warn('[upload] PDF text extraction skipped:', pdfErr?.message || pdfErr);
+          // Upload continues — text simply won't be indexed for AI question generation
+        }
       } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || origName.endsWith('.docx')) {
-        const result = await mammoth.extractRawText({ buffer: fileBuffer });
-        textContent = result.value || '';
+        try {
+          const result = await mammoth.extractRawText({ buffer: fileBuffer });
+          textContent = result.value || '';
+        } catch (docxErr: any) {
+          console.warn('[upload] DOCX text extraction skipped:', docxErr?.message || docxErr);
+        }
       } else if (mime === 'application/msword' || origName.endsWith('.doc')) {
-        const extractor = new WordExtractor();
-        const extracted = await extractor.extract(fileBuffer);
-        textContent = extracted.getBody() || '';
+        try {
+          const extractor = new WordExtractor();
+          const extracted = await extractor.extract(fileBuffer);
+          textContent = extracted.getBody() || '';
+        } catch (docErr: any) {
+          console.warn('[upload] DOC text extraction skipped:', docErr?.message || docErr);
+        }
       } else if (
         mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
         origName.endsWith('.pptx')
       ) {
-        textContent = await extractPptxText(fileBuffer);
-        if (!textContent.trim()) {
-          const pptxResult = await officeParser.parseOffice(fileBuffer).catch(() => '');
-          textContent = typeof pptxResult === 'string' ? pptxResult : '';
+        try {
+          textContent = await extractPptxText(fileBuffer);
+          if (!textContent.trim()) {
+            const pptxResult = await officeParser.parseOffice(fileBuffer).catch(() => '');
+            textContent = typeof pptxResult === 'string' ? pptxResult : '';
+          }
+        } catch (pptxErr: any) {
+          console.warn('[upload] PPTX text extraction skipped:', pptxErr?.message || pptxErr);
         }
       }
       // Sanitize: strip null bytes that PostgreSQL rejects
