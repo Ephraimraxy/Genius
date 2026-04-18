@@ -9505,6 +9505,9 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
       <tr><td style="padding: 8px 0; color: #64748b;">Access Mode:</td><td style="padding: 8px 0; text-align: right; font-weight: bold; color: ${isPaidEntry ? '#ef4444' : '#10b981'};">${isPaidEntry ? `Paid (₦${feeInt})` : 'Free Access'}</td></tr>
     </table>
   </div>
+  <div style="text-align: center; margin: 28px 0 16px;">
+    <a href="https://genius-portal.com" style="display: inline-block; background-color: #1a237e; color: #ffffff; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px; letter-spacing: 0.5px;">Access Your Portal &rarr;</a>
+  </div>
   <p style="color: #d97706; font-weight: bold; font-size: 14px; text-align: center;">🔒 Keep your PIN private. Do not share it.</p>
   ${isPaidEntry ? `<p style="color: #ef4444; font-weight: bold; font-size: 14px; text-align: center;">⚠️ Payment required before full portal access.</p>` : ''}
   <div style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #94a3b8; font-size: 12px;">&copy; 2026 Genius Academic Publishing. All rights reserved.</div>
@@ -10001,8 +10004,11 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     </table>
   </div>
 
+  <div style="text-align: center; margin: 28px 0 16px;">
+    <a href="https://genius-portal.com" style="display: inline-block; background-color: #1a237e; color: #ffffff; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px; letter-spacing: 0.5px;">Access Your Portal &rarr;</a>
+  </div>
   <p style="color: #d97706; font-weight: bold; font-size: 14px; text-align: center;">🔒 Keep your PIN private. Do not share it.</p>
-  
+
   <div style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #94a3b8; font-size: 12px;">
     &copy; 2026 Genius Academic Publishing. All rights reserved.
   </div>
@@ -10251,6 +10257,9 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
                 <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric}</td></tr>
                 <tr><td style="color:#64748b;padding:6px 0">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${s.autoPin}</span></td></tr>
               </table>
+            </div>
+            <div style="text-align:center;margin:24px 0 12px">
+              <a href="https://genius-portal.com" style="display:inline-block;background-color:#1a237e;color:#ffffff;padding:13px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:15px;letter-spacing:0.5px">Access Your Portal &rarr;</a>
             </div>
             <p style="color:#d97706;font-weight:bold;text-align:center">🔒 Keep your PIN private.</p>
           </div>`
