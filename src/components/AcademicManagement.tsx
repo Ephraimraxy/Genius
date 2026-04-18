@@ -97,7 +97,10 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
     // Assignment-specific
-    const [assessDueDate, setAssessDueDate] = useState('');
+    const [assessOpenVal, setAssessOpenVal] = useState('');
+    const [assessOpenUnit, setAssessOpenUnit] = useState<'minutes'|'hours'|'days'>('hours');
+    const [assessWindowVal, setAssessWindowVal] = useState('');
+    const [assessWindowUnit, setAssessWindowUnit] = useState<'hours'|'days'>('days');
     const [assessSubmType, setAssessSubmType] = useState<'text'|'file'|'both'>('file');
     const [assessAllowLate, setAssessAllowLate] = useState(false);
     const [viewingSubsFor, setViewingSubsFor] = useState<number | null>(null);
@@ -278,7 +281,12 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 instructions: assessInstructions || null,
                 material_id: assessmentMaterialIds[0] || null,
                 material_ids: assessmentMaterialIds,
-                due_date: assessDueDate || null,
+                due_date: (() => {
+                    if (!assessWindowVal) return null;
+                    const openMs = assessOpenVal ? toMs(assessOpenVal, assessOpenUnit) : 0;
+                    const windowMs = toMs(assessWindowVal, assessWindowUnit);
+                    return new Date(Date.now() + openMs + windowMs).toISOString();
+                })(),
                 submission_type: assessSubmType,
                 allow_late: assessAllowLate,
                 difficulty: assessDifficulty,
@@ -1308,17 +1316,51 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             placeholder="Full instructions / question / task description — this is what the student will read and respond to..."
                             rows={5}
                             className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-400 resize-none" />
-                        <div className="grid grid-cols-2 gap-3">
-                            <select value={assessCategoryId} onChange={e => setAssessCategoryId(e.target.value)}
-                                className="px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
-                                <option value="">Target Category (All)</option>
-                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
+                        <select value={assessCategoryId} onChange={e => setAssessCategoryId(e.target.value)}
+                            className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
+                            <option value="">Target Category (All)</option>
+                            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+
+                        {/* Submission Deadline — schedule-window style */}
+                        <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl space-y-3">
+                            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">📅 Submission Deadline</p>
                             <div>
-                                <input type="datetime-local" value={assessDueDate} onChange={e => setAssessDueDate(e.target.value)}
-                                    className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-400" />
-                                <p className="text-[9px] text-slate-400 mt-1 ml-1">Submission Deadline</p>
+                                <label className="text-[10px] font-black uppercase text-slate-500 ml-1 mb-1 block">Opens in (from publish)</label>
+                                <div className="flex gap-2">
+                                    <input type="number" min="0" value={assessOpenVal} onChange={e => setAssessOpenVal(e.target.value)}
+                                        placeholder="e.g. 10"
+                                        className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl font-black text-sm text-slate-700 focus:outline-none focus:border-blue-400" />
+                                    <select value={assessOpenUnit} onChange={e => setAssessOpenUnit(e.target.value as any)}
+                                        className="px-3 py-3 bg-white border border-slate-200 rounded-xl font-black text-sm text-slate-700 focus:outline-none focus:border-blue-400">
+                                        <option value="minutes">Minutes</option>
+                                        <option value="hours">Hours</option>
+                                        <option value="days">Days</option>
+                                    </select>
+                                </div>
                             </div>
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-slate-500 ml-1 mb-1 block">Closes after (duration from opening)</label>
+                                <div className="flex gap-2">
+                                    <input type="number" min="1" value={assessWindowVal} onChange={e => setAssessWindowVal(e.target.value)}
+                                        placeholder="e.g. 7"
+                                        className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl font-black text-sm text-slate-700 focus:outline-none focus:border-blue-400" />
+                                    <select value={assessWindowUnit} onChange={e => setAssessWindowUnit(e.target.value as any)}
+                                        className="px-3 py-3 bg-white border border-slate-200 rounded-xl font-black text-sm text-slate-700 focus:outline-none focus:border-blue-400">
+                                        <option value="hours">Hours</option>
+                                        <option value="days">Days</option>
+                                    </select>
+                                </div>
+                            </div>
+                            {assessWindowVal && (
+                                <p className="text-[10px] text-blue-500 font-bold ml-1">
+                                    Deadline: {(() => {
+                                        const toMsLocal = (v: string, u: string) => (parseFloat(v)||0) * ({minutes:60000,hours:3600000,days:86400000}[u]||3600000);
+                                        const d = new Date(Date.now() + toMsLocal(assessOpenVal, assessOpenUnit) + toMsLocal(assessWindowVal, assessWindowUnit));
+                                        return d.toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+                                    })()}
+                                </p>
+                            )}
                         </div>
 
                         {/* Submission type */}
