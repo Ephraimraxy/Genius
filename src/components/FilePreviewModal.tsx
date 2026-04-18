@@ -43,6 +43,30 @@ interface FilePreviewModalProps {
 }
 
 
+// Correct MIME types by extension — ensures browsers render blobs properly
+// regardless of what the server's Content-Type header says.
+const MIME_MAP: Record<string, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  doc: 'application/msword',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls: 'application/vnd.ms-excel',
+  csv: 'text/csv',
+  txt: 'text/plain',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ppt: 'application/vnd.ms-powerpoint',
+  mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+  mkv: 'video/x-matroska', avi: 'video/x-msvideo', flv: 'video/x-flv',
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+  m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac', opus: 'audio/opus',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  gif: 'image/gif', webp: 'image/webp',
+};
+
+const VIDEO_EXTS = new Set(['mp4','mov','webm','mkv','avi','flv','wmv','m4v','ogv','ts','mpeg','mpg']);
+const AUDIO_EXTS = new Set(['mp3','wav','ogg','m4a','aac','flac','opus','wma','aiff','aif']);
+const TEXT_ONLY_EXTS = new Set(['pptx','ppt','doc']); // rendered as extracted text
+
 export default function FilePreviewModal({ file, fileName, isOpen, onClose, publicationDetails, isInline = false }: FilePreviewModalProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,71 +76,110 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [textPreview, setTextPreview] = useState<string | null>(null);
+  const [docxRenderBlob, setDocxRenderBlob] = useState<Blob | null>(null);
   const docxRef = useRef<HTMLDivElement>(null);
 
-  const getExtension = (name: string) => name.split('.').pop()?.toLowerCase() || '';
+  const getExtension = (name: string) => {
+    const parts = name.split('.');
+    return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+  };
+
+  // Render DOCX once both the blob and the DOM ref are ready.
+  // This effect runs AFTER React commits the DOCX div to the DOM,
+  // so docxRef.current is guaranteed to be set by the time it fires.
+  useEffect(() => {
+    if (!docxRenderBlob || !docxRef.current) return;
+    docxRef.current.innerHTML = '';
+    docx.renderAsync(docxRenderBlob, docxRef.current).catch((err: any) => {
+      setError(friendlyError(err, 'load'));
+    });
+  }, [docxRenderBlob]);
 
   useEffect(() => {
     if (!isOpen) return;
-    
-    const name = typeof file === 'string' ? (fileName || (file.split('/').includes('file') ? 'paper.pdf' : (file.split('/').pop() || 'file'))) : file.name;
+
+    const name = typeof file === 'string'
+      ? (fileName || (file.includes('/file') ? 'paper.pdf' : (file.split('/').pop() || 'file')))
+      : file.name;
     const ext = fileName ? getExtension(fileName) : getExtension(name);
     setFileType(ext);
     setLoading(true);
     setError(null);
     setExcelData([]);
     setTextPreview(null);
+    setDocxRenderBlob(null);
+    setPreviewBlobUrl(null);
+
+    const token = localStorage.getItem('token') || '';
 
     const processFile = async () => {
       try {
+        // ── Video / Audio: stream directly via query-param auth ──────────────
+        // Avoids downloading the entire file into memory before playback.
+        // authenticateToken on the server also accepts ?token= query param.
+        if ((VIDEO_EXTS.has(ext) || AUDIO_EXTS.has(ext)) && typeof file === 'string') {
+          const sep = file.includes('?') ? '&' : '?';
+          setPreviewBlobUrl(`${file}${sep}token=${encodeURIComponent(token)}`);
+          setLoading(false);
+          return;
+        }
+
+        // ── PPTX / PPT / DOC: server-extracted text preview ─────────────────
+        // These can't be rendered visually in a browser. Show extracted text instead.
+        if (TEXT_ONLY_EXTS.has(ext) && typeof file === 'string') {
+          const resourceId = file.split('/').find((_, i, arr) => arr[i - 1] === 'resources');
+          if (resourceId) {
+            const textRes = await fetch(`/api/resources/${resourceId}/text`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (textRes.ok) {
+              const data = await textRes.json();
+              setTextPreview(typeof data.text === 'string' && data.text.trim()
+                ? data.text
+                : '(No text content could be extracted from this file)');
+            } else {
+              setTextPreview('(Text preview unavailable — please download to view)');
+            }
+          } else {
+            setTextPreview('(Text preview unavailable — please download to view)');
+          }
+          setLoading(false);
+          return;
+        }
+
+        // ── All other types: fetch as blob ───────────────────────────────────
         let blob: Blob;
         if (typeof file === 'string') {
           const response = await fetch(file, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
+            headers: { 'Authorization': `Bearer ${token}` }
           });
-          if (!response.ok) throw new Error('Unauthorized or file missing');
-          blob = await response.blob();
+          if (!response.ok) throw new Error('File could not be loaded. Please try again.');
+          const rawBlob = await response.blob();
+          // Force correct MIME type so browsers render properly (PDF in iframe, etc.)
+          const correctMime = MIME_MAP[ext] || rawBlob.type || 'application/octet-stream';
+          blob = rawBlob.type === correctMime
+            ? rawBlob
+            : new Blob([await rawBlob.arrayBuffer()], { type: correctMime });
         } else {
           blob = file;
         }
-        
+
         const blobUrl = URL.createObjectURL(blob);
         setPreviewBlobUrl(blobUrl);
 
         if (ext === 'docx') {
-          if (docxRef.current) {
-            docxRef.current.innerHTML = '';
-            await docx.renderAsync(blob, docxRef.current);
-          }
-          setLoading(false); // fix: renderAsync doesn't trigger any load event
-        } else if (ext === 'pptx' || ext === 'ppt') {
-          // PPTX can't be rendered in browser — fetch extracted text from server
-          if (typeof file === 'string') {
-            const resourceId = file.split('/').find((_, i, arr) => arr[i - 1] === 'resources');
-            if (resourceId) {
-              const textRes = await fetch(`/api/resources/${resourceId}/text`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-              });
-              if (textRes.ok) {
-                const data = await textRes.json();
-                const text = typeof data.text === 'string' ? data.text : (data.text != null ? JSON.stringify(data.text) : '');
-                setTextPreview(text || '(No text content extracted)');
-              } else {
-                setTextPreview('(Could not load text preview)');
-              }
-            }
-          }
+          // Store blob in state — the separate useEffect above will call renderAsync
+          // once React has committed the docxRef div to the DOM (loading=false).
+          setDocxRenderBlob(blob);
           setLoading(false);
         } else if (ext === 'xlsx' || ext === 'xls') {
           const reader = new FileReader();
           reader.onload = (e) => {
             const data = new Uint8Array(e.target?.result as ArrayBuffer);
             const workbook = XLSX.read(data, { type: 'array' });
-            const sheets = workbook.SheetNames.map(name => ({
-              name,
-              data: XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1 })
+            const sheets = workbook.SheetNames.map(sheetName => ({
+              name: sheetName,
+              data: XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 })
             }));
             setExcelData(sheets);
             setLoading(false);
@@ -134,7 +197,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
             }
           });
         } else {
-          // Other types (PDF, images) will be handled by iframe/embed/img
+          // PDF, images — rendered via iframe/img using the blob URL
           setLoading(false);
         }
       } catch (err: any) {
@@ -148,22 +211,24 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
 
   const handleDownload = async () => {
     const downloadName = typeof file === 'string' ? (fileName || 'download') : file.name;
+    const token = localStorage.getItem('token') || '';
     let url: string;
 
     if (typeof file === 'string') {
-      // For API URLs, use the already-fetched blob or fetch again with auth
-      if (previewBlobUrl) {
+      // If previewBlobUrl is a real blob URL, use it directly
+      if (previewBlobUrl && previewBlobUrl.startsWith('blob:')) {
         url = previewBlobUrl;
       } else {
+        // Stream URL or no cached blob — fetch fresh for download
         try {
           const response = await fetch(file, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            headers: { 'Authorization': `Bearer ${token}` }
           });
           if (!response.ok) throw new Error('Download failed');
           const blob = await response.blob();
           url = URL.createObjectURL(blob);
         } catch {
-          return; // Silently fail if download fails
+          return;
         }
       }
     } else {
@@ -179,7 +244,10 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
   };
 
   const renderContent = () => {
-    if (loading && fileType !== 'pdf') {
+    // PDF and media elements have native loaders — show them immediately.
+    // All other types need a blob/text ready before rendering.
+    const nativeLoader = fileType === 'pdf' || VIDEO_EXTS.has(fileType) || AUDIO_EXTS.has(fileType);
+    if (loading && !nativeLoader) {
       return (
         <div className="flex flex-col items-center justify-center h-full gap-4">
           <Loader2 className="animate-spin text-indigo-600" size={48} />
@@ -224,6 +292,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
         );
       case 'pptx':
       case 'ppt':
+      case 'doc':
         return (
           <div className="w-full h-full overflow-auto bg-slate-100 p-6 flex justify-center">
             <div className="bg-white shadow-2xl rounded-2xl p-10 max-w-4xl w-full min-h-full">
@@ -233,12 +302,22 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
                 </div>
                 <div>
                   <p className="font-black text-slate-900 text-sm uppercase tracking-tight">{fileName}</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Extracted Text Preview · PPTX Visual Rendering Not Supported in Browser</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    Extracted Text Preview · {fileType.toUpperCase()} Visual Rendering Not Supported in Browser
+                  </p>
                 </div>
               </div>
-              <pre className="whitespace-pre-wrap font-sans text-sm text-slate-700 leading-relaxed">
-                {textPreview || '(No text content available)'}
-              </pre>
+              {textPreview ? (
+                <pre className="whitespace-pre-wrap font-sans text-sm text-slate-700 leading-relaxed">
+                  {textPreview}
+                </pre>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
+                  <FileText size={48} />
+                  <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">No text could be extracted</p>
+                  <button onClick={handleDownload} className="text-indigo-600 font-bold hover:underline text-sm">Download to view</button>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -295,30 +374,27 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
       case 'ogg':
       case 'm4a':
       case 'aac':
+      case 'flac':
+      case 'opus':
+      case 'wma':
         return (
           <div className="w-full h-full flex flex-col items-center justify-center p-10 bg-slate-50">
             <div className="w-full max-w-2xl bg-white rounded-[2.5rem] p-10 shadow-2xl border border-slate-100 flex flex-col items-center gap-8 relative overflow-hidden">
-              {/* Decorative background pulse */}
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-rose-50 rounded-full animate-pulse opacity-20 pointer-events-none" />
-              
               <div className="w-32 h-32 bg-rose-50 text-rose-600 rounded-[2rem] flex items-center justify-center shadow-inner relative z-10">
                 <Volume2 size={64} />
               </div>
-
               <div className="text-center relative z-10">
                 <h4 className="text-xl font-black text-slate-900 mb-1 uppercase tracking-tight">Audio Record Analysis</h4>
                 <p className="text-sm font-bold text-slate-400 uppercase tracking-[0.2em]">Live Monitoring System</p>
               </div>
-
               <div className="w-full space-y-2 relative z-10">
                 <audio
                   src={previewBlobUrl || (typeof file !== 'string' ? URL.createObjectURL(file as Blob) : undefined)}
                   controls
                   className="w-full h-14 rounded-2xl"
-                  onLoadedMetadata={() => setLoading(false)}
                 />
               </div>
-
               <div className="flex gap-4 relative z-10">
                 <div className="px-4 py-2 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-2">
                   <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
@@ -333,13 +409,16 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
       case 'webm':
       case 'mkv':
       case 'avi':
+      case 'flv':
+      case 'wmv':
+      case 'm4v':
+      case 'ogv':
         return (
           <div className="w-full h-full flex items-center justify-center bg-black p-4">
             <video
               src={previewBlobUrl || (typeof file !== 'string' ? URL.createObjectURL(file as Blob) : undefined)}
               controls
               className="max-w-full max-h-full rounded-xl"
-              onLoadedMetadata={() => setLoading(false)}
             />
           </div>
         );

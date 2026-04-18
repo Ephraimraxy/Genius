@@ -9064,12 +9064,13 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
 app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
-      'SELECT name, content FROM resources WHERE id = $1 AND tenant_id = $2',
+      'SELECT name, content, file_url, mime_type FROM resources WHERE id = $1 AND tenant_id = $2',
       [req.params.id, req.tenant_id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    const c = result.rows[0].content;
-    // Content may be stored as a JSON string (text column) or already parsed (jsonb column)
+    const row = result.rows[0];
+    const c = row.content;
+
     let parsed: any;
     if (typeof c === 'string') {
       try { parsed = JSON.parse(c); } catch { parsed = c; }
@@ -9081,13 +9082,41 @@ app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (
       text = parsed;
     } else if (parsed && typeof parsed === 'object') {
       if (typeof parsed.text === 'string') {
-        text = parsed.text; // standard { text: "..." } format
+        text = parsed.text;
       } else {
-        // officeParser structured JSON — walk recursively to collect all text nodes
         text = extractTextFromOfficeParserJson(parsed);
       }
     }
-    res.json({ name: result.rows[0].name, text });
+
+    // If text is empty and the file is on R2, re-extract on demand.
+    // This handles files uploaded before text extraction was in place.
+    if (!text.trim() && row.file_url) {
+      const nameLower = (row.name || '').toLowerCase();
+      const isPptx = nameLower.endsWith('.pptx') || nameLower.endsWith('.ppt') ||
+        (row.mime_type || '').includes('presentationml');
+      if (isPptx) {
+        try {
+          const fileRes = await fetch(row.file_url);
+          const buffer = Buffer.from(await fileRes.arrayBuffer());
+          text = await extractPptxText(buffer);
+          if (!text.trim()) {
+            const pptxResult = await officeParser.parseOffice(buffer).catch(() => '');
+            text = typeof pptxResult === 'string' ? pptxResult : '';
+          }
+          // Cache back so the next preview is instant
+          if (text.trim()) {
+            pool.query(
+              'UPDATE resources SET content = $1 WHERE id = $2',
+              [JSON.stringify({ text }), req.params.id]
+            ).catch(() => {});
+          }
+        } catch (reExtractErr: any) {
+          console.warn('[text endpoint] PPTX re-extraction failed:', reExtractErr?.message);
+        }
+      }
+    }
+
+    res.json({ name: row.name, text });
   } catch (err: any) {
     res.status(500).json({ error: friendlyServerError(err) });
   }
