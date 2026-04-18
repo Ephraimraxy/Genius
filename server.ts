@@ -61,6 +61,40 @@ async function pdfParse(buffer: Buffer, options?: any): Promise<any> {
   }
   return _pdfParseImpl(buffer, options);
 }
+// ─── R2 streaming proxy ───────────────────────────────────────────────────────
+// Proxies a Cloudflare R2 file through our server so the browser never hits
+// R2 directly. R2's public CDN has no Access-Control-Allow-Origin header, so
+// any fetch() or XHR call that follows a redirect to R2 will be CORS-blocked.
+// By proxying we also forward Range headers so video/audio seeking works.
+async function proxyR2(req: any, res: any, r2Url: string, fallbackMime: string, filename: string) {
+  const rangeHeader = req.headers['range'] as string | undefined;
+  const upstreamHeaders: Record<string, string> = {};
+  if (rangeHeader) upstreamHeaders['Range'] = rangeHeader;
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(r2Url, { headers: upstreamHeaders });
+  } catch {
+    if (!res.headersSent) res.status(502).json({ error: 'Could not retrieve file from storage. Please try again.' });
+    return;
+  }
+
+  res.status(upstream.status);
+  ['content-type', 'content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag'].forEach(h => {
+    const v = upstream.headers.get(h);
+    if (v) res.setHeader(h, v);
+  });
+  if (!res.getHeader('content-type')) res.setHeader('Content-Type', fallbackMime);
+  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+
+  if (!upstream.body) return res.end();
+  const { Readable } = require('stream');
+  const readable = (Readable as any).fromWeb(upstream.body);
+  readable.pipe(res);
+  req.on('close', () => readable.destroy());
+}
+
 // ─── Server-side friendly error sanitizer ────────────────────────────────────
 // Converts raw DB/system errors into safe, human-readable messages.
 // Never exposes stack traces, constraint names, or internal details to clients.
@@ -3709,8 +3743,7 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
     const safeTitle = (paper.title || 'manuscript').replace(/[^a-zA-Z0-9\s-_]/g, '').substring(0, 100);
     const mimetype = metadata.mimetype || (ext === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
-    // R2 URL — redirect directly to CDN
-    if (paper.file_url) return res.redirect(302, paper.file_url);
+    if (paper.file_url) return proxyR2(req, res, paper.file_url, mimetype, `${safeTitle}.${ext}`);
 
     // Legacy BYTEA — serve and lazily migrate to R2
     if (paper.file_blob) {
@@ -7476,8 +7509,7 @@ app.get('/api/papers/:id/file', authenticateToken, async (req: any, res) => {
     const mimetype = metadata.mimetype || 'application/pdf';
     const safeTitle = (paper.title || 'manuscript').replace(/[^a-zA-Z0-9]/g, '_');
 
-    // R2 URL — redirect directly to CDN
-    if (paper.file_url) return res.redirect(302, paper.file_url);
+    if (paper.file_url) return proxyR2(req, res, paper.file_url, mimetype, `${safeTitle}.${ext}`);
 
     // Legacy BYTEA — serve and lazily migrate
     if (paper.file_blob) {
@@ -8997,8 +9029,7 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
     );
     const row = fullResult.rows[0];
 
-    // R2 URL — redirect directly to CDN
-    if (row.file_url) return res.redirect(302, row.file_url);
+    if (row.file_url) return proxyR2(req, res, row.file_url, row.mime_type || 'application/octet-stream', row.name);
 
     // Legacy BYTEA — serve and lazily migrate to R2
     if (row.file_blob) {
@@ -11273,8 +11304,7 @@ app.get('/api/assignments/submissions/:subId/file', authenticateToken, async (re
     if (!result.rows.length) return res.status(404).json({ error: 'File not found' });
     const { file_blob, file_url, file_name, mime_type } = result.rows[0];
 
-    // R2 URL — redirect directly to CDN
-    if (file_url) return res.redirect(302, file_url);
+    if (file_url) return proxyR2(req, res, file_url, mime_type || 'application/octet-stream', file_name);
 
     // Legacy BYTEA — serve and lazily migrate
     if (file_blob) {
