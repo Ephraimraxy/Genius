@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { BarChart3, TrendingUp, TrendingDown, Minus, Trophy, Award, BookOpen, Clock, ChevronRight, Download, Loader2, CheckCircle2, CalendarDays } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Minus, Trophy, Award, BookOpen, Clock, ChevronRight, Download, Loader2, CheckCircle2 } from 'lucide-react';
 
 interface StudentPerformanceProps {
     profile: any;
@@ -33,15 +33,16 @@ interface StatCard {
 }
 
 function getGradeColor(grade: string) {
-    if (grade?.startsWith('A')) return 'bg-emerald-100 text-emerald-700';
-    if (grade?.startsWith('B')) return 'bg-indigo-100 text-indigo-700';
-    if (grade?.startsWith('C')) return 'bg-amber-100 text-amber-700';
-    if (grade?.startsWith('D')) return 'bg-orange-100 text-orange-700';
-    return 'bg-rose-100 text-rose-700';
+    if (grade === 'A') return 'bg-emerald-100 text-emerald-700';
+    if (grade === 'B') return 'bg-indigo-100 text-indigo-700';
+    if (grade === 'C') return 'bg-amber-100 text-amber-700';
+    if (grade === 'D') return 'bg-orange-100 text-orange-700';
+    if (grade === 'E') return 'bg-red-100 text-red-600';
+    return 'bg-rose-100 text-rose-700'; // F
 }
 
 function ScoreBar({ score, delay = 0 }: { score: number; delay?: number }) {
-    const color = score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-indigo-500' : score >= 50 ? 'bg-amber-500' : 'bg-rose-500';
+    const color = score >= 70 ? 'bg-emerald-500' : score >= 60 ? 'bg-indigo-500' : score >= 50 ? 'bg-amber-500' : score >= 46 ? 'bg-orange-500' : score >= 40 ? 'bg-red-400' : 'bg-rose-500';
     return (
         <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden w-24">
             <motion.div
@@ -89,7 +90,9 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                         attendance: { text: 'text-teal-600', bg: 'bg-teal-50' },
                         avg: { text: 'text-violet-600', bg: 'bg-violet-50' }
                     };
-                    const formattedStats = (data.stats || []).map((s: any) => ({
+                    const formattedStats = (data.stats || [])
+                        .filter((s: any) => s.type !== 'attendance') // attendance lives on its own sidebar page
+                        .map((s: any) => ({
                         ...s,
                         icon: iconMap[s.type] || BookOpen,
                         color: colorMap[s.type]?.text || 'text-indigo-600',
@@ -133,14 +136,14 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
     const types = ['all', ...Array.from(new Set(records.map(r => r.type)))];
     const filtered = filterType === 'all' ? records : records.filter(r => r.type === filterType);
 
-    // Chart data: score distribution buckets
+    // Chart data: score distribution matching actual grading scale
     const buckets = [
-        { label: '90–100', min: 90, max: 100, color: 'bg-emerald-500' },
-        { label: '80–89', min: 80, max: 89, color: 'bg-indigo-500' },
-        { label: '70–79', min: 70, max: 79, color: 'bg-violet-500' },
-        { label: '60–69', min: 60, max: 69, color: 'bg-amber-500' },
-        { label: '50–59', min: 50, max: 59, color: 'bg-orange-500' },
-        { label: '0–49', min: 0, max: 49, color: 'bg-rose-500' },
+        { label: 'A  ≥70', min: 70, max: 100, color: 'bg-emerald-500' },
+        { label: 'B 60-69', min: 60, max: 69, color: 'bg-indigo-500' },
+        { label: 'C 50-59', min: 50, max: 59, color: 'bg-amber-500' },
+        { label: 'D 46-49', min: 46, max: 49, color: 'bg-orange-500' },
+        { label: 'E 40-45', min: 40, max: 45, color: 'bg-red-400' },
+        { label: 'F  <40', min: 0, max: 39, color: 'bg-rose-600' },
     ].map(b => ({
         ...b,
         count: records.filter(r => r.score >= b.min && r.score <= b.max).length
@@ -357,32 +360,36 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                 <div className="space-y-6">
                     {/* Grading System */}
                     <div className="p-6 md:p-8 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-[2rem] md:rounded-[2.5rem] shadow-xl text-white">
-                        <h3 className="text-xl font-black mb-6">Grading System</h3>
-                        <div className="space-y-3">
+                        <h3 className="text-xl font-black mb-1">Grading System</h3>
+                        <p className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-5">Exam 70% · CA 30%</p>
+                        <div className="space-y-2.5">
                             {[
-                                { grade: 'A+', range: '90–100', points: '4.0', color: 'bg-emerald-400/20 border-emerald-400/30' },
-                                { grade: 'A', range: '80–89', points: '3.7', color: 'bg-white/10 border-white/5' },
-                                { grade: 'B', range: '70–79', points: '3.3', color: 'bg-white/10 border-white/5' },
-                                { grade: 'C', range: '60–69', points: '3.0', color: 'bg-white/10 border-white/5' },
-                                { grade: 'D', range: '50–59', points: '2.0', color: 'bg-amber-400/10 border-amber-400/20' },
-                                { grade: 'F', range: '0–49', points: '0.0', color: 'bg-rose-400/10 border-rose-400/20' },
+                                { grade: 'A', range: '70 – 100', label: 'Distinction', color: 'bg-emerald-400/20 border-emerald-400/30', dot: 'bg-emerald-400' },
+                                { grade: 'B', range: '60 – 69',  label: 'Credit',      color: 'bg-blue-400/10 border-blue-400/20',    dot: 'bg-blue-400' },
+                                { grade: 'C', range: '50 – 59',  label: 'Merit',       color: 'bg-amber-400/10 border-amber-400/20',  dot: 'bg-amber-400' },
+                                { grade: 'D', range: '46 – 49',  label: 'Pass',        color: 'bg-orange-400/10 border-orange-400/20',dot: 'bg-orange-400' },
+                                { grade: 'E', range: '40 – 45',  label: 'Marginal',    color: 'bg-red-400/10 border-red-400/20',      dot: 'bg-red-400' },
+                                { grade: 'F', range: '0 – 39',   label: 'Fail',        color: 'bg-rose-500/10 border-rose-500/20',    dot: 'bg-rose-500' },
                             ].map((item, i) => (
-                                <div key={i} className={`flex items-center justify-between p-3 rounded-2xl border ${item.color}`}>
+                                <div key={i} className={`flex items-center justify-between px-4 py-3 rounded-2xl border ${item.color}`}>
                                     <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center font-black text-xs">
+                                        <div className={`w-2 h-2 rounded-full ${item.dot}`} />
+                                        <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center font-black text-sm">
                                             {item.grade}
                                         </div>
-                                        <span className="text-xs font-bold text-indigo-100 tracking-wide">{item.range}%</span>
+                                        <div>
+                                            <p className="text-xs font-bold text-white leading-none">{item.range}%</p>
+                                            <p className="text-[9px] font-medium text-indigo-300 mt-0.5">{item.label}</p>
+                                        </div>
                                     </div>
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300">
-                                        {item.points} GP
-                                    </span>
                                 </div>
                             ))}
                         </div>
-                        <div className="mt-6 p-4 bg-indigo-900/40 rounded-2xl border border-indigo-400/20">
-                            <p className="text-[10px] font-bold text-indigo-200 leading-relaxed italic">
-                                Performance evaluation uses the Genius Portal neural weighting algorithm.
+                        <div className="mt-5 p-4 bg-indigo-900/40 rounded-2xl border border-indigo-400/20 space-y-1">
+                            <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Score Breakdown</p>
+                            <p className="text-[10px] font-medium text-indigo-300 leading-relaxed">
+                                Exams count for 70% · Continuous Assessment (CA) counts for 30%
+                                — comprising Attendance (10%), Assignments (10%), and Tests (10%).
                             </p>
                         </div>
                     </div>
@@ -425,18 +432,6 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-4">Quick Access</h3>
                         <div className="space-y-2">
                             <button
-                                onClick={() => onNavigate('attendance')}
-                                className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors group"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 bg-teal-50 text-teal-600 rounded-lg flex items-center justify-center">
-                                        <CalendarDays size={14} />
-                                    </div>
-                                    <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-600 transition-colors">Attendance Records</span>
-                                </div>
-                                <ChevronRight size={14} className="text-slate-400" />
-                            </button>
-                            <button
                                 onClick={() => onNavigate('materials')}
                                 className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors group"
                             >
@@ -445,6 +440,18 @@ export default function StudentPerformance({ profile, onNavigate }: StudentPerfo
                                         <BookOpen size={14} />
                                     </div>
                                     <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-600 transition-colors">Course Materials</span>
+                                </div>
+                                <ChevronRight size={14} className="text-slate-400" />
+                            </button>
+                            <button
+                                onClick={() => onNavigate('exams')}
+                                className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 bg-violet-50 text-violet-600 rounded-lg flex items-center justify-center">
+                                        <Award size={14} />
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-600 transition-colors">Exams & Tests</span>
                                 </div>
                                 <ChevronRight size={14} className="text-slate-400" />
                             </button>

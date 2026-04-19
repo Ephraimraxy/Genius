@@ -29,7 +29,8 @@ import {
   Video,
   Zap,
   CheckCircle2,
-  Loader2
+  Loader2,
+  CalendarDays
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -176,6 +177,7 @@ export default function Sidebar({
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },
     { id: 'assignments', label: 'Assignments', icon: FileUp },
     { id: 'performance', label: 'Performance', icon: BarChart3, section: 'Records' },
+    { id: 'attendance', label: 'Attendance', icon: CalendarDays },
     { id: 'guidelines', label: 'Guidelines', icon: Info },
   ];
 
