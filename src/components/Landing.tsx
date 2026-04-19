@@ -331,7 +331,7 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                       <span className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.4em]">Our Foundation</span>
                       <h2 className="text-3xl font-black text-slate-900 tracking-tighter mt-3 mb-6">Strategic Collaboration & Accreditation</h2>
                       <p className="text-slate-600 font-medium leading-relaxed mb-6">
-                        Genius operates in formal partnership with the <strong>Research, Measurement, and Evaluation Unit</strong> of Nasarawa State University, Keffi (NSUK) — one of Nigeria's premier research institutions. This partnership ensures that every workflow, from submission to publication, meets internationally accepted academic standards.
+                        Genius operates in formal collaboration with the <strong>Research, Measurement, and Evaluation Unit</strong> of Nasarawa State University, Keffi (NSUK) — one of Nigeria's premier research institutions. This partnership ensures that every workflow, from submission to publication, meets internationally accepted academic standards.
                       </p>
                       <p className="text-slate-500 font-medium leading-relaxed">
                         We are registered under the Corporate Affairs Commission of Nigeria (<strong>CAC No. 3591627</strong>), staffed by a multidisciplinary team of scholars, technologists, and editorial professionals committed to advancing open, rigorous scholarship.
@@ -845,7 +845,7 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                         {[
                           { icon: <Phone size={20} />, label: 'Phone / WhatsApp', value: '+234 816 406 4212', note: 'Available Monday–Friday, 8am–6pm WAT' },
                           { icon: <Mail size={20} />, label: 'Email', value: 'geniusmultidisciplinary@gmail.com', note: 'We aim to respond within 24 hours on working days' },
-                          { icon: <MapPin size={20} />, label: 'Collaorating Institution', value: 'Nasarawa State University, Keffi', note: 'Research, Measurement & Evaluation Unit, NSUK' },
+                          { icon: <MapPin size={20} />, label: 'Collaborating Institution', value: 'Nasarawa State University, Keffi', note: 'Research, Measurement & Evaluation Unit, NSUK' },
                         ].map(c => (
                           <div key={c.label} className="flex items-start gap-5 p-6 bg-white border border-slate-100 rounded-3xl shadow-sm hover:border-[#800000]/20 hover:shadow-md transition-all group">
                             <div className="w-12 h-12 bg-[#800000]/5 rounded-2xl flex items-center justify-center text-[#800000] shrink-0 group-hover:bg-[#800000] group-hover:text-white transition-all">{c.icon}</div>
