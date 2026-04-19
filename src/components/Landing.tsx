@@ -112,11 +112,10 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
               <React.Fragment key={item.page}>
                 <button
                   onClick={() => setActivePage(item.page)}
-                  className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-[0.2em] transition-all ${
-                    activePage === item.page
-                      ? 'bg-[#800000] text-white shadow-lg shadow-[#800000]/20'
-                      : 'text-slate-500 hover:text-[#800000] hover:bg-slate-50'
-                  }`}
+                  className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-[0.2em] transition-all ${activePage === item.page
+                    ? 'bg-[#800000] text-white shadow-lg shadow-[#800000]/20'
+                    : 'text-slate-500 hover:text-[#800000] hover:bg-slate-50'
+                    }`}
                 >
                   {item.label}
                 </button>
@@ -330,7 +329,7 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                   <div className="grid lg:grid-cols-3 gap-12">
                     <div className="lg:col-span-2">
                       <span className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.4em]">Our Foundation</span>
-                      <h2 className="text-3xl font-black text-slate-900 tracking-tighter mt-3 mb-6">Strategic Partnership & Accreditation</h2>
+                      <h2 className="text-3xl font-black text-slate-900 tracking-tighter mt-3 mb-6">Strategic Collaboration & Accreditation</h2>
                       <p className="text-slate-600 font-medium leading-relaxed mb-6">
                         Genius operates in formal partnership with the <strong>Research, Measurement, and Evaluation Unit</strong> of Nasarawa State University, Keffi (NSUK) — one of Nigeria's premier research institutions. This partnership ensures that every workflow, from submission to publication, meets internationally accepted academic standards.
                       </p>
@@ -445,9 +444,8 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                       <button
                         key={t.id}
                         onClick={() => setGuideTab(t.id)}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
-                          guideTab === t.id ? 'bg-[#800000] text-white shadow-lg shadow-[#800000]/20' : 'text-slate-500 hover:bg-slate-50'
-                        }`}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${guideTab === t.id ? 'bg-[#800000] text-white shadow-lg shadow-[#800000]/20' : 'text-slate-500 hover:bg-slate-50'
+                          }`}
                       >
                         {t.icon} {t.label}
                       </button>
@@ -847,7 +845,7 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                         {[
                           { icon: <Phone size={20} />, label: 'Phone / WhatsApp', value: '+234 816 406 4212', note: 'Available Monday–Friday, 8am–6pm WAT' },
                           { icon: <Mail size={20} />, label: 'Email', value: 'geniusmultidisciplinary@gmail.com', note: 'We aim to respond within 24 hours on working days' },
-                          { icon: <MapPin size={20} />, label: 'Affiliated Institution', value: 'Nasarawa State University, Keffi', note: 'Research, Measurement & Evaluation Unit, NSUK' },
+                          { icon: <MapPin size={20} />, label: 'Collaorating Institution', value: 'Nasarawa State University, Keffi', note: 'Research, Measurement & Evaluation Unit, NSUK' },
                         ].map(c => (
                           <div key={c.label} className="flex items-start gap-5 p-6 bg-white border border-slate-100 rounded-3xl shadow-sm hover:border-[#800000]/20 hover:shadow-md transition-all group">
                             <div className="w-12 h-12 bg-[#800000]/5 rounded-2xl flex items-center justify-center text-[#800000] shrink-0 group-hover:bg-[#800000] group-hover:text-white transition-all">{c.icon}</div>
