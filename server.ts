@@ -1540,6 +1540,12 @@ async function initDB() {
   }
   // ─────────────────────────────────────────────────────────────────────────
 
+  // ─── Chat channel migrations ──────────────────────────────────────────────
+  try { await pool.query("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'online'"); } catch (e) { }
+  try { await pool.query("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sender_name TEXT"); } catch (e) { }
+  try { await pool.query("UPDATE chat_messages SET channel = 'online' WHERE channel IS NULL"); } catch (e) { }
+  // ─────────────────────────────────────────────────────────────────────────
+
   // ─── Storage Management Migrations ───────────────────────────────────────
   try { await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS storage_quota_mb INTEGER DEFAULT 50'); } catch (e) { }
   try { await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS storage_used_bytes BIGINT DEFAULT 0'); } catch (e) { }
@@ -8837,101 +8843,107 @@ app.get('/api/publications', authenticateToken, async (req: any, res) => {
   }
 });
 
-// Direct Admin-User Chat System
-app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
-  const userId = req.user.role === 'admin' ? (req.query.userId || req.user.id) : req.user.id;
+// ─── Chat System (Online Support + Intelligent Support) ───────────────────────
 
-  // If fetching a thread, mark those messages as read for the recipient
-  if (req.user.role === 'admin' && req.query.userId) {
-    await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND sender_role = \'user\'', [req.query.userId]);
-  } else if (req.user.role === 'user') {
-    await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND sender_role = \'admin\'', [req.user.id]);
+// ── GET /api/chat/history — fetch messages for a thread (filtered by channel) ─
+app.get('/api/chat/history', authenticateToken, async (req: any, res) => {
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+  const userId = isAdmin ? (req.query.userId || req.user.id) : req.user.id;
+  const channel = req.query.channel || 'online';
+
+  // Mark received messages as read
+  if (isAdmin && req.query.userId) {
+    await pool.query(
+      "UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND channel = $2 AND sender_role NOT IN ('admin','super_admin')",
+      [req.query.userId, channel]
+    );
+  } else if (!isAdmin && channel === 'online') {
+    await pool.query(
+      "UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND channel = 'online' AND sender_role IN ('admin','super_admin')",
+      [req.user.id]
+    );
   }
 
-  const result = await pool.query(`
-    SELECT cm.*, u.name as sender_name 
-    FROM chat_messages cm 
-    LEFT JOIN users u ON cm.user_id = u.id 
-    WHERE cm.user_id = $1 
-    ORDER BY cm.created_at ASC
-  `, [userId]);
+  const result = await pool.query(
+    `SELECT cm.*, u.name as user_name, u.email as user_email, u.role as user_role
+     FROM chat_messages cm
+     LEFT JOIN users u ON cm.user_id = u.id
+     WHERE cm.user_id = $1 AND cm.channel = $2
+     ORDER BY cm.created_at ASC`,
+    [userId, channel]
+  );
   res.json(result.rows);
 });
 
+// ── GET /api/chat/inbox — admin sees all online-support threads ────────────────
 app.get('/api/chat/inbox', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
 
-  // Get latest message per user thread to build the inbox view, counting unread messages from users
   const result = await pool.query(`
     WITH LatestMessages AS (
       SELECT DISTINCT ON (user_id)
-        user_id,
-        content,
-        created_at,
-        sender_role
+        user_id, content, created_at, sender_role
       FROM chat_messages
+      WHERE channel = 'online'
       ORDER BY user_id, created_at DESC
     ),
     UnreadCounts AS (
       SELECT user_id, COUNT(*) as unread_count
       FROM chat_messages
-      WHERE is_read = FALSE AND sender_role = 'user'
+      WHERE channel = 'online' AND is_read = FALSE AND sender_role NOT IN ('admin','super_admin','ai')
       GROUP BY user_id
     )
-    SELECT 
+    SELECT
       lm.user_id,
-      u.name as user_name,
-      u.email as user_email,
-      lm.content as last_message,
-      lm.created_at as last_message_at,
+      u.name  AS user_name,
+      u.email AS user_email,
+      u.role  AS user_role,
+      lm.content       AS last_message,
+      lm.created_at    AS last_message_at,
       lm.sender_role,
-      COALESCE(uc.unread_count, 0)::int as unread_count
+      COALESCE(uc.unread_count, 0)::int AS unread_count
     FROM LatestMessages lm
     JOIN users u ON lm.user_id = u.id
     LEFT JOIN UnreadCounts uc ON lm.user_id = uc.user_id
+    ORDER BY lm.created_at DESC
   `);
-
-  // Sort overall inbox by most recent message
-  const inbox = result.rows.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
-  res.json(inbox);
+  res.json(result.rows);
 });
 
+// ── GET /api/chat/notifications — unread badge counts ─────────────────────────
 app.get('/api/chat/notifications', authenticateToken, async (req: any, res) => {
-  const isUser = req.user.role === 'user';
-  const isLecturer = req.user.role === 'tenant_admin';
-  const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
-
-  if (isUser || isLecturer) {
-    const result = await pool.query(`
-      SELECT cm.content, cm.created_at, u.name as sender_name, u.id as sender_id
-      FROM chat_messages cm
-      JOIN users u ON u.role = 'admin' OR u.role = 'super_admin'
-      WHERE cm.user_id = $1 AND cm.sender_role IN ('admin', 'super_admin') AND cm.is_read = FALSE
-      ORDER BY cm.created_at DESC
-    `, [req.user.id]);
-    res.json(result.rows);
-  } else if (isAdmin) {
-    const result = await pool.query(`
-      SELECT cm.content, cm.created_at, u.name as user_name, u.id as user_id
-      FROM chat_messages cm
-      JOIN users u ON cm.user_id = u.id
-      WHERE cm.sender_role = 'user' AND cm.is_read = FALSE
-      ORDER BY cm.created_at DESC
-      LIMIT 10
-    `);
-    res.json(result.rows);
-  } else {
-    res.json([]);
+  try {
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    if (isAdmin) {
+      const result = await pool.query(
+        `SELECT COUNT(*)::int as count FROM chat_messages
+         WHERE channel = 'online' AND is_read = FALSE AND sender_role NOT IN ('admin','super_admin','ai')`
+      );
+      res.json({ count: result.rows[0].count });
+    } else {
+      const result = await pool.query(
+        `SELECT COUNT(*)::int as count FROM chat_messages
+         WHERE user_id = $1 AND channel = 'online' AND is_read = FALSE AND sender_role IN ('admin','super_admin')`,
+        [req.user.id]
+      );
+      res.json({ count: result.rows[0].count });
+    }
+  } catch (e) {
+    res.json({ count: 0 });
   }
 });
 
+// ── POST /api/chat/read-all ────────────────────────────────────────────────────
 app.post('/api/chat/read-all', authenticateToken, async (req: any, res) => {
   try {
     const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
     if (isAdmin) {
-      await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE sender_role = \'user\'');
+      await pool.query("UPDATE chat_messages SET is_read = TRUE WHERE channel = 'online' AND sender_role NOT IN ('admin','super_admin','ai')");
     } else {
-      await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND sender_role IN (\'admin\', \'super_admin\')', [req.user.id]);
+      await pool.query(
+        "UPDATE chat_messages SET is_read = TRUE WHERE user_id = $1 AND channel = 'online' AND sender_role IN ('admin','super_admin')",
+        [req.user.id]
+      );
     }
     res.json({ success: true });
   } catch (error) {
@@ -8939,19 +8951,145 @@ app.post('/api/chat/read-all', authenticateToken, async (req: any, res) => {
   }
 });
 
+// ── POST /api/chat/send — send a message on the online-support channel ─────────
 app.post('/api/chat/send', authenticateToken, async (req: any, res) => {
   const { content, targetUserId } = req.body;
   const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
   const userId = isAdmin ? targetUserId : req.user.id;
-  const senderRole = req.user.role;
-
   if (!userId) return res.status(400).json({ error: 'Target user ID required for admin replies' });
+  if (!content?.trim()) return res.status(400).json({ error: 'Message content required' });
 
-  // Save the message directly to the targeted user's thread
-  await pool.query('INSERT INTO chat_messages (user_id, sender_role, content, tenant_id) VALUES ($1, $2, $3, $4)',
-    [userId, senderRole, content, req.tenant_id || null]);
-
+  await pool.query(
+    "INSERT INTO chat_messages (user_id, sender_role, sender_name, content, channel, tenant_id) VALUES ($1, $2, $3, $4, 'online', $5)",
+    [userId, req.user.role, req.user.name || req.user.email, content.trim(), req.tenant_id || null]
+  );
   res.json({ success: true });
+});
+
+// ── POST /api/chat/ai — Intelligent Support AI response ───────────────────────
+app.post('/api/chat/ai', authenticateToken, async (req: any, res) => {
+  const { content } = req.body;
+  if (!content?.trim()) return res.status(400).json({ error: 'Message required' });
+
+  const userId = req.user.id;
+  const userRole = req.user.role;
+  const roleFriendly = userRole === 'tenant_admin' ? 'Lecturer' : userRole === 'student' ? 'Student' : 'Researcher';
+
+  // Fetch last 16 AI messages for context
+  const historyRes = await pool.query(
+    `SELECT sender_role, content FROM chat_messages
+     WHERE user_id = $1 AND channel = 'ai'
+     ORDER BY created_at DESC LIMIT 16`,
+    [userId]
+  );
+  const history = historyRes.rows.reverse();
+
+  // Store user message first
+  await pool.query(
+    "INSERT INTO chat_messages (user_id, sender_role, sender_name, content, channel) VALUES ($1, $2, $3, $4, 'ai')",
+    [userId, userRole, req.user.name || req.user.email, content.trim()]
+  );
+
+  const systemPrompt = `You are the Genius Support AI, the intelligent assistant for the "Genius Research Portal" — a comprehensive academic management and research publication platform.
+
+The user you are speaking with is a ${roleFriendly}.
+
+## PLATFORM OVERVIEW
+
+### Research & Publication Side (Researchers)
+- Upload manuscripts (PDF or DOCX) for journal publication
+- AI-powered metadata extraction (title, authors, abstract, keywords)
+- APA 7th Edition validator (APA Gatekeeper)
+- Writing Assistant for prose enhancement
+- Formatting Engine for document layout
+- Reference Intelligence — citation & bibliography manager
+- Integrity Check — plagiarism and structure scanner
+- Peer Review Simulation — simulated reviewer evaluation
+- Journal Matching — recommends suitable journals
+- DOI assignment on publication
+- Requires a publication credit (default ₦5,000) per manuscript
+
+### Academic Workspace Side (Lecturers)
+- Create and manage a workspace with a unique 4-digit workspace ID
+- Student roster — import and manage students by matric number
+- Create exams, tests, assignments (MCQ or file submission)
+- AI-generated exam questions from linked lecture materials
+- Resource Hub — upload PDF, DOCX, PPTX, video, audio, images, CSV, XLSX materials
+- Attendance tracking with session management
+- Grading: A≥70, B 60–69, C 50–59, D 46–49, E 40–45, F <40
+- Overall score = Exam 70% + CA 30% (Attendance 10% + Assignment 10% + Test 10%)
+- Student performance analytics and reports
+- Storage: 50MB default workspace quota; more can be purchased
+
+### Student Side
+- Access portal via workspace ID and matric number
+- Take exams and submit assignments
+- View lecture materials in the Resource Hub
+- Track attendance records
+- View grades and performance reports
+- Download performance certificates
+
+## PAYMENTS
+- Paystack and Kora (Korapay) payment gateways are supported
+- Researchers pay per publication credit
+- Lecturers pay for workspace subscriptions and extra storage
+- All payments handled securely on the platform
+
+## YOUR CAPABILITIES
+- Explain any platform feature clearly and helpfully
+- Guide users step-by-step through processes
+- Help troubleshoot common issues (file formats, login, matric number, payment steps)
+- Clarify grading calculations and system rules
+
+## HARD LIMITS — NEVER DO THESE
+- Do NOT reveal specific transaction details, payment records, or amounts for any user
+- Do NOT share account credentials, tokens, or API keys
+- Do NOT share admin configurations or system internals
+- Do NOT discuss other users' data
+- For any of the above, politely say you cannot help with that and suggest contacting the admin or support team
+
+## HANDLING INAPPROPRIATE MESSAGES
+If a user sends harassment, insults, offensive content, or anything unrelated to the platform:
+- Respond calmly and professionally
+- Gently redirect them to platform-related topics
+- Do not engage with the inappropriate content
+- Example: "I'm here to help with anything related to the Genius Research Portal. Is there something about the platform I can assist you with?"
+
+## TONE
+- Warm, professional, and approachable
+- Concise but thorough
+- Use simple language — not everyone is technical
+- If unsure about something specific, acknowledge it and suggest contacting the admin`;
+
+  const messages: any[] = [
+    { role: 'system', content: systemPrompt },
+    ...history.map((m: any) => ({
+      role: m.sender_role === 'ai' ? 'assistant' : 'user',
+      content: m.content
+    })),
+    { role: 'user', content: content.trim() }
+  ];
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages,
+      max_tokens: 600,
+      temperature: 0.5
+    });
+    const aiReply = completion.choices[0]?.message?.content || "I'm sorry, I couldn't process your request. Please try again or contact our support team.";
+
+    // Store AI response
+    await pool.query(
+      "INSERT INTO chat_messages (user_id, sender_role, sender_name, content, channel) VALUES ($1, 'ai', 'Genius AI', $2, 'ai')",
+      [userId, aiReply]
+    );
+
+    res.json({ reply: aiReply });
+  } catch (err: any) {
+    console.error('[chat/ai] OpenAI error:', err?.message);
+    res.status(500).json({ error: 'AI service temporarily unavailable. Please try again or contact Online Support.' });
+  }
 });
 
 // ─── VIDEO ENDPOINTS (R2 Storage) ───────────────────────────────────
