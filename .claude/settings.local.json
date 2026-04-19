@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find 'd:\\\\Junks\\\\TODAY\\\\Publish AI' -type f \\\\\\(-name *.tsx -o -name *.ts -o -name *.jsx -o -name *.js \\\\\\))"
+      "Bash(find 'd:\\\\Junks\\\\TODAY\\\\Publish AI' -type f \\\\\\(-name *.tsx -o -name *.ts -o -name *.jsx -o -name *.js \\\\\\))",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

@@ -792,8 +792,8 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                           {[
                             { sn: 1, name: 'Prof. Yahaya A. Adadu', school: 'Nasarawa State University, Keffi', dept: 'Social Sciences', country: 'Nigeria' },
                             { sn: 2, name: 'Prof. Francis A. Akawu', school: 'Nasarawa State University, Keffi', dept: 'Economics', country: 'Nigeria' },
-                            { sn: 3, name: 'Prof. LJ Kukwi', school: 'Nasarawa State University, Keffi', dept: 'Education', country: 'Nigeria' },
-                            { sn: 4, name: 'Prof. Saleh A Dauda, Ph.D', school: 'Nasarawa State University, Keffi', dept: 'Education', country: 'Nigeria' },
+                            { sn: 3, name: 'Prof. IJ Kukwi', school: 'Nasarawa State University, Keffi', dept: 'Education', country: 'Nigeria' },
+                            { sn: 4, name: 'Dr.  A Dauda', school: 'Nasarawa State University, Keffi', dept: 'Education', country: 'Nigeria' },
                             { sn: 5, name: 'Prof. H. M Mainoma', school: 'Nasarawa State University, Keffi', dept: 'Accounting', country: 'Nigeria' },
                             { sn: 6, name: 'Dr. Danjuma Namo', school: 'Nasarawa State University, Keffi', dept: 'Education', country: 'Nigeria' },
                             { sn: 7, name: 'Johan Adersson', school: 'University of Freiburg', dept: 'Banking and Finance', country: 'Dutch/Switzerland' },
@@ -802,6 +802,7 @@ export default function Landing({ onPublicationHub, onSchoolPortal }: LandingPro
                             { sn: 10, name: 'Charlotte Dupont', school: 'University of Serbia', dept: 'Mathematics', country: 'United Kingdom' },
                             { sn: 11, name: 'Dr. David M. Shekwolo', school: 'Nigerian Defence Academy', dept: 'Psychology', country: 'Kaduna, Nigeria' },
                             { sn: 12, name: 'Assoc. Prof. Abubakar M. Tafida', school: 'Nasarawa State University, Keffi', dept: 'Psychology', country: 'Nasarawa, Nigeria' },
+                            { sn: 13, name: 'Dr. M.M Usman', school: 'Nasarawa State University', dept: 'Accounting', country: 'Nigeria' },
                           ].map(m => (
                             <tr key={m.sn} className="hover:bg-slate-50 transition-colors group">
                               <td className="px-8 py-5 text-sm font-black text-[#800000]">{m.sn}</td>
