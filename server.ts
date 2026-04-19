@@ -193,7 +193,7 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import puppeteer from 'puppeteer-core';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import helmet from 'helmet';
 
@@ -476,6 +476,45 @@ async function deleteFromR2(fileUrl: string): Promise<void> {
   } catch (err: any) {
     console.error('[R2 delete error]', err?.message);
     // Non-fatal: log but don't throw — DB row is still deleted
+  }
+}
+
+// Extract R2 key from a public file URL
+function r2KeyFromUrl(fileUrl: string): string {
+  const publicBase = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+  if (publicBase && fileUrl.startsWith(publicBase + '/')) return fileUrl.slice(publicBase.length + 1);
+  try { return new URL(fileUrl).pathname.replace(/^\//, ''); } catch { return fileUrl; }
+}
+
+// Recalculate a tenant's storage_used_bytes by HEAD-requesting every R2 file.
+// Only runs when R2 is available. Fire-and-forget safe.
+async function recalculateTenantStorage(tenantId: number): Promise<void> {
+  if (!r2 || !R2_ENABLED) return;
+  try {
+    const [resources, submissions] = await Promise.all([
+      pool.query('SELECT id, file_url, file_size_bytes FROM resources WHERE tenant_id = $1 AND file_url IS NOT NULL', [tenantId]),
+      pool.query('SELECT id, file_url, file_size_bytes FROM assignment_submissions WHERE tenant_id = $1 AND file_url IS NOT NULL', [tenantId])
+    ]);
+
+    let totalBytes = 0;
+
+    for (const row of [...resources.rows, ...submissions.rows]) {
+      const existing = parseInt(row.file_size_bytes) || 0;
+      if (existing > 0) { totalBytes += existing; continue; }
+      try {
+        const head = await r2.send(new HeadObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: r2KeyFromUrl(row.file_url) }));
+        const size = head.ContentLength || 0;
+        if (size > 0) {
+          const table = resources.rows.includes(row) ? 'resources' : 'assignment_submissions';
+          await pool.query(`UPDATE ${table} SET file_size_bytes = $1 WHERE id = $2`, [size, row.id]);
+          totalBytes += size;
+        }
+      } catch { /* file may not exist or HEAD failed — skip */ }
+    }
+
+    await pool.query('UPDATE tenants SET storage_used_bytes = $1 WHERE id = $2', [totalBytes, tenantId]);
+  } catch (e: any) {
+    console.error('[storage recalc]', e?.message);
   }
 }
 
@@ -1577,24 +1616,6 @@ async function initDB() {
         expires_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `);
-  } catch (e) { }
-  // Seed a default 50MB plan if none exist
-  try {
-    await pool.query(`
-      INSERT INTO storage_plans (name, storage_mb, price_kobo, duration_days)
-      SELECT '50MB Extra', 50, 50000, 365
-      WHERE NOT EXISTS (SELECT 1 FROM storage_plans LIMIT 1)
-    `);
-    await pool.query(`
-      INSERT INTO storage_plans (name, storage_mb, price_kobo, duration_days)
-      SELECT '200MB Extra', 200, 150000, 365
-      WHERE (SELECT COUNT(*) FROM storage_plans) < 2
-    `);
-    await pool.query(`
-      INSERT INTO storage_plans (name, storage_mb, price_kobo, duration_days)
-      SELECT '500MB Extra', 500, 300000, 365
-      WHERE (SELECT COUNT(*) FROM storage_plans) < 3
     `);
   } catch (e) { }
   // ─────────────────────────────────────────────────────────────────────────
@@ -9156,19 +9177,54 @@ app.get('/api/tenant/info', authenticateToken, async (req: any, res) => {
 // ─── Storage: Lecturer GET storage usage + active plans ────────────────────
 app.get('/api/storage/info', authenticateToken, async (req: any, res: any) => {
   try {
-    const tenantRes = await pool.query(
+    let tenantRes = await pool.query(
       'SELECT storage_quota_mb, storage_used_bytes FROM tenants WHERE id = $1',
       [req.tenant_id]
     );
     if (tenantRes.rows.length === 0) return res.status(404).json({ error: 'Workspace not found' });
-    const { storage_quota_mb, storage_used_bytes } = tenantRes.rows[0];
+    let { storage_quota_mb, storage_used_bytes } = tenantRes.rows[0];
+    let usedBytes = parseInt(storage_used_bytes) || 0;
+
+    // If storage shows 0 but tenant has R2 files, recalculate from R2 HEAD requests
+    if (usedBytes === 0 && R2_ENABLED) {
+      const hasFiles = await pool.query(
+        'SELECT 1 FROM resources WHERE tenant_id = $1 AND file_url IS NOT NULL LIMIT 1',
+        [req.tenant_id]
+      );
+      if (hasFiles.rows.length > 0) {
+        await recalculateTenantStorage(req.tenant_id);
+        const updated = await pool.query('SELECT storage_used_bytes FROM tenants WHERE id = $1', [req.tenant_id]);
+        usedBytes = parseInt(updated.rows[0]?.storage_used_bytes) || 0;
+      }
+    }
+
     res.json({
       quota_mb: storage_quota_mb || 50,
-      used_bytes: parseInt(storage_used_bytes) || 0,
-      used_mb: parseFloat(((parseInt(storage_used_bytes) || 0) / 1048576).toFixed(2))
+      used_bytes: usedBytes,
+      used_mb: parseFloat((usedBytes / 1048576).toFixed(2))
     });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch storage info' });
+  }
+});
+
+// ─── Storage: Manual recalculate trigger (lecturer or admin) ───────────────
+app.post('/api/storage/recalculate', authenticateToken, async (req: any, res: any) => {
+  try {
+    await recalculateTenantStorage(req.tenant_id);
+    const updated = await pool.query(
+      'SELECT storage_quota_mb, storage_used_bytes FROM tenants WHERE id = $1',
+      [req.tenant_id]
+    );
+    const row = updated.rows[0];
+    const usedBytes = parseInt(row?.storage_used_bytes) || 0;
+    res.json({
+      quota_mb: row?.storage_quota_mb || 50,
+      used_bytes: usedBytes,
+      used_mb: parseFloat((usedBytes / 1048576).toFixed(2))
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Recalculation failed' });
   }
 });
 
@@ -9309,6 +9365,17 @@ app.get('/api/admin/storage-usage', authenticateToken, async (req: any, res: any
     res.json(result.rows);
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch storage usage' });
+  }
+});
+
+// ─── Admin: Trigger storage recalculation for a specific workspace ─────────
+app.post('/api/admin/storage-recalculate/:tenantId', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    await recalculateTenantStorage(parseInt(req.params.tenantId));
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Recalculation failed' });
   }
 });
 

@@ -31,6 +31,7 @@ export default function LecturerSettings() {
     const [selectedPlan, setSelectedPlan] = useState<number | null>(null);
     const [purchasing, setPurchasing] = useState(false);
     const [purchaseSuccess, setPurchaseSuccess] = useState(false);
+    const [recalculating, setRecalculating] = useState(false);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -39,6 +40,17 @@ export default function LecturerSettings() {
         fetch('/api/storage/plans', { headers: { 'Authorization': `Bearer ${token}` } })
             .then(r => r.json()).then(d => { if (Array.isArray(d)) setStoragePlans(d); }).catch(() => {});
     }, []);
+
+    const handleRecalculate = async () => {
+        setRecalculating(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/api/storage/recalculate', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            if (data.quota_mb !== undefined) setStorageInfo(data);
+        } catch (e) {}
+        setRecalculating(false);
+    };
 
     const handlePurchase = async (gateway: 'paystack' | 'kora') => {
         if (!selectedPlan) return;
@@ -97,10 +109,18 @@ export default function LecturerSettings() {
                                 <p className="text-xs text-slate-400 font-medium">{storageInfo.used_mb} MB used of {storageInfo.quota_mb} MB</p>
                             </div>
                         </div>
-                        <button onClick={() => setShowBuyModal(true)}
-                            className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl transition-colors">
-                            <ShoppingCart size={14} /> Get More
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button onClick={handleRecalculate} disabled={recalculating}
+                                title="Recalculate storage from uploaded files"
+                                className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-600 text-xs font-bold rounded-xl transition-colors">
+                                <svg className={`w-3.5 h-3.5 ${recalculating ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                {recalculating ? 'Syncing...' : 'Sync'}
+                            </button>
+                            <button onClick={() => setShowBuyModal(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl transition-colors">
+                                <ShoppingCart size={14} /> Get More
+                            </button>
+                        </div>
                     </div>
                     <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
                         {(() => {
