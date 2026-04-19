@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
-import { 
-    Settings, 
-    Bell, 
-    Shield, 
-    User, 
-    Smartphone, 
-    Globe, 
-    CheckCircle, 
+import React, { useState, useEffect } from 'react';
+import {
+    Settings,
+    Bell,
+    Shield,
+    Smartphone,
+    Globe,
+    CheckCircle,
     Lock,
     Eye,
-    EyeOff
+    EyeOff,
+    Database,
+    ShoppingCart,
+    X
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -20,8 +22,43 @@ export default function LecturerSettings() {
         browser: true,
         submissions: true
     });
-
     const [isPublic, setIsPublic] = useState(true);
+
+    // Storage state
+    const [storageInfo, setStorageInfo] = useState<{ quota_mb: number; used_bytes: number; used_mb: number } | null>(null);
+    const [storagePlans, setStoragePlans] = useState<Array<{ id: number; name: string; storage_mb: number; price_kobo: number; duration_days: number }>>([]);
+    const [showBuyModal, setShowBuyModal] = useState(false);
+    const [selectedPlan, setSelectedPlan] = useState<number | null>(null);
+    const [purchasing, setPurchasing] = useState(false);
+    const [purchaseSuccess, setPurchaseSuccess] = useState(false);
+
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        fetch('/api/storage/info', { headers: { 'Authorization': `Bearer ${token}` } })
+            .then(r => r.json()).then(d => { if (d.quota_mb !== undefined) setStorageInfo(d); }).catch(() => {});
+        fetch('/api/storage/plans', { headers: { 'Authorization': `Bearer ${token}` } })
+            .then(r => r.json()).then(d => { if (Array.isArray(d)) setStoragePlans(d); }).catch(() => {});
+    }, []);
+
+    const handlePurchase = async (gateway: 'paystack' | 'kora') => {
+        if (!selectedPlan) return;
+        setPurchasing(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/api/storage/purchase/initiate', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ plan_id: selectedPlan, gateway })
+            });
+            const data = await res.json();
+            if (data.checkout?.authorization_url) {
+                window.location.href = data.checkout.authorization_url;
+            } else if (data.checkout?.checkout_url) {
+                window.location.href = data.checkout.checkout_url;
+            }
+        } catch (e) {}
+        setPurchasing(false);
+    };
 
     const toggleNotif = (key: keyof typeof notifications) => {
         setNotifications(prev => ({ ...prev, [key]: !prev[key] }));
@@ -46,6 +83,45 @@ export default function LecturerSettings() {
                     </div>
                 </div>
             </div>
+
+            {/* Storage Usage Card */}
+            {storageInfo && (
+                <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center">
+                                <Database size={20} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Workspace Storage</h3>
+                                <p className="text-xs text-slate-400 font-medium">{storageInfo.used_mb} MB used of {storageInfo.quota_mb} MB</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setShowBuyModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl transition-colors">
+                            <ShoppingCart size={14} /> Get More
+                        </button>
+                    </div>
+                    <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                        {(() => {
+                            const pct = Math.min(100, Math.round((storageInfo.used_mb / storageInfo.quota_mb) * 100));
+                            return (
+                                <div className={`h-3 rounded-full transition-all ${pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-teal-500'}`}
+                                    style={{ width: `${pct}%` }} />
+                            );
+                        })()}
+                    </div>
+                    <div className="flex justify-between mt-2">
+                        <span className="text-[11px] text-slate-400 font-medium">{storageInfo.used_mb} MB used</span>
+                        <span className="text-[11px] text-slate-400 font-medium">{(storageInfo.quota_mb - storageInfo.used_mb).toFixed(1)} MB free</span>
+                    </div>
+                    {storageInfo.used_mb / storageInfo.quota_mb >= 0.8 && (
+                        <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-2xl text-xs font-medium text-amber-700">
+                            Storage nearly full. Purchase additional storage to continue uploading files.
+                        </div>
+                    )}
+                </div>
+            )}
 
             <div className="grid lg:grid-cols-2 gap-8">
                 {/* Notification Settings */}
@@ -136,6 +212,61 @@ export default function LecturerSettings() {
                     </div>
                 </div>
             </div>
+        {/* Buy Storage Modal */}
+        {showBuyModal && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
+                <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md p-8">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-xl font-black text-slate-800">Buy Storage</h3>
+                        <button onClick={() => { setShowBuyModal(false); setSelectedPlan(null); setSelectedPlan(null); }}
+                            className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><X size={18} /></button>
+                    </div>
+                    {purchaseSuccess ? (
+                        <div className="text-center py-8">
+                            <CheckCircle size={48} className="text-emerald-500 mx-auto mb-4" />
+                            <p className="font-bold text-slate-800">Storage Added!</p>
+                            <p className="text-sm text-slate-500 mt-1">Your workspace quota has been updated.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <p className="text-sm text-slate-500">Select a plan to add extra storage to your workspace.</p>
+                            {storagePlans.length === 0 ? (
+                                <p className="text-sm text-slate-400 text-center py-6">No storage plans available. Contact support.</p>
+                            ) : (
+                                <>
+                                    <div className="space-y-3">
+                                        {storagePlans.map(plan => (
+                                            <button key={plan.id} onClick={() => setSelectedPlan(plan.id)}
+                                                className={`w-full p-4 rounded-2xl border-2 text-left transition-all ${selectedPlan === plan.id ? 'border-teal-500 bg-teal-50' : 'border-slate-100 bg-slate-50 hover:border-slate-200'}`}>
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <p className="font-bold text-slate-800 text-sm">{plan.name}</p>
+                                                        <p className="text-xs text-slate-500">+{plan.storage_mb} MB · {plan.duration_days} days</p>
+                                                    </div>
+                                                    <p className="font-black text-teal-700 text-sm">₦{(plan.price_kobo / 100).toLocaleString()}</p>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {selectedPlan && (
+                                        <div className="space-y-2 pt-2">
+                                            <button onClick={() => handlePurchase('paystack')} disabled={purchasing}
+                                                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-colors">
+                                                {purchasing ? 'Redirecting...' : 'Pay with Paystack'}
+                                            </button>
+                                            <button onClick={() => handlePurchase('kora')} disabled={purchasing}
+                                                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-colors">
+                                                {purchasing ? 'Redirecting...' : 'Pay with Kora'}
+                                            </button>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
         </motion.div>
     );
 }

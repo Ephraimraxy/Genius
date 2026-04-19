@@ -36,8 +36,6 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
     const questionStartTime = useRef<number>(Date.now());
     const lastActivityTime = useRef<number>(Date.now());
     const devToolsCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const videoRef = useRef<HTMLVideoElement>(null);
-
     const examContainerRef = useRef<HTMLDivElement>(null);
 
     // ─── Fetch exam data and auto-start immediately (no briefing screen) ──
@@ -390,13 +388,6 @@ export default function ActiveExamSession({ examId, courseName, matricNumber, ad
                 </div>
             </header>
 
-            {/* PIP Camera */}
-            <div className="fixed bottom-6 right-6 w-28 h-36 md:w-44 md:h-32 bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border-4 border-emerald-600/40 z-50">
-                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 bg-rose-500/80 rounded-md text-[9px] font-bold text-white uppercase">
-                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" /> REC
-                </div>
-            </div>
 
             {/* Submitting overlay */}
             <AnimatePresence>

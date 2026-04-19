@@ -58,6 +58,15 @@ export default function AdminSettings() {
   const [journalSecretary, setJournalSecretary] = useState<string>('Dr. Danjuma Namo');
   const [savingJournal, setSavingJournal] = useState(false);
   const [savedJournal, setSavedJournal] = useState(false);
+
+  // Storage Plans State
+  const [storagePlans, setStoragePlans] = useState<Array<{ id: number; name: string; storage_mb: number; price_kobo: number; duration_days: number; is_active: boolean }>>([]);
+  const [storageUsage, setStorageUsage] = useState<Array<{ id: number; name: string; owner_email: string; storage_quota_mb: number; used_mb: number }>>([]);
+  const [newPlan, setNewPlan] = useState({ name: '', storage_mb: '', price_kobo: '', duration_days: '365' });
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [editingPlanId, setEditingPlanId] = useState<number | null>(null);
+  const [editPlan, setEditPlan] = useState({ name: '', storage_mb: '', price_kobo: '', duration_days: '365', is_active: true });
+
   const [journalStats, setJournalStats] = useState<{
     papersInCurrentIssue: number;
     maxManuscriptsPerIssue: number;
@@ -105,6 +114,12 @@ export default function AdminSettings() {
         if (!data.error) setGateways(data);
       })
       .catch(console.error);
+
+    // Fetch storage plans + workspace usage
+    fetch('/api/admin/storage-plans', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json()).then(data => { if (Array.isArray(data)) setStoragePlans(data); }).catch(() => {});
+    fetch('/api/admin/storage-usage', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json()).then(data => { if (Array.isArray(data)) setStorageUsage(data); }).catch(() => {});
 
     // Fetch journal settings
     fetch('/api/admin/config/journal', {
@@ -311,9 +326,9 @@ export default function AdminSettings() {
     setSavingJournal(false);
   };
 
-  const journalChanged = 
-    journalVolume !== origJournal.volume || 
-    journalIssue !== origJournal.issue || 
+  const journalChanged =
+    journalVolume !== origJournal.volume ||
+    journalIssue !== origJournal.issue ||
     journalIssn !== origJournal.issn ||
     maxManuscripts !== origJournal.maxManuscripts ||
     maxIssues !== origJournal.maxIssues ||
@@ -322,6 +337,46 @@ export default function AdminSettings() {
     doiAutoRetryEnabled !== origJournal.doiAutoRetryEnabled ||
     doiAutoRetryInterval !== origJournal.doiAutoRetryInterval ||
     journalSecretary !== origJournal.secretary;
+
+  const handleCreatePlan = async () => {
+    if (!newPlan.name || !newPlan.storage_mb || !newPlan.price_kobo) return;
+    setSavingPlan(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/admin/storage-plans', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newPlan.name, storage_mb: parseInt(newPlan.storage_mb), price_kobo: parseInt(newPlan.price_kobo) * 100, duration_days: parseInt(newPlan.duration_days) || 365 })
+      });
+      if (res.ok) {
+        const plan = await res.json();
+        setStoragePlans(prev => [...prev, plan]);
+        setNewPlan({ name: '', storage_mb: '', price_kobo: '', duration_days: '365' });
+      }
+    } catch (e) {}
+    setSavingPlan(false);
+  };
+
+  const handleUpdatePlan = async (id: number) => {
+    setSavingPlan(true);
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`/api/admin/storage-plans/${id}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editPlan.name, storage_mb: parseInt(editPlan.storage_mb), price_kobo: parseInt(editPlan.price_kobo) * 100, duration_days: parseInt(editPlan.duration_days) || 365, is_active: editPlan.is_active })
+      });
+      setStoragePlans(prev => prev.map(p => p.id === id ? { ...p, name: editPlan.name, storage_mb: parseInt(editPlan.storage_mb), price_kobo: parseInt(editPlan.price_kobo) * 100, duration_days: parseInt(editPlan.duration_days) || 365, is_active: editPlan.is_active } : p));
+      setEditingPlanId(null);
+    } catch (e) {}
+    setSavingPlan(false);
+  };
+
+  const handleDeletePlan = async (id: number) => {
+    const token = localStorage.getItem('token');
+    await fetch(`/api/admin/storage-plans/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+    setStoragePlans(prev => prev.filter(p => p.id !== id));
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 pb-12">
@@ -914,6 +969,122 @@ export default function AdminSettings() {
             {!republishConfig.enabled && (
               <div className="flex items-center gap-2 p-3 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-500 font-medium">
                 <AlertCircle size={14} /> Republish button is hidden from all researcher dashboards.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Storage Plans Management */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden lg:col-span-2">
+          <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
+            <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
+              <Database size={20} className="text-teal-600" /> Storage Plans
+            </h3>
+            <p className="text-xs text-slate-400 font-medium mt-0.5">Create and manage storage upgrade plans that workspace owners can purchase.</p>
+          </div>
+          <div className="p-8 space-y-8">
+            {/* Create New Plan */}
+            <div className="p-6 bg-teal-50 border border-teal-100 rounded-2xl space-y-4">
+              <p className="text-xs font-black text-teal-700 uppercase tracking-widest">New Plan</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Plan Name</label>
+                  <input type="text" placeholder="e.g. 100MB Extra" value={newPlan.name} onChange={e => setNewPlan(p => ({ ...p, name: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Storage (MB)</label>
+                  <input type="number" min="1" placeholder="100" value={newPlan.storage_mb} onChange={e => setNewPlan(p => ({ ...p, storage_mb: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Price (₦)</label>
+                  <input type="number" min="0" placeholder="1500" value={newPlan.price_kobo} onChange={e => setNewPlan(p => ({ ...p, price_kobo: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Duration (days)</label>
+                  <input type="number" min="1" placeholder="365" value={newPlan.duration_days} onChange={e => setNewPlan(p => ({ ...p, duration_days: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+              </div>
+              <button onClick={handleCreatePlan} disabled={savingPlan || !newPlan.name || !newPlan.storage_mb || !newPlan.price_kobo}
+                className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors">
+                {savingPlan ? 'Saving...' : 'Create Plan'}
+              </button>
+            </div>
+
+            {/* Existing Plans */}
+            {storagePlans.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Active Plans</p>
+                {storagePlans.map(plan => (
+                  <div key={plan.id} className="p-4 border border-slate-100 rounded-2xl bg-slate-50">
+                    {editingPlanId === plan.id ? (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <input type="text" value={editPlan.name} onChange={e => setEditPlan(p => ({ ...p, name: e.target.value }))}
+                          className="px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                        <input type="number" value={editPlan.storage_mb} onChange={e => setEditPlan(p => ({ ...p, storage_mb: e.target.value }))}
+                          className="px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                        <input type="number" value={editPlan.price_kobo} onChange={e => setEditPlan(p => ({ ...p, price_kobo: e.target.value }))}
+                          className="px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                        <div className="flex gap-2">
+                          <button onClick={() => handleUpdatePlan(plan.id)} disabled={savingPlan}
+                            className="flex-1 px-3 py-2 bg-teal-600 text-white text-xs font-bold rounded-xl hover:bg-teal-700 disabled:opacity-50">Save</button>
+                          <button onClick={() => setEditingPlanId(null)}
+                            className="px-3 py-2 bg-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-300">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center">
+                            <Database size={18} className="text-teal-600" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-800 text-sm">{plan.name}</p>
+                            <p className="text-xs text-slate-500">{plan.storage_mb} MB · ₦{(plan.price_kobo / 100).toLocaleString()} · {plan.duration_days}d</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase border ${plan.is_active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
+                            {plan.is_active ? 'Active' : 'Hidden'}
+                          </span>
+                          <button onClick={() => { setEditingPlanId(plan.id); setEditPlan({ name: plan.name, storage_mb: String(plan.storage_mb), price_kobo: String(plan.price_kobo / 100), duration_days: String(plan.duration_days), is_active: plan.is_active }); }}
+                            className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-200">Edit</button>
+                          <button onClick={() => handleDeletePlan(plan.id)}
+                            className="p-1.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-100"><Trash2 size={14} /></button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Workspace Storage Usage */}
+            {storageUsage.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Workspace Storage Usage</p>
+                <div className="space-y-2">
+                  {storageUsage.slice(0, 10).map(ws => {
+                    const pct = Math.min(100, Math.round((ws.used_mb / (ws.storage_quota_mb || 50)) * 100));
+                    return (
+                      <div key={ws.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <p className="font-bold text-slate-800 text-sm">{ws.name}</p>
+                            <p className="text-[11px] text-slate-400">{ws.owner_email}</p>
+                          </div>
+                          <span className="text-xs font-bold text-slate-600">{ws.used_mb} / {ws.storage_quota_mb || 50} MB</span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                          <div className={`h-2 rounded-full transition-all ${pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-teal-500'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

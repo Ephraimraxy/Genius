@@ -28,7 +28,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import FilePreviewModal from './FilePreviewModal';
 import { ToastType } from './ToastSystem';
-import { friendlyError } from '../utils/friendlyError';
 import { analyzeFile, FileAnalysis, formatFileSize } from '../utils/fileValidation';
 
 interface Resource {

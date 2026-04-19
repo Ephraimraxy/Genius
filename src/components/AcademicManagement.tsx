@@ -309,7 +309,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 setAssessTitle(''); setAssessCategoryId(''); setAssessStartDate(''); setAssessStartTime('08:00'); setAssessEndDate(''); setAssessEndTime('18:00');
                 setAssessInstructions(''); setAssessDuration('60'); setAssessQuestionsCount('20');
                 setAssessBatchSize('10'); setAssessTimerMode('whole'); setSelectedHubResource(null); setSelectedMaterialResources([]);
-                setAssessDueDate(''); setAssessSubmType('file'); setAssessAllowLate(false);
+                setAssessSubmType('file'); setAssessAllowLate(false);
                 setAssessDifficulty('medium'); setAssessBlooms('mixed'); setAssessMaxAttempts('1');
                 setAssessIsPool(false); setAssessPoolSize('40');
                 setCustomStartVal(''); setCustomStartUnit('minutes'); setCustomDurVal(''); setCustomDurUnit('hours');

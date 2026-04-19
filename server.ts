@@ -1539,6 +1539,59 @@ async function initDB() {
     try { await pool.query(sql); } catch (e) { /* index may already exist under different name */ }
   }
   // ─────────────────────────────────────────────────────────────────────────
+
+  // ─── Storage Management Migrations ───────────────────────────────────────
+  try { await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS storage_quota_mb INTEGER DEFAULT 50'); } catch (e) { }
+  try { await pool.query('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS storage_used_bytes BIGINT DEFAULT 0'); } catch (e) { }
+  try { await pool.query('ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT DEFAULT 0'); } catch (e) { }
+  try { await pool.query('ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT DEFAULT 0'); } catch (e) { }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS storage_plans (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        storage_mb INTEGER NOT NULL,
+        price_kobo INTEGER NOT NULL,
+        duration_days INTEGER NOT NULL DEFAULT 365,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  } catch (e) { }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS storage_purchases (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id),
+        plan_id INTEGER REFERENCES storage_plans(id),
+        storage_mb INTEGER NOT NULL,
+        price_kobo INTEGER NOT NULL,
+        reference TEXT,
+        status TEXT DEFAULT 'pending',
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  } catch (e) { }
+  // Seed a default 50MB plan if none exist
+  try {
+    await pool.query(`
+      INSERT INTO storage_plans (name, storage_mb, price_kobo, duration_days)
+      SELECT '50MB Extra', 50, 50000, 365
+      WHERE NOT EXISTS (SELECT 1 FROM storage_plans LIMIT 1)
+    `);
+    await pool.query(`
+      INSERT INTO storage_plans (name, storage_mb, price_kobo, duration_days)
+      SELECT '200MB Extra', 200, 150000, 365
+      WHERE (SELECT COUNT(*) FROM storage_plans) < 2
+    `);
+    await pool.query(`
+      INSERT INTO storage_plans (name, storage_mb, price_kobo, duration_days)
+      SELECT '500MB Extra', 500, 300000, 365
+      WHERE (SELECT COUNT(*) FROM storage_plans) < 3
+    `);
+  } catch (e) { }
+  // ─────────────────────────────────────────────────────────────────────────
 }
 initDB().catch(err => {
   console.error('CRITICAL: Database initialization failed');
@@ -8962,6 +9015,178 @@ app.get('/api/tenant/info', authenticateToken, async (req: any, res) => {
   }
 });
 
+// ─── Storage: Lecturer GET storage usage + active plans ────────────────────
+app.get('/api/storage/info', authenticateToken, async (req: any, res: any) => {
+  try {
+    const tenantRes = await pool.query(
+      'SELECT storage_quota_mb, storage_used_bytes FROM tenants WHERE id = $1',
+      [req.tenant_id]
+    );
+    if (tenantRes.rows.length === 0) return res.status(404).json({ error: 'Workspace not found' });
+    const { storage_quota_mb, storage_used_bytes } = tenantRes.rows[0];
+    res.json({
+      quota_mb: storage_quota_mb || 50,
+      used_bytes: parseInt(storage_used_bytes) || 0,
+      used_mb: parseFloat(((parseInt(storage_used_bytes) || 0) / 1048576).toFixed(2))
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch storage info' });
+  }
+});
+
+// ─── Storage: GET available plans (for lecturer purchase screen) ────────────
+app.get('/api/storage/plans', authenticateToken, async (req: any, res: any) => {
+  try {
+    const plans = await pool.query(
+      'SELECT id, name, storage_mb, price_kobo, duration_days FROM storage_plans WHERE is_active = TRUE ORDER BY storage_mb ASC'
+    );
+    res.json(plans.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch storage plans' });
+  }
+});
+
+// ─── Storage: Initiate purchase (lecturer buys extra storage) ──────────────
+app.post('/api/storage/purchase/initiate', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Only workspace owners can purchase storage' });
+  try {
+    const { plan_id, gateway } = req.body;
+    if (!plan_id) return res.status(400).json({ error: 'plan_id is required' });
+
+    const planRes = await pool.query('SELECT * FROM storage_plans WHERE id = $1 AND is_active = TRUE', [plan_id]);
+    if (planRes.rows.length === 0) return res.status(404).json({ error: 'Plan not found' });
+    const plan = planRes.rows[0];
+
+    const reference = `storage_${req.tenant_id}_${plan_id}_${Date.now()}`;
+    await pool.query(
+      `INSERT INTO storage_purchases (tenant_id, plan_id, storage_mb, price_kobo, reference, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending')`,
+      [req.tenant_id, plan_id, plan.storage_mb, plan.price_kobo, reference]
+    );
+
+    const amountKobo = plan.price_kobo;
+    let checkoutData: any;
+    const gw = gateway || 'paystack';
+    if (gw === 'kora') {
+      checkoutData = await initializeKoraCheckout(req.user, amountKobo, reference, {});
+    } else {
+      checkoutData = await initializePaystackCheckout(req.user, amountKobo, reference, {});
+    }
+    res.json({ reference, checkout: checkoutData });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to initiate storage purchase' });
+  }
+});
+
+// ─── Storage: Confirm purchase (webhook / manual confirm) ─────────────────
+app.post('/api/storage/purchase/confirm', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { reference } = req.body;
+    if (!reference) return res.status(400).json({ error: 'reference required' });
+
+    const purchaseRes = await pool.query(
+      "SELECT * FROM storage_purchases WHERE reference = $1 AND status = 'pending'",
+      [reference]
+    );
+    if (purchaseRes.rows.length === 0) return res.status(404).json({ error: 'Purchase not found or already confirmed' });
+    const purchase = purchaseRes.rows[0];
+
+    const expiresAt = new Date(Date.now() + purchase.duration_days * 86400000);
+    await pool.query(
+      "UPDATE storage_purchases SET status = 'success', expires_at = $1 WHERE reference = $2",
+      [expiresAt, reference]
+    );
+    await pool.query(
+      'UPDATE tenants SET storage_quota_mb = COALESCE(storage_quota_mb, 50) + $1 WHERE id = $2',
+      [purchase.storage_mb, purchase.tenant_id]
+    );
+    res.json({ success: true, added_mb: purchase.storage_mb });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to confirm storage purchase' });
+  }
+});
+
+// ─── Admin: GET all storage plans ─────────────────────────────────────────
+app.get('/api/admin/storage-plans', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const plans = await pool.query('SELECT * FROM storage_plans ORDER BY storage_mb ASC');
+    res.json(plans.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch plans' });
+  }
+});
+
+// ─── Admin: CREATE storage plan ────────────────────────────────────────────
+app.post('/api/admin/storage-plans', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { name, storage_mb, price_kobo, duration_days } = req.body;
+    if (!name || !storage_mb || !price_kobo) return res.status(400).json({ error: 'name, storage_mb, price_kobo required' });
+    const result = await pool.query(
+      'INSERT INTO storage_plans (name, storage_mb, price_kobo, duration_days) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, parseInt(storage_mb), parseInt(price_kobo), parseInt(duration_days) || 365]
+    );
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to create plan' });
+  }
+});
+
+// ─── Admin: UPDATE storage plan ────────────────────────────────────────────
+app.put('/api/admin/storage-plans/:id', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { name, storage_mb, price_kobo, duration_days, is_active } = req.body;
+    await pool.query(
+      'UPDATE storage_plans SET name=$1, storage_mb=$2, price_kobo=$3, duration_days=$4, is_active=$5 WHERE id=$6',
+      [name, parseInt(storage_mb), parseInt(price_kobo), parseInt(duration_days) || 365, is_active !== false, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update plan' });
+  }
+});
+
+// ─── Admin: DELETE storage plan ────────────────────────────────────────────
+app.delete('/api/admin/storage-plans/:id', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    await pool.query('DELETE FROM storage_plans WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to delete plan' });
+  }
+});
+
+// ─── Admin: GET all workspace storage usage ────────────────────────────────
+app.get('/api/admin/storage-usage', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const result = await pool.query(
+      `SELECT id, name, owner_email, storage_quota_mb, storage_used_bytes,
+              ROUND((COALESCE(storage_used_bytes,0)::numeric / 1048576), 2) AS used_mb
+       FROM tenants ORDER BY storage_used_bytes DESC NULLS LAST`
+    );
+    res.json(result.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch storage usage' });
+  }
+});
+
+// ─── Admin: Adjust quota for a specific workspace ──────────────────────────
+app.put('/api/admin/storage-usage/:tenantId', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { quota_mb } = req.body;
+    if (!quota_mb) return res.status(400).json({ error: 'quota_mb required' });
+    await pool.query('UPDATE tenants SET storage_quota_mb = $1 WHERE id = $2', [parseInt(quota_mb), req.params.tenantId]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update quota' });
+  }
+});
+
 app.get('/api/resources', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const result = await pool.query(
@@ -9227,6 +9452,28 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
     const { type, name, categoryName, categoryId, isPaidEntry, entryFee } = req.body;
     if (!type || !name) return res.status(400).json({ error: 'Missing required fields' });
 
+    // ── Storage quota check ─────────────────────────────────────────────────
+    const tenantStorageRes = await pool.query(
+      'SELECT storage_quota_mb, storage_used_bytes FROM tenants WHERE id = $1',
+      [req.tenant_id]
+    );
+    if (tenantStorageRes.rows.length > 0) {
+      const { storage_quota_mb, storage_used_bytes } = tenantStorageRes.rows[0];
+      const quotaBytes = (storage_quota_mb || 50) * 1024 * 1024;
+      const usedBytes = parseInt(storage_used_bytes) || 0;
+      const fileSize = req.file.size || 0;
+      if (usedBytes + fileSize > quotaBytes) {
+        fs.unlink(req.file.path, () => {});
+        const usedMB = (usedBytes / 1048576).toFixed(1);
+        const quotaMB = storage_quota_mb || 50;
+        return res.status(507).json({
+          error: `Storage full. You have used ${usedMB} MB of your ${quotaMB} MB quota. Purchase additional storage from your workspace settings to upload more files.`,
+          code: 'STORAGE_FULL'
+        });
+      }
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
     const mime = req.file.mimetype;
     const origName = (req.file.originalname || '').toLowerCase();
     const isVideoOrAudio = mime.startsWith('video/') || mime.startsWith('audio/') ||
@@ -9309,12 +9556,19 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
       const safeFilename = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
       resourceFileUrl = await uploadToR2(`resources/${req.tenant_id}/${Date.now()}-${safeFilename}`, fs.createReadStream(req.file.path), mimeType, req.file.size);
     }
+    const fileSizeBytes = req.file.size || 0;
     fs.unlink(req.file.path, () => {});
     const result = await pool.query(
-      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type, file_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
-      [req.tenant_id, type, name, contentJson, 'ready', final_category_id, resourceFileBlob, mimeType, resourceFileUrl]
+      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type, file_url, file_size_bytes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
+      [req.tenant_id, type, name, contentJson, 'ready', final_category_id, resourceFileBlob, mimeType, resourceFileUrl, fileSizeBytes]
     );
     const newResourceId = result.rows[0].id;
+
+    // Update tenant storage usage
+    await pool.query(
+      'UPDATE tenants SET storage_used_bytes = COALESCE(storage_used_bytes, 0) + $1 WHERE id = $2',
+      [fileSizeBytes, req.tenant_id]
+    );
 
     // Fire AI fitness check in background (only for text-extractable materials)
     if (type === 'material' && !isVideoOrAudio && textContent) {
@@ -9562,10 +9816,17 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
 
 app.delete('/api/resources/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
-    const row = await pool.query('SELECT file_url FROM resources WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    const row = await pool.query('SELECT file_url, file_size_bytes FROM resources WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
     const fileUrl: string | null = row.rows[0]?.file_url || null;
+    const fileSizeBytes: number = parseInt(row.rows[0]?.file_size_bytes) || 0;
     await pool.query('DELETE FROM resources WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
     if (fileUrl) deleteFromR2(fileUrl); // fire-and-forget, non-fatal
+    if (fileSizeBytes > 0) {
+      await pool.query(
+        'UPDATE tenants SET storage_used_bytes = GREATEST(0, COALESCE(storage_used_bytes, 0) - $1) WHERE id = $2',
+        [fileSizeBytes, req.tenant_id]
+      );
+    }
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: friendlyServerError(err) });
@@ -11252,11 +11513,18 @@ app.post('/api/assignments/:id/submit', authenticateToken, upload.single('file')
       fs.unlink(req.file.path, () => {});
     }
 
+    const submFileSizeBytes = req.file?.size || 0;
     await pool.query(
-      `INSERT INTO assignment_submissions (exam_id, tenant_id, student_id, student_name, student_email, submission_type, content, file_blob, file_name, mime_type, file_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [id, req.tenant_id, req.user.id, req.user.name, req.user.email, submType, content, submFileBlob, fileName, mimeType, submFileUrl]
+      `INSERT INTO assignment_submissions (exam_id, tenant_id, student_id, student_name, student_email, submission_type, content, file_blob, file_name, mime_type, file_url, file_size_bytes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [id, req.tenant_id, req.user.id, req.user.name, req.user.email, submType, content, submFileBlob, fileName, mimeType, submFileUrl, submFileSizeBytes]
     );
+    if (submFileSizeBytes > 0) {
+      await pool.query(
+        'UPDATE tenants SET storage_used_bytes = COALESCE(storage_used_bytes, 0) + $1 WHERE id = $2',
+        [submFileSizeBytes, req.tenant_id]
+      );
+    }
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -11743,11 +12011,11 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
     const records = results.rows.map(r => {
       let grade = 'F';
       const s = r.score;
-      if (s >= 90) grade = 'A+';
-      else if (s >= 80) grade = 'A';
-      else if (s >= 70) grade = 'B';
-      else if (s >= 60) grade = 'C';
-      else if (s >= 50) grade = 'D';
+      if (s >= 70) grade = 'A';
+      else if (s >= 60) grade = 'B';
+      else if (s >= 50) grade = 'C';
+      else if (s >= 46) grade = 'D';
+      else if (s >= 40) grade = 'E';
 
       return {
         id: r.id,
@@ -12081,11 +12349,11 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
     const scorePercent = totalPossible > 0 ? Math.round((totalEarned / totalPossible) * 100) : 0;
 
     let grade = 'F';
-    if (scorePercent >= 90) grade = 'A+';
-    else if (scorePercent >= 80) grade = 'A';
-    else if (scorePercent >= 70) grade = 'B';
-    else if (scorePercent >= 60) grade = 'C';
-    else if (scorePercent >= 50) grade = 'D';
+    if (scorePercent >= 70) grade = 'A';
+    else if (scorePercent >= 60) grade = 'B';
+    else if (scorePercent >= 50) grade = 'C';
+    else if (scorePercent >= 46) grade = 'D';
+    else if (scorePercent >= 40) grade = 'E';
 
     // Persist result with grade + totals
     await pool.query(
