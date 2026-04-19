@@ -1618,6 +1618,15 @@ async function initDB() {
       )
     `);
   } catch (e) { }
+  // Remove any auto-seeded placeholder plans (admin must create plans intentionally)
+  try {
+    await pool.query(`
+      DELETE FROM storage_plans
+      WHERE (name = '50MB Extra'  AND storage_mb = 50  AND price_kobo = 50000)
+         OR (name = '200MB Extra' AND storage_mb = 200 AND price_kobo = 150000)
+         OR (name = '500MB Extra' AND storage_mb = 500 AND price_kobo = 300000)
+    `);
+  } catch (e) { }
   // ─────────────────────────────────────────────────────────────────────────
 }
 initDB().catch(err => {
@@ -9205,6 +9214,40 @@ app.get('/api/storage/info', authenticateToken, async (req: any, res: any) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch storage info' });
+  }
+});
+
+// ─── Storage: File-level breakdown for the workspace ──────────────────────
+app.get('/api/storage/breakdown', authenticateToken, async (req: any, res: any) => {
+  try {
+    const resources = await pool.query(
+      `SELECT id, name, type, mime_type, file_size_bytes, created_at
+       FROM resources
+       WHERE tenant_id = $1 AND file_url IS NOT NULL
+       ORDER BY file_size_bytes DESC`,
+      [req.tenant_id]
+    );
+    const submissions = await pool.query(
+      `SELECT s.id, s.file_name AS name, 'submission' AS type, s.mime_type, s.file_size_bytes, s.submitted_at AS created_at
+       FROM assignment_submissions s
+       WHERE s.tenant_id = $1 AND s.file_url IS NOT NULL AND s.file_size_bytes > 0
+       ORDER BY s.file_size_bytes DESC`,
+      [req.tenant_id]
+    );
+    const files = [...resources.rows, ...submissions.rows]
+      .map(f => ({
+        id: f.id,
+        name: f.name || 'Unnamed file',
+        type: f.type,
+        mime_type: f.mime_type,
+        size_bytes: parseInt(f.file_size_bytes) || 0,
+        size_mb: parseFloat(((parseInt(f.file_size_bytes) || 0) / 1048576).toFixed(2)),
+        uploaded_at: f.created_at
+      }))
+      .sort((a, b) => b.size_bytes - a.size_bytes);
+    res.json(files);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch storage breakdown' });
   }
 });
 

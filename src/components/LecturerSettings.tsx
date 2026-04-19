@@ -11,7 +11,14 @@ import {
     EyeOff,
     Database,
     ShoppingCart,
-    X
+    X,
+    ChevronDown,
+    ChevronUp,
+    FileText,
+    Video,
+    Music,
+    File,
+    ClipboardList
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -32,6 +39,9 @@ export default function LecturerSettings() {
     const [purchasing, setPurchasing] = useState(false);
     const [purchaseSuccess, setPurchaseSuccess] = useState(false);
     const [recalculating, setRecalculating] = useState(false);
+    const [showBreakdown, setShowBreakdown] = useState(false);
+    const [breakdown, setBreakdown] = useState<Array<{ id: number; name: string; type: string; mime_type: string; size_bytes: number; size_mb: number; uploaded_at: string }>>([]);
+    const [loadingBreakdown, setLoadingBreakdown] = useState(false);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -40,6 +50,27 @@ export default function LecturerSettings() {
         fetch('/api/storage/plans', { headers: { 'Authorization': `Bearer ${token}` } })
             .then(r => r.json()).then(d => { if (Array.isArray(d)) setStoragePlans(d); }).catch(() => {});
     }, []);
+
+    const fetchBreakdown = async () => {
+        if (breakdown.length > 0) { setShowBreakdown(s => !s); return; }
+        setLoadingBreakdown(true);
+        setShowBreakdown(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/api/storage/breakdown', { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            if (Array.isArray(data)) setBreakdown(data);
+        } catch (e) {}
+        setLoadingBreakdown(false);
+    };
+
+    const fileIcon = (mime: string, type: string) => {
+        if (type === 'video' || mime?.startsWith('video/')) return <Video size={14} className="text-blue-500" />;
+        if (type === 'audio' || mime?.startsWith('audio/')) return <Music size={14} className="text-purple-500" />;
+        if (mime === 'application/pdf' || mime?.includes('pdf')) return <FileText size={14} className="text-red-500" />;
+        if (type === 'submission') return <ClipboardList size={14} className="text-amber-500" />;
+        return <File size={14} className="text-slate-400" />;
+    };
 
     const handleRecalculate = async () => {
         setRecalculating(true);
@@ -99,14 +130,15 @@ export default function LecturerSettings() {
             {/* Storage Usage Card */}
             {storageInfo && (
                 <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between mb-6">
+                    {/* Top row */}
+                    <div className="flex items-center justify-between mb-5">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center">
                                 <Database size={20} />
                             </div>
                             <div>
                                 <h3 className="text-lg font-bold text-slate-800">Workspace Storage</h3>
-                                <p className="text-xs text-slate-400 font-medium">{storageInfo.used_mb} MB used of {storageInfo.quota_mb} MB</p>
+                                <p className="text-xs text-slate-400 font-medium">{storageInfo.used_mb} MB used of {storageInfo.quota_mb} MB quota</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -122,22 +154,72 @@ export default function LecturerSettings() {
                             </button>
                         </div>
                     </div>
-                    <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                        {(() => {
-                            const pct = Math.min(100, Math.round((storageInfo.used_mb / storageInfo.quota_mb) * 100));
-                            return (
-                                <div className={`h-3 rounded-full transition-all ${pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-teal-500'}`}
-                                    style={{ width: `${pct}%` }} />
-                            );
-                        })()}
-                    </div>
-                    <div className="flex justify-between mt-2">
-                        <span className="text-[11px] text-slate-400 font-medium">{storageInfo.used_mb} MB used</span>
-                        <span className="text-[11px] text-slate-400 font-medium">{(storageInfo.quota_mb - storageInfo.used_mb).toFixed(1)} MB free</span>
-                    </div>
+
+                    {/* Progress bar */}
+                    {(() => {
+                        const pct = Math.min(100, Math.round((storageInfo.used_mb / storageInfo.quota_mb) * 100));
+                        return (
+                            <>
+                                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className={`h-3 rounded-full transition-all duration-500 ${pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-teal-500'}`}
+                                        style={{ width: `${pct}%` }} />
+                                </div>
+                                <div className="flex justify-between mt-2 mb-1">
+                                    <span className="text-[11px] text-slate-500 font-semibold">{storageInfo.used_mb} MB used</span>
+                                    <span className="text-[11px] text-slate-400 font-medium">{Math.max(0, storageInfo.quota_mb - storageInfo.used_mb).toFixed(2)} MB free · {pct}%</span>
+                                </div>
+                            </>
+                        );
+                    })()}
+
                     {storageInfo.used_mb / storageInfo.quota_mb >= 0.8 && (
-                        <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-2xl text-xs font-medium text-amber-700">
+                        <div className="mt-3 p-3 bg-amber-50 border border-amber-100 rounded-2xl text-xs font-medium text-amber-700">
                             Storage nearly full. Purchase additional storage to continue uploading files.
+                        </div>
+                    )}
+
+                    {/* File breakdown toggle */}
+                    <button onClick={fetchBreakdown}
+                        className="mt-4 w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-2xl text-xs font-bold text-slate-600 transition-colors">
+                        <span>View storage breakdown by file</span>
+                        {showBreakdown ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    </button>
+
+                    {/* Breakdown list */}
+                    {showBreakdown && (
+                        <div className="mt-3 border border-slate-100 rounded-2xl overflow-hidden">
+                            {loadingBreakdown ? (
+                                <div className="p-6 text-center text-xs text-slate-400 font-medium">Loading files...</div>
+                            ) : breakdown.length === 0 ? (
+                                <div className="p-6 text-center text-xs text-slate-400 font-medium">No tracked files found. Click Sync to recalculate.</div>
+                            ) : (
+                                <div className="divide-y divide-slate-50">
+                                    {breakdown.map((f, i) => (
+                                        <div key={f.id} className={`flex items-center gap-3 px-4 py-3 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}`}>
+                                            <div className="w-7 h-7 shrink-0 bg-slate-100 rounded-lg flex items-center justify-center">
+                                                {fileIcon(f.mime_type, f.type)}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs font-bold text-slate-800 truncate">{f.name}</p>
+                                                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">
+                                                    {f.type} · {new Date(f.uploaded_at).toLocaleDateString()}
+                                                </p>
+                                            </div>
+                                            <div className="shrink-0 text-right">
+                                                <p className="text-xs font-black text-slate-700">{f.size_mb > 0 ? `${f.size_mb} MB` : `${f.size_bytes} B`}</p>
+                                                <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
+                                                    <div className="h-1.5 bg-teal-400 rounded-full"
+                                                        style={{ width: `${Math.min(100, (f.size_mb / storageInfo.used_mb) * 100)}%` }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <div className="px-4 py-3 bg-teal-50 flex items-center justify-between">
+                                        <span className="text-[11px] font-black text-teal-700 uppercase tracking-widest">{breakdown.length} file{breakdown.length !== 1 ? 's' : ''}</span>
+                                        <span className="text-[11px] font-black text-teal-700">{storageInfo.used_mb} MB total</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
