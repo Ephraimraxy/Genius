@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { SettingsProvider } from './context/SettingsContext';
 import { motion, AnimatePresence } from 'motion/react'; 
 import Sidebar from './components/Sidebar';
 import DashboardOverview from './components/DashboardOverview';
@@ -939,11 +940,11 @@ export default function App() {
   };
 
   return (
-    <>
+    <SettingsProvider>
       <AnimatePresence>
         {showSplash && <SplashScreen themeColor={splashTheme.theme} accentColor={splashTheme.accent} onComplete={() => setShowSplash(false)} />}
       </AnimatePresence>
       {renderMainContent() || mainView()}
-    </>
+    </SettingsProvider>
   );
 }

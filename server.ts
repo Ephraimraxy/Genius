@@ -414,14 +414,49 @@ const upload = multer({
 // Initialize OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Active AI model — loaded from DB at startup, updated instantly when admin changes it.
-// All OpenAI calls read this variable so the admin's choice applies platform-wide.
+// ─── REAL-TIME SETTINGS INFRASTRUCTURE ───────────────────────────────────────
+// All admin setting changes are pushed instantly to every connected browser
+// via Server-Sent Events — no page refresh needed for any user.
+
 let _activeAIModel = 'gpt-5.4';
+const _settingsConnections = new Set<any>();
+const _settingsSnapshot: Record<string, any> = {
+  nav_visibility: { apa_validation: true, writing: true, formatting: true, references: true, integrity: true, reviews: true, journals: true },
+  gateways: { paystack: true, kora: true },
+  republish_config: { enabled: false, paid: false, amount: 0 },
+  pub_price: 5000,
+  sub_price: 15000,
+  ai_model: 'gpt-5.4',
+};
+
+function broadcastSettings(patch: Record<string, any>) {
+  Object.assign(_settingsSnapshot, patch);
+  if (_settingsConnections.size === 0) return;
+  const msg = `data: ${JSON.stringify(patch)}\n\n`;
+  for (const res of _settingsConnections) {
+    try { res.write(msg); } catch { _settingsConnections.delete(res); }
+  }
+}
+
+// Load all live settings from DB at startup so snapshot is accurate on first connect
 (async () => {
   try {
-    const r = await pool.query("SELECT value FROM settings WHERE key = 'ai_model'");
-    if (r.rows[0]?.value) _activeAIModel = r.rows[0].value;
-  } catch { /* use default */ }
+    const keys = ['ai_model', 'researcher_nav_config', 'gateway_paystack_enabled', 'gateway_kora_enabled',
+                  'republish_config', 'publication_price', 'lecturer_subscription_price'];
+    const r = await pool.query('SELECT key, value FROM settings WHERE key = ANY($1)', [keys]);
+    const s: Record<string, string> = {};
+    r.rows.forEach((row: any) => { s[row.key] = row.value; });
+
+    if (s.ai_model) _activeAIModel = s.ai_model;
+    Object.assign(_settingsSnapshot, {
+      ai_model: _activeAIModel,
+      nav_visibility: s.researcher_nav_config ? JSON.parse(s.researcher_nav_config) : _settingsSnapshot.nav_visibility,
+      gateways: { paystack: s.gateway_paystack_enabled !== 'false', kora: s.gateway_kora_enabled !== 'false' },
+      republish_config: s.republish_config ? JSON.parse(s.republish_config) : _settingsSnapshot.republish_config,
+      pub_price: parseInt(s.publication_price || '5000', 10),
+      sub_price: parseInt(s.lecturer_subscription_price || '15000', 10),
+    });
+  } catch { /* use defaults */ }
   console.log(`[AI] Active model: ${_activeAIModel}`);
 })();
 
@@ -2617,7 +2652,7 @@ app.post('/api/auth/contact-admin-reset', authLimiter, async (req, res) => {
 
 // Admin: View pending password reset requests
 app.get('/api/admin/reset-requests', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
   try {
     const result = await pool.query('SELECT * FROM password_reset_requests ORDER BY created_at DESC LIMIT 50');
     res.json(result.rows);
@@ -2688,7 +2723,7 @@ app.get('/api/lecturer/my-stats', authenticateToken, checkSubscription, async (r
 
 // Admin: Mark a reset request as resolved
 app.put('/api/admin/reset-requests/:id', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = req.params;
     await pool.query("UPDATE password_reset_requests SET status = 'resolved' WHERE id = $1", [parseInt(id)]);
@@ -7929,6 +7964,8 @@ app.post('/api/admin/config/pricing', authenticateToken, async (req: any, res) =
   if (!['publication_price', 'lecturer_subscription_price'].includes(key)) return res.status(400).json({ error: 'Invalid setting key' });
 
   await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value.toString()]);
+  if (key === 'publication_price') broadcastSettings({ pub_price: Number(value) });
+  if (key === 'lecturer_subscription_price') broadcastSettings({ sub_price: Number(value) });
   res.json({ success: true, key, value });
 });
 
@@ -7983,6 +8020,7 @@ app.post('/api/admin/config/journal', authenticateToken, async (req: any, res) =
     if (doi_auto_retry_interval_minutes !== undefined) queries.push(pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['doi_auto_retry_interval_minutes', doi_auto_retry_interval_minutes.toString()]));
 
     await Promise.all(queries);
+    broadcastSettings({ journal: { current_volume, current_issue, journal_issn, max_manuscripts_per_issue, max_issues_per_volume, max_pages_per_manuscript } });
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -8045,6 +8083,7 @@ app.post('/api/admin/config/gateways', authenticateToken, async (req: any, res) 
       "INSERT INTO settings (key, value) VALUES ('gateway_kora_enabled', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
       [kora === false ? 'false' : 'true']
     );
+    broadcastSettings({ gateways: { paystack: paystack !== false, kora: kora !== false } });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update gateway config' });
@@ -8140,6 +8179,7 @@ app.post('/api/admin/config/researcher-nav', authenticateToken, async (req: any,
       "INSERT INTO settings (key, value) VALUES ('researcher_nav_config', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
       [JSON.stringify(config)]
     );
+    broadcastSettings({ nav_visibility: config });
     res.json({ success: true, config });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update nav config' });
@@ -8175,7 +8215,8 @@ app.post('/api/admin/config/ai-model', authenticateToken, async (req: any, res) 
     "INSERT INTO settings (key, value) VALUES ('ai_model', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
     [model]
   );
-  _activeAIModel = model; // take effect immediately for all subsequent AI calls
+  _activeAIModel = model;
+  broadcastSettings({ ai_model: model });
   console.log(`[ADMIN] AI model updated to: ${model}`);
   res.json({ success: true, model });
 });
@@ -8193,10 +8234,34 @@ app.post('/api/admin/config/republish', authenticateToken, async (req: any, res)
       "INSERT INTO settings (key, value) VALUES ('republish_config', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
       [JSON.stringify(config)]
     );
+    broadcastSettings({ republish_config: config });
     res.json({ success: true, config });
   } catch {
     res.status(500).json({ error: 'Failed to save republish config' });
   }
+});
+
+// ─── REAL-TIME SETTINGS STREAM ──────────────────────────────────────────────
+// EventSource (SSE) cannot send custom headers, so we verify the JWT from the query param.
+app.get('/api/settings/stream', async (req: any, res) => {
+  const token = req.query.token as string;
+  if (!token) return res.status(401).end();
+  try {
+    jwt.verify(token, JWT_SECRET);
+  } catch {
+    return res.status(401).end();
+  }
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  _settingsConnections.add(res);
+  const hb = setInterval(() => { try { res.write(': ping\n\n'); } catch { clearInterval(hb); _settingsConnections.delete(res); } }, 25000);
+  req.on('close', () => { clearInterval(hb); _settingsConnections.delete(res); });
+
+  // Send the full current snapshot immediately so the new client is in sync
+  res.write(`data: ${JSON.stringify(_settingsSnapshot)}\n\n`);
 });
 
 // Researcher triggers a republish on their already-published paper
@@ -9560,7 +9625,7 @@ app.post('/api/storage/purchase/confirm', authenticateToken, async (req: any, re
 
 // ─── Admin: GET all storage plans ─────────────────────────────────────────
 app.get('/api/admin/storage-plans', authenticateToken, async (req: any, res: any) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
   try {
     const plans = await pool.query('SELECT * FROM storage_plans ORDER BY storage_mb ASC');
     res.json(plans.rows);
@@ -9571,7 +9636,7 @@ app.get('/api/admin/storage-plans', authenticateToken, async (req: any, res: any
 
 // ─── Admin: CREATE storage plan ────────────────────────────────────────────
 app.post('/api/admin/storage-plans', authenticateToken, async (req: any, res: any) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { name, storage_mb, price_kobo, duration_days } = req.body;
     if (!name || !storage_mb || !price_kobo) return res.status(400).json({ error: 'name, storage_mb, price_kobo required' });
@@ -9587,7 +9652,7 @@ app.post('/api/admin/storage-plans', authenticateToken, async (req: any, res: an
 
 // ─── Admin: UPDATE storage plan ────────────────────────────────────────────
 app.put('/api/admin/storage-plans/:id', authenticateToken, async (req: any, res: any) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { name, storage_mb, price_kobo, duration_days, is_active } = req.body;
     await pool.query(
@@ -9602,7 +9667,7 @@ app.put('/api/admin/storage-plans/:id', authenticateToken, async (req: any, res:
 
 // ─── Admin: DELETE storage plan ────────────────────────────────────────────
 app.delete('/api/admin/storage-plans/:id', authenticateToken, async (req: any, res: any) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
   try {
     await pool.query('DELETE FROM storage_plans WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -9613,7 +9678,7 @@ app.delete('/api/admin/storage-plans/:id', authenticateToken, async (req: any, r
 
 // ─── Admin: GET all workspace storage usage ────────────────────────────────
 app.get('/api/admin/storage-usage', authenticateToken, async (req: any, res: any) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
   try {
     const result = await pool.query(
       `SELECT id, name, owner_email, storage_quota_mb, storage_used_bytes,
@@ -9628,7 +9693,7 @@ app.get('/api/admin/storage-usage', authenticateToken, async (req: any, res: any
 
 // ─── Admin: Trigger storage recalculation for a specific workspace ─────────
 app.post('/api/admin/storage-recalculate/:tenantId', authenticateToken, async (req: any, res: any) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
   try {
     await recalculateTenantStorage(parseInt(req.params.tenantId));
     res.json({ success: true });
@@ -9639,7 +9704,7 @@ app.post('/api/admin/storage-recalculate/:tenantId', authenticateToken, async (r
 
 // ─── Admin: Adjust quota for a specific workspace ──────────────────────────
 app.put('/api/admin/storage-usage/:tenantId', authenticateToken, async (req: any, res: any) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { quota_mb } = req.body;
     if (!quota_mb) return res.status(400).json({ error: 'quota_mb required' });

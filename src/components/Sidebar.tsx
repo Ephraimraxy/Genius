@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSettings } from '../context/SettingsContext';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   LayoutDashboard,
@@ -55,30 +56,12 @@ export default function Sidebar({
   profile,
   activePaperId
 }: SidebarProps) {
-  const [navVisibility, setNavVisibility] = React.useState<Record<string, boolean>>({
-    apa_validation: true, writing: true, formatting: true,
-    references: true, integrity: true, reviews: true, journals: true,
-  });
+  // Nav visibility comes from the real-time settings stream — no polling needed
+  const { navVisibility } = useSettings();
 
   // Student: open attendance sessions
   const [attendanceSessions, setAttendanceSessions] = React.useState<any[]>([]);
   const [markingId, setMarkingId] = React.useState<number | null>(null);
-
-  React.useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
-    const fetchNavConfig = () => {
-      fetch('/api/admin/config/researcher-nav', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-        .then(res => res.json())
-        .then(data => { if (!data.error) setNavVisibility(data); })
-        .catch(() => {});
-    };
-    fetchNavConfig();
-    const interval = setInterval(fetchNavConfig, 8000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Fetch open attendance sessions for students (always, so panel is always visible)
   React.useEffect(() => {
