@@ -56,11 +56,20 @@ on the Genius Global Network.`;
     if (!activePaperId) return;
     setIsPublishing(true);
     try {
+      // Advance status to accepted before publishing (publish endpoint requires ready/accepted)
+      const statusRes = await fetch(`/api/papers/${activePaperId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify({ status: 'accepted' })
+      });
+      if (!statusRes.ok) {
+        const statusErr = await statusRes.json().catch(() => ({}));
+        throw new Error(statusErr.error || 'Failed to advance manuscript to accepted status.');
+      }
+
       const res = await fetch(`/api/publish/${activePaperId}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Submission protocol failed.');
