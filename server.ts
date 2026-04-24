@@ -5703,7 +5703,7 @@ EXAMPLE of correct reference output:
 
         const response = await openai.chat.completions.create({
           model: 'gpt-4o',
-          max_tokens: 8192,
+          max_tokens: 16384,
           messages: [
             { role: 'system', content: systemContent },
             { role: 'user', content: userContent }
