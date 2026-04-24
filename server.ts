@@ -414,6 +414,17 @@ const upload = multer({
 // Initialize OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Active AI model — loaded from DB at startup, updated instantly when admin changes it.
+// All OpenAI calls read this variable so the admin's choice applies platform-wide.
+let _activeAIModel = 'gpt-5.4';
+(async () => {
+  try {
+    const r = await pool.query("SELECT value FROM settings WHERE key = 'ai_model'");
+    if (r.rows[0]?.value) _activeAIModel = r.rows[0].value;
+  } catch { /* use default */ }
+  console.log(`[AI] Active model: ${_activeAIModel}`);
+})();
+
 const trackUsage = async (model: string, usage: any, purpose: string) => {
   try {
     const pt = usage?.prompt_tokens || 0;
@@ -939,7 +950,7 @@ const buildCertificateVerificationUrl = (paper: any) => {
 };
 
 async function getJournalConfig() {
-  const keys = ['current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue', 'max_issues_per_volume', 'max_pages_per_manuscript', 'journal_signature', 'journal_secretary', 'doi_auto_retry_enabled', 'doi_auto_retry_interval_minutes'];
+  const keys = ['current_volume', 'current_issue', 'journal_issn', 'max_manuscripts_per_issue', 'max_issues_per_volume', 'max_pages_per_manuscript', 'journal_signature', 'journal_secretary', 'doi_auto_retry_enabled', 'doi_auto_retry_interval_minutes', 'ai_model'];
   const result = await pool.query('SELECT key, value FROM settings WHERE key = ANY($1)', [keys]);
   const settings: Record<string, string> = {};
   result.rows.forEach((row: any) => {
@@ -956,7 +967,8 @@ async function getJournalConfig() {
     journalSignature: settings.journal_signature || '',
     journalSecretary: settings.journal_secretary || 'Dr. Danjuma Namo',
     doiAutoRetryEnabled: settings.doi_auto_retry_enabled !== 'false',
-    doiAutoRetryIntervalMinutes: parseInt(settings.doi_auto_retry_interval_minutes || '20', 10)
+    doiAutoRetryIntervalMinutes: parseInt(settings.doi_auto_retry_interval_minutes || '20', 10),
+    aiModel: settings.ai_model || 'gpt-5.4'
   };
 }
 
@@ -3631,7 +3643,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       console.log('Falling back to OpenAI for metadata extraction...');
       try {
         const response = await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: _activeAIModel,
           response_format: { type: 'json_object' },
           messages: [
             {
@@ -4703,7 +4715,7 @@ ${manuscriptText}
 `;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: _activeAIModel,
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: prompt }]
     });
@@ -4751,7 +4763,7 @@ app.post('/api/manuscript/check-similarity/:id', authenticateToken, async (req: 
     Return JSON only: { "similarityScore": number (0-100), "explanation": "string" }`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: _activeAIModel,
       messages: [{ role: "system", content: "You are a professional plagiarism auditor for a high-impact journal." }, { role: "user", content: prompt }],
       response_format: { type: "json_object" }
     });
@@ -4831,7 +4843,7 @@ Ensure the output adheres exactly to the JSON schema provided.
     `.trim();
 
   const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: _activeAIModel,
     response_format: {
       type: 'json_schema',
       json_schema: {
@@ -4926,7 +4938,7 @@ app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
     }
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: _activeAIModel,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: 'You are an expert academic writing editor. Return JSON with key "suggestions" containing an array of objects with: type (string, e.g. "grammar", "clarity", "style"), original (string), improved (string), explanation (string). Do not return more than 10 suggestions per batch.' },
@@ -5035,7 +5047,7 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
 
       try {
         const harvestResponse = await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: _activeAIModel,
           response_format: { type: 'json_object' },
           messages: [{ role: 'user', content: harvestPrompt }]
         });
@@ -5073,7 +5085,7 @@ Respond with a strict JSON array.
     `.trim();
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: _activeAIModel,
       response_format: {
         type: 'json_schema',
         json_schema: {
@@ -5295,7 +5307,7 @@ app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, 
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: _activeAIModel,
       response_format: { type: 'json_object' },
       messages: [
         {
@@ -5702,16 +5714,14 @@ EXAMPLE of correct reference output:
           ? `Manuscript Title (TOPIC): ${paper.title}\nAuthors (with affiliations):\n${authorBlock}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text) — chunk ${idx + 1} of ${totalChunks}:\n\n${chunkContent}`
           : `Source Content (HTML/Text) — chunk ${idx + 1} of ${totalChunks} (continuation of the same paper titled "${paper.title}"):\n\n${chunkContent}`;
 
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          max_tokens: 16384,
-          messages: [
-            { role: 'system', content: systemContent },
-            { role: 'user', content: userContent }
-          ]
+        const response = await (openai as any).responses.create({
+          model: _activeAIModel,
+          instructions: systemContent,
+          input: userContent,
+          max_output_tokens: 16384,
         });
 
-        const raw = response.choices[0]?.message?.content || '';
+        const raw: string = response.output_text || '';
         return raw.replace(/^```html\n?/, '').replace(/\n?```$/, '');
       })
     );
@@ -7261,7 +7271,7 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
     } else {
       // Fallback to OpenAI if GROBID citations aren't available
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: _activeAIModel,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: 'You are an academic citation integrity checker. Return JSON with key "mismatches" containing an array of objects with: issue (string), details (string).' },
@@ -7334,7 +7344,7 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: _activeAIModel,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: 'You are an expert academic peer reviewer. Provide a simulated peer review. Return JSON with: score (integer 1-10, where 10=accept as is, 1=reject), status (one of: "accept", "minor_revision", "major_revision", "reject"), comments (string with detailed review including strengths, weaknesses, and suggestions).' },
@@ -8147,6 +8157,27 @@ app.get('/api/settings/republish-config', authenticateToken, async (_req: any, r
   } catch {
     res.status(500).json({ error: 'Failed to fetch republish config' });
   }
+});
+
+const ALLOWED_AI_MODELS = ['gpt-5.4', 'gpt-5', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini'];
+
+app.get('/api/admin/config/ai-model', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  const result = await pool.query("SELECT value FROM settings WHERE key = 'ai_model'");
+  res.json({ model: result.rows[0]?.value || 'gpt-5.4', available: ALLOWED_AI_MODELS });
+});
+
+app.post('/api/admin/config/ai-model', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+  const { model } = req.body;
+  if (!ALLOWED_AI_MODELS.includes(model)) return res.status(400).json({ error: 'Invalid model ID' });
+  await pool.query(
+    "INSERT INTO settings (key, value) VALUES ('ai_model', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    [model]
+  );
+  _activeAIModel = model; // take effect immediately for all subsequent AI calls
+  console.log(`[ADMIN] AI model updated to: ${model}`);
+  res.json({ success: true, model });
 });
 
 app.post('/api/admin/config/republish', authenticateToken, async (req: any, res) => {
@@ -9286,7 +9317,7 @@ If a user sends harassment, insults, offensive content, or anything unrelated to
 
   try {
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: _activeAIModel,
       messages,
       max_tokens: 600,
       temperature: 0.5
@@ -11447,7 +11478,7 @@ STUDY MATERIALS:
 ${materialText}`;
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: _activeAIModel,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.7,
     max_tokens: 4000,
@@ -11502,7 +11533,7 @@ STUDY MATERIALS:
 ${materialText}`;
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: _activeAIModel,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.5,
     max_tokens: 1400,

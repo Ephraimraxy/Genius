@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Settings, Banknote, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity, CreditCard, BookOpen, Hash, Layers, Trash2 } from 'lucide-react';
+import { Settings, Banknote, Database, CheckCircle, AlertCircle, RefreshCw, Save, Server, Shield, Activity, CreditCard, BookOpen, Hash, Layers, Trash2, Cpu } from 'lucide-react';
 
 export default function AdminSettings() {
   const [pubPrice, setPubPrice] = useState<number>(5000);
@@ -58,6 +58,20 @@ export default function AdminSettings() {
   const [journalSecretary, setJournalSecretary] = useState<string>('Dr. Danjuma Namo');
   const [savingJournal, setSavingJournal] = useState(false);
   const [savedJournal, setSavedJournal] = useState(false);
+
+  // AI Model State
+  const AI_MODELS = [
+    { id: 'gpt-5.4', label: 'GPT-5.4', badge: 'Latest', desc: 'Highest capability — best formatting quality. Recommended.', color: 'emerald' },
+    { id: 'gpt-5',   label: 'GPT-5',   badge: 'Stable', desc: 'GPT-5 base — strong reasoning, slightly lower cost.', color: 'indigo' },
+    { id: 'gpt-4o',  label: 'GPT-4o',  badge: 'Legacy', desc: 'Previous generation — reliable fallback if needed.', color: 'amber' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini', badge: 'Economy', desc: 'Fastest and cheapest — lower quality output.', color: 'slate' },
+    { id: 'o3',      label: 'o3',       badge: 'Reasoning', desc: 'OpenAI reasoning model — best for complex analysis.', color: 'violet' },
+    { id: 'o3-mini', label: 'o3-mini',  badge: 'Reasoning', desc: 'Compact reasoning model — cost-effective for logic tasks.', color: 'violet' },
+  ] as const;
+  const [aiModel, setAiModel] = useState<string>('gpt-5.4');
+  const [savingAiModel, setSavingAiModel] = useState(false);
+  const [savedAiModel, setSavedAiModel] = useState(false);
+  const [origAiModel, setOrigAiModel] = useState<string>('gpt-5.4');
 
   // Storage Plans State
   const [storagePlans, setStoragePlans] = useState<Array<{ id: number; name: string; storage_mb: number; price_kobo: number; duration_days: number; is_active: boolean }>>([]);
@@ -166,6 +180,12 @@ export default function AdminSettings() {
     })
       .then(res => res.json())
       .then(data => { if (!data.error) setNavVisibility(data); })
+      .catch(console.error);
+
+    // Fetch AI model setting
+    fetch('/api/admin/config/ai-model', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => { if (data.model) { setAiModel(data.model); setOrigAiModel(data.model); } })
       .catch(console.error);
 
     // Fetch republish config
@@ -337,6 +357,24 @@ export default function AdminSettings() {
     doiAutoRetryEnabled !== origJournal.doiAutoRetryEnabled ||
     doiAutoRetryInterval !== origJournal.doiAutoRetryInterval ||
     journalSecretary !== origJournal.secretary;
+
+  const handleSaveAiModel = async () => {
+    setSavingAiModel(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/admin/config/ai-model', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: aiModel })
+      });
+      if (res.ok) {
+        setOrigAiModel(aiModel);
+        setSavedAiModel(true);
+        setTimeout(() => setSavedAiModel(false), 3000);
+      }
+    } catch (err) { console.error('Failed to save AI model', err); }
+    setSavingAiModel(false);
+  };
 
   const handleCreatePlan = async () => {
     if (!newPlan.name || !newPlan.storage_mb || !newPlan.price_kobo) return;
@@ -1087,6 +1125,73 @@ export default function AdminSettings() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* AI Engine Model Selector */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden lg:col-span-2">
+          <div className="px-8 py-6 border-b border-slate-100 bg-gradient-to-r from-indigo-500/5 to-transparent">
+            <h3 className="text-lg font-bold text-slate-800 font-display flex items-center gap-2">
+              <Cpu size={20} className="text-indigo-600" /> AI Engine Model
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Select the OpenAI model used for all AI operations across the entire platform — formatting, writing assistant, peer review, reference intel, and more. Takes effect immediately on the next AI call.
+            </p>
+          </div>
+          <div className="p-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+              {AI_MODELS.map(m => {
+                const active = aiModel === m.id;
+                const colorMap: Record<string, string> = {
+                  emerald: 'border-emerald-200 bg-emerald-50/60',
+                  indigo:  'border-indigo-200 bg-indigo-50/60',
+                  amber:   'border-amber-200 bg-amber-50/60',
+                  slate:   'border-slate-200 bg-slate-50',
+                  violet:  'border-violet-200 bg-violet-50/60',
+                };
+                const badgeMap: Record<string, string> = {
+                  emerald: 'bg-emerald-100 text-emerald-700',
+                  indigo:  'bg-indigo-100 text-indigo-700',
+                  amber:   'bg-amber-100 text-amber-700',
+                  slate:   'bg-slate-100 text-slate-500',
+                  violet:  'bg-violet-100 text-violet-700',
+                };
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setAiModel(m.id)}
+                    className={`text-left p-5 rounded-2xl border-2 transition-all ${active ? colorMap[m.color] + ' ring-2 ring-offset-1 ring-indigo-400' : 'border-slate-100 bg-slate-50 hover:border-slate-200'}`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-base font-black text-slate-900 font-mono">{m.label}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg ${badgeMap[m.color]}`}>{m.badge}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{m.desc}</p>
+                    {active && (
+                      <div className="mt-3 flex items-center gap-1.5 text-indigo-600">
+                        <CheckCircle size={13} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Active</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between gap-4 pt-6 border-t border-slate-100">
+              <div className="flex items-center gap-3 bg-slate-50 px-5 py-3 rounded-xl border border-slate-100">
+                <Cpu size={14} className="text-slate-400" />
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Current Active Model:</span>
+                <span className="text-sm font-black text-indigo-700 font-mono">{origAiModel}</span>
+              </div>
+              <button
+                onClick={handleSaveAiModel}
+                disabled={savingAiModel || aiModel === origAiModel}
+                className="flex items-center gap-2 px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
+              >
+                {savingAiModel ? <RefreshCw size={16} className="animate-spin" /> : savedAiModel ? <CheckCircle size={16} /> : <Save size={16} />}
+                {savingAiModel ? 'Applying...' : savedAiModel ? 'Model Applied!' : 'Apply Model Globally'}
+              </button>
+            </div>
           </div>
         </div>
 
