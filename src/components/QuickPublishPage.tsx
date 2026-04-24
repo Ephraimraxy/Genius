@@ -168,10 +168,30 @@ export default function QuickPublishPage({
               customOptions: { justify: true, alignment: 'justify', preservePageCount: true },
             }),
           });
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || 'APA 7th formatting pipeline failed');
+          if (!res.ok) throw new Error('APA 7th formatting pipeline failed');
+          // Drain SSE stream until done; surface any server-side error
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          let buf = '';
+          let sseComplete = false;
+          let sseError: string | null = null;
+          while (!sseComplete) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const parts = buf.split('\n\n');
+            buf = parts.pop() ?? '';
+            for (const part of parts) {
+              const line = part.startsWith('data: ') ? part.slice(6) : null;
+              if (!line) continue;
+              try {
+                const msg = JSON.parse(line);
+                if (msg.error) { sseError = msg.error; sseComplete = true; }
+                if (msg.done) sseComplete = true;
+              } catch { /* heartbeat */ }
+            }
           }
+          if (sseError) throw new Error(sseError || 'APA 7th formatting pipeline failed');
           return { success: true, summary: 'APA 7th edition layout applied successfully' };
         }
 

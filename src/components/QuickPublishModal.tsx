@@ -78,21 +78,32 @@ export default function QuickPublishModal({
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ 
-          style: 'ieee', // Default to IEEE for quick publish
-          customOptions: { 
-            justify: true, 
-            alignment: 'justify',
-            preservePageCount: true 
-          } 
+        body: JSON.stringify({
+          style: 'ieee',
+          customOptions: { justify: true, alignment: 'justify', preservePageCount: true }
         })
       });
       if (!formatRes.ok) {
-        const errData = await formatRes.json().catch(() => ({}));
-        console.warn('Quick publish formatting failed, continuing with structural pipeline.', errData);
+        console.warn('Quick publish formatting failed, continuing with structural pipeline.');
         addToast('Formatting skipped due to a processing error. Publishing will continue with structural layout.', 'info');
       } else {
-        await formatRes.json();
+        // Drain SSE stream until the server signals done or error
+        const reader = formatRes.body!.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let sseComplete = false;
+        while (!sseComplete) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split('\n\n');
+          buf = parts.pop() ?? '';
+          for (const part of parts) {
+            const line = part.startsWith('data: ') ? part.slice(6) : null;
+            if (!line) continue;
+            try { const msg = JSON.parse(line); if (msg.done || msg.error) sseComplete = true; } catch { /* heartbeat */ }
+          }
+        }
       }
       setProgress(60);
 

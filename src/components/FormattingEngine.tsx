@@ -129,9 +129,32 @@ export default function FormattingEngine({
         body: JSON.stringify({ style: selectedStyle })
       });
       if (!res.ok) throw new Error('Document reconstruction failed');
-      const data = await res.json();
-      setFormattedHtml(data.formattedHtml);
-      setBranding(data.branding);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+        for (const part of parts) {
+          const line = part.startsWith('data: ') ? part.slice(6) : null;
+          if (!line || line.trim() === '') continue;
+          try {
+            const msg = JSON.parse(line);
+            if (msg.error) throw new Error(msg.error);
+            if (msg.done) {
+              setFormattedHtml(msg.formattedHtml);
+              setBranding(msg.branding);
+            }
+          } catch {
+            // ignore malformed SSE lines (e.g. heartbeats)
+          }
+        }
+      }
     } catch (err: any) {
       setError(friendlyError(err, 'generic'));
     } finally {

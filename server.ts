@@ -5534,6 +5534,58 @@ function getStyleGuidelines(style: string, branding: any) {
   }
 }
 
+// Split HTML/plain-text manuscript into sections at <h2> boundaries
+function splitManuscriptSections(content: string): Array<{ heading: string | null; body: string }> {
+  const sections: Array<{ heading: string | null; body: string }> = [];
+  if (/<[a-z]/i.test(content)) {
+    const parts = content.split(/(?=<h2[\s>])/i);
+    for (const part of parts) {
+      if (!part.trim()) continue;
+      const m = part.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+      sections.push({ heading: m ? m[1].replace(/<[^>]+>/g, '').trim() : null, body: part });
+    }
+  } else {
+    const headingRe = /^(?:\d+\.?\s+)?(?:abstract|introduction|background|literature|method|material|result|finding|discussion|conclusion|reference|acknowledge|appendix)/i;
+    const lines = content.split('\n');
+    let current: string[] = [];
+    let heading: string | null = null;
+    for (const line of lines) {
+      const t = line.trim();
+      if (t.length > 3 && t.length < 80 && !t.endsWith('.') && headingRe.test(t) && current.length > 20) {
+        sections.push({ heading, body: current.join('\n') });
+        current = [line];
+        heading = t;
+      } else {
+        current.push(line);
+      }
+    }
+    if (current.length > 0) sections.push({ heading, body: current.join('\n') });
+  }
+  return sections.length > 0 ? sections : [{ heading: null, body: content }];
+}
+
+// Group sections so each chunk stays under maxWords to avoid GPT-4o output truncation
+function groupSectionsForFormatting(
+  sections: Array<{ heading: string | null; body: string }>,
+  maxWords = 3500
+): string[] {
+  const groups: string[] = [];
+  let group: string[] = [];
+  let wordCount = 0;
+  for (const s of sections) {
+    const words = s.body.split(/\s+/).length;
+    if (group.length > 0 && wordCount + words > maxWords) {
+      groups.push(group.join('\n\n'));
+      group = [];
+      wordCount = 0;
+    }
+    group.push(s.body);
+    wordCount += words;
+  }
+  if (group.length > 0) groups.push(group.join('\n\n'));
+  return groups;
+}
+
 app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -5565,83 +5617,108 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
 
     console.log(`[DEBUG] Formatting paper ${id}: PaperVol=${paper.volume}, FinalVol=${branding.volume}`);
 
-    // High-fidelity structural extraction for the AI
-    let sourceContent = paper.content;
-
     // DELIBERATE OMISSION: We no longer try to extract the original file_blob here.
     // The pipeline must respect the intermediate corrections (e.g. from APA Gatekeeper)
     // which are saved securely to paper.content. Re-extracting file_blob overrides them.
+    const sourceContent = paper.content;
 
     const styleGuidelines = getStyleGuidelines(style, branding);
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 16384,
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert academic paper formatter. Format the given paper content into professional, production-ready HTML according to the ${style.toUpperCase()} style.
-          
-          STYLE GUIDELINES TO FOLLOW:
-          ${styleGuidelines}
+    // Build author block for the first-chunk user message
+    let authorBlock = paper.authors || '';
+    if (metaAuthors.length > 0) {
+      authorBlock = metaAuthors.map((a: any) => {
+        const parts = [a.name];
+        if (a.department) parts.push(a.department);
+        if (a.faculty) parts.push(a.faculty);
+        if (a.institution) parts.push(a.institution);
+        if (a.email) parts.push(a.email);
+        return parts.filter(Boolean).join(', ');
+      }).join('\n');
+    } else if (userProfile.affiliation) {
+      authorBlock = `${paper.authors || userProfile.name} — ${userProfile.affiliation}`;
+    }
 
-          CRITICAL RULES:
-          1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the output in triple backticks (\`\`\`html).
-          2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>.
-          3. DEDUPLICATION: The Title, Authors, and Abstract provided above might ALSO exist inside the Source Content. You MUST merge them so they only appear ONCE at the very beginning of the document. Do not duplicate the title, authors, or abstract. If there is a short and long abstract, use the detailed one.
-          4. ZERO OMISSION OF MAIN TEXT: You MUST preserve 100% of the actual manuscript body text, references, and acknowledgements. Do NOT truncate or summarize the core content.
-          5. NO PLACEHOLDERS: Do NOT generate "[Figure]", "[Image]", or any missing media placeholders.
-          6. NO RECURRING METADATA: Do NOT inject journal metadata, ISSNs, slogans, or branding blocks into the manuscript. Only format the raw academic content. 
-          7. START AT TITLE: Your output must begin directly with the manuscript title (<h1>). Do NOT include any logos or journal identifiers at the top. 
-          8. STRUCTURE: Use <div class="paper-sheet"> to simulate real pages. Within each sheet, use standard HTML tags (<h1>, <h2>, <p>).
-          9. ZERO OMISSION: You MUST preserve 100% of the actual manuscript body text.
-          10. NO BROKEN MEDIA: If an image or logo is referenced in the source but the path looks absolute or relative to a local system, omit it entirely. Do NOT generate <img> tags for logos.
-          11. COPYEDITING: Fix spelling and grammatical errors, remove completely all unwanted symbols/characters, eliminate weird text indentations, and strip out unnecessary extra spaces. The text must read flawlessly as a professionally copyedited scientific manuscript.
-          12. ENFORCEMENT: If you see "Genius Multidisciplinary International Journal" or "ISSN" at the top of the source, STRIP IT.
-          13. FONTS: Use standard serif fonts for the main body.
-          14. ZERO OMISSION (STRICT): The source manuscript is approximately ${targetPageCount} pages, but you MUST prioritize content integrity over page count. Do NOT compress or summarize to fit the length. Replicate every section, paragraph, and reference.
-          15. PAGE DISCIPLINE: Avoid inflating the paper with unnecessary spacing, but ensure all text is present. Use as many <div class="paper-sheet"> blocks as needed to hold the FULL content.
-          15. REFERENCES FORMATTING (NON-NEGOTIABLE): The References section MUST be formatted as a compact, single-spaced list. Each reference entry is ONE paragraph tag: <p class="reference">...</p>. Rules:
-              a. NO blank lines or extra margin between individual reference entries. They flow one immediately after another.
-              b. Use a hanging indent: padding-left:2.9em; text-indent:-2.9em; on each <p class="reference">.
-              c. line-height must be 1.35 on all reference entries — never 1.5, never 2.
-              d. margin-bottom on each entry must be 3px maximum — never 0.8em or 1em.
-              e. Do NOT use <ol> or <ul> for references. Use <div class="references"> containing <p class="reference"> for each entry.
-              f. Do NOT add extra spacing, gaps, or visual separators between reference entries.
-              g. URLs in references must stay on the same line as the reference text and must NOT be separated into their own paragraph.
-              h. The heading "References" should use <h2> with normal heading styling above the list.
-          EXAMPLE of correct reference output:
-          <div class="references">
-            <p class="reference">Ajayi, O. (2022). <em>Human trafficking and modern slavery.</em> Lagos: Academic Press.</p>
-            <p class="reference">Bello, A. (2024). <em>Economic hardship and human trafficking in Nigeria.</em> Lagos: University Press.</p>
-          </div>`
-        },
-        {
-          role: 'user',
-          content: (() => {
-            // Build a rich author block including affiliation for the AI
-            let authorBlock = paper.authors || '';
-            if (metaAuthors.length > 0) {
-              authorBlock = metaAuthors.map((a: any) => {
-                const parts = [a.name];
-                if (a.department) parts.push(a.department);
-                if (a.faculty) parts.push(a.faculty);
-                if (a.institution) parts.push(a.institution);
-                if (a.email) parts.push(a.email);
-                return parts.filter(Boolean).join(', ');
-              }).join('\n');
-            } else if (userProfile.affiliation) {
-              authorBlock = `${paper.authors || userProfile.name} — ${userProfile.affiliation}`;
-            }
-            return `Manuscript Title (TOPIC): ${paper.title}\nAuthors (with affiliations):\n${authorBlock}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text):\n\n${sourceContent}`;
-          })()
-        }
-      ]
-    });
+    // Stream SSE so Cloudflare never 524s regardless of paper length
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    const heartbeat = setInterval(() => res.write(': ping\n\n'), 20000);
 
-    // Strip any lingering markdown backticks if the AI failed to follow instruction 1
-    let formattedHtml = response.choices[0]?.message?.content || '';
-    formattedHtml = formattedHtml.replace(/^```html\n?/, '').replace(/\n?```$/, '');
+    // Split source into section-aligned chunks so no single GPT-4o call exceeds its output limit.
+    // Each chunk is formatted in parallel; the final HTML is stitched before post-processing.
+    const sections = splitManuscriptSections(sourceContent);
+    const chunks = groupSectionsForFormatting(sections, 3500);
+    const totalChunks = chunks.length;
+    console.log(`[DEBUG] Paper ${id}: ${totalChunks} formatting chunk(s) for ~${targetPageCount} pages`);
+
+    const baseSystemPrompt = `You are an expert academic paper formatter. Format the given paper content into professional, production-ready HTML according to the ${style.toUpperCase()} style.
+
+STYLE GUIDELINES TO FOLLOW:
+${styleGuidelines}
+
+CRITICAL RULES:
+1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the output in triple backticks (\`\`\`html).
+2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>.
+3. ZERO OMISSION OF MAIN TEXT: You MUST preserve 100% of the actual manuscript body text, references, and acknowledgements. Do NOT truncate or summarize the core content.
+4. NO PLACEHOLDERS: Do NOT generate "[Figure]", "[Image]", or any missing media placeholders.
+5. NO RECURRING METADATA: Do NOT inject journal metadata, ISSNs, slogans, or branding blocks into the manuscript. Only format the raw academic content.
+6. STRUCTURE: Use <div class="paper-sheet"> to simulate real pages. Within each sheet, use standard HTML tags (<h1>, <h2>, <p>).
+7. NO BROKEN MEDIA: If an image or logo is referenced in the source but the path looks absolute or relative to a local system, omit it entirely. Do NOT generate <img> tags for logos.
+8. COPYEDITING: Fix spelling and grammatical errors, remove completely all unwanted symbols/characters, eliminate weird text indentations, and strip out unnecessary extra spaces. The text must read flawlessly as a professionally copyedited scientific manuscript.
+9. ENFORCEMENT: If you see "Genius Multidisciplinary International Journal" or "ISSN" at the top of the source, STRIP IT.
+10. FONTS: Use standard serif fonts for the main body.
+11. ZERO OMISSION (STRICT): You MUST prioritize content integrity. Do NOT compress or summarize to fit any length. Replicate every section, paragraph, and reference.
+12. PAGE DISCIPLINE: Avoid inflating the paper with unnecessary spacing, but ensure all text is present. Use as many <div class="paper-sheet"> blocks as needed to hold the FULL content.
+13. REFERENCES FORMATTING (NON-NEGOTIABLE): The References section MUST be formatted as a compact, single-spaced list. Each reference entry is ONE paragraph tag: <p class="reference">...</p>. Rules:
+    a. NO blank lines or extra margin between individual reference entries. They flow one immediately after another.
+    b. Use a hanging indent: padding-left:2.9em; text-indent:-2.9em; on each <p class="reference">.
+    c. line-height must be 1.35 on all reference entries — never 1.5, never 2.
+    d. margin-bottom on each entry must be 3px maximum — never 0.8em or 1em.
+    e. Do NOT use <ol> or <ul> for references. Use <div class="references"> containing <p class="reference"> for each entry.
+    f. Do NOT add extra spacing, gaps, or visual separators between reference entries.
+    g. URLs in references must stay on the same line as the reference text and must NOT be separated into their own paragraph.
+    h. The heading "References" should use <h2> with normal heading styling above the list.
+EXAMPLE of correct reference output:
+<div class="references">
+  <p class="reference">Ajayi, O. (2022). <em>Human trafficking and modern slavery.</em> Lagos: Academic Press.</p>
+  <p class="reference">Bello, A. (2024). <em>Economic hardship and human trafficking in Nigeria.</em> Lagos: University Press.</p>
+</div>`;
+
+    // Format all chunks in parallel; each uses at most 8192 output tokens (well within limits)
+    const formattedParts = await Promise.all(
+      chunks.map(async (chunkContent, idx) => {
+        const isFirst = idx === 0;
+        const chunkNote = totalChunks > 1
+          ? `\n\nCHUNK ${idx + 1} OF ${totalChunks}: ${isFirst
+              ? 'This is the FIRST chunk. Include the Title (<h1>), Authors, and Abstract at the top, then continue with the body content below. DEDUPLICATE — if the title/abstract also appear in the source body, render them only once.'
+              : 'This is a CONTINUATION chunk. Do NOT repeat the Title, Authors, or Abstract — they were already output in chunk 1. Start directly with the first section heading in this chunk.'}`
+          : '';
+
+        const systemContent = baseSystemPrompt + chunkNote;
+        const userContent = isFirst
+          ? `Manuscript Title (TOPIC): ${paper.title}\nAuthors (with affiliations):\n${authorBlock}\nAbstract: ${paper.abstract}\nSource Content (HTML/Text) — chunk ${idx + 1} of ${totalChunks}:\n\n${chunkContent}`
+          : `Source Content (HTML/Text) — chunk ${idx + 1} of ${totalChunks} (continuation of the same paper titled "${paper.title}"):\n\n${chunkContent}`;
+
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          max_tokens: 8192,
+          messages: [
+            { role: 'system', content: systemContent },
+            { role: 'user', content: userContent }
+          ]
+        });
+
+        const raw = response.choices[0]?.message?.content || '';
+        return raw.replace(/^```html\n?/, '').replace(/\n?```$/, '');
+      })
+    );
+
+    clearInterval(heartbeat);
+
+    // Stitch chunks — paper-sheet divs flow naturally end-to-end
+    let formattedHtml = formattedParts.join('\n');
 
     // POST-PROCESS: Enforce compact references regardless of what the AI produced.
     // Find the references section and tighten every <p> inside it.
@@ -5669,14 +5746,16 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
       [formattedHtml, nextStatus, JSON.stringify({ ...metadata, pageWindow, targetPageCount }), id, req.user.id]
     );
 
-    res.json({
-      formattedHtml,
-      branding,
-      pageWindow,
-      targetPageCount
-    });
+    res.write(`data: ${JSON.stringify({ done: true, formattedHtml, branding, pageWindow, targetPageCount })}\n\n`);
+    res.end();
   } catch (error) {
-    res.status(500).json({ error: 'Failed to format' });
+    // If headers already sent (streaming started), send error via SSE; otherwise use HTTP error
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ error: 'Failed to format' })}\n\n`);
+      res.end();
+    } else {
+      res.status(500).json({ error: 'Failed to format' });
+    }
   }
 });
 
