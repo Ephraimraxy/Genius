@@ -414,6 +414,38 @@ const upload = multer({
 // Initialize OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+const trackUsage = async (model: string, usage: any, purpose: string) => {
+  try {
+    const pt = usage?.prompt_tokens || 0;
+    const ct = usage?.completion_tokens || 0;
+    const tt = usage?.total_tokens || 0;
+    
+    // GPT-4o Pricing (current)
+    let promptRate = 0.000005;
+    let completionRate = 0.000015;
+    
+    if (model.includes('gpt-3.5')) {
+      promptRate = 0.0000005;
+      completionRate = 0.0000015;
+    }
+
+    const cost = (pt * promptRate) + (ct * completionRate);
+    
+    await pool.query(
+      'INSERT INTO system_usage (model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, purpose) VALUES ($1, $2, $3, $4, $5, $6)',
+      [model, pt, ct, tt, cost, purpose]
+    );
+
+    // Update estimated balance in settings if it exists
+    await pool.query(
+      "UPDATE settings SET value = (COALESCE(value::numeric, 0) - $1)::text WHERE key = 'openai_balance'",
+      [cost]
+    );
+  } catch (err) {
+    console.error('Usage tracking failed:', err);
+  }
+};
+
 // Initialize Database connection pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/scholar',
@@ -1410,6 +1442,16 @@ async function initDB() {
       is_available BOOLEAN DEFAULT TRUE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(tenant_id) REFERENCES tenants(id)
+    );
+    CREATE TABLE IF NOT EXISTS system_usage (
+      id SERIAL PRIMARY KEY,
+      model TEXT,
+      prompt_tokens INTEGER,
+      completion_tokens INTEGER,
+      total_tokens INTEGER,
+      estimated_cost_usd DECIMAL(12, 6),
+      purpose TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
@@ -7242,7 +7284,61 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
   }
 });
 
-app.get('/api/papers/:id/export/ris', authenticateToken, async (req: any, res) => {
+// Usage Stats for Admin
+app.get('/api/admin/usage-stats', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const [statsResult, balanceResult, historyResult, modelResult, dailyResult] = await Promise.all([
+      pool.query(`
+        SELECT
+          SUM(total_tokens) as total_tokens,
+          SUM(estimated_cost_usd) as total_cost,
+          COUNT(*) as total_requests
+        FROM system_usage
+      `),
+      pool.query("SELECT value FROM settings WHERE key = 'openai_balance'"),
+      pool.query("SELECT model, purpose, total_tokens, estimated_cost_usd, created_at FROM system_usage ORDER BY created_at DESC LIMIT 20"),
+      pool.query(`
+        SELECT model, SUM(total_tokens) as tokens, SUM(estimated_cost_usd) as cost, COUNT(*) as requests
+        FROM system_usage GROUP BY model ORDER BY cost DESC
+      `),
+      pool.query(`
+        SELECT DATE(created_at) as date, SUM(total_tokens) as tokens, SUM(estimated_cost_usd) as cost
+        FROM system_usage
+        WHERE created_at >= NOW() - INTERVAL '7 days'
+        GROUP BY DATE(created_at) ORDER BY date ASC
+      `),
+    ]);
+
+    res.json({
+      totalTokens: parseInt(statsResult.rows[0].total_tokens || '0'),
+      totalCost: parseFloat(statsResult.rows[0].total_cost || '0'),
+      totalRequests: parseInt(statsResult.rows[0].total_requests || '0'),
+      currentBalance: parseFloat(balanceResult.rows[0]?.value || '0'),
+      recentHistory: historyResult.rows,
+      byModel: modelResult.rows,
+      dailyBreakdown: dailyResult.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch usage stats' });
+  }
+});
+
+app.post('/api/admin/update-balance', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { balance } = req.body;
+    await pool.query(
+      "INSERT INTO settings (key, value) VALUES ('openai_balance', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+      [balance.toString()]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update balance' });
+  }
+});
+
+app.get('/api/papers/:id/ris', authenticateToken, async (req: any, res) => {
   const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
   const paper = paperResult.rows[0];
   if (!paper) return res.status(404).send('Not found');
