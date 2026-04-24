@@ -854,7 +854,9 @@ const buildSafeFilename = (value: string, suffix = '') => {
 
 const estimatePageCountFromText = (text: string) => {
   const words = String(text || '').split(/\s+/).filter(Boolean).length;
-  return Math.max(1, Math.ceil(words / 550));
+  // Adjusted to 350 words per page to account for typical submission layouts (double spacing).
+  // This prevents the AI from aggressively truncating papers during formatting.
+  return Math.max(1, Math.ceil(words / 350));
 };
 
 const buildPageWindow = (sourcePages: number) => {
@@ -2263,7 +2265,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       if (requestedRole === 'lecturer') mappedRole = 'tenant_admin';
 
       // Admin Priority/Restriction: Admins can ONLY login via the researcher/research portal
-      if (requestedRole === 'lecturer' && email === 'burstbrainconcept@gmail.com') {
+      const adminEmails = ['burstbrainconcept@gmail.com', 'idfelix247@gmail.com'];
+      if (requestedRole === 'lecturer' && adminEmails.includes(email)) {
         return res.status(403).json({ error: 'Admin access is restricted to the Publication portal only.' });
       }
 
@@ -2281,6 +2284,9 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       }
     }
 
+    // Order by seniority (super_admin > admin > user) so the most powerful account is picked first
+    query += " ORDER BY CASE WHEN role = 'super_admin' THEN 1 WHEN role = 'admin' THEN 2 ELSE 3 END ASC";
+
     const result = await pool.query(query, params);
 
     if (result.rows.length === 0) {
@@ -2293,8 +2299,9 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const validPassword = await bcrypt.compare(data.password.trim(), user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
 
-    // Enforce admin for specific email
-    if (user.email.toLowerCase() === 'burstbrainconcept@gmail.com' && user.role !== 'admin' && user.role !== 'super_admin') {
+    // Enforce admin for specific emails
+    const superAdminWhitelist = ['burstbrainconcept@gmail.com', 'idfelix247@gmail.com'];
+    if (superAdminWhitelist.includes(user.email.toLowerCase()) && user.role !== 'admin' && user.role !== 'super_admin') {
       await pool.query("UPDATE users SET role = 'super_admin' WHERE id = $1", [user.id]);
       user.role = 'super_admin';
     }
@@ -5550,7 +5557,8 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
           11. COPYEDITING: Fix spelling and grammatical errors, remove completely all unwanted symbols/characters, eliminate weird text indentations, and strip out unnecessary extra spaces. The text must read flawlessly as a professionally copyedited scientific manuscript.
           12. ENFORCEMENT: If you see "Genius Multidisciplinary International Journal" or "ISSN" at the top of the source, STRIP IT.
           13. FONTS: Use standard serif fonts for the main body.
-          14. PAGE DISCIPLINE: The source manuscript is approximately ${targetPageCount} pages. Keep the formatted result very close to that length. Avoid compressing the paper to an unrealistically short output and avoid inflating it with unnecessary spacing or repeated headings.
+          14. ZERO OMISSION (STRICT): The source manuscript is approximately ${targetPageCount} pages, but you MUST prioritize content integrity over page count. Do NOT compress or summarize to fit the length. Replicate every section, paragraph, and reference.
+          15. PAGE DISCIPLINE: Avoid inflating the paper with unnecessary spacing, but ensure all text is present. Use as many <div class="paper-sheet"> blocks as needed to hold the FULL content.
           15. REFERENCES FORMATTING (NON-NEGOTIABLE): The References section MUST be formatted as a compact, single-spaced list. Each reference entry is ONE paragraph tag: <p class="reference">...</p>. Rules:
               a. NO blank lines or extra margin between individual reference entries. They flow one immediately after another.
               b. Use a hanging indent: padding-left:2.9em; text-indent:-2.9em; on each <p class="reference">.
