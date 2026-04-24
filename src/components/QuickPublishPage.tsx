@@ -207,8 +207,8 @@ export default function QuickPublishPage({
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}` },
           });
-          if (!publishRes.ok) throw new Error('Publication broadcast failed — please retry');
           const publishData = await publishRes.json();
+          if (!publishRes.ok) throw new Error(publishData?.error || 'Publication broadcast failed — please retry');
           return { success: true, summary: `DOI assigned: ${publishData.doi || 'Processing...'}`, publishData };
         }
 

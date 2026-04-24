@@ -893,10 +893,11 @@ const estimatePageCountFromText = (text: string) => {
 
 const buildPageWindow = (sourcePages: number) => {
   const target = Math.max(1, Math.round(sourcePages || 1));
-  let tolerance = 1;
-  if (target >= 8) tolerance = 2;
-  if (target >= 16) tolerance = 3;
-  if (target >= 25) tolerance = 4;
+  let tolerance = 2;
+  if (target >= 8)  tolerance = 3;
+  if (target >= 16) tolerance = 5;
+  if (target >= 25) tolerance = 7;
+  if (target >= 40) tolerance = 10;
   return {
     target,
     tolerance,

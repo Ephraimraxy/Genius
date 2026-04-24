@@ -126,8 +126,8 @@ export default function QuickPublishModal({
           'Authorization': `Bearer ${token}`
         }
       });
-      if (!publishRes.ok) throw new Error('Publication broadcast failed');
       const publishData = await publishRes.json();
+      if (!publishRes.ok) throw new Error(publishData?.error || 'Publication broadcast failed');
       setProgress(90);
 
       // 4. Success
