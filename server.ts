@@ -460,29 +460,37 @@ function broadcastSettings(patch: Record<string, any>) {
   console.log(`[AI] Active model: ${_activeAIModel}`);
 })();
 
-const trackUsage = async (model: string, usage: any, purpose: string) => {
+const trackUsage = async (model: string, usage: any, purpose: string, userId?: number) => {
   try {
-    const pt = usage?.prompt_tokens || 0;
-    const ct = usage?.completion_tokens || 0;
-    const tt = usage?.total_tokens || 0;
-    
-    // GPT-4o Pricing (current)
-    let promptRate = 0.000005;
-    let completionRate = 0.000015;
-    
-    if (model.includes('gpt-3.5')) {
-      promptRate = 0.0000005;
-      completionRate = 0.0000015;
+    // Handle both Chat Completions API (prompt_tokens/completion_tokens)
+    // and Responses API (input_tokens/output_tokens)
+    const pt = usage?.prompt_tokens || usage?.input_tokens || 0;
+    const ct = usage?.completion_tokens || usage?.output_tokens || 0;
+    const tt = usage?.total_tokens || (pt + ct);
+
+    // Per-token pricing (cost per 1 token = price per 1M / 1_000_000)
+    let promptRate    = 0.000005;   // GPT-4o default: $5/1M input
+    let completionRate = 0.000015;  // GPT-4o default: $15/1M output
+
+    if (model.includes('gpt-5.4') || model.includes('gpt-5')) {
+      promptRate = 0.000008; completionRate = 0.000024;
+    } else if (model.includes('gpt-4o-mini')) {
+      promptRate = 0.0000001; completionRate = 0.0000004;
+    } else if (model.includes('gpt-3.5')) {
+      promptRate = 0.0000005; completionRate = 0.0000015;
+    } else if (model.includes('o3-mini')) {
+      promptRate = 0.0000011; completionRate = 0.0000044;
+    } else if (model.startsWith('o3')) {
+      promptRate = 0.00001; completionRate = 0.00004;
     }
 
     const cost = (pt * promptRate) + (ct * completionRate);
-    
+
     await pool.query(
-      'INSERT INTO system_usage (model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, purpose) VALUES ($1, $2, $3, $4, $5, $6)',
-      [model, pt, ct, tt, cost, purpose]
+      'INSERT INTO system_usage (model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, purpose, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [model, pt, ct, tt, cost, purpose, userId || null]
     );
 
-    // Update estimated balance in settings if it exists
     await pool.query(
       "UPDATE settings SET value = (COALESCE(value::numeric, 0) - $1)::text WHERE key = 'openai_balance'",
       [cost]
@@ -1499,6 +1507,7 @@ async function initDB() {
       total_tokens INTEGER,
       estimated_cost_usd DECIMAL(12, 6),
       purpose TEXT,
+      user_id INTEGER,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `);
@@ -1581,6 +1590,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE resources ADD COLUMN IF NOT EXISTS file_url TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS file_url TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE papers ADD COLUMN certificate_id TEXT'); } catch (e) { }
+  try { await pool.query('ALTER TABLE system_usage ADD COLUMN IF NOT EXISTS user_id INTEGER'); } catch (e) { }
 
   try { await pool.query('ALTER TABLE exams ADD COLUMN is_available BOOLEAN DEFAULT TRUE'); } catch (e) { }
   try { await pool.query('ALTER TABLE exams ADD COLUMN price INTEGER DEFAULT 0'); } catch (e) { }
@@ -3691,6 +3701,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
           ]
         });
         metadata = JSON.parse(response.choices[0]?.message?.content || '{}');
+        trackUsage(_activeAIModel, response.usage, 'metadata_extraction', req.user?.id);
       } catch (aiError: any) {
         console.error('OpenAI Metadata Extraction Failed:', aiError.message);
         if (aiError.status === 429) {
@@ -4756,6 +4767,7 @@ ${manuscriptText}
     });
 
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
+    trackUsage(_activeAIModel, response.usage, 'apa_validation', req.user?.id);
     let aiResult = parsed;
 
     // Phase-aware scoring
@@ -4804,6 +4816,7 @@ app.post('/api/manuscript/check-similarity/:id', authenticateToken, async (req: 
     });
 
     const aiData = JSON.parse(completion.choices[0].message.content || '{}');
+    trackUsage(_activeAIModel, completion.usage, 'similarity_check', req.user?.id);
     const score = aiData.similarityScore || 0;
 
     await pool.query('UPDATE papers SET metadata = metadata || $1 WHERE id = $2', [JSON.stringify({ similarityScore: score }), id]);
@@ -4867,7 +4880,7 @@ app.post('/api/manuscript/auto-fix/:id', authenticateToken, async (req: any, res
   }
 });
 
-async function performStructuralRewrite(paper: any) {
+async function performStructuralRewrite(paper: any, userId?: number) {
   const prompt = `
 You are a master academic formatter and parser.
 Parse the following manuscript into a strict JSON Abstract Syntax Tree (AST).
@@ -4930,6 +4943,7 @@ Ensure the output adheres exactly to the JSON schema provided.
   const astJson = response.choices[0]?.message?.content;
   if (!astJson) throw new Error("Failed to parse AST");
 
+  trackUsage(_activeAIModel, response.usage, 'structural_rewrite', userId);
   const ast = JSON.parse(astJson);
 
   // Save AST to db in metadata
@@ -4947,7 +4961,7 @@ app.post('/api/manuscript/structural-rewrite/:id', authenticateToken, async (req
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
-    const ast = await performStructuralRewrite(paper);
+    const ast = await performStructuralRewrite(paper, req.user.id);
     res.json({ success: true, ast });
   } catch (error) {
     console.error('AST Parser Error:', error);
@@ -4982,6 +4996,7 @@ app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
     });
 
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{"suggestions":[]}');
+    trackUsage(_activeAIModel, response.usage, 'writing_assistant', req.user?.id);
     const suggestions = parsed.suggestions || parsed;
     res.json({ suggestions, textChunk: fullText, hasMore });
   } catch (error) {
@@ -5087,6 +5102,7 @@ app.post('/api/references/:id', authenticateToken, async (req: any, res) => {
           messages: [{ role: 'user', content: harvestPrompt }]
         });
         const harvestData = JSON.parse(harvestResponse.choices[0]?.message?.content || '{}');
+        trackUsage(_activeAIModel, harvestResponse.usage, 'reference_harvest', userId);
         // Extract array from common fields like 'references', 'citations', or just the root array
         rawReferences = harvestData.references || harvestData.citations || harvestData.results || Object.values(harvestData)[0] || [];
         if (!Array.isArray(rawReferences)) rawReferences = [];
@@ -5169,6 +5185,7 @@ Respond with a strict JSON array.
     });
 
     const parsedContent = JSON.parse(response.choices[0]?.message?.content || '{"results":[]}');
+    trackUsage(_activeAIModel, response.usage, 'reference_validation', userId);
     const aiResults = parsedContent.results || [];
 
     // Clear old references to replace them
@@ -5354,6 +5371,7 @@ app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, 
     });
 
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{"keywords":[]}');
+    trackUsage(_activeAIModel, response.usage, 'keyword_refinement', req.user?.id);
     const newKeywords = parsed.keywords || [];
 
     if (newKeywords.length > 0) {
@@ -5756,6 +5774,7 @@ EXAMPLE of correct reference output:
           max_output_tokens: 16384,
         });
 
+        trackUsage(_activeAIModel, response.usage, 'formatting', req.user?.id);
         const raw: string = response.output_text || '';
         return raw.replace(/^```html\n?/, '').replace(/\n?```$/, '');
       })
@@ -5858,7 +5877,7 @@ const finalizePublicationFromRetry = async (paperId: number) => {
 
   let ast = metadata.ast;
   if (!ast) {
-    ast = await performStructuralRewrite(paper);
+    ast = await performStructuralRewrite(paper, paper.user_id);
   }
 
   const zenodoToken = process.env.ZENODO_ACCESS_TOKEN;
@@ -6721,7 +6740,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     if (!ast) {
       console.log(`Autonomous Fix: Generating missing AST for paper ${paperId}...`);
       try {
-        ast = await performStructuralRewrite(paper);
+        ast = await performStructuralRewrite(paper, userId);
       } catch (e: any) {
         return res.status(400).json({ error: `Structural Rewrite failed: ${e.message}. Please fix the manuscript manually.` });
       }
@@ -7318,6 +7337,7 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
         ]
       });
       const parsed = JSON.parse(response.choices[0]?.message?.content || '{"mismatches":[]}');
+      trackUsage(_activeAIModel, response.usage, 'integrity_check', userId);
       citationMismatches = parsed.mismatches || parsed;
     }
 
@@ -7388,6 +7408,7 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
     });
 
     const reviewData = JSON.parse(response.choices[0]?.message?.content || '{}');
+    trackUsage(_activeAIModel, response.usage, 'peer_review', req.user?.id);
 
     const result = await pool.query(`
       INSERT INTO reviews (paper_id, user_id, reviewer_name, status, score, comments)
@@ -7409,20 +7430,46 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
   }
 });
 
+// Fetch live OpenAI credit balance from their API
+app.get('/api/admin/openai-balance', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const response = await fetch('https://api.openai.com/v1/organization/balance', {
+      headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(502).json({ error: `OpenAI API returned ${response.status}: ${errText}` });
+    }
+    const data = await response.json();
+    // Response shape: { object: "balance", available: [{ currency: "usd", amount: 5.00 }], pending: [...] }
+    const available = data.available?.[0]?.amount ?? null;
+    res.json({ balance: available, raw: data });
+  } catch (err: any) {
+    res.status(502).json({ error: err.message || 'Failed to reach OpenAI billing API' });
+  }
+});
+
 // Usage Stats for Admin
 app.get('/api/admin/usage-stats', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const [statsResult, balanceResult, historyResult, modelResult, dailyResult] = await Promise.all([
+    const [statsResult, balanceResult, historyResult, modelResult, dailyResult, perUserResult] = await Promise.all([
       pool.query(`
         SELECT
-          SUM(total_tokens) as total_tokens,
-          SUM(estimated_cost_usd) as total_cost,
+          COALESCE(SUM(total_tokens), 0) as total_tokens,
+          COALESCE(SUM(estimated_cost_usd), 0) as total_cost,
           COUNT(*) as total_requests
         FROM system_usage
       `),
       pool.query("SELECT value FROM settings WHERE key = 'openai_balance'"),
-      pool.query("SELECT model, purpose, total_tokens, estimated_cost_usd, created_at FROM system_usage ORDER BY created_at DESC LIMIT 20"),
+      pool.query(`
+        SELECT su.model, su.purpose, su.total_tokens, su.estimated_cost_usd, su.created_at,
+               u.name as user_name, u.email as user_email, u.role as user_role
+        FROM system_usage su
+        LEFT JOIN users u ON u.id = su.user_id
+        ORDER BY su.created_at DESC LIMIT 20
+      `),
       pool.query(`
         SELECT model, SUM(total_tokens) as tokens, SUM(estimated_cost_usd) as cost, COUNT(*) as requests
         FROM system_usage GROUP BY model ORDER BY cost DESC
@@ -7432,6 +7479,18 @@ app.get('/api/admin/usage-stats', authenticateToken, async (req: any, res) => {
         FROM system_usage
         WHERE created_at >= NOW() - INTERVAL '7 days'
         GROUP BY DATE(created_at) ORDER BY date ASC
+      `),
+      pool.query(`
+        SELECT u.id, u.name, u.email, u.role,
+          COUNT(su.id)::int as requests,
+          COALESCE(SUM(su.total_tokens), 0)::bigint as tokens,
+          COALESCE(SUM(su.estimated_cost_usd), 0) as cost,
+          MAX(su.created_at) as last_used
+        FROM users u
+        JOIN system_usage su ON su.user_id = u.id
+        GROUP BY u.id, u.name, u.email, u.role
+        ORDER BY SUM(su.estimated_cost_usd) DESC
+        LIMIT 25
       `),
     ]);
 
@@ -7443,9 +7502,42 @@ app.get('/api/admin/usage-stats', authenticateToken, async (req: any, res) => {
       recentHistory: historyResult.rows,
       byModel: modelResult.rows,
       dailyBreakdown: dailyResult.rows,
+      perUser: perUserResult.rows,
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch usage stats' });
+  }
+});
+
+// Per-user AI usage drill-down
+app.get('/api/admin/usage-stats/user/:userId', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { userId } = req.params;
+    const [userResult, historyResult, summaryResult, byPurposeResult] = await Promise.all([
+      pool.query('SELECT id, name, email, role, created_at FROM users WHERE id = $1', [userId]),
+      pool.query(`
+        SELECT model, purpose, total_tokens, estimated_cost_usd, created_at
+        FROM system_usage WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50
+      `, [userId]),
+      pool.query(`
+        SELECT COUNT(*)::int as requests,
+          COALESCE(SUM(total_tokens), 0)::bigint as tokens,
+          COALESCE(SUM(estimated_cost_usd), 0) as cost
+        FROM system_usage WHERE user_id = $1
+      `, [userId]),
+      pool.query(`
+        SELECT purpose, COUNT(*)::int as calls, COALESCE(SUM(total_tokens), 0)::bigint as tokens, COALESCE(SUM(estimated_cost_usd), 0) as cost
+        FROM system_usage WHERE user_id = $1
+        GROUP BY purpose ORDER BY SUM(estimated_cost_usd) DESC
+      `, [userId]),
+    ]);
+
+    const user = userResult.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ user, summary: summaryResult.rows[0], history: historyResult.rows, byPurpose: byPurposeResult.rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch user usage stats' });
   }
 });
 
@@ -9388,6 +9480,7 @@ If a user sends harassment, insults, offensive content, or anything unrelated to
       temperature: 0.5
     });
     const aiReply = completion.choices[0]?.message?.content || "I'm sorry, I couldn't process your request. Please try again or contact our support team.";
+    trackUsage(_activeAIModel, completion.usage, 'ai_chat', userId);
 
     // Store AI response
     await pool.query(
@@ -11551,6 +11644,7 @@ ${materialText}`;
   });
 
   const raw = completion.choices[0]?.message?.content || '{}';
+  trackUsage(_activeAIModel, completion.usage, 'exam_generation');
   let parsed: any;
   try {
     parsed = JSON.parse(raw);
@@ -11606,6 +11700,7 @@ ${materialText}`;
   });
 
   const raw = completion.choices[0]?.message?.content || '{}';
+  trackUsage(_activeAIModel, completion.usage, 'assignment_generation');
   const parsed = safeJsonParse<any>(raw, {});
   const instructions = String(parsed?.instructions || '').replace(/\r/g, '').trim();
   if (!instructions) throw new Error('AI did not return assignment instructions.');

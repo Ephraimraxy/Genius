@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, TrendingUp, Users, ShieldCheck, Eye, User, ToggleLeft, ToggleRight, RefreshCw, Loader2, X, Cpu, DollarSign, Activity, Zap, Edit3 } from 'lucide-react';
+import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, TrendingUp, Users, ShieldCheck, Eye, User, ToggleLeft, ToggleRight, RefreshCw, Loader2, X, Cpu, DollarSign, Activity, Zap, ChevronRight, ExternalLink } from 'lucide-react';
 import GeniusPaymentModal from './GeniusPaymentModal';
 import { Tab } from '../App';
 import { friendlyError } from '../utils/friendlyError';
@@ -19,38 +19,59 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   // AI usage stats (admin only)
   const [usageStats, setUsageStats] = useState<{
     totalTokens: number; totalCost: number; totalRequests: number; currentBalance: number;
-    recentHistory: any[]; byModel: any[]; dailyBreakdown: any[];
+    recentHistory: any[]; byModel: any[]; dailyBreakdown: any[]; perUser: any[];
   } | null>(null);
-  const [editingBalance, setEditingBalance] = useState(false);
-  const [balanceInput, setBalanceInput] = useState('');
-  const [savingBalance, setSavingBalance] = useState(false);
+  const [liveBalance, setLiveBalance] = useState<number | null>(null);
+  const [liveBalanceError, setLiveBalanceError] = useState<string | null>(null);
+  const [refreshingBalance, setRefreshingBalance] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [userDetail, setUserDetail] = useState<{ user: any; summary: any; history: any[]; byPurpose: any[] } | null>(null);
+  const [loadingUserDetail, setLoadingUserDetail] = useState(false);
 
-  useEffect(() => {
-    if (!isAdmin) return;
+  const fetchUsageStats = useCallback(() => {
     const token = localStorage.getItem('token');
     fetch('/api/admin/usage-stats', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => { if (!d.error) setUsageStats(d); })
       .catch(() => {});
-  }, [isAdmin]);
+  }, []);
 
-  const handleSaveBalance = async () => {
-    const val = parseFloat(balanceInput);
-    if (isNaN(val)) return;
-    setSavingBalance(true);
+  const fetchLiveBalance = useCallback(async () => {
+    setRefreshingBalance(true);
+    setLiveBalanceError(null);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('/api/admin/update-balance', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ balance: val }),
-      });
-      if (res.ok) {
-        setUsageStats(prev => prev ? { ...prev, currentBalance: val } : null);
-        setEditingBalance(false);
+      const res = await fetch('/api/admin/openai-balance', { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      if (res.ok && data.balance !== null && data.balance !== undefined) {
+        setLiveBalance(data.balance);
+      } else {
+        setLiveBalanceError(data.error || 'Unavailable');
       }
+    } catch {
+      setLiveBalanceError('Network error');
     } finally {
-      setSavingBalance(false);
+      setRefreshingBalance(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetchUsageStats();
+    fetchLiveBalance();
+  }, [isAdmin, fetchUsageStats, fetchLiveBalance]);
+
+  const openUserDetail = async (user: any) => {
+    setSelectedUser(user);
+    setUserDetail(null);
+    setLoadingUserDetail(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/admin/usage-stats/user/${user.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      if (!data.error) setUserDetail(data);
+    } finally {
+      setLoadingUserDetail(false);
     }
   };
 
@@ -241,46 +262,37 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               <h3 className="text-sm md:text-lg font-bold text-slate-800 font-display flex items-center gap-2">
                 <Cpu size={18} className="text-violet-600" /> AI Engine — Token Usage & Balance
               </h3>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">OpenAI</span>
+              <button onClick={fetchUsageStats} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-violet-600 flex items-center gap-1 transition-colors">
+                <RefreshCw size={10} /> Refresh
+              </button>
             </div>
 
-            {/* Balance + summary cards */}
             <div className="p-5 md:p-8 space-y-6">
+              {/* Balance row */}
               <div className="flex flex-col sm:flex-row gap-4">
-                {/* Balance card */}
+                {/* Live balance card */}
                 <div className="flex-1 bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-5 flex flex-col gap-2">
                   <p className="text-[10px] font-black text-violet-500 uppercase tracking-widest flex items-center gap-1.5">
-                    <DollarSign size={11} /> Credit Balance
+                    <DollarSign size={11} /> OpenAI Credit Balance
                   </p>
-                  {editingBalance ? (
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-slate-500 font-bold">$</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={balanceInput}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBalanceInput(e.target.value)}
-                        className="w-28 border border-violet-300 rounded-lg px-2 py-1 text-lg font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-400"
-                        autoFocus
-                      />
-                      <button
-                        onClick={handleSaveBalance}
-                        disabled={savingBalance}
-                        className="px-3 py-1 bg-violet-600 text-white text-xs font-bold rounded-lg hover:bg-violet-700 disabled:opacity-50"
-                      >{savingBalance ? '…' : 'Save'}</button>
-                      <button onClick={() => setEditingBalance(false)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
-                    </div>
-                  ) : (
-                    <div className="flex items-end gap-2 mt-1">
-                      <span className="text-3xl font-black text-violet-700">${usageStats.currentBalance.toFixed(2)}</span>
-                      <button
-                        onClick={() => { setBalanceInput(usageStats.currentBalance.toFixed(2)); setEditingBalance(true); }}
-                        className="mb-1 text-violet-400 hover:text-violet-600 transition-colors"
-                        title="Update balance"
-                      ><Edit3 size={13} /></button>
-                    </div>
-                  )}
-                  <p className="text-[10px] text-violet-400 font-medium">Remaining API credit (update after topping up)</p>
+                  <div className="flex items-end gap-3 mt-1">
+                    {liveBalance !== null ? (
+                      <span className="text-3xl font-black text-violet-700">${liveBalance.toFixed(2)}</span>
+                    ) : liveBalanceError ? (
+                      <span className="text-sm font-bold text-rose-500">{liveBalanceError}</span>
+                    ) : (
+                      <span className="text-3xl font-black text-slate-300">—</span>
+                    )}
+                    <button
+                      onClick={fetchLiveBalance}
+                      disabled={refreshingBalance}
+                      className="mb-1 text-violet-400 hover:text-violet-600 transition-colors disabled:opacity-40"
+                      title="Fetch live balance from OpenAI"
+                    >
+                      {refreshingBalance ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-violet-400 font-medium">Live from OpenAI API · click refresh to update</p>
                 </div>
 
                 {/* Stats cards */}
@@ -288,7 +300,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                   {[
                     { label: 'Total Requests', value: usageStats.totalRequests.toLocaleString(), icon: <Activity size={14} className="text-blue-500" />, color: 'bg-blue-50 border-blue-100' },
                     { label: 'Total Tokens', value: usageStats.totalTokens >= 1000 ? `${(usageStats.totalTokens / 1000).toFixed(1)}k` : usageStats.totalTokens.toString(), icon: <Zap size={14} className="text-amber-500" />, color: 'bg-amber-50 border-amber-100' },
-                    { label: 'Total Spent', value: `$${usageStats.totalCost.toFixed(4)}`, icon: <DollarSign size={14} className="text-emerald-500" />, color: 'bg-emerald-50 border-emerald-100' },
+                    { label: 'Platform Spend', value: `$${usageStats.totalCost.toFixed(4)}`, icon: <DollarSign size={14} className="text-emerald-500" />, color: 'bg-emerald-50 border-emerald-100' },
                   ].map((s, i) => (
                     <div key={i} className={`rounded-xl border p-3 flex flex-col gap-1 ${s.color}`}>
                       <div className="flex items-center gap-1">{s.icon}<p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{s.label}</p></div>
@@ -297,6 +309,38 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                   ))}
                 </div>
               </div>
+
+              {/* Per-user breakdown */}
+              {usageStats.perUser && usageStats.perUser.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Usage by User — click a row to drill down</p>
+                  <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 overflow-hidden">
+                    {usageStats.perUser.map((u: any, i: number) => (
+                      <button
+                        key={i}
+                        onClick={() => openUserDetail(u)}
+                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-violet-50 transition-colors text-left"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0 text-[10px] font-black text-violet-600">
+                            {(u.name || 'U')[0].toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold text-slate-800 truncate">{u.name || 'Unknown'}</p>
+                            <p className="text-[9px] text-slate-400 truncate">{u.email} · <span className="uppercase">{u.role}</span></p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 shrink-0 ml-3">
+                          <span className="text-[10px] font-bold text-slate-500">{Number(u.requests).toLocaleString()} calls</span>
+                          <span className="text-[10px] font-bold text-slate-500">{Number(u.tokens).toLocaleString()} tok</span>
+                          <span className="text-[10px] font-bold text-emerald-600 w-16 text-right">${parseFloat(u.cost).toFixed(4)}</span>
+                          <ChevronRight size={12} className="text-slate-300" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Per-model breakdown */}
               {usageStats.byModel.length > 0 && (
@@ -332,7 +376,10 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                           <Cpu size={12} className="text-violet-400 shrink-0" />
                           <div className="min-w-0">
                             <p className="text-[10px] font-bold text-slate-700 truncate">{h.purpose || 'AI call'}</p>
-                            <p className="text-[9px] text-slate-400">{h.model} · {new Date(h.created_at).toLocaleString()}</p>
+                            <p className="text-[9px] text-slate-400">
+                              {h.model} · {new Date(h.created_at).toLocaleString()}
+                              {h.user_name && <span className="ml-1 text-violet-400">· {h.user_name}</span>}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-4 shrink-0 ml-4">
@@ -354,6 +401,114 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
             </div>
           </div>
         )}
+
+        {/* User AI Usage Detail Modal */}
+        <AnimatePresence>
+          {selectedUser && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+              onClick={() => setSelectedUser(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.93, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.93, opacity: 0 }}
+                onClick={e => e.stopPropagation()}
+                className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
+              >
+                {/* Modal header */}
+                <div className="flex items-center justify-between px-7 py-5 border-b border-slate-100 shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-violet-100 flex items-center justify-center font-black text-violet-600">
+                      {(selectedUser.name || 'U')[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-900">{selectedUser.name}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{selectedUser.email} · <span className="uppercase">{selectedUser.role}</span></p>
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedUser(null)} className="p-2 rounded-xl hover:bg-slate-100">
+                    <X size={18} className="text-slate-400" />
+                  </button>
+                </div>
+
+                {/* Modal body */}
+                <div className="overflow-y-auto custom-scrollbar flex-1 p-7 space-y-6">
+                  {loadingUserDetail && (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 size={24} className="animate-spin text-violet-400" />
+                    </div>
+                  )}
+
+                  {userDetail && (
+                    <>
+                      {/* Summary stats */}
+                      <div className="grid grid-cols-3 gap-3">
+                        {[
+                          { label: 'Total Calls', value: Number(userDetail.summary.requests).toLocaleString(), color: 'bg-blue-50 border-blue-100', text: 'text-blue-700' },
+                          { label: 'Total Tokens', value: Number(userDetail.summary.tokens) >= 1000 ? `${(Number(userDetail.summary.tokens)/1000).toFixed(1)}k` : String(userDetail.summary.tokens), color: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
+                          { label: 'Total Cost', value: `$${parseFloat(userDetail.summary.cost).toFixed(4)}`, color: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700' },
+                        ].map((s, i) => (
+                          <div key={i} className={`rounded-xl border p-4 ${s.color}`}>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">{s.label}</p>
+                            <p className={`text-xl font-black ${s.text}`}>{s.value}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* By pipeline phase */}
+                      {userDetail.byPurpose.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">By Pipeline Phase</p>
+                          <div className="space-y-2">
+                            {userDetail.byPurpose.map((p: any, i: number) => {
+                              const maxC = Math.max(...userDetail.byPurpose.map((x: any) => parseFloat(x.cost)));
+                              const pct = maxC > 0 ? (parseFloat(p.cost) / maxC) * 100 : 0;
+                              return (
+                                <div key={i} className="flex items-center gap-3">
+                                  <span className="text-[10px] font-bold text-slate-600 w-36 truncate shrink-0 capitalize">{(p.purpose || 'ai_call').replace(/_/g, ' ')}</span>
+                                  <div className="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                    <div className="h-1.5 rounded-full bg-violet-400" style={{ width: `${pct}%` }} />
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 w-10 text-right shrink-0">{p.calls}×</span>
+                                  <span className="text-[10px] font-bold text-emerald-600 w-16 text-right shrink-0">${parseFloat(p.cost).toFixed(4)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Call history */}
+                      {userDetail.history.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Call History (last 50)</p>
+                          <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 overflow-hidden">
+                            {userDetail.history.map((h: any, i: number) => (
+                              <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-bold text-slate-700 capitalize">{(h.purpose || 'ai_call').replace(/_/g, ' ')}</p>
+                                  <p className="text-[9px] text-slate-400">{h.model} · {new Date(h.created_at).toLocaleString()}</p>
+                                </div>
+                                <div className="flex items-center gap-4 shrink-0 ml-3">
+                                  <span className="text-[10px] font-bold text-slate-500">{Number(h.total_tokens).toLocaleString()} tok</span>
+                                  <span className="text-[10px] font-bold text-emerald-600">${parseFloat(h.estimated_cost_usd).toFixed(5)}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
