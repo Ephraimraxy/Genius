@@ -21,7 +21,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
     totalTokens: number; totalCost: number; totalRequests: number; currentBalance: number;
     recentHistory: any[]; byModel: any[]; dailyBreakdown: any[]; perUser: any[];
   } | null>(null);
-  const [liveBalance, setLiveBalance] = useState<number | null>(null);
+  const [liveBalance, setLiveBalance] = useState<{ balance: number; source: 'live' | 'estimated'; note?: string } | null>(null);
   const [liveBalanceError, setLiveBalanceError] = useState<string | null>(null);
   const [refreshingBalance, setRefreshingBalance] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
@@ -44,12 +44,12 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
       const res = await fetch('/api/admin/openai-balance', { headers: { 'Authorization': `Bearer ${token}` } });
       const data = await res.json();
       if (res.ok && data.balance !== null && data.balance !== undefined) {
-        setLiveBalance(data.balance);
+        setLiveBalance({ balance: data.balance, source: data.source, note: data.note });
       } else {
         setLiveBalanceError(data.error || 'Unavailable');
       }
-    } catch {
-      setLiveBalanceError('Network error');
+    } catch (e: any) {
+      setLiveBalanceError('Could not reach server');
     } finally {
       setRefreshingBalance(false);
     }
@@ -270,29 +270,44 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
             <div className="p-5 md:p-8 space-y-6">
               {/* Balance row */}
               <div className="flex flex-col sm:flex-row gap-4">
-                {/* Live balance card */}
-                <div className="flex-1 bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-5 flex flex-col gap-2">
-                  <p className="text-[10px] font-black text-violet-500 uppercase tracking-widest flex items-center gap-1.5">
-                    <DollarSign size={11} /> OpenAI Credit Balance
-                  </p>
+                {/* Balance card */}
+                <div className={`flex-1 bg-gradient-to-br border rounded-2xl p-5 flex flex-col gap-2 ${liveBalance?.source === 'live' ? 'from-emerald-50 to-teal-50 border-emerald-100' : 'from-violet-50 to-indigo-50 border-violet-100'}`}>
+                  <div className="flex items-center justify-between">
+                    <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${liveBalance?.source === 'live' ? 'text-emerald-600' : 'text-violet-500'}`}>
+                      <DollarSign size={11} /> OpenAI Credit Balance
+                    </p>
+                    {liveBalance && (
+                      <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${liveBalance.source === 'live' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                        {liveBalance.source === 'live' ? '● Live' : '~ Estimated'}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-end gap-3 mt-1">
                     {liveBalance !== null ? (
-                      <span className="text-3xl font-black text-violet-700">${liveBalance.toFixed(2)}</span>
+                      <span className={`text-3xl font-black ${liveBalance.source === 'live' ? 'text-emerald-700' : 'text-violet-700'}`}>
+                        ${liveBalance.balance.toFixed(2)}
+                      </span>
                     ) : liveBalanceError ? (
                       <span className="text-sm font-bold text-rose-500">{liveBalanceError}</span>
                     ) : (
-                      <span className="text-3xl font-black text-slate-300">—</span>
+                      <Loader2 size={20} className="text-slate-300 animate-spin" />
                     )}
                     <button
                       onClick={fetchLiveBalance}
                       disabled={refreshingBalance}
-                      className="mb-1 text-violet-400 hover:text-violet-600 transition-colors disabled:opacity-40"
-                      title="Fetch live balance from OpenAI"
+                      className="mb-1 text-slate-400 hover:text-violet-600 transition-colors disabled:opacity-40"
+                      title="Refresh balance"
                     >
                       {refreshingBalance ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
                     </button>
                   </div>
-                  <p className="text-[10px] text-violet-400 font-medium">Live from OpenAI API · click refresh to update</p>
+                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+                    {liveBalance?.source === 'live'
+                      ? 'Live from OpenAI Admin API'
+                      : liveBalance?.note
+                        ? liveBalance.note
+                        : 'Set OPENAI_ADMIN_KEY in env for live balance'}
+                  </p>
                 </div>
 
                 {/* Stats cards */}

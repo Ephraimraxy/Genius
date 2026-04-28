@@ -7431,22 +7431,46 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
 });
 
 // Fetch live OpenAI credit balance from their API
+// Requires OPENAI_ADMIN_KEY (sk-admin-...) from platform.openai.com/settings/organization/admin-keys
+// Falls back to: stored balance minus platform-tracked spend
 app.get('/api/admin/openai-balance', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+
+  const adminKey = process.env.OPENAI_ADMIN_KEY;
+  if (adminKey) {
+    try {
+      const response = await fetch('https://api.openai.com/v1/organization/balance', {
+        headers: { 'Authorization': `Bearer ${adminKey}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const available = data.available?.[0]?.amount ?? null;
+        if (available !== null) {
+          return res.json({ balance: available, source: 'live' });
+        }
+      }
+    } catch { /* fall through to estimated */ }
+  }
+
+  // Fallback: stored balance minus total tracked spend so far
   try {
-    const response = await fetch('https://api.openai.com/v1/organization/balance', {
-      headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }
+    const [balResult, spendResult] = await Promise.all([
+      pool.query("SELECT value FROM settings WHERE key = 'openai_balance'"),
+      pool.query("SELECT COALESCE(SUM(estimated_cost_usd), 0) as total_spend FROM system_usage"),
+    ]);
+    const stored = parseFloat(balResult.rows[0]?.value || '0');
+    const spend = parseFloat(spendResult.rows[0]?.total_spend || '0');
+    res.json({
+      balance: Math.max(0, stored - spend),
+      source: 'estimated',
+      stored,
+      spend,
+      note: adminKey
+        ? 'Live OpenAI balance fetch failed — showing estimate (stored balance minus tracked spend)'
+        : 'Set OPENAI_ADMIN_KEY in your environment for live balance. Showing estimate instead.'
     });
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(502).json({ error: `OpenAI API returned ${response.status}: ${errText}` });
-    }
-    const data = await response.json();
-    // Response shape: { object: "balance", available: [{ currency: "usd", amount: 5.00 }], pending: [...] }
-    const available = data.available?.[0]?.amount ?? null;
-    res.json({ balance: available, raw: data });
   } catch (err: any) {
-    res.status(502).json({ error: err.message || 'Failed to reach OpenAI billing API' });
+    res.status(500).json({ error: err.message });
   }
 });
 
