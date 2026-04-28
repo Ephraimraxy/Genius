@@ -418,6 +418,16 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // All admin setting changes are pushed instantly to every connected browser
 // via Server-Sent Events — no page refresh needed for any user.
 
+// Initialize Database connection pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/scholar',
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+  statement_timeout: 30000,
+});
+
 let _activeAIModel = 'gpt-5.4';
 const _settingsConnections = new Set<any>();
 const _settingsSnapshot: Record<string, any> = {
@@ -500,15 +510,6 @@ const trackUsage = async (model: string, usage: any, purpose: string, userId?: n
   }
 };
 
-// Initialize Database connection pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/scholar',
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-  statement_timeout: 30000,
-});
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || process.env.RESEND_FROM || 'onboarding@resend.dev';
