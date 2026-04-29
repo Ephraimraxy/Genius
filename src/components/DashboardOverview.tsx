@@ -25,6 +25,10 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   const [balanceEditOpen, setBalanceEditOpen] = useState(false);
   const [balanceInput, setBalanceInput] = useState('');
   const [savingBalance, setSavingBalance] = useState(false);
+  const [twilioData, setTwilioData] = useState<{
+    balance: number | null; currency: string; smsSent: number; smsCost: number; source: string; note?: string;
+  } | null>(null);
+  const [loadingTwilio, setLoadingTwilio] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [userDetail, setUserDetail] = useState<{ user: any; summary: any; history: any[]; byPurpose: any[] } | null>(null);
   const [loadingUserDetail, setLoadingUserDetail] = useState(false);
@@ -46,11 +50,22 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
       .catch(() => {});
   }, []);
 
+  const fetchTwilioBalance = useCallback(() => {
+    const token = localStorage.getItem('token');
+    setLoadingTwilio(true);
+    fetch('/api/admin/twilio-balance', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => setTwilioData(d))
+      .catch(() => {})
+      .finally(() => setLoadingTwilio(false));
+  }, []);
+
   useEffect(() => {
     if (!isAdmin) return;
     fetchUsageStats();
     fetchBalance();
-  }, [isAdmin, fetchUsageStats, fetchBalance]);
+    fetchTwilioBalance();
+  }, [isAdmin, fetchUsageStats, fetchBalance, fetchTwilioBalance]);
 
   const saveManualBalance = async () => {
     const val = parseFloat(balanceInput);
@@ -347,6 +362,59 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Twilio SMS Balance Card */}
+              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-100 rounded-2xl p-5 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 text-blue-600">
+                    <Activity size={11} /> Twilio SMS Balance &amp; Usage
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {twilioData?.source === 'live' && (
+                      <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-700 border-emerald-200">● Live</span>
+                    )}
+                    <button onClick={fetchTwilioBalance} disabled={loadingTwilio} className="text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-40" title="Refresh Twilio balance">
+                      {loadingTwilio ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 mt-1">
+                  {/* Balance */}
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Credit Balance</p>
+                    {loadingTwilio ? (
+                      <Loader2 size={16} className="text-slate-300 animate-spin" />
+                    ) : twilioData?.balance !== null && twilioData?.balance !== undefined ? (
+                      <p className="text-2xl font-black text-blue-700">
+                        {twilioData.currency === 'USD' ? '$' : ''}{Number(twilioData.balance).toFixed(2)}
+                        <span className="text-[9px] font-bold text-slate-400 ml-1">{twilioData.currency}</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs font-bold text-slate-400">—</p>
+                    )}
+                  </div>
+                  {/* SMS sent today */}
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">SMS Sent Today</p>
+                    <p className="text-2xl font-black text-slate-700">{twilioData?.smsSent ?? '—'}</p>
+                  </div>
+                  {/* Cost today */}
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Today&apos;s SMS Cost</p>
+                    <p className="text-2xl font-black text-slate-700">
+                      {twilioData?.smsCost !== undefined ? `$${Number(twilioData.smsCost).toFixed(4)}` : '—'}
+                    </p>
+                  </div>
+                </div>
+
+                {twilioData?.note && (
+                  <p className="text-[10px] text-amber-600 font-medium mt-1">{twilioData.note}</p>
+                )}
+                {!twilioData?.note && twilioData?.source === 'live' && (
+                  <p className="text-[10px] text-emerald-600 font-medium">Live from Twilio API · refreshes on page load</p>
+                )}
               </div>
 
               {/* Per-user breakdown */}

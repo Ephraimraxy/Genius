@@ -7726,6 +7726,66 @@ app.get('/api/admin/usage-stats/user/:userId', authenticateToken, async (req: an
   }
 });
 
+// Live Twilio account balance — uses Twilio's real REST API
+// Twilio DOES expose balance unlike OpenAI, no manual sync needed
+app.get('/api/admin/twilio-balance', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+
+  if (!sid || !token) {
+    return res.json({
+      balance: null,
+      currency: 'USD',
+      smsSent: 0,
+      source: 'unavailable',
+      note: 'TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN not set in environment.',
+    });
+  }
+
+  try {
+    // Twilio balance API — Basic Auth with AccountSid:AuthToken
+    const basicAuth = Buffer.from(`${sid}:${token}`).toString('base64');
+    const [balRes, usageRes] = await Promise.all([
+      fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Balance.json`, {
+        headers: { 'Authorization': `Basic ${basicAuth}` },
+      }),
+      fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Usage/Records/Today.json?Category=sms`, {
+        headers: { 'Authorization': `Basic ${basicAuth}` },
+      }),
+    ]);
+
+    if (!balRes.ok) {
+      const errBody = await balRes.json().catch(() => ({}));
+      return res.json({
+        balance: null, currency: 'USD', smsSent: 0, source: 'error',
+        note: `Twilio API ${balRes.status}: ${(errBody as any)?.message || balRes.statusText}`,
+      });
+    }
+
+    const balData: any = await balRes.json();
+    let smsSent = 0;
+    let smsCost = 0;
+    if (usageRes.ok) {
+      const usageData: any = await usageRes.json();
+      const smsRecord = usageData?.usage_records?.[0];
+      smsSent = parseInt(smsRecord?.count || '0', 10);
+      smsCost = parseFloat(smsRecord?.price || '0');
+    }
+
+    res.json({
+      balance: parseFloat(balData.balance),
+      currency: balData.currency || 'USD',
+      smsSent,
+      smsCost,
+      source: 'live',
+    });
+  } catch (e: any) {
+    res.json({ balance: null, currency: 'USD', smsSent: 0, source: 'error', note: e.message });
+  }
+});
+
 app.post('/api/admin/update-balance', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
