@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, UserPlus, Mail, Lock, User, Building, ArrowRight, Loader2, ShieldCheck, ArrowLeft, KeyRound, CheckCircle, MessageSquare, Send, Phone, Eye, EyeOff } from 'lucide-react';
 
@@ -25,6 +25,20 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
     const [phone, setPhone] = useState('');
     const [regStep, setRegStep] = useState(1);
     const [otpCode, setOtpCode] = useState('');
+    const [resendCooldown, setResendCooldown] = useState(0);
+    const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const startResendCooldown = () => {
+        setResendCooldown(60);
+        cooldownRef.current = setInterval(() => {
+            setResendCooldown(prev => {
+                if (prev <= 1) { clearInterval(cooldownRef.current!); return 0; }
+                return prev - 1;
+            });
+        }, 1000);
+    };
+
+    useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
 
     const isLecturer = role === 'lecturer';
     const themeColor = isLecturer ? '#1a237e' : '#800000';
@@ -110,8 +124,31 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to send code');
-            addToast('Verification code sent! Check your email.', 'success');
+            addToast('Verification code sent to your email and phone!', 'success');
             setRegStep(3);
+            startResendCooldown();
+        } catch (err: any) {
+            setError(friendlyError(err, 'auth'));
+            addToast(friendlyError(err, 'auth'), 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleResendOtp = async () => {
+        if (resendCooldown > 0 || loading) return;
+        setError('');
+        setLoading(true);
+        try {
+            const res = await fetch('/api/auth/resend-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to resend');
+            addToast('Fresh code sent to your email and phone!', 'success');
+            startResendCooldown();
         } catch (err: any) {
             setError(friendlyError(err, 'auth'));
             addToast(friendlyError(err, 'auth'), 'error');
@@ -486,6 +523,32 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                             </>
                                                         )}
                                                     </motion.button>
+
+                                                    {/* Resume shortcut for returning users */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            if (!email) { addToast('Enter your email above first', 'error'); return; }
+                                                            setLoading(true);
+                                                            try {
+                                                                const res = await fetch('/api/auth/resend-otp', {
+                                                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({ email }),
+                                                                });
+                                                                const data = await res.json();
+                                                                if (!res.ok) throw new Error(data.error);
+                                                                addToast('Code sent! Your previous registration was found.', 'success');
+                                                                setRegStep(3);
+                                                                startResendCooldown();
+                                                            } catch (err: any) {
+                                                                addToast(err.message || 'No previous registration found', 'error');
+                                                            } finally { setLoading(false); }
+                                                        }}
+                                                        disabled={loading}
+                                                        className="w-full text-center text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors pt-1"
+                                                    >
+                                                        Resuming a previous registration? Enter email above → tap here
+                                                    </button>
                                                 </motion.div>
                                             ) : (
                                                 <motion.div
@@ -557,11 +620,11 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
 
                                                     <button
                                                         type="button"
-                                                        onClick={handleSendOtp}
-                                                        disabled={loading}
-                                                        className="w-full text-center text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors pt-1"
+                                                        onClick={handleResendOtp}
+                                                        disabled={loading || resendCooldown > 0}
+                                                        className="w-full text-center text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors pt-1 disabled:opacity-40"
                                                     >
-                                                        Didn't receive a code? Resend
+                                                        {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Didn't receive a code? Resend"}
                                                     </button>
                                                 </motion.div>
                                             )}

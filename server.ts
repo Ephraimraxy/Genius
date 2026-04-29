@@ -215,7 +215,7 @@ const sendSmsOtp = async (phone: string, otp: string, name: string) => {
     await twilioClient.messages.create({
       from: process.env.TWILIO_PHONE_NUMBER,
       to: toE164Nigerian(phone),
-      body: `Hi ${name}, your Genius Publication Portal verification code is: ${otp}. Valid for 10 minutes.`,
+      body: `Hi ${name}, your Genius Publication Portal verification code is: ${otp}. Valid for 60 minutes.`,
     });
   } catch (err) {
     console.error('Twilio SMS error:', err);
@@ -2024,7 +2024,7 @@ app.post('/api/auth/send-registration-otp', authLimiter, async (req, res) => {
 
     const hashedPassword = await bcrypt.hash((password as string).trim(), 10);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+    const expiresAt = Date.now() + 30 * 60 * 1000; // OTP valid 30 min (data kept 30 days)
 
     // Upsert: refresh if pending entry already exists (network-drop resume)
     await pool.query(
@@ -2056,6 +2056,46 @@ app.post('/api/auth/send-registration-otp', authLimiter, async (req, res) => {
   } catch (error: any) {
     console.error('Send registration OTP error:', error);
     res.status(500).json({ error: 'Failed to send verification code. Please try again.' });
+  }
+});
+
+// ─── REGISTRATION OTP: RESEND (email only — for returning users) ─────
+// User can come back days/weeks later, enter just their email, get a fresh OTP.
+// Their registration data (name, password, phone) is preserved in the DB.
+app.post('/api/auth/resend-otp', authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const normalizedEmail = (email as string).toLowerCase().trim();
+
+    const row = await pool.query('SELECT * FROM pending_registrations WHERE email = $1', [normalizedEmail]);
+    if (row.rows.length === 0)
+      return res.status(404).json({ error: 'No pending registration found for this email. Please register again.' });
+
+    const pending = row.rows[0];
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 30 * 60 * 1000;
+
+    await pool.query(
+      'UPDATE pending_registrations SET otp = $1, expires_at = $2 WHERE email = $3',
+      [otp, expiresAt, normalizedEmail]
+    );
+
+    const isLecturer = pending.portal_type === 'lecturer';
+    await Promise.all([
+      sendResendEmail({
+        fromName: isLecturer ? 'Genius Academy School Portal' : 'Genius Research Publication Portal',
+        to: normalizedEmail,
+        subject: isLecturer ? 'New Verification Code — Genius Academy' : 'New Verification Code — Research Publication Portal',
+        html: isLecturer ? buildLecturerOtpEmail(pending.name, otp) : buildResearcherOtpEmail(pending.name, otp),
+      }),
+      sendSmsOtp(pending.phone || '', otp, pending.name),
+    ]);
+
+    res.json({ success: true, message: 'A fresh verification code has been sent to your email and phone.' });
+  } catch (err) {
+    console.error('Resend OTP error:', err);
+    res.status(500).json({ error: 'Failed to resend code. Please try again.' });
   }
 });
 
@@ -2488,7 +2528,7 @@ function buildLecturerOtpEmail(name: string, otp: string): string {
       <div style="background:#f0f2ff;border:2px dashed #3f51b5;border-radius:14px;padding:28px;text-align:center;margin:0 0 28px;">
         <p style="color:#3f51b5;font-size:11px;font-weight:800;letter-spacing:0.2em;text-transform:uppercase;margin:0 0 12px;">Your Verification Code</p>
         <div style="font-size:42px;font-weight:900;letter-spacing:12px;color:#1a237e;font-family:'Courier New',monospace;">${otp}</div>
-        <p style="color:#9ca3af;font-size:12px;margin:14px 0 0;">Valid for <strong>10 minutes</strong></p>
+        <p style="color:#9ca3af;font-size:12px;margin:14px 0 0;">Valid for <strong>60 minutes</strong></p>
       </div>
       <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 18px;margin:0 0 24px;">
         <p style="color:#92400e;font-size:12px;margin:0;font-weight:600;">&#9888;&#65039; If you didn&rsquo;t request this, ignore this email. Your account will NOT be created without this code.</p>
@@ -2526,7 +2566,7 @@ function buildResearcherOtpEmail(name: string, otp: string): string {
       <div style="background:#fff5f5;border:2px dashed #c0392b;border-radius:14px;padding:28px;text-align:center;margin:0 0 28px;">
         <p style="color:#c0392b;font-size:11px;font-weight:800;letter-spacing:0.2em;text-transform:uppercase;margin:0 0 12px;">Your Verification Code</p>
         <div style="font-size:42px;font-weight:900;letter-spacing:12px;color:#800000;font-family:'Courier New',monospace;">${otp}</div>
-        <p style="color:#9ca3af;font-size:12px;margin:14px 0 0;">Valid for <strong>10 minutes</strong></p>
+        <p style="color:#9ca3af;font-size:12px;margin:14px 0 0;">Valid for <strong>60 minutes</strong></p>
       </div>
       <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 18px;margin:0 0 24px;">
         <p style="color:#92400e;font-size:12px;margin:0;font-weight:600;">&#9888;&#65039; If you didn&rsquo;t request this, ignore this email. Your account will NOT be created without this code.</p>
@@ -2545,10 +2585,10 @@ function buildResearcherOtpEmail(name: string, otp: string): string {
 }
 
 // ─── PENDING REGISTRATION STORE (OTP-gated, 10-min TTL) ─────────────
-// Auto-purge expired pending_registrations rows every 60 s
+// Purge pending_registrations older than 30 days (data, not OTP expiry) — runs every hour
 setInterval(() => {
-  pool.query('DELETE FROM pending_registrations WHERE expires_at < $1', [Date.now()]).catch(() => {});
-}, 60_000);
+  pool.query('DELETE FROM pending_registrations WHERE created_at < NOW() - INTERVAL \'30 days\'').catch(() => {});
+}, 60 * 60 * 1000);
 
 // ─── PASSWORD RESET SYSTEM ──────────────────────────────────────────
 const resetCodes = new Map<string, { code: string; expires: number }>();
