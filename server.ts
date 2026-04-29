@@ -4439,197 +4439,191 @@ async function generatePublicationCertificatePDF(
   certificateId: string,
   journalConfig?: any
 ): Promise<Buffer> {
-  const pdfDoc = await PDFDocument.create();
-  // A4 landscape: 842 x 595 pt
-  const page = pdfDoc.addPage([842, 595]);
-  const { width, height } = page.getSize();
-  const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-  const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
-  const maroon = rgb(0.5, 0, 0);
-  const white = rgb(1, 1, 1);
-  const black = rgb(0, 0, 0);
-  const gray = rgb(0.35, 0.35, 0.35);
-  const gold = rgb(0.72, 0.55, 0.1);
-
   const config = journalConfig || await getJournalConfig();
-  const secretaryName = sanitizePdfText(config.journalSecretary || 'Dr. Danjuma Namo');
+  const secretaryName = (config.journalSecretary || 'Dr. Danjuma Namo').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] || c));
   const signatureBase64 = config.journalSignature || '';
 
-  const title = sanitizePdfText(paper?.title || 'Untitled Manuscript');
+  const rawTitle = paper?.title || 'Untitled Manuscript';
   const authorsList = normalizeAuthorNames(paper?.authors || paper?.metadata?.authors || []);
-  const authorsLine = sanitizePdfText(authorsList.length ? authorsList.join(', ') : 'Researcher');
-  const doi = sanitizePdfText(String(branding?.doi || paper?.doi || 'Pending'));
-  const issn = sanitizePdfText(String(branding?.issn || paper?.issn || config.journalIssn || '2971-7760'));
-  const volume = sanitizePdfText(String(branding?.volume || paper?.volume || config.currentVolume || '1'));
-  const issue = sanitizePdfText(String(branding?.issue || paper?.issue || config.currentIssue || '1'));
-  const publishedDate = sanitizePdfText(String(
+  const authorsLine = authorsList.length ? authorsList.join(', ') : 'Researcher';
+  const doi = String(branding?.doi || paper?.doi || 'Pending');
+  const issn = String(branding?.issn || paper?.issn || config.journalIssn || '2971-7760');
+  const volume = String(branding?.volume || paper?.volume || config.currentVolume || '1');
+  const issue = String(branding?.issue || paper?.issue || config.currentIssue || '1');
+  const publishedDate = String(
     branding?.date || new Date(paper?.published_at || paper?.created_at || new Date())
       .toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-  ));
+  );
   const verifyUrl = buildCertificateVerificationUrl(certificateId);
 
-  // --- Embed tools/image.png as full-page background ---
+  const esc = (s: string) => s.replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] || c));
+
+  // Read template image from disk and encode as base64 data URL
   const templatePath = path.join(process.cwd(), 'tools', 'image.png');
-  let bgImage: any = null;
+  let bgDataUrl = '';
   try {
-    const bgBytes = fs.readFileSync(templatePath);
-    bgImage = await pdfDoc.embedPng(bgBytes);
+    const imgBytes = fs.readFileSync(templatePath);
+    bgDataUrl = `data:image/png;base64,${imgBytes.toString('base64')}`;
   } catch (e) {
-    console.warn('Certificate template image not found, using blank background:', e);
-  }
-  if (bgImage) {
-    page.drawImage(bgImage, { x: 0, y: 0, width, height });
+    console.warn('[cert] Template image not found at', templatePath, e);
   }
 
-  // --- Helper: wrap text ---
-  const wrapText = (text: string, usedFont: any, size: number, maxWidth: number): string[] => {
-    const words = text.split(/\s+/).filter(Boolean);
-    const lines: string[] = [];
-    let line = '';
-    for (const word of words) {
-      const testLine = line ? `${line} ${word}` : word;
-      if (usedFont.widthOfTextAtSize(testLine, size) > maxWidth) {
-        if (line) lines.push(line);
-        line = word;
-      } else {
-        line = testLine;
-      }
-    }
-    if (line) lines.push(line);
-    return lines;
-  };
-
-  const drawCenteredLines = (lines: string[], startY: number, usedFont: any, size: number, color: any, lineGap = 6): number => {
-    let y = startY;
-    for (const line of lines) {
-      page.drawText(line, {
-        x: width / 2 - usedFont.widthOfTextAtSize(line, size) / 2,
-        y,
-        size,
-        font: usedFont,
-        color,
-      });
-      y -= size + lineGap;
-    }
-    return y;
-  };
-
-  // --- Content area: center strip between the red side strips (~x=115 to x=727) ---
-  // The template has red curved strips on left (~0-110) and right (~730-842)
-  const contentLeft = 118;
-  const contentRight = 726;
-  const contentWidth = contentRight - contentLeft;
-
-  // Blank the white area around paper-specific content in the template so we write fresh
-  // (Title area and body)
-  page.drawRectangle({ x: contentLeft, y: 130, width: contentWidth, height: 285, color: white, opacity: 0.92 });
-
-  // --- Dynamic text content ---
-  // "This is to certify that the manuscript titled"
-  let y = height - 140;
-  y = drawCenteredLines(
-    wrapText('This is to certify that the manuscript titled', fontItalic, 10, contentWidth - 20),
-    y, fontItalic, 10, gray, 4
-  );
-  y -= 4;
-
-  // Title (bold, maroon) — up to 2 lines
-  const titleLines = wrapText(`"${title}"`, fontBold, 15, contentWidth - 30);
-  y = drawCenteredLines(titleLines.slice(0, 3), y, fontBold, 15, maroon, 5);
-  y -= 4;
-
-  // "authored by"
-  y = drawCenteredLines(['authored by'], y, fontItalic, 10, gray, 4);
-
-  // Authors
-  const authorLines = wrapText(authorsLine, fontBold, 12, contentWidth - 30);
-  y = drawCenteredLines(authorLines.slice(0, 2), y, fontBold, 12, black, 5);
-  y -= 5;
-
-  // "has been accepted and published..."
-  y = drawCenteredLines(
-    wrapText(`has been accepted and published in the ${JOURNAL_DISPLAY_NAME}.`, font, 10, contentWidth - 20),
-    y, font, 10, black, 4
-  );
-  y -= 5;
-
-  // DOI
-  y = drawCenteredLines(
-    wrapText(`DOI: ${doiUrl(doi)}`, fontBold, 9, contentWidth - 20),
-    y, fontBold, 9, maroon, 3
-  );
-
-  // ISSN / Volume / Issue / Date
-  y = drawCenteredLines(
-    [`ISSN: ${issn}   |   Volume ${volume}   |   Issue ${issue}`],
-    y, font, 9, gray, 3
-  );
-  y = drawCenteredLines([`Published: ${publishedDate}`], y, fontItalic, 9, gray, 3);
-
-  // --- Signature block (bottom-left of content area) ---
-  // Template already has "DR. DANJUMA NAMO" text in image; blank it and redraw fresh
-  const sigX = contentLeft + 10;
-  const sigLineY = 108;
-
-  // blank signature area
-  page.drawRectangle({ x: sigX - 4, y: 68, width: 220, height: 60, color: white, opacity: 0.95 });
-
-  if (signatureBase64 && signatureBase64.startsWith('data:image')) {
-    try {
-      const base64Data = signatureBase64.split(',')[1];
-      const sigBytes = Buffer.from(base64Data, 'base64');
-      const sigImg = signatureBase64.includes('image/png')
-        ? await pdfDoc.embedPng(sigBytes)
-        : await pdfDoc.embedJpg(sigBytes);
-      const sigDims = sigImg.scaleToFit(130, 42);
-      page.drawImage(sigImg, { x: sigX, y: sigLineY + 4, width: sigDims.width, height: sigDims.height });
-    } catch (err) {
-      console.error('Failed to embed certificate signature image:', err);
-    }
-  }
-  page.drawLine({ start: { x: sigX, y: sigLineY }, end: { x: sigX + 190, y: sigLineY }, thickness: 0.8, color: gray });
-  page.drawText(secretaryName, { x: sigX, y: sigLineY - 13, size: 9, font: fontBold, color: black });
-  page.drawText('Secretary, Editorial Board', { x: sigX, y: sigLineY - 24, size: 8, font, color: gray });
-
-  // --- QR code (bottom-right, over the template QR area) ---
-  // Template already has a "Scan to verify" QR placeholder; we place our dynamic one there
-  const qrSize = 68;
-  const qrX = contentRight - qrSize - 8;
-  const qrY = 62;
+  // Generate QR code as base64 data URL
+  let qrDataUrl = '';
   try {
-    const qrPngBuffer: Buffer = await QRCode.toBuffer(verifyUrl, {
-      type: 'png',
-      width: 200,
-      margin: 1,
-      color: { dark: '#000000', light: '#ffffff' },
-    });
-    const qrImg = await pdfDoc.embedPng(qrPngBuffer);
-    // blank the template QR area first
-    page.drawRectangle({ x: qrX - 4, y: qrY - 2, width: qrSize + 8, height: qrSize + 8, color: white });
-    page.drawImage(qrImg, { x: qrX, y: qrY, width: qrSize, height: qrSize });
-    page.drawText('Scan to verify', { x: qrX - 2, y: qrY - 11, size: 6, font, color: gray });
-  } catch (qrErr) {
-    console.error('QR code generation failed:', qrErr);
+    qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 120, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+  } catch (e) {
+    console.warn('[cert] QR generation failed:', e);
   }
 
-  // --- Certificate ID box (bottom-right corner of content, maroon box style) ---
-  const certIdText = `Cert ID: ${certificateId}`;
-  const certIdBoxX = contentLeft + 10;
-  const certIdBoxY = 52;
-  const certIdBoxW = 220;
-  const certIdBoxH = 16;
-  page.drawRectangle({ x: certIdBoxX, y: certIdBoxY, width: certIdBoxW, height: certIdBoxH, color: maroon });
-  page.drawText(certIdText, {
-    x: certIdBoxX + 6,
-    y: certIdBoxY + 4,
-    size: 7,
-    font: fontBold,
-    color: white,
-  });
+  const doiDisplay = doiUrl(doi);
 
-  const pdfBytes = await pdfDoc.save();
-  return Buffer.from(pdfBytes);
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 297mm; height: 210mm; overflow: hidden; }
+  .page {
+    position: relative;
+    width: 297mm;
+    height: 210mm;
+    font-family: 'Times New Roman', Times, serif;
+  }
+  .bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+  }
+  .content {
+    position: absolute;
+    /* centre strip, clear of the red side banners */
+    left: 112px;
+    right: 112px;
+    top: 54px;
+    bottom: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 0;
+  }
+  .certify { font-style: italic; font-size: 11pt; color: #555; margin-bottom: 6px; }
+  .title   { font-size: 15pt; font-weight: bold; color: #800000; margin-bottom: 6px; line-height: 1.3; }
+  .authored{ font-style: italic; font-size: 10pt; color: #555; margin-bottom: 4px; }
+  .authors { font-size: 12pt; font-weight: bold; color: #111; margin-bottom: 8px; }
+  .accepted{ font-size: 10pt; color: #111; margin-bottom: 8px; line-height: 1.4; }
+  .doi     { font-size: 10pt; font-weight: bold; color: #800000; margin-bottom: 3px; }
+  .meta    { font-size: 9pt; color: #666; margin-bottom: 2px; }
+  .date    { font-style: italic; font-size: 9pt; color: #666; }
+
+  /* Bottom row */
+  .bottom {
+    position: absolute;
+    bottom: 14px;
+    left: 115px;
+    right: 115px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .sig-block { display: flex; flex-direction: column; }
+  .sig-img   { max-width: 140px; max-height: 50px; margin-bottom: 2px; }
+  .sig-line  { width: 180px; border-top: 1px solid #888; margin-bottom: 3px; }
+  .sig-name  { font-size: 10pt; font-weight: bold; color: #111; }
+  .sig-role  { font-size: 8pt; color: #666; }
+
+  .cert-id-box {
+    background: #800000;
+    color: #fff;
+    font-size: 7.5pt;
+    font-weight: bold;
+    padding: 3px 10px;
+    border-radius: 2px;
+    margin-bottom: 4px;
+    white-space: nowrap;
+  }
+  .qr-block { display: flex; flex-direction: column; align-items: center; }
+  .qr-block img { width: 72px; height: 72px; }
+  .scan-label { font-size: 7pt; color: #666; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+  ${bgDataUrl ? `<img class="bg" src="${bgDataUrl}" alt=""/>` : ''}
+
+  <div class="content">
+    <p class="certify">This is to certify that the manuscript titled</p>
+    <p class="title">&ldquo;${esc(rawTitle)}&rdquo;</p>
+    <p class="authored">authored by</p>
+    <p class="authors">${esc(authorsLine)}</p>
+    <p class="accepted">has been accepted and published in the <em>${esc(JOURNAL_DISPLAY_NAME)}</em>.</p>
+    <p class="doi">DOI: ${esc(doiDisplay)}</p>
+    <p class="meta">ISSN: ${esc(issn)} &nbsp;|&nbsp; Volume ${esc(volume)} &nbsp;|&nbsp; Issue ${esc(issue)}</p>
+    <p class="date">Published: ${esc(publishedDate)}</p>
+  </div>
+
+  <div class="bottom">
+    <div class="sig-block">
+      ${signatureBase64 && signatureBase64.startsWith('data:image') ? `<img class="sig-img" src="${signatureBase64}" alt="signature"/>` : ''}
+      <div class="sig-line"></div>
+      <span class="sig-name">${secretaryName}</span>
+      <span class="sig-role">Secretary, Editorial Board</span>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <div class="qr-block">
+      <div class="cert-id-box">Cert ID: ${esc(certificateId)}</div>
+      ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR"/>` : ''}
+      <span class="scan-label">Scan to verify</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+
+  // Launch puppeteer and render to PDF
+  const executablePaths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_PATH,
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome-stable',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  ].filter(Boolean) as string[];
+
+  let activePath = executablePaths.find(p => fs.existsSync(p));
+  if (!activePath) {
+    try {
+      const { execSync } = require('child_process');
+      activePath = execSync('which chromium || which chromium-browser || which google-chrome-stable || which google-chrome', { encoding: 'utf-8' }).trim();
+    } catch (_) {}
+  }
+  if (!activePath) throw new Error('Chromium not found for certificate generation');
+
+  const browser = await puppeteer.launch({
+    executablePath: activePath,
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote'],
+  });
+  try {
+    const certPage = await browser.newPage();
+    await certPage.setContent(html, { waitUntil: 'networkidle0' });
+    const pdfBuffer = await certPage.pdf({
+      width: '297mm',
+      height: '210mm',
+      printBackground: true,
+      margin: { top: 0, bottom: 0, left: 0, right: 0 },
+    });
+    return Buffer.from(pdfBuffer);
+  } finally {
+    await browser.close();
+  }
 }
 
 /* LEGACY PUBLICATION EMAIL (deprecated in favor of server-issued certificate)
