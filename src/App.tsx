@@ -38,6 +38,7 @@ import TokenStatusView from './components/TokenStatusView';
 import VideoLectures from './components/VideoLectures';
 import QuickPublishPage from './components/QuickPublishPage';
 import PaymentEventsAdmin from './components/PaymentEventsAdmin';
+import CertificateVerify from './components/CertificateVerify';
 
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
@@ -387,6 +388,11 @@ export default function App() {
   const renderMainContent = () => {
     if (currentPath === '/setup-pin') {
       return <PINSetup onBackToLanding={() => { window.history.pushState({}, '', '/'); setCurrentPath('/'); setShowLanding(true); }} addToast={addToast} />;
+    }
+
+    const verifyMatch = currentPath.match(/^\/verify\/(.+)$/);
+    if (verifyMatch) {
+      return <CertificateVerify certificateId={decodeURIComponent(verifyMatch[1])} />;
     }
 
     if (showLanding && !token && !showStudentAuth) {

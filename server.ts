@@ -186,6 +186,7 @@ import OpenAI from 'openai';
 import { Pool } from 'pg';
 import * as cheerio from 'cheerio';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import QRCode from 'qrcode';
 import stringSimilarity from 'string-similarity';
 import natural from 'natural';
 import jwt from 'jsonwebtoken';
@@ -1011,11 +1012,8 @@ const doiUrl = (doi: string): string => {
   return doi;
 };
 
-const buildCertificateVerificationUrl = (paper: any) => {
-  if (paper?.doi) {
-    return doiUrl(paper.doi);
-  }
-  return `${APP_URL}/publications/${paper?.id || ''}`;
+const buildCertificateVerificationUrl = (certificateId: string) => {
+  return `${APP_URL}/verify/${encodeURIComponent(certificateId)}`;
 };
 
 async function getJournalConfig() {
@@ -4442,17 +4440,20 @@ async function generatePublicationCertificatePDF(
   journalConfig?: any
 ): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([842, 595]); // A4 landscape
+  // A4 landscape: 842 x 595 pt
+  const page = pdfDoc.addPage([842, 595]);
   const { width, height } = page.getSize();
   const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
   const fontBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
   const fontItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
   const maroon = rgb(0.5, 0, 0);
-  const gray = rgb(0.4, 0.4, 0.4);
+  const white = rgb(1, 1, 1);
   const black = rgb(0, 0, 0);
+  const gray = rgb(0.35, 0.35, 0.35);
+  const gold = rgb(0.72, 0.55, 0.1);
 
   const config = journalConfig || await getJournalConfig();
-  const secretaryName = config.journalSecretary || 'Dr. Danjuma Namo';
+  const secretaryName = sanitizePdfText(config.journalSecretary || 'Dr. Danjuma Namo');
   const signatureBase64 = config.journalSignature || '';
 
   const title = sanitizePdfText(paper?.title || 'Untitled Manuscript');
@@ -4466,36 +4467,23 @@ async function generatePublicationCertificatePDF(
     branding?.date || new Date(paper?.published_at || paper?.created_at || new Date())
       .toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
   ));
-  const verifyUrl = sanitizePdfText(buildCertificateVerificationUrl({ id: paper?.id, doi }));
+  const verifyUrl = buildCertificateVerificationUrl(certificateId);
 
-  const logoLeft = await embedJournalAsset(pdfDoc, ['journal-logo.png', 'gmijp-logo.png', 'ain logo.jpeg']);
-  const logoRight = await embedJournalAsset(pdfDoc, ['Nasarawa-State-University.jpg', 'university-logo.jpg']);
+  // --- Embed tools/image.png as full-page background ---
+  const templatePath = path.join(process.cwd(), 'tools', 'image.png');
+  let bgImage: any = null;
+  try {
+    const bgBytes = fs.readFileSync(templatePath);
+    bgImage = await pdfDoc.embedPng(bgBytes);
+  } catch (e) {
+    console.warn('Certificate template image not found, using blank background:', e);
+  }
+  if (bgImage) {
+    page.drawImage(bgImage, { x: 0, y: 0, width, height });
+  }
 
-  page.drawRectangle({ x: 20, y: 20, width: width - 40, height: height - 40, borderColor: maroon, borderWidth: 2 });
-  page.drawRectangle({ x: 32, y: 32, width: width - 64, height: height - 64, borderColor: maroon, borderWidth: 1 });
-
-  if (logoLeft) page.drawImage(logoLeft, { x: 50, y: height - 115, width: 60, height: 60 });
-  if (logoRight) page.drawImage(logoRight, { x: width - 110, y: height - 115, width: 60, height: 60 });
-
-  const titleText = 'CERTIFICATE OF PUBLICATION';
-  page.drawText(titleText, {
-    x: width / 2 - fontBold.widthOfTextAtSize(titleText, 22) / 2,
-    y: height - 95,
-    size: 22,
-    font: fontBold,
-    color: maroon
-  });
-
-  const journalLine = JOURNAL_NAME.toUpperCase();
-  page.drawText(journalLine, {
-    x: width / 2 - fontBold.widthOfTextAtSize(journalLine, 10) / 2,
-    y: height - 118,
-    size: 10,
-    font: fontBold,
-    color: gray
-  });
-
-  const wrapText = (text: string, usedFont: any, size: number, maxWidth: number) => {
+  // --- Helper: wrap text ---
+  const wrapText = (text: string, usedFont: any, size: number, maxWidth: number): string[] => {
     const words = text.split(/\s+/).filter(Boolean);
     const lines: string[] = [];
     let line = '';
@@ -4512,67 +4500,133 @@ async function generatePublicationCertificatePDF(
     return lines;
   };
 
-  const drawCenteredLines = (lines: string[], y: number, usedFont: any, size: number, color: any, lineGap = 8) => {
+  const drawCenteredLines = (lines: string[], startY: number, usedFont: any, size: number, color: any, lineGap = 6): number => {
+    let y = startY;
     for (const line of lines) {
       page.drawText(line, {
         x: width / 2 - usedFont.widthOfTextAtSize(line, size) / 2,
         y,
         size,
         font: usedFont,
-        color
+        color,
       });
       y -= size + lineGap;
     }
     return y;
   };
 
-  let y = height - 160;
-  y = drawCenteredLines(wrapText('This is to certify that the manuscript titled', fontItalic, 12, width - 160), y, fontItalic, 12, gray, 6);
-  y -= 4;
-  y = drawCenteredLines(wrapText(`"${title}"`, fontBold, 18, width - 160), y, fontBold, 18, black, 6);
-  y -= 4;
-  y = drawCenteredLines(wrapText('authored by', fontItalic, 11, width - 160), y, fontItalic, 11, gray, 4);
-  y = drawCenteredLines(wrapText(authorsLine, fontBold, 14, width - 180), y, fontBold, 14, black, 6);
-  y -= 6;
+  // --- Content area: center strip between the red side strips (~x=115 to x=727) ---
+  // The template has red curved strips on left (~0-110) and right (~730-842)
+  const contentLeft = 118;
+  const contentRight = 726;
+  const contentWidth = contentRight - contentLeft;
+
+  // Blank the white area around paper-specific content in the template so we write fresh
+  // (Title area and body)
+  page.drawRectangle({ x: contentLeft, y: 130, width: contentWidth, height: 285, color: white, opacity: 0.92 });
+
+  // --- Dynamic text content ---
+  // "This is to certify that the manuscript titled"
+  let y = height - 140;
   y = drawCenteredLines(
-    wrapText(`has been accepted and published in the ${JOURNAL_DISPLAY_NAME}.`, font, 12, width - 160),
-    y,
-    font,
-    12,
-    black,
-    6
+    wrapText('This is to certify that the manuscript titled', fontItalic, 10, contentWidth - 20),
+    y, fontItalic, 10, gray, 4
+  );
+  y -= 4;
+
+  // Title (bold, maroon) — up to 2 lines
+  const titleLines = wrapText(`"${title}"`, fontBold, 15, contentWidth - 30);
+  y = drawCenteredLines(titleLines.slice(0, 3), y, fontBold, 15, maroon, 5);
+  y -= 4;
+
+  // "authored by"
+  y = drawCenteredLines(['authored by'], y, fontItalic, 10, gray, 4);
+
+  // Authors
+  const authorLines = wrapText(authorsLine, fontBold, 12, contentWidth - 30);
+  y = drawCenteredLines(authorLines.slice(0, 2), y, fontBold, 12, black, 5);
+  y -= 5;
+
+  // "has been accepted and published..."
+  y = drawCenteredLines(
+    wrapText(`has been accepted and published in the ${JOURNAL_DISPLAY_NAME}.`, font, 10, contentWidth - 20),
+    y, font, 10, black, 4
+  );
+  y -= 5;
+
+  // DOI
+  y = drawCenteredLines(
+    wrapText(`DOI: ${doiUrl(doi)}`, fontBold, 9, contentWidth - 20),
+    y, fontBold, 9, maroon, 3
   );
 
-  y -= 6;
-  y = drawCenteredLines(wrapText(`DOI: ${doiUrl(doi)}`, fontBold, 11, width - 160), y, fontBold, 11, maroon, 4);
+  // ISSN / Volume / Issue / Date
   y = drawCenteredLines(
-    wrapText(`ISSN: ${issn}   |   Volume ${volume}   |   Issue ${issue}`, font, 10, width - 160),
-    y,
-    font,
-    10,
-    gray,
-    4
+    [`ISSN: ${issn}   |   Volume ${volume}   |   Issue ${issue}`],
+    y, font, 9, gray, 3
   );
-  y = drawCenteredLines(wrapText(`Published: ${publishedDate}`, fontItalic, 10, width - 160), y, fontItalic, 10, gray, 4);
+  y = drawCenteredLines([`Published: ${publishedDate}`], y, fontItalic, 9, gray, 3);
 
-  const signatureY = 95;
+  // --- Signature block (bottom-left of content area) ---
+  // Template already has "DR. DANJUMA NAMO" text in image; blank it and redraw fresh
+  const sigX = contentLeft + 10;
+  const sigLineY = 108;
+
+  // blank signature area
+  page.drawRectangle({ x: sigX - 4, y: 68, width: 220, height: 60, color: white, opacity: 0.95 });
+
   if (signatureBase64 && signatureBase64.startsWith('data:image')) {
     try {
       const base64Data = signatureBase64.split(',')[1];
       const sigBytes = Buffer.from(base64Data, 'base64');
-      const sigImg = signatureBase64.includes('image/png') ? await pdfDoc.embedPng(sigBytes) : await pdfDoc.embedJpg(sigBytes);
-      const sigDims = sigImg.scaleToFit(140, 50);
-      page.drawImage(sigImg, { x: 80, y: signatureY + 15, width: sigDims.width, height: sigDims.height });
+      const sigImg = signatureBase64.includes('image/png')
+        ? await pdfDoc.embedPng(sigBytes)
+        : await pdfDoc.embedJpg(sigBytes);
+      const sigDims = sigImg.scaleToFit(130, 42);
+      page.drawImage(sigImg, { x: sigX, y: sigLineY + 4, width: sigDims.width, height: sigDims.height });
     } catch (err) {
       console.error('Failed to embed certificate signature image:', err);
     }
   }
-  page.drawLine({ start: { x: 80, y: signatureY }, end: { x: 260, y: signatureY }, thickness: 1, color: gray });
-  page.drawText(secretaryName, { x: 80, y: signatureY - 16, size: 11, font: fontBold, color: black });
-  page.drawText('Secretary, Editorial Board', { x: 80, y: signatureY - 30, size: 9, font, color: gray });
+  page.drawLine({ start: { x: sigX, y: sigLineY }, end: { x: sigX + 190, y: sigLineY }, thickness: 0.8, color: gray });
+  page.drawText(secretaryName, { x: sigX, y: sigLineY - 13, size: 9, font: fontBold, color: black });
+  page.drawText('Secretary, Editorial Board', { x: sigX, y: sigLineY - 24, size: 8, font, color: gray });
 
-  page.drawText(`Certificate ID: ${certificateId}`, { x: width - 320, y: 95, size: 9, font: fontBold, color: black });
-  page.drawText(`Verification: ${verifyUrl}`, { x: width - 320, y: 80, size: 8, font, color: gray });
+  // --- QR code (bottom-right, over the template QR area) ---
+  // Template already has a "Scan to verify" QR placeholder; we place our dynamic one there
+  const qrSize = 68;
+  const qrX = contentRight - qrSize - 8;
+  const qrY = 62;
+  try {
+    const qrPngBuffer: Buffer = await QRCode.toBuffer(verifyUrl, {
+      type: 'png',
+      width: 200,
+      margin: 1,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+    const qrImg = await pdfDoc.embedPng(qrPngBuffer);
+    // blank the template QR area first
+    page.drawRectangle({ x: qrX - 4, y: qrY - 2, width: qrSize + 8, height: qrSize + 8, color: white });
+    page.drawImage(qrImg, { x: qrX, y: qrY, width: qrSize, height: qrSize });
+    page.drawText('Scan to verify', { x: qrX - 2, y: qrY - 11, size: 6, font, color: gray });
+  } catch (qrErr) {
+    console.error('QR code generation failed:', qrErr);
+  }
+
+  // --- Certificate ID box (bottom-right corner of content, maroon box style) ---
+  const certIdText = `Cert ID: ${certificateId}`;
+  const certIdBoxX = contentLeft + 10;
+  const certIdBoxY = 52;
+  const certIdBoxW = 220;
+  const certIdBoxH = 16;
+  page.drawRectangle({ x: certIdBoxX, y: certIdBoxY, width: certIdBoxW, height: certIdBoxH, color: maroon });
+  page.drawText(certIdText, {
+    x: certIdBoxX + 6,
+    y: certIdBoxY + 4,
+    size: 7,
+    font: fontBold,
+    color: white,
+  });
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
@@ -6183,6 +6237,50 @@ app.get('/api/papers/:id/certificate', authenticateToken, async (req: any, res) 
   } catch (error) {
     console.error('Certificate generation error:', error);
     res.status(500).json({ error: 'Failed to generate publication certificate' });
+  }
+});
+
+// Public certificate verification — no auth required
+app.get('/api/verify/:certificateId', async (req: any, res) => {
+  try {
+    const { certificateId } = req.params;
+    if (!certificateId) return res.status(400).json({ error: 'Certificate ID required' });
+
+    const result = await pool.query(
+      `SELECT p.id, p.title, p.doi, p.issn, p.volume, p.issue, p.published_at, p.status, p.certificate_id,
+              p.metadata, u.name as researcher_name
+       FROM papers p
+       JOIN users u ON p.user_id = u.id
+       WHERE p.certificate_id = $1`,
+      [certificateId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ valid: false, error: 'Certificate not found or invalid.' });
+    }
+
+    const paper = result.rows[0];
+    const metadata: any = safeJsonParse(paper.metadata, {});
+    const authors = normalizeAuthorNames(metadata.authors || []);
+    const publishedAt = paper.published_at
+      ? new Date(paper.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+      : null;
+
+    res.json({
+      valid: paper.status === 'published',
+      certificateId: paper.certificate_id,
+      title: paper.title,
+      authors,
+      doi: paper.doi || null,
+      issn: paper.issn || null,
+      volume: paper.volume || null,
+      issue: paper.issue || null,
+      publishedAt,
+      journal: JOURNAL_DISPLAY_NAME,
+    });
+  } catch (err) {
+    console.error('Certificate verify error:', err);
+    res.status(500).json({ valid: false, error: 'Verification failed' });
   }
 });
 
