@@ -377,33 +377,32 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                         </div>
                                                     </div>
 
-                                                    {isLecturer && (
-                                                        <div className="space-y-1">
-                                                            <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>PHONE NUMBER (11 DIGITS)</label>
-                                                            <div className="relative group">
-                                                                <Phone className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
-                                                                <input
-                                                                    type="tel"
-                                                                    required
-                                                                    pattern="[0-9]{11}"
-                                                                    maxLength={11}
-                                                                    value={phone}
-                                                                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                                                                    className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
-                                                                    placeholder="08012345678"
-                                                                />
-                                                            </div>
+                                                    <div className="space-y-1">
+                                                        <label className={`text-[10px] font-black uppercase tracking-[0.2em] ml-2 ${labelColor}`}>PHONE NUMBER (11 DIGITS)</label>
+                                                        <div className="relative group">
+                                                            <Phone className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors" size={20} />
+                                                            <input
+                                                                type="tel"
+                                                                required
+                                                                pattern="[0-9]{11}"
+                                                                maxLength={11}
+                                                                value={phone}
+                                                                onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                                                                className={`w-full pl-16 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:bg-white outline-none transition-all text-slate-900 placeholder:text-slate-300 font-bold ${focusRing}`}
+                                                                placeholder="08012345678"
+                                                            />
                                                         </div>
-                                                    )}
+                                                    </div>
 
                                                     <motion.button
                                                         whileTap={{ scale: 0.98 }}
                                                         type="button"
                                                         onClick={() => {
-                                                            if (name && (isLecturer ? (tenantName && phone.length === 11) : affiliation)) {
+                                                            const hasRequired = name && phone.length === 11 && (isLecturer ? tenantName : affiliation);
+                                                            if (hasRequired) {
                                                                 setRegStep(2);
                                                             } else {
-                                                                addToast(isLecturer && phone.length !== 11 ? 'Please enter a valid 11-digit phone number' : 'Please fill all required fields', 'error');
+                                                                addToast(phone.length !== 11 ? 'Please enter a valid 11-digit phone number' : 'Please fill all required fields', 'error');
                                                             }
                                                         }}
                                                         className="w-full text-white font-black py-5 rounded-2xl shadow-xl transition-all mt-4 flex items-center justify-center gap-3 group uppercase tracking-widest text-xs"
@@ -504,7 +503,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                         >
                                                             <ArrowLeft size={10} /> BACK
                                                         </button>
-                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${labelColor}`}>Step 3: Verify Email</span>
+                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${labelColor}`}>Step 3: Verify</span>
                                                     </div>
 
                                                     {/* Branded info banner */}
@@ -515,7 +514,7 @@ export default function Auth({ onAuthSuccess, addToast, onBackToLanding, role = 
                                                                 {isLecturer ? 'Genius Academy School Portal' : 'Genius Research Publication Portal'}
                                                             </p>
                                                             <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                                                                A 6-digit code was sent to <strong className="text-slate-700">{email}</strong>. Enter it below to activate your account.
+                                                                A 6-digit code was sent to <strong className="text-slate-700">{email}</strong> and your phone <strong className="text-slate-700">{phone}</strong>. Enter it below to activate your account.
                                                             </p>
                                                         </div>
                                                     </div>

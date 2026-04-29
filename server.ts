@@ -196,6 +196,31 @@ import puppeteer from 'puppeteer-core';
 import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import helmet from 'helmet';
+import twilio from 'twilio';
+
+const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+  ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+  : null;
+
+const toE164Nigerian = (phone: string) => {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('0') && digits.length === 11) return '+234' + digits.slice(1);
+  if (digits.startsWith('234') && digits.length === 13) return '+' + digits;
+  return '+' + digits;
+};
+
+const sendSmsOtp = async (phone: string, otp: string, name: string) => {
+  if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) return;
+  try {
+    await twilioClient.messages.create({
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: toE164Nigerian(phone),
+      body: `Hi ${name}, your Genius Publication Portal verification code is: ${otp}. Valid for 10 minutes.`,
+    });
+  } catch (err) {
+    console.error('Twilio SMS error:', err);
+  }
+};
 
 const JOURNAL_NAME = 'Genius Multidisciplinary International Journal Publication';
 const JOURNAL_DISPLAY_NAME = 'Genius Multidisciplinary International Journal';
@@ -1962,11 +1987,11 @@ app.post('/api/auth/send-registration-otp', authLimiter, async (req, res) => {
     if (!email || !password || !name || !portalType)
       return res.status(400).json({ error: 'Missing required fields' });
 
-    if (portalType === 'lecturer' && (!tenantName || !phone))
-      return res.status(400).json({ error: 'Workspace name and phone number are required' });
-
-    if (portalType === 'lecturer' && !/^\d{11}$/.test(phone))
+    if (!phone || !/^\d{11}$/.test(phone))
       return res.status(400).json({ error: 'Phone number must be exactly 11 digits' });
+
+    if (portalType === 'lecturer' && !tenantName)
+      return res.status(400).json({ error: 'Workspace name is required' });
 
     if (password.length < 6)
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
@@ -2001,18 +2026,21 @@ app.post('/api/auth/send-registration-otp', authLimiter, async (req, res) => {
     });
 
     const isLecturer = portalType === 'lecturer';
-    await sendResendEmail({
-      fromName: isLecturer ? 'Genius Academy School Portal' : 'Genius Research Publication Portal',
-      to: normalizedEmail,
-      subject: isLecturer
-        ? 'Verify Your Genius Academy Lecturer Account'
-        : 'Verify Your Research Publication Account',
-      html: isLecturer
-        ? buildLecturerOtpEmail(name, otp)
-        : buildResearcherOtpEmail(name, otp),
-    });
+    await Promise.all([
+      sendResendEmail({
+        fromName: isLecturer ? 'Genius Academy School Portal' : 'Genius Research Publication Portal',
+        to: normalizedEmail,
+        subject: isLecturer
+          ? 'Verify Your Genius Academy Lecturer Account'
+          : 'Verify Your Research Publication Account',
+        html: isLecturer
+          ? buildLecturerOtpEmail(name, otp)
+          : buildResearcherOtpEmail(name, otp),
+      }),
+      sendSmsOtp(phone, otp, name),
+    ]);
 
-    res.json({ success: true, message: 'A 6-digit verification code has been sent to your email.' });
+    res.json({ success: true, message: 'A 6-digit verification code has been sent to your email and phone number.' });
   } catch (error: any) {
     console.error('Send registration OTP error:', error);
     res.status(500).json({ error: 'Failed to send verification code. Please try again.' });
@@ -2047,8 +2075,8 @@ app.post('/api/auth/verify-registration', authLimiter, async (req, res) => {
     if (pending.portalType === 'researcher') {
       const accountRole = normalizedEmail === 'burstbrainconcept@gmail.com' ? 'super_admin' : 'user';
       const result = await pool.query(
-        'INSERT INTO users (email, password, name, affiliation, role, tenant_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
-        [normalizedEmail, pending.hashedPassword, pending.name, pending.affiliation || '', accountRole, null]
+        'INSERT INTO users (email, phone, password, name, affiliation, role, tenant_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+        [normalizedEmail, pending.phone || null, pending.hashedPassword, pending.name, pending.affiliation || '', accountRole, null]
       );
       const userId = result.rows[0].id;
       await pool.query(
