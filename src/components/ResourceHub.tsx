@@ -447,7 +447,9 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 const lines = rawContent.split('\n');
                 const finalContent = lines.map(line => {
                     const parts = line.split(',').map(p => p.trim());
-                    if (parts.length === 3) {
+                    if (parts.length >= 4) {
+                        return { name: parts[0], matricNumber: parts[1], email: parts[2], phone: parts[3] };
+                    } else if (parts.length === 3) {
                         return { name: parts[0], matricNumber: parts[1], email: parts[2] };
                     } else if (parts.length === 2) {
                         return { name: parts[0], matricNumber: parts[0], email: parts[1] };
@@ -671,7 +673,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 )}
                                 {uploadType === 'roster' && !fileHandle && (
                                     <p className="text-[10px] text-white/40 mt-2 text-center">
-                                        3 columns: <span className="text-white/60 font-bold">Full Name, Matric, Email</span>
+                                        4 columns: <span className="text-white/60 font-bold">Full Name, Matric, Email, Phone</span>
                                     </p>
                                 )}
                                 {uploadType === 'audio' && !fileHandle && (

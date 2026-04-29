@@ -1570,6 +1570,7 @@ async function initDB() {
   try { await pool.query("ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS email_status VARCHAR(20) DEFAULT 'pending'"); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id)'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE'); } catch (e) { }
+  try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS phone TEXT'); } catch (e) { }
   try { await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query(`CREATE TABLE IF NOT EXISTS exam_materials (
     id SERIAL PRIMARY KEY,
@@ -10305,13 +10306,15 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         const name = clean(s.name || s.studentName || s.fullName || s.Name);
         const matric = clean(s.matricNumber || s.regNumber || s.matricNo || s.matric);
         const course = clean(s.course || s.department || s.program);
+        const phone = clean(s.phone || s.phoneNumber || s.mobile || s.Phone || '');
 
         return {
           ...s,
           name,
           email,
           matricNumber: matric,
-          course
+          course,
+          phone,
         };
       });
 
@@ -10345,6 +10348,7 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         const matricNumber = s.matricNumber;
         const email = s.email;
         const studentName = s.name || matricNumber;
+        const studentPhone = (s.phone || '').replace(/\D/g, '');
 
         if (!matricNumber || !email) {
           uploadFailed.push({ matric: matricNumber || '?', reason: 'Missing matric or email' });
@@ -10399,8 +10403,8 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         const hashedPin = await hashPin(autoPin);
 
         await pool.query(
-          "INSERT INTO students_roster (tenant_id, matric_number, name, email, pin_hash, category_id, email_status) VALUES ($1, $2, $3, $4, $5, $6, 'pending')",
-          [req.tenant_id, matricNumber, studentName, email, hashedPin, final_category_id]
+          "INSERT INTO students_roster (tenant_id, matric_number, name, email, phone, pin_hash, category_id, email_status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')",
+          [req.tenant_id, matricNumber, studentName, email, studentPhone || null, hashedPin, final_category_id]
         );
 
         const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
@@ -10445,6 +10449,16 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
           });
           await pool.query("UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
           uploadAdded.push({ matric: matricNumber, name: studentName });
+          // SMS — fire-and-forget, never blocks or fails the upload
+          if (studentPhone && studentPhone.length >= 10 && twilioClient && process.env.TWILIO_PHONE_NUMBER) {
+            const feeInt2 = parseInt(entryFee as string) || 0;
+            const accessLine = feeInt2 > 0 ? ` Pay N${feeInt2} to unlock.` : ' Free access.';
+            twilioClient.messages.create({
+              from: process.env.TWILIO_PHONE_NUMBER,
+              to: toE164Nigerian(studentPhone),
+              body: `Genius Academy: Hi ${studentName.split(' ')[0]}, enrolled! WS: ${workspaceId} | Matric: ${matricNumber} | PIN: ${autoPin}.${accessLine} genius-portal.com`,
+            }).catch((e: any) => console.error('SMS to student failed:', e));
+          }
         } catch (emailErr) {
           console.error('Batch email failed for', email, emailErr);
           await pool.query("UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
