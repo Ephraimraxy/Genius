@@ -1571,6 +1571,18 @@ async function initDB() {
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id)'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS phone TEXT'); } catch (e) { }
+  try { await pool.query(`CREATE TABLE IF NOT EXISTS pending_registrations (
+    email TEXT PRIMARY KEY,
+    portal_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    hashed_password TEXT NOT NULL,
+    affiliation TEXT,
+    tenant_name TEXT,
+    phone TEXT,
+    otp TEXT NOT NULL,
+    expires_at BIGINT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )`); } catch (e) { }
   try { await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query(`CREATE TABLE IF NOT EXISTS exam_materials (
     id SERIAL PRIMARY KEY,
@@ -2015,16 +2027,15 @@ app.post('/api/auth/send-registration-otp', authLimiter, async (req, res) => {
     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
     // Upsert: refresh if pending entry already exists (network-drop resume)
-    pendingRegistrations.set(normalizedEmail, {
-      portalType,
-      name,
-      hashedPassword,
-      affiliation: affiliation || '',
-      tenantName,
-      phone,
-      otp,
-      expiresAt,
-    });
+    await pool.query(
+      `INSERT INTO pending_registrations (email, portal_type, name, hashed_password, affiliation, tenant_name, phone, otp, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (email) DO UPDATE SET
+         portal_type=EXCLUDED.portal_type, name=EXCLUDED.name, hashed_password=EXCLUDED.hashed_password,
+         affiliation=EXCLUDED.affiliation, tenant_name=EXCLUDED.tenant_name, phone=EXCLUDED.phone,
+         otp=EXCLUDED.otp, expires_at=EXCLUDED.expires_at`,
+      [normalizedEmail, portalType, name, hashedPassword, affiliation || '', tenantName || null, phone || null, otp, expiresAt]
+    );
 
     const isLecturer = portalType === 'lecturer';
     await Promise.all([
@@ -2057,21 +2068,31 @@ app.post('/api/auth/verify-registration', authLimiter, async (req, res) => {
     if (!email || !otp) return res.status(400).json({ error: 'Email and verification code are required' });
 
     const normalizedEmail = (email as string).toLowerCase().trim();
-    const pending = pendingRegistrations.get(normalizedEmail);
+    const pendingResult = await pool.query('SELECT * FROM pending_registrations WHERE email = $1', [normalizedEmail]);
+    const row = pendingResult.rows[0];
 
-    if (!pending)
+    if (!row)
       return res.status(400).json({ error: 'No pending registration found. Please fill in your details again.' });
 
-    if (Date.now() > pending.expiresAt) {
-      pendingRegistrations.delete(normalizedEmail);
+    if (Date.now() > Number(row.expires_at)) {
+      await pool.query('DELETE FROM pending_registrations WHERE email = $1', [normalizedEmail]);
       return res.status(400).json({ error: 'Verification code has expired. Please start registration again.' });
     }
 
-    if (pending.otp !== (otp as string).trim())
+    if (row.otp !== (otp as string).trim())
       return res.status(400).json({ error: 'Invalid verification code. Please check and try again.' });
 
     // Consume the pending entry immediately (prevent replay)
-    pendingRegistrations.delete(normalizedEmail);
+    await pool.query('DELETE FROM pending_registrations WHERE email = $1', [normalizedEmail]);
+
+    const pending = {
+      portalType: row.portal_type as 'researcher' | 'lecturer',
+      name: row.name,
+      hashedPassword: row.hashed_password,
+      affiliation: row.affiliation,
+      tenantName: row.tenant_name,
+      phone: row.phone,
+    };
 
     if (pending.portalType === 'researcher') {
       const accountRole = normalizedEmail === 'burstbrainconcept@gmail.com' ? 'super_admin' : 'user';
@@ -2524,24 +2545,9 @@ function buildResearcherOtpEmail(name: string, otp: string): string {
 }
 
 // ─── PENDING REGISTRATION STORE (OTP-gated, 10-min TTL) ─────────────
-interface PendingRegistration {
-  portalType: 'researcher' | 'lecturer';
-  name: string;
-  hashedPassword: string;
-  affiliation?: string;
-  tenantName?: string;
-  phone?: string;
-  otp: string;
-  expiresAt: number;
-}
-const pendingRegistrations = new Map<string, PendingRegistration>();
-
-// Auto-purge expired entries every 60 s
+// Auto-purge expired pending_registrations rows every 60 s
 setInterval(() => {
-  const now = Date.now();
-  for (const [email, entry] of pendingRegistrations.entries()) {
-    if (entry.expiresAt <= now) pendingRegistrations.delete(email);
-  }
+  pool.query('DELETE FROM pending_registrations WHERE expires_at < $1', [Date.now()]).catch(() => {});
 }, 60_000);
 
 // ─── PASSWORD RESET SYSTEM ──────────────────────────────────────────
