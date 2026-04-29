@@ -7612,23 +7612,70 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
   }
 });
 
-// OpenAI does not expose a public API endpoint for credit balance.
-// We track spend locally and let the admin sync the stored balance manually.
+// Live OpenAI credit balance via dashboard billing API.
+// Uses OPENAI_ADMIN_KEY (sk-admin-...) first, then OPENAI_API_KEY as fallback.
 app.get('/api/admin/openai-balance', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+
+  // Try every known endpoint / key combination until one works
+  const adminKey = process.env.OPENAI_ADMIN_KEY;
+  const apiKey   = process.env.OPENAI_API_KEY;
+  const attempts: Array<{ url: string; key: string; label: string }> = [];
+
+  if (adminKey) {
+    attempts.push(
+      { url: 'https://api.openai.com/v1/organization/balance',              key: adminKey, label: 'org-balance/admin'    },
+      { url: 'https://api.openai.com/dashboard/billing/credit_grants',       key: adminKey, label: 'credit-grants/admin'  },
+    );
+  }
+  if (apiKey) {
+    attempts.push(
+      { url: 'https://api.openai.com/dashboard/billing/credit_grants',       key: apiKey,   label: 'credit-grants/apikey' },
+      { url: 'https://api.openai.com/v1/organization/balance',               key: apiKey,   label: 'org-balance/apikey'   },
+    );
+  }
+
+  for (const { url, key, label } of attempts) {
+    try {
+      const r = await fetch(url, { headers: { 'Authorization': `Bearer ${key}` } });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        console.warn(`[openai-balance] ${label} → ${r.status}: ${(body as any)?.error?.message || r.statusText}`);
+        continue;
+      }
+      const data: any = await r.json();
+      // Handle different response shapes across endpoints
+      const available =
+        typeof data.total_available === 'number'   ? data.total_available   :
+        typeof data.available?.[0]?.amount === 'number' ? data.available[0].amount :
+        typeof data.hard_limit_usd === 'number'    ? data.hard_limit_usd    :
+        null;
+      if (available !== null) {
+        console.log(`[openai-balance] live balance $${available} via ${label}`);
+        return res.json({ balance: available, source: 'live', via: label });
+      }
+      console.warn(`[openai-balance] ${label} → unrecognised shape:`, JSON.stringify(data).slice(0, 200));
+    } catch (e: any) {
+      console.warn(`[openai-balance] ${label} fetch error:`, e.message);
+    }
+  }
+
+  // All attempts failed — fall back to stored estimate
   try {
     const [balResult, spendResult] = await Promise.all([
       pool.query("SELECT value FROM settings WHERE key = 'openai_balance'"),
       pool.query("SELECT COALESCE(SUM(estimated_cost_usd), 0) as total_spend FROM system_usage"),
     ]);
     const stored = parseFloat(balResult.rows[0]?.value || '0');
-    const spend = parseFloat(spendResult.rows[0]?.total_spend || '0');
+    const spend  = parseFloat(spendResult.rows[0]?.total_spend || '0');
     res.json({
       balance: Math.max(0, stored - spend),
       source: 'estimated',
       stored,
       spend,
-      note: 'OpenAI does not expose a public balance API. Click "Set actual balance" and enter the value from your OpenAI billing dashboard.',
+      note: attempts.length
+        ? 'All OpenAI balance endpoints failed. Use "+ Sync balance" below to enter the value manually.'
+        : 'No OPENAI_API_KEY or OPENAI_ADMIN_KEY found in Railway env.',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

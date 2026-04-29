@@ -296,33 +296,40 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               {/* Balance row */}
               <div className="flex flex-col sm:flex-row gap-4">
                 {/* Balance card */}
-                <div className="flex-1 bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-5 flex flex-col gap-2">
+                <div className={`flex-1 bg-gradient-to-br border rounded-2xl p-5 flex flex-col gap-2 ${liveBalance?.source === 'live' ? 'from-emerald-50 to-teal-50 border-emerald-100' : 'from-violet-50 to-indigo-50 border-violet-100'}`}>
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 text-violet-500">
+                    <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${liveBalance?.source === 'live' ? 'text-emerald-600' : 'text-violet-500'}`}>
                       <DollarSign size={11} /> OpenAI Credit Balance
                     </p>
-                    <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border bg-amber-100 text-amber-700 border-amber-200">
-                      ~ Estimated
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${liveBalance?.source === 'live' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                        {liveBalance?.source === 'live' ? '● Live' : '~ Estimated'}
+                      </span>
+                      <button onClick={fetchBalance} className="text-slate-400 hover:text-violet-600 transition-colors" title="Refresh">
+                        <RefreshCw size={12} />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex items-end gap-3 mt-1">
                     {liveBalance !== null ? (
-                      <span className="text-3xl font-black text-violet-700">
-                        ${liveBalance.balance.toFixed(2)}
+                      <span className={`text-3xl font-black ${liveBalance.source === 'live' ? 'text-emerald-700' : 'text-violet-700'}`}>
+                        ${Number(liveBalance.balance).toFixed(2)}
                       </span>
                     ) : (
                       <Loader2 size={20} className="text-slate-300 animate-spin" />
                     )}
                   </div>
 
-                  <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                    Stored balance minus platform spend. OpenAI does not expose a balance API — sync manually from your&nbsp;
-                    <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener noreferrer" className="text-violet-500 underline">OpenAI billing page</a>.
-                  </p>
+                  {liveBalance?.source === 'live'
+                    ? <p className="text-[10px] text-emerald-600 font-medium">Live from OpenAI API</p>
+                    : <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                        {(liveBalance as any)?.note || 'Stored balance minus platform spend.'}
+                      </p>
+                  }
 
-                  {/* Manual balance entry */}
-                  {balanceEditOpen ? (
+                  {/* Manual balance entry — only shown when live fetch fails */}
+                  {liveBalance?.source !== 'live' && balanceEditOpen ? (
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-slate-500 text-xs font-bold">$</span>
                       <input
@@ -339,14 +346,14 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                       </button>
                       <button onClick={() => setBalanceEditOpen(false)} className="text-[10px] text-slate-400 hover:text-slate-600">✕</button>
                     </div>
-                  ) : (
+                  ) : liveBalance?.source !== 'live' ? (
                     <button
-                      onClick={() => { setBalanceEditOpen(true); setBalanceInput(liveBalance?.balance.toFixed(2) || ''); }}
+                      onClick={() => { setBalanceEditOpen(true); setBalanceInput(Number(liveBalance?.balance ?? 0).toFixed(2)); }}
                       className="text-[10px] font-bold text-violet-600 hover:text-violet-800 text-left mt-1 underline underline-offset-2 w-fit"
                     >
                       + Sync balance from OpenAI billing
                     </button>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Stats cards */}
