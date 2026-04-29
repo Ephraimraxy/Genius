@@ -7600,45 +7600,10 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
   }
 });
 
-// Fetch live OpenAI credit balance from their API
-// Requires OPENAI_ADMIN_KEY (sk-admin-...) from platform.openai.com/settings/organization/admin-keys
-// Falls back to: stored balance minus platform-tracked spend
+// OpenAI does not expose a public API endpoint for credit balance.
+// We track spend locally and let the admin sync the stored balance manually.
 app.get('/api/admin/openai-balance', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
-
-  const adminKey = process.env.OPENAI_ADMIN_KEY;
-  let liveError: string | null = null;
-
-  if (adminKey) {
-    try {
-      const response = await fetch('https://api.openai.com/v1/organization/balance', {
-        headers: {
-          'Authorization': `Bearer ${adminKey}`,
-          'Content-Type': 'application/json',
-        }
-      });
-      const data = await response.json();
-      if (response.ok) {
-        // Handle both possible response shapes
-        const available =
-          data.available?.[0]?.amount ??
-          data.total_available ??
-          data.hard_limit_usd ??
-          null;
-        if (typeof available === 'number') {
-          return res.json({ balance: available, source: 'live' });
-        }
-        liveError = `Unrecognised balance shape: ${JSON.stringify(data).slice(0, 200)}`;
-      } else {
-        liveError = `OpenAI API ${response.status}: ${data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200)}`;
-      }
-    } catch (e: any) {
-      liveError = `Fetch error: ${e.message}`;
-    }
-    console.warn('[openai-balance] live fetch failed:', liveError);
-  }
-
-  // Fallback: stored balance minus total tracked spend so far
   try {
     const [balResult, spendResult] = await Promise.all([
       pool.query("SELECT value FROM settings WHERE key = 'openai_balance'"),
@@ -7651,9 +7616,7 @@ app.get('/api/admin/openai-balance', authenticateToken, async (req: any, res) =>
       source: 'estimated',
       stored,
       spend,
-      note: adminKey
-        ? `Live fetch failed: ${liveError || 'unknown error'}`
-        : 'OPENAI_ADMIN_KEY not set — showing estimate (stored balance minus tracked spend).',
+      note: 'OpenAI does not expose a public balance API. Click "Set actual balance" and enter the value from your OpenAI billing dashboard.',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -21,9 +21,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
     totalTokens: number; totalCost: number; totalRequests: number; currentBalance: number;
     recentHistory: any[]; byModel: any[]; dailyBreakdown: any[]; perUser: any[];
   } | null>(null);
-  const [liveBalance, setLiveBalance] = useState<{ balance: number; source: 'live' | 'estimated'; note?: string } | null>(null);
-  const [liveBalanceError, setLiveBalanceError] = useState<string | null>(null);
-  const [refreshingBalance, setRefreshingBalance] = useState(false);
+  const [liveBalance, setLiveBalance] = useState<{ balance: number; source: string; note?: string } | null>(null);
   const [balanceEditOpen, setBalanceEditOpen] = useState(false);
   const [balanceInput, setBalanceInput] = useState('');
   const [savingBalance, setSavingBalance] = useState(false);
@@ -40,30 +38,19 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
       .catch(() => {});
   }, []);
 
-  const fetchLiveBalance = useCallback(async () => {
-    setRefreshingBalance(true);
-    setLiveBalanceError(null);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/admin/openai-balance', { headers: { 'Authorization': `Bearer ${token}` } });
-      const data = await res.json();
-      if (res.ok && data.balance !== null && data.balance !== undefined) {
-        setLiveBalance({ balance: data.balance, source: data.source, note: data.note });
-      } else {
-        setLiveBalanceError(data.error || 'Unavailable');
-      }
-    } catch (e: any) {
-      setLiveBalanceError('Could not reach server');
-    } finally {
-      setRefreshingBalance(false);
-    }
+  const fetchBalance = useCallback(() => {
+    const token = localStorage.getItem('token');
+    fetch('/api/admin/openai-balance', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.balance !== undefined) setLiveBalance({ balance: d.balance, source: d.source }); })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     if (!isAdmin) return;
     fetchUsageStats();
-    fetchLiveBalance();
-  }, [isAdmin, fetchUsageStats, fetchLiveBalance]);
+    fetchBalance();
+  }, [isAdmin, fetchUsageStats, fetchBalance]);
 
   const saveManualBalance = async () => {
     const val = parseFloat(balanceInput);
@@ -78,7 +65,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
       });
       setBalanceEditOpen(false);
       setBalanceInput('');
-      fetchLiveBalance();
+      fetchBalance();
     } finally {
       setSavingBalance(false);
     }
@@ -294,67 +281,57 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               {/* Balance row */}
               <div className="flex flex-col sm:flex-row gap-4">
                 {/* Balance card */}
-                <div className={`flex-1 bg-gradient-to-br border rounded-2xl p-5 flex flex-col gap-2 ${liveBalance?.source === 'live' ? 'from-emerald-50 to-teal-50 border-emerald-100' : 'from-violet-50 to-indigo-50 border-violet-100'}`}>
+                <div className="flex-1 bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-5 flex flex-col gap-2">
                   <div className="flex items-center justify-between">
-                    <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${liveBalance?.source === 'live' ? 'text-emerald-600' : 'text-violet-500'}`}>
+                    <p className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 text-violet-500">
                       <DollarSign size={11} /> OpenAI Credit Balance
                     </p>
-                    {liveBalance && (
-                      <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${liveBalance.source === 'live' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
-                        {liveBalance.source === 'live' ? '● Live' : '~ Estimated'}
-                      </span>
-                    )}
+                    <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border bg-amber-100 text-amber-700 border-amber-200">
+                      ~ Estimated
+                    </span>
                   </div>
+
                   <div className="flex items-end gap-3 mt-1">
                     {liveBalance !== null ? (
-                      <span className={`text-3xl font-black ${liveBalance.source === 'live' ? 'text-emerald-700' : 'text-violet-700'}`}>
+                      <span className="text-3xl font-black text-violet-700">
                         ${liveBalance.balance.toFixed(2)}
                       </span>
-                    ) : liveBalanceError ? (
-                      <span className="text-sm font-bold text-rose-500">{liveBalanceError}</span>
                     ) : (
                       <Loader2 size={20} className="text-slate-300 animate-spin" />
                     )}
-                    <button onClick={fetchLiveBalance} disabled={refreshingBalance} className="mb-1 text-slate-400 hover:text-violet-600 transition-colors disabled:opacity-40" title="Refresh live balance">
-                      {refreshingBalance ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-                    </button>
                   </div>
 
-                  {/* Note / error */}
-                  {liveBalance?.source !== 'live' && (
-                    <p className="text-[10px] text-amber-600 font-medium leading-relaxed" title={liveBalance?.note || ''}>
-                      {liveBalance?.note
-                        ? liveBalance.note.length > 80 ? liveBalance.note.slice(0, 80) + '…' : liveBalance.note
-                        : 'Set OPENAI_ADMIN_KEY in Railway env for live balance.'}
-                    </p>
-                  )}
+                  <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                    Stored balance minus platform spend. OpenAI does not expose a balance API — sync manually from your&nbsp;
+                    <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener noreferrer" className="text-violet-500 underline">OpenAI billing page</a>.
+                  </p>
 
-                  {/* Manual balance override */}
-                  {liveBalance?.source !== 'live' && (
-                    balanceEditOpen ? (
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-slate-500 text-xs font-bold">$</span>
-                        <input
-                          type="number" step="0.01" min="0"
-                          value={balanceInput}
-                          onChange={e => setBalanceInput(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && saveManualBalance()}
-                          placeholder="e.g. 8.94"
-                          className="flex-1 text-xs border border-violet-200 rounded-lg px-2 py-1 focus:outline-none focus:border-violet-400"
-                          autoFocus
-                        />
-                        <button onClick={saveManualBalance} disabled={savingBalance} className="text-[10px] font-black bg-violet-600 text-white px-2 py-1 rounded-lg hover:bg-violet-700 disabled:opacity-50">
-                          {savingBalance ? '…' : 'Save'}
-                        </button>
-                        <button onClick={() => setBalanceEditOpen(false)} className="text-[10px] text-slate-400 hover:text-slate-600">✕</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => { setBalanceEditOpen(true); setBalanceInput(liveBalance?.balance.toFixed(2) || ''); }} className="text-[10px] font-bold text-violet-500 hover:text-violet-700 text-left mt-1 underline underline-offset-2">
-                        Set actual balance manually
+                  {/* Manual balance entry */}
+                  {balanceEditOpen ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-slate-500 text-xs font-bold">$</span>
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={balanceInput}
+                        onChange={e => setBalanceInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && saveManualBalance()}
+                        placeholder="e.g. 8.94"
+                        className="flex-1 text-xs border border-violet-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-violet-400"
+                        autoFocus
+                      />
+                      <button onClick={saveManualBalance} disabled={savingBalance} className="text-[10px] font-black bg-violet-600 text-white px-3 py-1.5 rounded-lg hover:bg-violet-700 disabled:opacity-50">
+                        {savingBalance ? '…' : 'Save'}
                       </button>
-                    )
+                      <button onClick={() => setBalanceEditOpen(false)} className="text-[10px] text-slate-400 hover:text-slate-600">✕</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setBalanceEditOpen(true); setBalanceInput(liveBalance?.balance.toFixed(2) || ''); }}
+                      className="text-[10px] font-bold text-violet-600 hover:text-violet-800 text-left mt-1 underline underline-offset-2 w-fit"
+                    >
+                      + Sync balance from OpenAI billing
+                    </button>
                   )}
-                  {liveBalance?.source === 'live' && <p className="text-[10px] text-emerald-600 font-medium">Live from OpenAI Admin API</p>}
                 </div>
 
                 {/* Stats cards */}
