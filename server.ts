@@ -203,23 +203,44 @@ const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_T
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
 
-const toE164Nigerian = (phone: string) => {
+// Startup log so Railway logs show Twilio config status
+console.log('[Twilio] SID:', process.env.TWILIO_ACCOUNT_SID ? 'PRESENT' : 'MISSING');
+console.log('[Twilio] AUTH_TOKEN:', process.env.TWILIO_AUTH_TOKEN ? 'PRESENT' : 'MISSING');
+console.log('[Twilio] PHONE_NUMBER:', process.env.TWILIO_PHONE_NUMBER || 'MISSING');
+console.log('[Twilio] client:', twilioClient ? 'READY' : 'NULL (credentials missing)');
+
+const toE164Nigerian = (phone: string): string => {
   const digits = phone.replace(/\D/g, '');
   if (digits.startsWith('0') && digits.length === 11) return '+234' + digits.slice(1);
   if (digits.startsWith('234') && digits.length === 13) return '+' + digits;
+  if (digits.startsWith('+')) return digits;
   return '+' + digits;
 };
 
-const sendSmsOtp = async (phone: string, otp: string, name: string) => {
-  if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) return;
+// Returns 'sent' | 'no_client' | error message string
+const sendSmsOtp = async (phone: string, otp: string, name: string): Promise<string> => {
+  if (!twilioClient) {
+    console.warn('[Twilio] sendSmsOtp skipped — twilioClient is null (TWILIO_ACCOUNT_SID/AUTH_TOKEN not set)');
+    return 'no_client';
+  }
+  if (!process.env.TWILIO_PHONE_NUMBER) {
+    console.warn('[Twilio] sendSmsOtp skipped — TWILIO_PHONE_NUMBER not set');
+    return 'no_phone';
+  }
+  const toNumber = toE164Nigerian(phone);
+  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+  console.log(`[Twilio] Sending OTP SMS from ${fromNumber} to ${toNumber}`);
   try {
-    await twilioClient.messages.create({
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: toE164Nigerian(phone),
-      body: `Hi ${name}, your Genius Publication Portal verification code is: ${otp}. Valid for 60 minutes.`,
+    const msg = await twilioClient.messages.create({
+      from: fromNumber,
+      to: toNumber,
+      body: `${name.split(' ')[0]}, your Genius Portal OTP is: ${otp}. Valid 30 min.`,
     });
-  } catch (err) {
-    console.error('Twilio SMS error:', err);
+    console.log(`[Twilio] SMS sent — SID: ${msg.sid} status: ${msg.status}`);
+    return 'sent';
+  } catch (err: any) {
+    console.error('[Twilio] SMS send FAILED:', err?.message || err);
+    return err?.message || 'unknown error';
   }
 };
 
@@ -2036,7 +2057,7 @@ app.post('/api/auth/send-registration-otp', authLimiter, async (req, res) => {
     );
 
     const isLecturer = portalType === 'lecturer';
-    await Promise.all([
+    const [, smsResult] = await Promise.all([
       sendResendEmail({
         fromName: isLecturer ? 'Genius Academy School Portal' : 'Genius Research Publication Portal',
         to: normalizedEmail,
@@ -2050,7 +2071,14 @@ app.post('/api/auth/send-registration-otp', authLimiter, async (req, res) => {
       sendSmsOtp(phone, otp, name),
     ]);
 
-    res.json({ success: true, message: 'A 6-digit verification code has been sent to your email and phone number.' });
+    const smsSent = smsResult === 'sent';
+    res.json({
+      success: true,
+      smsSent,
+      message: smsSent
+        ? 'A 6-digit verification code has been sent to your email and phone number.'
+        : 'Verification code sent to your email. SMS could not be delivered — check your email.',
+    });
   } catch (error: any) {
     console.error('Send registration OTP error:', error);
     res.status(500).json({ error: 'Failed to send verification code. Please try again.' });
@@ -2080,7 +2108,7 @@ app.post('/api/auth/resend-otp', authLimiter, async (req, res) => {
     );
 
     const isLecturer = pending.portal_type === 'lecturer';
-    await Promise.all([
+    const [, smsResult] = await Promise.all([
       sendResendEmail({
         fromName: isLecturer ? 'Genius Academy School Portal' : 'Genius Research Publication Portal',
         to: normalizedEmail,
@@ -2090,7 +2118,14 @@ app.post('/api/auth/resend-otp', authLimiter, async (req, res) => {
       sendSmsOtp(pending.phone || '', otp, pending.name),
     ]);
 
-    res.json({ success: true, message: 'A fresh verification code has been sent to your email and phone.' });
+    const smsSent = smsResult === 'sent';
+    res.json({
+      success: true,
+      smsSent,
+      message: smsSent
+        ? 'A fresh verification code has been sent to your email and phone.'
+        : 'New code sent to your email. SMS could not be delivered — check your email.',
+    });
   } catch (err) {
     console.error('Resend OTP error:', err);
     res.status(500).json({ error: 'Failed to resend code. Please try again.' });
