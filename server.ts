@@ -7210,17 +7210,18 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
-    const textContent = paper.content;
+    const textContent = paper.content || '';
 
     // Real Similarity Detection Algorithm
     const existingResult = await pool.query('SELECT title, content FROM papers WHERE id != $1 AND user_id = $2', [id, userId]);
-    const existingPapers = existingResult.rows;
+    // Filter out papers with null/empty content to avoid toLowerCase errors
+    const existingPapers = existingResult.rows.filter((ep: any) => ep.content);
 
     let maxSimilarity = 0;
     let mostSimilarPaper = null;
     let detailedReport = [];
 
-    if (existingPapers.length > 0) {
+    if (existingPapers.length > 0 && textContent) {
       const TfIdf = natural.TfIdf;
       const tfidf = new TfIdf();
 
@@ -7228,7 +7229,7 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
       tfidf.addDocument(textContent.toLowerCase());
 
       // Add existing papers
-      existingPapers.forEach(ep => {
+      existingPapers.forEach((ep: any) => {
         tfidf.addDocument(ep.content.toLowerCase());
       });
 
@@ -7241,8 +7242,8 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
 
         // 1. Basic string similarity (good for exact matches/copy-paste)
         const stringSim = stringSimilarity.compareTwoStrings(
-          textContent.substring(0, 5000).toLowerCase(),
-          ep.content.substring(0, 5000).toLowerCase()
+          (textContent || '').substring(0, 5000).toLowerCase(),
+          (ep.content || '').substring(0, 5000).toLowerCase()
         );
 
         // 2. Term overlap (good for paraphrasing)
@@ -7337,9 +7338,10 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
           }
         ]
       });
-      const parsed = JSON.parse(response.choices[0]?.message?.content || '{"mismatches":[]}');
+      let parsed: any = { mismatches: [] };
+      try { parsed = JSON.parse(response.choices[0]?.message?.content || '{"mismatches":[]}'); } catch {}
       trackUsage(_activeAIModel, response.usage, 'integrity_check', userId);
-      citationMismatches = parsed.mismatches || parsed;
+      citationMismatches = Array.isArray(parsed.mismatches) ? parsed.mismatches : (Array.isArray(parsed) ? parsed : []);
     }
 
     res.json({

@@ -358,12 +358,12 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               )}
 
               {/* Per-model breakdown */}
-              {usageStats.byModel.length > 0 && (
+              {(usageStats.byModel?.length ?? 0) > 0 && (
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">By Model</p>
                   <div className="space-y-2">
-                    {usageStats.byModel.map((m: any, i: number) => {
-                      const maxCost = Math.max(...usageStats.byModel.map((x: any) => parseFloat(x.cost)));
+                    {(usageStats.byModel ?? []).map((m: any, i: number) => {
+                      const maxCost = Math.max(...(usageStats.byModel ?? []).map((x: any) => parseFloat(x.cost)));
                       const pct = maxCost > 0 ? (parseFloat(m.cost) / maxCost) * 100 : 0;
                       return (
                         <div key={i} className="flex items-center gap-3">
@@ -381,11 +381,11 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
               )}
 
               {/* Recent call log */}
-              {usageStats.recentHistory.length > 0 && (
+              {(usageStats.recentHistory?.length ?? 0) > 0 && (
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Recent API Calls</p>
                   <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 overflow-hidden">
-                    {usageStats.recentHistory.slice(0, 8).map((h: any, i: number) => (
+                    {(usageStats.recentHistory ?? []).slice(0, 8).map((h: any, i: number) => (
                       <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
                         <div className="flex items-center gap-3 min-w-0">
                           <Cpu size={12} className="text-violet-400 shrink-0" />
