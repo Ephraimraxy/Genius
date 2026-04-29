@@ -27,6 +27,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [userDetail, setUserDetail] = useState<{ user: any; summary: any; history: any[]; byPurpose: any[] } | null>(null);
   const [loadingUserDetail, setLoadingUserDetail] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const fetchUsageStats = useCallback(() => {
     const token = localStorage.getItem('token');
@@ -380,30 +381,40 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                 </div>
               )}
 
-              {/* Recent call log */}
+              {/* Recent call log — collapsible */}
               {(usageStats.recentHistory?.length ?? 0) > 0 && (
                 <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Recent API Calls</p>
-                  <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 overflow-hidden">
-                    {(usageStats.recentHistory ?? []).slice(0, 8).map((h: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <Cpu size={12} className="text-violet-400 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-slate-700 truncate">{h.purpose || 'AI call'}</p>
-                            <p className="text-[9px] text-slate-400">
-                              {h.model} · {new Date(h.created_at).toLocaleString()}
-                              {h.user_name && <span className="ml-1 text-violet-400">· {h.user_name}</span>}
-                            </p>
+                  <button
+                    onClick={() => setHistoryOpen(o => !o)}
+                    className="w-full flex items-center justify-between group mb-2"
+                  >
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent API Calls</p>
+                    <span className={`text-slate-300 transition-transform duration-200 ${historyOpen ? 'rotate-180' : ''}`}>
+                      <ChevronRight size={14} className={`transition-transform duration-200 ${historyOpen ? 'rotate-90' : ''}`} />
+                    </span>
+                  </button>
+                  {historyOpen && (
+                    <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 overflow-hidden">
+                      {(usageStats.recentHistory ?? []).slice(0, 8).map((h: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Cpu size={12} className="text-violet-400 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-slate-700 truncate">{h.purpose || 'AI call'}</p>
+                              <p className="text-[9px] text-slate-400">
+                                {h.model} · {new Date(h.created_at).toLocaleString()}
+                                {h.user_name && <span className="ml-1 text-violet-400">· {h.user_name}</span>}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 shrink-0 ml-4">
+                            <span className="text-[10px] font-bold text-slate-500">{Number(h.total_tokens).toLocaleString()} tok</span>
+                            <span className="text-[10px] font-bold text-emerald-600">${parseFloat(h.estimated_cost_usd).toFixed(5)}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4 shrink-0 ml-4">
-                          <span className="text-[10px] font-bold text-slate-500">{Number(h.total_tokens).toLocaleString()} tok</span>
-                          <span className="text-[10px] font-bold text-emerald-600">${parseFloat(h.estimated_cost_usd).toFixed(5)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
