@@ -7613,19 +7613,35 @@ app.get('/api/admin/openai-balance', authenticateToken, async (req: any, res) =>
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
 
   const adminKey = process.env.OPENAI_ADMIN_KEY;
+  let liveError: string | null = null;
+
   if (adminKey) {
     try {
       const response = await fetch('https://api.openai.com/v1/organization/balance', {
-        headers: { 'Authorization': `Bearer ${adminKey}` }
+        headers: {
+          'Authorization': `Bearer ${adminKey}`,
+          'Content-Type': 'application/json',
+        }
       });
+      const data = await response.json();
       if (response.ok) {
-        const data = await response.json();
-        const available = data.available?.[0]?.amount ?? null;
-        if (available !== null) {
+        // Handle both possible response shapes
+        const available =
+          data.available?.[0]?.amount ??
+          data.total_available ??
+          data.hard_limit_usd ??
+          null;
+        if (typeof available === 'number') {
           return res.json({ balance: available, source: 'live' });
         }
+        liveError = `Unrecognised balance shape: ${JSON.stringify(data).slice(0, 200)}`;
+      } else {
+        liveError = `OpenAI API ${response.status}: ${data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200)}`;
       }
-    } catch { /* fall through to estimated */ }
+    } catch (e: any) {
+      liveError = `Fetch error: ${e.message}`;
+    }
+    console.warn('[openai-balance] live fetch failed:', liveError);
   }
 
   // Fallback: stored balance minus total tracked spend so far
@@ -7642,8 +7658,8 @@ app.get('/api/admin/openai-balance', authenticateToken, async (req: any, res) =>
       stored,
       spend,
       note: adminKey
-        ? 'Live OpenAI balance fetch failed — showing estimate (stored balance minus tracked spend)'
-        : 'Set OPENAI_ADMIN_KEY in your environment for live balance. Showing estimate instead.'
+        ? `Live fetch failed: ${liveError || 'unknown error'}`
+        : 'OPENAI_ADMIN_KEY not set — showing estimate (stored balance minus tracked spend).',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

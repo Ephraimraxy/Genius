@@ -24,6 +24,9 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
   const [liveBalance, setLiveBalance] = useState<{ balance: number; source: 'live' | 'estimated'; note?: string } | null>(null);
   const [liveBalanceError, setLiveBalanceError] = useState<string | null>(null);
   const [refreshingBalance, setRefreshingBalance] = useState(false);
+  const [balanceEditOpen, setBalanceEditOpen] = useState(false);
+  const [balanceInput, setBalanceInput] = useState('');
+  const [savingBalance, setSavingBalance] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [userDetail, setUserDetail] = useState<{ user: any; summary: any; history: any[]; byPurpose: any[] } | null>(null);
   const [loadingUserDetail, setLoadingUserDetail] = useState(false);
@@ -61,6 +64,25 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
     fetchUsageStats();
     fetchLiveBalance();
   }, [isAdmin, fetchUsageStats, fetchLiveBalance]);
+
+  const saveManualBalance = async () => {
+    const val = parseFloat(balanceInput);
+    if (isNaN(val) || val < 0) return;
+    setSavingBalance(true);
+    try {
+      const token = localStorage.getItem('token');
+      await fetch('/api/admin/update-balance', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ balance: val }),
+      });
+      setBalanceEditOpen(false);
+      setBalanceInput('');
+      fetchLiveBalance();
+    } finally {
+      setSavingBalance(false);
+    }
+  };
 
   const openUserDetail = async (user: any) => {
     setSelectedUser(user);
@@ -293,22 +315,46 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
                     ) : (
                       <Loader2 size={20} className="text-slate-300 animate-spin" />
                     )}
-                    <button
-                      onClick={fetchLiveBalance}
-                      disabled={refreshingBalance}
-                      className="mb-1 text-slate-400 hover:text-violet-600 transition-colors disabled:opacity-40"
-                      title="Refresh balance"
-                    >
+                    <button onClick={fetchLiveBalance} disabled={refreshingBalance} className="mb-1 text-slate-400 hover:text-violet-600 transition-colors disabled:opacity-40" title="Refresh live balance">
                       {refreshingBalance ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
                     </button>
                   </div>
-                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
-                    {liveBalance?.source === 'live'
-                      ? 'Live from OpenAI Admin API'
-                      : liveBalance?.note
-                        ? liveBalance.note
-                        : 'Set OPENAI_ADMIN_KEY in env for live balance'}
-                  </p>
+
+                  {/* Note / error */}
+                  {liveBalance?.source !== 'live' && (
+                    <p className="text-[10px] text-amber-600 font-medium leading-relaxed" title={liveBalance?.note || ''}>
+                      {liveBalance?.note
+                        ? liveBalance.note.length > 80 ? liveBalance.note.slice(0, 80) + '…' : liveBalance.note
+                        : 'Set OPENAI_ADMIN_KEY in Railway env for live balance.'}
+                    </p>
+                  )}
+
+                  {/* Manual balance override */}
+                  {liveBalance?.source !== 'live' && (
+                    balanceEditOpen ? (
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-slate-500 text-xs font-bold">$</span>
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={balanceInput}
+                          onChange={e => setBalanceInput(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && saveManualBalance()}
+                          placeholder="e.g. 8.94"
+                          className="flex-1 text-xs border border-violet-200 rounded-lg px-2 py-1 focus:outline-none focus:border-violet-400"
+                          autoFocus
+                        />
+                        <button onClick={saveManualBalance} disabled={savingBalance} className="text-[10px] font-black bg-violet-600 text-white px-2 py-1 rounded-lg hover:bg-violet-700 disabled:opacity-50">
+                          {savingBalance ? '…' : 'Save'}
+                        </button>
+                        <button onClick={() => setBalanceEditOpen(false)} className="text-[10px] text-slate-400 hover:text-slate-600">✕</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setBalanceEditOpen(true); setBalanceInput(liveBalance?.balance.toFixed(2) || ''); }} className="text-[10px] font-bold text-violet-500 hover:text-violet-700 text-left mt-1 underline underline-offset-2">
+                        Set actual balance manually
+                      </button>
+                    )
+                  )}
+                  {liveBalance?.source === 'live' && <p className="text-[10px] text-emerald-600 font-medium">Live from OpenAI Admin API</p>}
                 </div>
 
                 {/* Stats cards */}
