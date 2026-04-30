@@ -4493,25 +4493,48 @@ async function generatePublicationCertificatePDF(
 
   const esc = (s: string) => s.replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] || c));
 
-  // Read template image from disk and encode as base64 data URL
-  const templatePath = path.join(process.cwd(), 'tools', 'image.png');
+  // Clean blank template — cert.png has only decorative elements, no pre-filled content
+  const templatePath = path.join(process.cwd(), 'tools', 'cert.png');
   let bgDataUrl = '';
   try {
     const imgBytes = fs.readFileSync(templatePath);
     bgDataUrl = `data:image/png;base64,${imgBytes.toString('base64')}`;
   } catch (e) {
-    console.warn('[cert] Template image not found at', templatePath, e);
+    console.warn('[cert] cert.png not found at', templatePath, e);
   }
 
-  // Generate QR code as base64 data URL
+  // Logos — embed as base64 so they work on Railway
+  const loadAsset = (names: string[]): string => {
+    const dirs = [path.join(process.cwd(), 'public'), path.join(process.cwd(), 'tools')];
+    for (const name of names) {
+      for (const dir of dirs) {
+        const p = path.join(dir, name);
+        if (fs.existsSync(p)) {
+          const ext = path.extname(p).toLowerCase();
+          const mime = ext === '.png' ? 'image/png' : ext === '.svg' ? 'image/svg+xml' : 'image/jpeg';
+          return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`;
+        }
+      }
+    }
+    return '';
+  };
+  const logoLeft  = loadAsset(['gmijp-logo.png', 'journal-logo.png', 'ain logo.jpeg']);
+  const logoRight = loadAsset(['Nasarawa-State-University.jpg', 'university-logo.jpg']);
+
+  // QR code
   let qrDataUrl = '';
   try {
-    qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 120, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+    qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 140, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
   } catch (e) {
     console.warn('[cert] QR generation failed:', e);
   }
 
   const doiDisplay = doiUrl(doi);
+
+  // cert.png is 1209×852px displayed at 297×210mm (A4 landscape).
+  // Content safe zone (clear of red curved strips): left≈11%, right≈89%, top≈4%, bottom≈95%
+  // Bottom section (signatures, QR): bottom 22% of page ≈ y > 164mm
+  // Medal center in template: x≈50%, y≈82%
 
   const html = `<!DOCTYPE html>
 <html>
@@ -4521,78 +4544,70 @@ async function generatePublicationCertificatePDF(
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 297mm; height: 210mm; overflow: hidden; background: white; }
   .page { position: relative; width: 297mm; height: 210mm; font-family: 'Times New Roman', Times, serif; }
-  .bg   { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
 </style>
 </head>
 <body>
 <div class="page">
 
-  <!-- 1. Full-page template background -->
+  <!-- Clean blank template background -->
   ${bgDataUrl ? `<img class="bg" src="${bgDataUrl}" alt=""/>` : ''}
 
-  <!--
-    2. WHITE ERASERS — cover the sample content baked into the template image.
-       The image contains a pre-filled sample certificate; we must blank those
-       regions before drawing the real paper data on top.
+  <!-- ═══ HEADER ═══ -->
+  <!-- Logos -->
+  ${logoLeft  ? `<img src="${logoLeft}"  style="position:absolute; top:6mm; left:34mm;  width:16mm; height:16mm; object-fit:contain;"/>` : ''}
+  ${logoRight ? `<img src="${logoRight}" style="position:absolute; top:6mm; right:34mm; width:16mm; height:16mm; object-fit:contain;"/>` : ''}
 
-       Image is 1036×730px mapped to 297×210mm.
-       Pixel → mm: x * (297/1036), y * (210/730)
+  <!-- Certificate title -->
+  <div style="position:absolute; top:5mm; left:55mm; right:55mm; text-align:center;">
+    <p style="font-size:20pt; font-weight:900; color:#800000; letter-spacing:2px; line-height:1.1;">CERTIFICATE OF PUBLICATION</p>
+    <p style="font-size:7.5pt; color:#666; letter-spacing:1.5px; margin-top:2mm;">GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL PUBLICATION</p>
+  </div>
 
-       Regions to erase:
-         a) Body text (sample title + authors + DOI/dates):
-            img y≈210–490px → mm top≈60mm, height≈82mm
-            img x≈105–930px → mm left≈30mm, right≈30mm
-         b) Bottom-left (template signature block):
-            img y≈490–640px, x≈55–350px → mm top≈141mm, left≈16mm, w≈86mm, h≈43mm
-         c) Bottom-right (template QR + cert-ID box):
-            img y≈490–640px, x≈690–995px → mm top≈141mm, right≈12mm, w≈88mm, h≈43mm
-  -->
+  <!-- "This is to certify..." line -->
+  <p style="position:absolute; top:30mm; left:0; right:0; text-align:center; font-size:9pt; letter-spacing:2px; color:#444; text-transform:uppercase;">
+    This is to certify that the manuscript titled
+  </p>
 
-  <!-- a) Body content eraser -->
-  <div style="position:absolute; top:60mm; left:30mm; right:30mm; height:82mm; background:white;"></div>
-  <!-- b) Template sig eraser (bottom-left) -->
-  <div style="position:absolute; top:141mm; left:14mm; width:90mm; height:46mm; background:white;"></div>
-  <!-- c) Template QR/cert-ID eraser (bottom-right) -->
-  <div style="position:absolute; top:141mm; right:10mm; width:94mm; height:46mm; background:white;"></div>
-
-  <!-- 3. REAL PAPER CONTENT overlaid on the blanked body area -->
+  <!-- ═══ BODY — paper-specific content ═══ -->
   <div style="
     position: absolute;
-    top: 60mm; left: 30mm; right: 30mm; height: 82mm;
+    top: 37mm; left: 32mm; right: 32mm; bottom: 50mm;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     text-align: center;
   ">
-    <p style="font-size:15pt; font-weight:bold; color:#800000; line-height:1.3; margin-bottom:6px;">
+    <p style="font-size:14.5pt; font-weight:bold; color:#800000; line-height:1.35; margin-bottom:5mm;">
       &ldquo;${esc(rawTitle)}&rdquo;
     </p>
-    <p style="font-style:italic; font-size:9.5pt; color:#555; margin-bottom:3px;">authored by</p>
-    <p style="font-size:11.5pt; font-weight:bold; color:#111; margin-bottom:9px;">${esc(authorsLine)}</p>
-    <p style="font-size:9.5pt; color:#111; margin-bottom:8px; line-height:1.4;">
+    <p style="font-style:italic; font-size:9pt; color:#666; margin-bottom:2mm;">authored by</p>
+    <p style="font-size:11pt; font-weight:bold; color:#111; margin-bottom:5mm; line-height:1.3;">${esc(authorsLine)}</p>
+    <p style="font-size:9pt; color:#111; margin-bottom:4mm; line-height:1.5;">
       has been accepted and published in the <em>${esc(JOURNAL_DISPLAY_NAME)}</em>.
     </p>
-    <p style="font-size:9.5pt; font-weight:bold; color:#800000; margin-bottom:3px;">DOI: ${esc(doiDisplay)}</p>
-    <p style="font-size:8.5pt; color:#666; margin-bottom:2px;">ISSN: ${esc(issn)} &nbsp;|&nbsp; Volume ${esc(volume)} &nbsp;|&nbsp; Issue ${esc(issue)}</p>
-    <p style="font-style:italic; font-size:8.5pt; color:#666;">Published: ${esc(publishedDate)}</p>
+    <p style="font-size:9.5pt; font-weight:bold; color:#800000; margin-bottom:2mm;">DOI: ${esc(doiDisplay)}</p>
+    <p style="font-size:8pt; color:#666; margin-bottom:1.5mm;">ISSN: ${esc(issn)} &nbsp;&nbsp;|&nbsp;&nbsp; Volume ${esc(volume)} &nbsp;&nbsp;|&nbsp;&nbsp; Issue ${esc(issue)}</p>
+    <p style="font-style:italic; font-size:8pt; color:#666;">Published: ${esc(publishedDate)}</p>
   </div>
 
-  <!-- 4. OUR SIGNATURE (bottom-left, over the erased area) -->
-  <div style="position:absolute; top:143mm; left:15mm; display:flex; flex-direction:column; align-items:flex-start;">
+  <!-- ═══ BOTTOM ROW ═══ -->
+  <!-- Signature (bottom-left) -->
+  <div style="position:absolute; bottom:12mm; left:32mm; display:flex; flex-direction:column; align-items:flex-start;">
     ${signatureBase64 && signatureBase64.startsWith('data:image')
-      ? `<img src="${signatureBase64}" alt="sig" style="max-width:130px; max-height:46px; margin-bottom:2px;"/>`
+      ? `<img src="${signatureBase64}" alt="sig" style="max-width:120px; max-height:40px; margin-bottom:1.5mm; object-fit:contain;"/>`
       : ''}
-    <div style="width:175px; border-top:1px solid #888; margin-bottom:3px;"></div>
-    <span style="font-size:10pt; font-weight:bold; color:#111;">${secretaryName}</span>
-    <span style="font-size:8pt; color:#666;">Secretary, Editorial Board</span>
+    <div style="width:160px; border-top:1px solid #666; margin-bottom:2mm;"></div>
+    <span style="font-size:9.5pt; font-weight:bold; color:#111;">${secretaryName}</span>
+    <span style="font-size:7.5pt; color:#666;">Secretary, Editorial Board</span>
   </div>
 
-  <!-- 5. OUR QR CODE + CERT ID (bottom-right, over the erased area) -->
-  <div style="position:absolute; top:141mm; right:11mm; display:flex; flex-direction:column; align-items:center;">
-    <div style="background:#800000; color:#fff; font-size:7pt; font-weight:bold; padding:3px 8px; border-radius:2px; margin-bottom:4px; white-space:nowrap;">
+  <!-- QR + Cert ID (bottom-right) -->
+  <div style="position:absolute; bottom:10mm; right:30mm; display:flex; flex-direction:column; align-items:center; gap:1.5mm;">
+    <div style="background:#800000; color:#fff; font-size:6.5pt; font-weight:bold; padding:2px 8px; border-radius:2px; white-space:nowrap; letter-spacing:0.5px;">
       Cert ID: ${esc(certificateId)}
     </div>
-    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:72px; height:72px;"/>` : ''}
-    <span style="font-size:6.5pt; color:#666; margin-top:2px;">Scan to verify</span>
+    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:66px; height:66px;"/>` : ''}
+    <span style="font-size:6pt; color:#666;">Scan to verify</span>
   </div>
 
 </div>
