@@ -4550,64 +4550,64 @@ async function generatePublicationCertificatePDF(
 <body>
 <div class="page">
 
-  <!-- Clean blank template background -->
+  <!-- Full-page background template -->
   ${bgDataUrl ? `<img class="bg" src="${bgDataUrl}" alt=""/>` : ''}
 
-  <!-- ═══ HEADER ═══ -->
-  <!-- Logos -->
-  ${logoLeft  ? `<img src="${logoLeft}"  style="position:absolute; top:6mm; left:34mm;  width:16mm; height:16mm; object-fit:contain;"/>` : ''}
-  ${logoRight ? `<img src="${logoRight}" style="position:absolute; top:6mm; right:34mm; width:16mm; height:16mm; object-fit:contain;"/>` : ''}
-
-  <!-- Certificate title -->
-  <div style="position:absolute; top:5mm; left:55mm; right:55mm; text-align:center;">
-    <p style="font-size:20pt; font-weight:900; color:#800000; letter-spacing:2px; line-height:1.1;">CERTIFICATE OF PUBLICATION</p>
-    <p style="font-size:7.5pt; color:#666; letter-spacing:1.5px; margin-top:2mm;">GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL PUBLICATION</p>
+  <!-- ═══ HEADER: logos flanking the title in one row ═══ -->
+  <div style="position:absolute; top:4mm; left:26mm; right:26mm; display:flex; align-items:center; gap:4mm;">
+    ${logoLeft
+      ? `<img src="${logoLeft}" style="width:20mm; height:20mm; object-fit:contain; flex-shrink:0;"/>`
+      : `<div style="width:20mm; flex-shrink:0;"></div>`}
+    <div style="flex:1; text-align:center;">
+      <p style="font-size:22pt; font-weight:900; color:#800000; letter-spacing:2.5px; line-height:1; margin-bottom:1.5mm;">CERTIFICATE OF PUBLICATION</p>
+      <p style="font-size:7pt; color:#555; letter-spacing:1.5px; text-transform:uppercase; line-height:1.4;">Genius Multidisciplinary International Journal Publication</p>
+    </div>
+    ${logoRight
+      ? `<img src="${logoRight}" style="width:20mm; height:20mm; object-fit:contain; flex-shrink:0;"/>`
+      : `<div style="width:20mm; flex-shrink:0;"></div>`}
   </div>
 
-  <!-- "This is to certify..." line -->
-  <p style="position:absolute; top:30mm; left:0; right:0; text-align:center; font-size:9pt; letter-spacing:2px; color:#444; text-transform:uppercase;">
+  <!-- Thin divider below header -->
+  <div style="position:absolute; top:27mm; left:30mm; right:30mm; border-top:0.5px solid #ccc;"></div>
+
+  <!-- "This is to certify..." -->
+  <p style="position:absolute; top:29mm; left:0; right:0; text-align:center; font-size:8.5pt; letter-spacing:2px; color:#444; text-transform:uppercase;">
     This is to certify that the manuscript titled
   </p>
 
-  <!-- ═══ BODY — paper-specific content ═══ -->
-  <div style="
-    position: absolute;
-    top: 37mm; left: 32mm; right: 32mm; bottom: 50mm;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    text-align: center;
-  ">
-    <p style="font-size:14.5pt; font-weight:bold; color:#800000; line-height:1.35; margin-bottom:5mm;">
+  <!-- ═══ BODY — flows from fixed top, no flex centering ═══ -->
+  <div style="position:absolute; top:36mm; left:30mm; right:30mm; text-align:center;">
+    <p style="font-size:15pt; font-weight:bold; color:#800000; line-height:1.35; margin-bottom:4mm;">
       &ldquo;${esc(rawTitle)}&rdquo;
     </p>
-    <p style="font-style:italic; font-size:9pt; color:#666; margin-bottom:2mm;">authored by</p>
-    <p style="font-size:11pt; font-weight:bold; color:#111; margin-bottom:5mm; line-height:1.3;">${esc(authorsLine)}</p>
-    <p style="font-size:9pt; color:#111; margin-bottom:4mm; line-height:1.5;">
+    <p style="font-style:italic; font-size:8.5pt; color:#555; margin-bottom:1.5mm;">authored by</p>
+    <p style="font-size:11pt; font-weight:bold; color:#111; margin-bottom:4mm; line-height:1.3;">${esc(authorsLine)}</p>
+    <p style="font-size:9pt; color:#111; margin-bottom:3mm; line-height:1.4;">
       has been accepted and published in the <em>${esc(JOURNAL_DISPLAY_NAME)}</em>.
     </p>
     <p style="font-size:9.5pt; font-weight:bold; color:#800000; margin-bottom:2mm;">DOI: ${esc(doiDisplay)}</p>
-    <p style="font-size:8pt; color:#666; margin-bottom:1.5mm;">ISSN: ${esc(issn)} &nbsp;&nbsp;|&nbsp;&nbsp; Volume ${esc(volume)} &nbsp;&nbsp;|&nbsp;&nbsp; Issue ${esc(issue)}</p>
+    <p style="font-size:8pt; color:#666; margin-bottom:1.5mm;">ISSN: ${esc(issn)} &nbsp;|&nbsp; Volume ${esc(volume)} &nbsp;|&nbsp; Issue ${esc(issue)}</p>
     <p style="font-style:italic; font-size:8pt; color:#666;">Published: ${esc(publishedDate)}</p>
   </div>
 
   <!-- ═══ BOTTOM ROW ═══ -->
   <!-- Signature (bottom-left) -->
-  <div style="position:absolute; bottom:12mm; left:32mm; display:flex; flex-direction:column; align-items:flex-start;">
+  <div style="position:absolute; bottom:8mm; left:26mm; display:flex; flex-direction:column; align-items:flex-start;">
     ${signatureBase64 && signatureBase64.startsWith('data:image')
-      ? `<img src="${signatureBase64}" alt="sig" style="max-width:120px; max-height:40px; margin-bottom:1.5mm; object-fit:contain;"/>`
+      ? `<img src="${signatureBase64}" alt="sig" style="max-width:115px; max-height:38px; margin-bottom:1mm; object-fit:contain;"/>`
       : ''}
-    <div style="width:160px; border-top:1px solid #666; margin-bottom:2mm;"></div>
-    <span style="font-size:9.5pt; font-weight:bold; color:#111;">${secretaryName}</span>
-    <span style="font-size:7.5pt; color:#666;">Secretary, Editorial Board</span>
+    <div style="width:155px; border-top:1.5px solid #555; margin-bottom:1.5mm;"></div>
+    <span style="font-size:9pt; font-weight:bold; color:#111; text-transform:uppercase; letter-spacing:0.5px;">${secretaryName}</span>
+    <span style="font-size:7pt; color:#666;">Secretary, Editorial Board</span>
   </div>
 
-  <!-- QR + Cert ID (bottom-right) -->
-  <div style="position:absolute; bottom:10mm; right:30mm; display:flex; flex-direction:column; align-items:center; gap:1.5mm;">
-    <div style="background:#800000; color:#fff; font-size:6.5pt; font-weight:bold; padding:2px 8px; border-radius:2px; white-space:nowrap; letter-spacing:0.5px;">
-      Cert ID: ${esc(certificateId)}
+  <!-- QR + Cert ID (bottom-right): Scan label → QR → Certificate ID -->
+  <div style="position:absolute; bottom:6mm; right:26mm; display:flex; flex-direction:column; align-items:center; gap:1mm;">
+    <span style="font-size:6pt; color:#666; letter-spacing:0.5px;">Scan to verify</span>
+    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:62px; height:62px;"/>` : ''}
+    <div style="background:#800000; color:#fff; font-size:5.5pt; font-weight:bold; padding:1.5px 7px; border-radius:2px; white-space:nowrap; letter-spacing:0.3px; margin-top:0.5mm;">
+      Certificate ID: ${esc(certificateId)}
     </div>
-    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:66px; height:66px;"/>` : ''}
-    <span style="font-size:6pt; color:#666;">Scan to verify</span>
   </div>
 
 </div>
