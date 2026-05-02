@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     Settings,
     Bell,
@@ -21,8 +21,26 @@ import {
     ClipboardList
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useSettings } from '../context/SettingsContext';
+import { friendlyError } from '../utils/friendlyError';
+import { subscribePaymentReturn } from './paymentChannel';
+import { openPaymentPopup } from './paymentPopup';
 
-export default function LecturerSettings() {
+declare global {
+    interface Window {
+        PaystackPop: any;
+        Korapay: any;
+    }
+}
+
+type Gateway = 'paystack' | 'kora';
+
+interface LecturerSettingsProps {
+    addToast?: (msg: string, type: any) => void;
+}
+
+export default function LecturerSettings({ addToast }: LecturerSettingsProps = {}) {
+    const { gateways } = useSettings();
     const [notifications, setNotifications] = useState({
         email: true,
         sms: false,
@@ -36,12 +54,20 @@ export default function LecturerSettings() {
     const [storagePlans, setStoragePlans] = useState<Array<{ id: number; name: string; storage_mb: number; price_kobo: number; duration_days: number }>>([]);
     const [showBuyModal, setShowBuyModal] = useState(false);
     const [selectedPlan, setSelectedPlan] = useState<number | null>(null);
-    const [purchasing, setPurchasing] = useState(false);
+    const [purchasingGateway, setPurchasingGateway] = useState<Gateway | null>(null);
+    const [paymentRef, setPaymentRef] = useState<string | null>(null);
+    const [paymentGateway, setPaymentGateway] = useState<Gateway | null>(null);
+    const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean; kora: boolean } | null>(null);
     const [purchaseSuccess, setPurchaseSuccess] = useState(false);
     const [recalculating, setRecalculating] = useState(false);
     const [showBreakdown, setShowBreakdown] = useState(false);
     const [breakdown, setBreakdown] = useState<Array<{ id: number; name: string; type: string; mime_type: string; size_bytes: number; size_mb: number; uploaded_at: string }>>([]);
     const [loadingBreakdown, setLoadingBreakdown] = useState(false);
+    const activeGateways = gatewaysStatus || gateways;
+
+    const notify = useCallback((msg: string, type: any = 'info') => {
+        addToast?.(msg, type);
+    }, [addToast]);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -49,6 +75,21 @@ export default function LecturerSettings() {
             .then(r => r.json()).then(d => { if (d.quota_mb !== undefined) setStorageInfo(d); }).catch(() => {});
         fetch('/api/storage/plans', { headers: { 'Authorization': `Bearer ${token}` } })
             .then(r => r.json()).then(d => { if (Array.isArray(d)) setStoragePlans(d); }).catch(() => {});
+        fetch('/api/payment/gateways')
+            .then(r => r.json())
+            .then(d => setGatewaysStatus({ paystack: d?.paystack !== false, kora: d?.kora !== false }))
+            .catch(() => setGatewaysStatus(gateways));
+    }, []);
+
+    useEffect(() => {
+        setGatewaysStatus(gateways);
+    }, [gateways.paystack, gateways.kora]);
+
+    const refreshStorageInfo = useCallback(async () => {
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/storage/info', { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        if (data.quota_mb !== undefined) setStorageInfo(data);
     }, []);
 
     const fetchBreakdown = async () => {
@@ -83,25 +124,122 @@ export default function LecturerSettings() {
         setRecalculating(false);
     };
 
-    const handlePurchase = async (gateway: 'paystack' | 'kora') => {
+    const checkStoragePaymentStatus = useCallback(async (refOverride?: string | null, silent = false) => {
+        const ref = refOverride || paymentRef;
+        if (!ref) return;
+        try {
+            const res = await fetch(`/api/payment/verify/${ref}`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.status === 'success') {
+                await refreshStorageInfo();
+                setPurchaseSuccess(true);
+                setPaymentRef(null);
+                setPaymentGateway(null);
+                notify('Storage payment confirmed. Workspace quota updated.', 'success');
+            } else if (!silent) {
+                notify('Payment is not confirmed yet. Please complete checkout first.', 'info');
+            }
+        } catch (err: any) {
+            if (!silent) notify(friendlyError(err, 'payment'), 'error');
+        }
+    }, [notify, paymentRef, refreshStorageInfo]);
+
+    const openStorageCheckout = (gateway: Gateway, checkout: any, reference: string) => {
+        if (!checkout) {
+            notify('Payment gateway did not return checkout details. Please try again.', 'error');
+            return;
+        }
+
+        if (gateway === 'paystack' && window.PaystackPop && checkout.publicKey) {
+            const handler = window.PaystackPop.setup({
+                key: checkout.publicKey,
+                email: checkout.email || checkout.customer?.email || '',
+                amount: Number(checkout.amount_kobo || checkout.amount || 0),
+                currency: checkout.currency || 'NGN',
+                ref: reference,
+                onClose: () => notify('Payment window closed. Complete payment to add storage.', 'info'),
+                callback: () => void checkStoragePaymentStatus(reference, false)
+            });
+            handler.openIframe();
+            return;
+        }
+
+        if (gateway === 'kora' && window.Korapay && checkout.publicKey) {
+            window.Korapay.initialize({
+                key: checkout.publicKey,
+                reference,
+                amount: Number(checkout.amount_naira || checkout.amount || 0),
+                currency: checkout.currency || 'NGN',
+                customer: {
+                    email: checkout.email || checkout.customer?.email || '',
+                    name: checkout.name || checkout.customer?.name || ''
+                },
+                onClose: () => notify('Payment window closed. Complete payment to add storage.', 'info'),
+                onSuccess: () => void checkStoragePaymentStatus(reference, false)
+            });
+            return;
+        }
+
+        const checkoutUrl = checkout.checkout_url || checkout.checkoutUrl || checkout.authorization_url;
+        if (checkoutUrl) {
+            const popup = openPaymentPopup(checkoutUrl, {
+                onBlocked: () => {
+                    notify('Popup blocked. Redirecting to checkout instead.', 'info');
+                    window.location.href = checkoutUrl;
+                }
+            });
+            if (popup) notify('Secure checkout opened. Complete payment to add storage.', 'info');
+            return;
+        }
+
+        notify('Unable to open checkout. Please retry.', 'error');
+    };
+
+    const handlePurchase = async (gateway: Gateway) => {
         if (!selectedPlan) return;
-        setPurchasing(true);
+        if (activeGateways[gateway] === false) {
+            notify(`${gateway === 'paystack' ? 'Paystack' : 'Kora'} is currently disabled by the administrator.`, 'error');
+            return;
+        }
+        setPurchasingGateway(gateway);
         try {
             const token = localStorage.getItem('token');
             const res = await fetch('/api/storage/purchase/initiate', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ plan_id: selectedPlan, gateway })
+                body: JSON.stringify({ plan_id: selectedPlan, gateway, mode: 'inline' })
             });
             const data = await res.json();
-            if (data.checkout?.authorization_url) {
-                window.location.href = data.checkout.authorization_url;
-            } else if (data.checkout?.checkout_url) {
-                window.location.href = data.checkout.checkout_url;
-            }
-        } catch (e) {}
-        setPurchasing(false);
+            if (!res.ok) throw new Error(data.error || 'Payment could not be initialized.');
+            const reference = data.reference;
+            const checkout = data.checkout || data;
+            setPaymentRef(reference);
+            setPaymentGateway(gateway);
+            openStorageCheckout(gateway, checkout, reference);
+        } catch (err: any) {
+            notify(friendlyError(err, 'payment'), 'error');
+        } finally {
+            setPurchasingGateway(null);
+        }
     };
+
+    useEffect(() => {
+        if (!paymentRef) return;
+        const interval = setInterval(() => void checkStoragePaymentStatus(paymentRef, true), 10000);
+        return () => clearInterval(interval);
+    }, [checkStoragePaymentStatus, paymentRef]);
+
+    useEffect(() => {
+        if (!paymentRef) return;
+        const unsubscribe = subscribePaymentReturn((message) => {
+            if (message.reference && message.reference !== paymentRef) return;
+            void checkStoragePaymentStatus(paymentRef, false);
+        });
+        return unsubscribe;
+    }, [checkStoragePaymentStatus, paymentRef]);
 
     const toggleNotif = (key: keyof typeof notifications) => {
         setNotifications(prev => ({ ...prev, [key]: !prev[key] }));
@@ -320,7 +458,7 @@ export default function LecturerSettings() {
                 <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md p-8">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="text-xl font-black text-slate-800">Buy Storage</h3>
-                        <button onClick={() => { setShowBuyModal(false); setSelectedPlan(null); setSelectedPlan(null); }}
+                        <button onClick={() => { setShowBuyModal(false); setSelectedPlan(null); setPaymentRef(null); setPaymentGateway(null); setPurchaseSuccess(false); }}
                             className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><X size={18} /></button>
                     </div>
                     {purchaseSuccess ? (
@@ -352,14 +490,31 @@ export default function LecturerSettings() {
                                     </div>
                                     {selectedPlan && (
                                         <div className="space-y-2 pt-2">
-                                            <button onClick={() => handlePurchase('paystack')} disabled={purchasing}
-                                                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-colors">
-                                                {purchasing ? 'Redirecting...' : 'Pay with Paystack'}
-                                            </button>
-                                            <button onClick={() => handlePurchase('kora')} disabled={purchasing}
-                                                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-colors">
-                                                {purchasing ? 'Redirecting...' : 'Pay with Kora'}
-                                            </button>
+                                            {!activeGateways.paystack && !activeGateways.kora ? (
+                                                <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-center text-xs font-bold text-amber-700">
+                                                    Payment gateways are currently disabled. Please contact support.
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {activeGateways.paystack && (
+                                                        <button onClick={() => handlePurchase('paystack')} disabled={!!purchasingGateway || !!paymentRef}
+                                                            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-colors">
+                                                            {purchasingGateway === 'paystack' ? 'Redirecting...' : 'Pay with Paystack'}
+                                                        </button>
+                                                    )}
+                                                    {activeGateways.kora && (
+                                                        <button onClick={() => handlePurchase('kora')} disabled={!!purchasingGateway || !!paymentRef}
+                                                            className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-colors">
+                                                            {purchasingGateway === 'kora' ? 'Redirecting...' : 'Pay with Kora'}
+                                                        </button>
+                                                    )}
+                                                </>
+                                            )}
+                                            {paymentRef && (
+                                                <div className="rounded-xl bg-slate-50 px-4 py-3 text-center text-[11px] font-bold text-slate-500">
+                                                    Listening for {paymentGateway === 'kora' ? 'Kora' : 'Paystack'} confirmation...
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, TrendingUp, Users, ShieldCheck, Eye, User, ToggleLeft, ToggleRight, RefreshCw, Loader2, X, Cpu, DollarSign, Activity, Zap, ChevronRight, ExternalLink } from 'lucide-react';
+import { FileText, CheckCircle, AlertCircle, Clock, ArrowRight, UploadCloud, TrendingUp, Users, ShieldCheck, Eye, User, ToggleLeft, ToggleRight, RefreshCw, Loader2, X, Cpu, DollarSign, Activity, Zap, ChevronRight, ExternalLink, ServerCog } from 'lucide-react';
 import GeniusPaymentModal from './GeniusPaymentModal';
 import { Tab } from '../App';
 import { friendlyError } from '../utils/friendlyError';
@@ -62,9 +62,6 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
 
   useEffect(() => {
     if (!isAdmin) return;
-    fetchUsageStats();
-    fetchBalance();
-    fetchTwilioBalance();
   }, [isAdmin, fetchUsageStats, fetchBalance, fetchTwilioBalance]);
 
   const saveManualBalance = async () => {
@@ -281,7 +278,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
         </div>
 
         {/* AI Usage & Balance Panel */}
-        {usageStats && (
+        {false && usageStats && (
           <div className="bg-white rounded-[1.5rem] sm:rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
             <div className="px-5 md:px-8 py-4 md:py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
               <h3 className="text-sm md:text-lg font-bold text-slate-800 font-display flex items-center gap-2">
@@ -528,7 +525,7 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
 
         {/* User AI Usage Detail Modal */}
         <AnimatePresence>
-          {selectedUser && (
+          {false && selectedUser && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -635,11 +632,12 @@ export default function DashboardOverview({ onNavigate, profile, setActivePaperI
         </AnimatePresence>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
           {[
             { label: 'User Management', desc: 'View and manage all registered users', icon: <Users className="text-indigo-600" size={24} />, tab: 'users' as const, color: 'bg-indigo-50', border: 'border-indigo-100', hover: 'hover:border-indigo-300' },
             { label: 'Review Queue', desc: 'Approve or reject pending manuscripts', icon: <FileText className="text-amber-600" size={24} />, tab: 'reviewQueue' as const, color: 'bg-amber-50', border: 'border-amber-100', hover: 'hover:border-amber-300' },
             { label: 'Platform Settings', desc: 'Configure pricing and system parameters', icon: <Eye className="text-emerald-600" size={24} />, tab: 'settings' as const, color: 'bg-emerald-50', border: 'border-emerald-100', hover: 'hover:border-emerald-300' },
+            { label: 'Services Settings', desc: 'Monitor OpenAI costs and Twilio usage history', icon: <ServerCog className="text-violet-600" size={24} />, tab: 'servicesSettings' as const, color: 'bg-violet-50', border: 'border-violet-100', hover: 'hover:border-violet-300' },
           ].map((action, i) => (
             <motion.button
               key={i}

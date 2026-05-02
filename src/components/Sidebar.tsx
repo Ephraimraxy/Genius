@@ -31,7 +31,8 @@ import {
   Zap,
   CheckCircle2,
   Loader2,
-  CalendarDays
+  CalendarDays,
+  ServerCog
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -118,6 +119,7 @@ export default function Sidebar({
     { id: 'tokenStatus', label: 'Token Tracking', icon: CreditCard },
     { id: 'reviewQueue', label: 'Review Queue', icon: FileText },
     { id: 'paymentEvents', label: 'Payment Events', icon: CreditCard, section: 'Finance' },
+    { id: 'servicesSettings', label: 'Services Settings', icon: ServerCog },
     { id: 'settings', label: 'System Settings', icon: Settings, section: 'Core' },
   ];
 

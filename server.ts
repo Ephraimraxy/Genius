@@ -495,6 +495,23 @@ function broadcastSettings(patch: Record<string, any>) {
   }
 }
 
+async function getPaymentGatewayStatus(): Promise<{ paystack: boolean; kora: boolean }> {
+  try {
+    const result = await pool.query(
+      "SELECT key, value FROM settings WHERE key IN ('gateway_paystack_enabled', 'gateway_kora_enabled')"
+    );
+    const map: Record<string, string> = {};
+    result.rows.forEach((row: any) => { map[row.key] = row.value; });
+    return {
+      paystack: map['gateway_paystack_enabled'] !== 'false',
+      kora: map['gateway_kora_enabled'] !== 'false'
+    };
+  } catch {
+    const snapshot = _settingsSnapshot.gateways || { paystack: true, kora: true };
+    return { paystack: snapshot.paystack !== false, kora: snapshot.kora !== false };
+  }
+}
+
 // Load all live settings from DB at startup so snapshot is accurate on first connect
 (async () => {
   try {
@@ -813,6 +830,25 @@ async function handleTransactionSuccess(tx: any) {
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 1);
     await pool.query('UPDATE tenants SET is_subscribed = TRUE, subscription_expiry = $1 WHERE id = $2', [expiry, tx.tenant_id]);
+  }
+
+  if (tx.type === 'storage_purchase') {
+    const storageMb = Number(meta.storage_mb || 0);
+    const durationDays = Number(meta.duration_days || 365);
+    const purchaseReference = meta.storage_purchase_reference || tx.reference;
+    const expiresAt = new Date(Date.now() + durationDays * 86400000);
+
+    const purchaseUpdate = await pool.query(
+      "UPDATE storage_purchases SET status = 'success', expires_at = $1 WHERE reference = $2 AND status <> 'success' RETURNING id",
+      [expiresAt, purchaseReference]
+    );
+
+    if (purchaseUpdate.rows.length > 0 && storageMb > 0) {
+      await pool.query(
+        'UPDATE tenants SET storage_quota_mb = COALESCE(storage_quota_mb, 50) + $1 WHERE id = $2',
+        [storageMb, tx.tenant_id]
+      );
+    }
   }
 
   await pool.query('UPDATE transactions SET metadata = metadata || $1 WHERE id = $2',
@@ -1778,6 +1814,7 @@ async function initDB() {
       )
     `);
   } catch (e) { }
+  try { await pool.query('ALTER TABLE storage_purchases ADD COLUMN IF NOT EXISTS duration_days INTEGER DEFAULT 365'); } catch (e) { }
   // Remove any auto-seeded placeholder plans (admin must create plans intentionally)
   try {
     await pool.query(`
@@ -7627,28 +7664,11 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
   }
 });
 
-// Live OpenAI credit balance via dashboard billing API.
-// Uses OPENAI_ADMIN_KEY (sk-admin-...) first, then OPENAI_API_KEY as fallback.
+// OpenAI does not expose a reliable account balance endpoint through the normal
+// API key flow. Keep an admin-entered balance and subtract tracked usage instead.
 app.get('/api/admin/openai-balance', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
-
-  // Try every known endpoint / key combination until one works
-  const adminKey = process.env.OPENAI_ADMIN_KEY;
-  const apiKey   = process.env.OPENAI_API_KEY;
   const attempts: Array<{ url: string; key: string; label: string }> = [];
-
-  if (adminKey) {
-    attempts.push(
-      { url: 'https://api.openai.com/v1/organization/balance',              key: adminKey, label: 'org-balance/admin'    },
-      { url: 'https://api.openai.com/dashboard/billing/credit_grants',       key: adminKey, label: 'credit-grants/admin'  },
-    );
-  }
-  if (apiKey) {
-    attempts.push(
-      { url: 'https://api.openai.com/dashboard/billing/credit_grants',       key: apiKey,   label: 'credit-grants/apikey' },
-      { url: 'https://api.openai.com/v1/organization/balance',               key: apiKey,   label: 'org-balance/apikey'   },
-    );
-  }
 
   for (const { url, key, label } of attempts) {
     try {
@@ -7688,12 +7708,146 @@ app.get('/api/admin/openai-balance', authenticateToken, async (req: any, res) =>
       source: 'estimated',
       stored,
       spend,
-      note: attempts.length
-        ? 'All OpenAI balance endpoints failed. Use "+ Sync balance" below to enter the value manually.'
-        : 'No OPENAI_API_KEY or OPENAI_ADMIN_KEY found in Railway env.',
+      note: 'Estimated from the manually entered OpenAI balance minus tracked AI usage.',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+function parseDateOnly(value: any, fallback: Date): Date {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return fallback;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
+function toDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 86400000);
+}
+
+function clampDateRange(req: any, defaultDays = 30, maxDays = 180) {
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const defaultStart = addDays(today, -(defaultDays - 1));
+  let start = parseDateOnly(req.query.start, defaultStart);
+  let end = parseDateOnly(req.query.end, today);
+  if (end < start) [start, end] = [end, start];
+  if ((end.getTime() - start.getTime()) / 86400000 > maxDays - 1) {
+    start = addDays(end, -(maxDays - 1));
+  }
+  return { start, end, endExclusive: addDays(end, 1) };
+}
+
+app.get('/api/admin/openai-costs', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+
+  const key = process.env.OPENAI_ADMIN_KEY || process.env.OPENAI_API_KEY;
+  const { start, end, endExclusive } = clampDateRange(req, 30, 180);
+  if (!key) {
+    return res.json({
+      source: 'unavailable',
+      totalCost: 0,
+      currency: 'usd',
+      range: { start: toDateOnly(start), end: toDateOnly(end) },
+      buckets: [],
+      byLineItem: [],
+      byProject: [],
+      note: 'OPENAI_ADMIN_KEY is not set in Railway.'
+    });
+  }
+
+  try {
+    const days = Math.min(180, Math.max(1, Math.ceil((endExclusive.getTime() - start.getTime()) / 86400000)));
+    const params = new URLSearchParams({
+      start_time: String(Math.floor(start.getTime() / 1000)),
+      end_time: String(Math.floor(endExclusive.getTime() / 1000)),
+      bucket_width: '1d',
+      limit: String(days),
+    });
+    params.append('group_by[]', 'line_item');
+    params.append('group_by[]', 'project_id');
+
+    const response = await fetch(`https://api.openai.com/v1/organization/costs?${params.toString()}`, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const body: any = await response.json().catch(() => ({}));
+      return res.json({
+        source: 'error',
+        totalCost: 0,
+        currency: 'usd',
+        range: { start: toDateOnly(start), end: toDateOnly(end) },
+        buckets: [],
+        byLineItem: [],
+        byProject: [],
+        note: `OpenAI Costs API ${response.status}: ${body?.error?.message || response.statusText}`
+      });
+    }
+
+    const data: any = await response.json();
+    const lineTotals = new Map<string, number>();
+    const projectTotals = new Map<string, number>();
+    let totalCost = 0;
+    let currency = 'usd';
+
+    const buckets = (data?.data || []).map((bucket: any) => {
+      let bucketTotal = 0;
+      const lineItems = (bucket.results || []).map((item: any) => {
+        const amount = Number(item?.amount?.value || 0);
+        const itemCurrency = item?.amount?.currency || currency;
+        currency = itemCurrency || currency;
+        totalCost += amount;
+        bucketTotal += amount;
+        const lineItem = item?.line_item || 'Uncategorized';
+        const projectId = item?.project_id || 'No project';
+        lineTotals.set(lineItem, (lineTotals.get(lineItem) || 0) + amount);
+        projectTotals.set(projectId, (projectTotals.get(projectId) || 0) + amount);
+        return { line_item: lineItem, project_id: projectId, amount, currency: itemCurrency };
+      });
+
+      return {
+        date: new Date(Number(bucket.start_time || 0) * 1000).toISOString().slice(0, 10),
+        start_time: bucket.start_time,
+        end_time: bucket.end_time,
+        total: bucketTotal,
+        lineItems
+      };
+    });
+
+    const mapToRows = (map: Map<string, number>) => Array.from(map.entries())
+      .map(([name, amount]) => ({ name, amount, currency }))
+      .sort((a, b) => b.amount - a.amount);
+
+    res.json({
+      source: 'live',
+      totalCost,
+      currency,
+      range: { start: toDateOnly(start), end: toDateOnly(end) },
+      buckets,
+      byLineItem: mapToRows(lineTotals),
+      byProject: mapToRows(projectTotals),
+      hasMore: Boolean(data?.has_more),
+      nextPage: data?.next_page || null
+    });
+  } catch (err: any) {
+    res.json({
+      source: 'error',
+      totalCost: 0,
+      currency: 'usd',
+      range: { start: toDateOnly(start), end: toDateOnly(end) },
+      buckets: [],
+      byLineItem: [],
+      byProject: [],
+      note: err?.message || 'Failed to fetch OpenAI costs'
+    });
   }
 });
 
@@ -7845,6 +7999,94 @@ app.get('/api/admin/twilio-balance', authenticateToken, async (req: any, res) =>
     });
   } catch (e: any) {
     res.json({ balance: null, currency: 'USD', smsSent: 0, source: 'error', note: e.message });
+  }
+});
+
+app.get('/api/admin/twilio-usage', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const { start, end } = clampDateRange(req, 30, 180);
+
+  if (!sid || !token) {
+    return res.json({
+      source: 'unavailable',
+      currency: 'USD',
+      totalCost: 0,
+      totalUsage: 0,
+      range: { start: toDateOnly(start), end: toDateOnly(end) },
+      records: [],
+      note: 'TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN not set in environment.'
+    });
+  }
+
+  try {
+    const basicAuth = Buffer.from(`${sid}:${token}`).toString('base64');
+    const params = new URLSearchParams({
+      StartDate: toDateOnly(start),
+      EndDate: toDateOnly(end),
+      PageSize: '1000'
+    });
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Usage/Records.json?${params.toString()}`, {
+      headers: { 'Authorization': `Basic ${basicAuth}` }
+    });
+
+    if (!response.ok) {
+      const errBody: any = await response.json().catch(() => ({}));
+      return res.json({
+        source: 'error',
+        currency: 'USD',
+        totalCost: 0,
+        totalUsage: 0,
+        range: { start: toDateOnly(start), end: toDateOnly(end) },
+        records: [],
+        note: `Twilio API ${response.status}: ${errBody?.message || response.statusText}`
+      });
+    }
+
+    const data: any = await response.json();
+    let totalCost = 0;
+    let totalUsage = 0;
+    let currency = 'USD';
+    const records = (data?.usage_records || []).map((record: any) => {
+      const price = Math.abs(Number(record.price || 0));
+      const usage = Number(record.usage || record.count || 0);
+      totalCost += price;
+      totalUsage += Number.isFinite(usage) ? usage : 0;
+      currency = record.price_unit || currency;
+      return {
+        category: record.category || 'unknown',
+        description: record.description || record.category || 'Twilio usage',
+        startDate: record.start_date,
+        endDate: record.end_date,
+        usage,
+        usageUnit: record.usage_unit || record.count_unit || '',
+        count: Number(record.count || 0),
+        countUnit: record.count_unit || '',
+        price,
+        currency: record.price_unit || currency
+      };
+    }).sort((a: any, b: any) => b.price - a.price);
+
+    res.json({
+      source: 'live',
+      currency,
+      totalCost,
+      totalUsage,
+      range: { start: toDateOnly(start), end: toDateOnly(end) },
+      records
+    });
+  } catch (e: any) {
+    res.json({
+      source: 'error',
+      currency: 'USD',
+      totalCost: 0,
+      totalUsage: 0,
+      range: { start: toDateOnly(start), end: toDateOnly(end) },
+      records: [],
+      note: e.message
+    });
   }
 });
 
@@ -9967,8 +10209,14 @@ app.get('/api/storage/plans', authenticateToken, async (req: any, res: any) => {
 app.post('/api/storage/purchase/initiate', authenticateToken, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Only workspace owners can purchase storage' });
   try {
-    const { plan_id, gateway } = req.body;
+    const { plan_id, gateway = 'paystack', mode = 'inline' } = req.body;
     if (!plan_id) return res.status(400).json({ error: 'plan_id is required' });
+    const gw = gateway === 'kora' ? 'kora' : 'paystack';
+
+    const gateways = await getPaymentGatewayStatus();
+    if (gateways[gw] === false) {
+      return res.status(403).json({ error: `${gw === 'paystack' ? 'Paystack' : 'Kora'} payments are currently disabled.` });
+    }
 
     const planRes = await pool.query('SELECT * FROM storage_plans WHERE id = $1 AND is_active = TRUE', [plan_id]);
     if (planRes.rows.length === 0) return res.status(404).json({ error: 'Plan not found' });
@@ -9976,20 +10224,54 @@ app.post('/api/storage/purchase/initiate', authenticateToken, async (req: any, r
 
     const reference = `storage_${req.tenant_id}_${plan_id}_${Date.now()}`;
     await pool.query(
-      `INSERT INTO storage_purchases (tenant_id, plan_id, storage_mb, price_kobo, reference, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending')`,
-      [req.tenant_id, plan_id, plan.storage_mb, plan.price_kobo, reference]
+      `INSERT INTO storage_purchases (tenant_id, plan_id, storage_mb, price_kobo, duration_days, reference, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending')`,
+      [req.tenant_id, plan_id, plan.storage_mb, plan.price_kobo, plan.duration_days || 365, reference]
     );
 
-    const amountKobo = plan.price_kobo;
+    const amountNaira = Number(plan.price_kobo || 0) / 100;
+    const redirectUrl = buildPaymentReturnUrl(reference, gw, 'storage_purchase');
     let checkoutData: any;
-    const gw = gateway || 'paystack';
     if (gw === 'kora') {
-      checkoutData = await initializeKoraCheckout(req.user, amountKobo, reference, {});
+      checkoutData = await initializeKoraCheckout(req.user, amountNaira, reference, {
+        redirectUrl,
+        notificationUrl: `${APP_URL}/api/payment/webhook/kora`
+      });
+    } else if (mode === 'inline') {
+      checkoutData = buildPaystackInlinePayload(req.user, amountNaira, reference);
     } else {
-      checkoutData = await initializePaystackCheckout(req.user, amountKobo, reference, {});
+      checkoutData = await initializePaystackCheckout(req.user, amountNaira, reference, { redirectUrl });
     }
-    res.json({ reference, checkout: checkoutData });
+
+    await pool.query(
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [
+        req.user.id,
+        req.tenant_id,
+        reference,
+        amountNaira,
+        'pending',
+        'storage_purchase',
+        JSON.stringify({
+          gateway: gw,
+          mode,
+          plan_id: Number(plan_id),
+          storage_mb: Number(plan.storage_mb || 0),
+          duration_days: Number(plan.duration_days || 365),
+          storage_purchase_reference: reference,
+          paid_so_far: 0,
+          remaining_amount: amountNaira
+        })
+      ]
+    );
+
+    res.json({
+      reference,
+      amount: amountNaira,
+      checkout: checkoutData,
+      checkout_url: checkoutData?.checkoutUrl || checkoutData?.checkout_url,
+      ...(typeof checkoutData === 'object' ? checkoutData : {})
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to initiate storage purchase' });
   }
@@ -10008,7 +10290,8 @@ app.post('/api/storage/purchase/confirm', authenticateToken, async (req: any, re
     if (purchaseRes.rows.length === 0) return res.status(404).json({ error: 'Purchase not found or already confirmed' });
     const purchase = purchaseRes.rows[0];
 
-    const expiresAt = new Date(Date.now() + purchase.duration_days * 86400000);
+    const durationDays = Number(purchase.duration_days || 365);
+    const expiresAt = new Date(Date.now() + durationDays * 86400000);
     await pool.query(
       "UPDATE storage_purchases SET status = 'success', expires_at = $1 WHERE reference = $2",
       [expiresAt, reference]
