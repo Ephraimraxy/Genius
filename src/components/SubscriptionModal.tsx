@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, CreditCard, ArrowRight, Loader2, Lock, Gift, Star, CheckCircle2, Copy, Building2 } from 'lucide-react';
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
+import { openPaystackInline } from './paystackInline';
 import { friendlyError } from '../utils/friendlyError';
 
 declare global {
@@ -165,11 +166,11 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
     setInlineRef(reference);
     setNeedsNewReference(false);
 
-    if (selectedGateway === 'paystack' && window.PaystackPop && data?.publicKey) {
+    if (selectedGateway === 'paystack' && data?.publicKey) {
       const fallbackAmount = Number(data?.amount_naira ?? price ?? 0);
       const amountKobo = Number(data?.amount_kobo ?? data?.amount ?? 0) || Math.round(fallbackAmount * 100);
       const email = data?.email || data?.customer?.email || '';
-      const handler = window.PaystackPop.setup({
+      const opened = openPaystackInline({
         key: data.publicKey,
         email,
         amount: amountKobo,
@@ -191,11 +192,11 @@ export default function SubscriptionModal({ profile, onSuccess, addToast }: Subs
           setNeedsNewReference(true);
           addToast('Payment window closed. Generate a new checkout to retry.', 'info');
         },
-        callback: () => {
+        onSuccess: () => {
           checkPaymentStatusOnce(false, reference);
         }
       });
-      handler.openIframe();
+      if (!opened) addToast('Unable to open Paystack checkout. Please retry.', 'error');
       return;
     }
 

@@ -25,6 +25,7 @@ import { useSettings } from '../context/SettingsContext';
 import { friendlyError } from '../utils/friendlyError';
 import { subscribePaymentReturn } from './paymentChannel';
 import { openPaymentPopup } from './paymentPopup';
+import { openPaystackInline } from './paystackInline';
 
 declare global {
     interface Window {
@@ -153,17 +154,17 @@ export default function LecturerSettings({ addToast }: LecturerSettingsProps = {
             return;
         }
 
-        if (gateway === 'paystack' && window.PaystackPop && checkout.publicKey) {
-            const handler = window.PaystackPop.setup({
+        if (gateway === 'paystack' && checkout.publicKey) {
+            const opened = openPaystackInline({
                 key: checkout.publicKey,
                 email: checkout.email || checkout.customer?.email || '',
                 amount: Number(checkout.amount_kobo || checkout.amount || 0),
                 currency: checkout.currency || 'NGN',
                 ref: reference,
                 onClose: () => notify('Payment window closed. Complete payment to add storage.', 'info'),
-                callback: () => void checkStoragePaymentStatus(reference, false)
+                onSuccess: () => void checkStoragePaymentStatus(reference, false)
             });
-            handler.openIframe();
+            if (!opened) notify('Unable to open Paystack checkout. Please retry.', 'error');
             return;
         }
 

@@ -4567,21 +4567,176 @@ async function generatePublicationCertificatePDF(
   }
 
   const doiDisplay = doiUrl(doi);
+  const titleLength = rawTitle.length;
+  const titleFontPx = titleLength > 115 ? 30 : titleLength > 90 ? 32 : 36;
+  const authorFontPx = authorsLine.length > 120 ? 18 : authorsLine.length > 85 ? 19 : 21;
 
-  // cert.png is 1209×852px displayed at 297×210mm (A4 landscape).
-  // Content safe zone (clear of red curved strips): left≈11%, right≈89%, top≈4%, bottom≈95%
-  // Bottom section (signatures, QR): bottom 22% of page ≈ y > 164mm
-  // Medal center in template: x≈50%, y≈82%
+  // Overlay coordinates below are matched to tools/cert.png at its native 1209x852 size.
 
   const html = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8"/>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 297mm; height: 210mm; overflow: hidden; background: white; }
-  .page { position: relative; width: 297mm; height: 210mm; font-family: 'Times New Roman', Times, serif; }
+  @page { size: 1209px 852px; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { width: 1209px; height: 852px; overflow: hidden; background: white; }
+  .page { position: relative; width: 1209px; height: 852px; font-family: 'Times New Roman', Times, serif; color: #111; overflow: hidden; }
   .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .logo { position: absolute; top: 132px; width: 67px; height: 67px; object-fit: contain; }
+  .logo-left { left: 230px; }
+  .logo-right { right: 252px; }
+  .cert-title {
+    position: absolute;
+    top: 92px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 36px;
+    line-height: 1;
+    letter-spacing: 8px;
+    font-weight: 900;
+    color: #8b0000;
+  }
+  .cert-subtitle {
+    position: absolute;
+    top: 135px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 16px;
+    line-height: 1.32;
+    letter-spacing: 2.2px;
+    color: #555;
+    text-transform: uppercase;
+  }
+  .certify-line {
+    position: absolute;
+    top: 216px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 20px;
+    letter-spacing: 4px;
+    color: #444;
+    text-transform: uppercase;
+  }
+  .content {
+    position: absolute;
+    top: 257px;
+    left: 125px;
+    right: 125px;
+    text-align: center;
+  }
+  .paper-title {
+    font-size: ${titleFontPx}px;
+    line-height: 1.22;
+    font-weight: 900;
+    color: #000;
+    margin: 0 auto 26px;
+    max-width: 980px;
+  }
+  .authored-by {
+    font-size: 18px;
+    line-height: 1;
+    margin-bottom: 22px;
+    color: #222;
+  }
+  .authors {
+    font-size: ${authorFontPx}px;
+    line-height: 1.25;
+    font-weight: 900;
+    margin-bottom: 16px;
+    color: #111;
+  }
+  .accepted {
+    font-size: 18px;
+    line-height: 1.25;
+    margin-bottom: 13px;
+    color: #111;
+  }
+  .doi {
+    font-size: 17px;
+    line-height: 1.2;
+    font-weight: 700;
+    color: #9b0000;
+    margin-bottom: 12px;
+  }
+  .meta {
+    font-size: 16px;
+    line-height: 1.25;
+    color: #333;
+    margin-bottom: 10px;
+  }
+  .published {
+    font-size: 16px;
+    line-height: 1.25;
+    color: #333;
+  }
+  .signature-block {
+    position: absolute;
+    left: 250px;
+    bottom: 92px;
+    width: 250px;
+    text-align: center;
+  }
+  .signature-block img {
+    display: block;
+    width: 178px;
+    max-height: 58px;
+    object-fit: contain;
+    margin: 0 auto -3px;
+  }
+  .signature-line {
+    width: 190px;
+    border-top: 2px solid #111;
+    margin: 0 auto 8px;
+  }
+  .secretary-name {
+    display: block;
+    font-size: 20px;
+    line-height: 1.1;
+    font-weight: 900;
+    color: #8b0000;
+    text-transform: uppercase;
+  }
+  .secretary-role {
+    display: block;
+    margin-top: 7px;
+    font-size: 16px;
+    line-height: 1.1;
+    color: #555;
+  }
+  .qr-block {
+    position: absolute;
+    left: 758px;
+    bottom: 88px;
+    width: 150px;
+    text-align: center;
+  }
+  .qr-label {
+    display: block;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 700;
+    color: #555;
+    margin-bottom: 7px;
+  }
+  .qr-block img {
+    width: 104px;
+    height: 104px;
+  }
+  .cert-id {
+    position: absolute;
+    right: 34px;
+    bottom: 13px;
+    width: 185px;
+    text-align: center;
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.12;
+    font-weight: 900;
+  }
 </style>
 </head>
 <body>
@@ -4590,62 +4745,66 @@ async function generatePublicationCertificatePDF(
   <!-- Full-page background template -->
   ${bgDataUrl ? `<img class="bg" src="${bgDataUrl}" alt=""/>` : ''}
 
-  <!-- ═══ HEADER: logos flanking the title in one row ═══ -->
-  <div style="position:absolute; top:4mm; left:26mm; right:26mm; display:flex; align-items:center; gap:4mm;">
-    ${logoLeft
-      ? `<img src="${logoLeft}" style="width:20mm; height:20mm; object-fit:contain; flex-shrink:0;"/>`
-      : `<div style="width:20mm; flex-shrink:0;"></div>`}
-    <div style="flex:1; text-align:center;">
-      <p style="font-size:22pt; font-weight:900; color:#800000; letter-spacing:2.5px; line-height:1; margin-bottom:1.5mm;">CERTIFICATE OF PUBLICATION</p>
-      <p style="font-size:7pt; color:#555; letter-spacing:1.5px; text-transform:uppercase; line-height:1.4;">Genius Multidisciplinary International Journal Publication</p>
-    </div>
-    ${logoRight
-      ? `<img src="${logoRight}" style="width:20mm; height:20mm; object-fit:contain; flex-shrink:0;"/>`
-      : `<div style="width:20mm; flex-shrink:0;"></div>`}
+  ${logoLeft ? `<img class="logo logo-left" src="${logoLeft}" alt="GMIJPN logo"/>` : ''}
+  ${logoRight ? `<img class="logo logo-right" src="${logoRight}" alt="Institution logo"/>` : ''}
+
+  <h1 class="cert-title">CERTIFICATE OF PUBLICATION</h1>
+  <div class="cert-subtitle">
+    <div>Genius Multidisciplinary International</div>
+    <div>Journal Publication</div>
   </div>
+
+  <div class="certify-line">This is to certify that the manuscript titled</div>
+
+  <div class="content">
+    <div class="paper-title">&ldquo;${esc(rawTitle)}&rdquo;</div>
+    <div class="authored-by">authored by</div>
+    <div class="authors">${esc(authorsLine)}</div>
+    <div class="accepted">
+      has been accepted and published in the <em>${esc(JOURNAL_DISPLAY_NAME)}</em>.
+    </div>
+    <div class="doi">DOI: ${esc(doiDisplay)}</div>
+    <div class="meta">ISSN: ${esc(issn)} &nbsp; | &nbsp; Volume ${esc(volume)} &nbsp; | &nbsp; Issue ${esc(issue)}</div>
+    <div class="published">Published: ${esc(publishedDate)}</div>
+  </div>
+
+  <div class="signature-block">
+    ${signatureBase64 && signatureBase64.startsWith('data:image')
+      ? `<img src="${signatureBase64}" alt="Signature"/>`
+      : ''}
+    <div class="signature-line"></div>
+    <span class="secretary-name">${secretaryName}</span>
+    <span class="secretary-role">Secretary, Editorial Board</span>
+  </div>
+
+  <div class="qr-block">
+    <span class="qr-label">Scan to verify</span>
+    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR"/>` : ''}
+  </div>
+
+  <div class="cert-id">
+    <div>Certificate ID:</div>
+    <div>${esc(certificateId)}</div>
+  </div>
+
+  <!-- ═══ HEADER: logos flanking the title in one row ═══ -->
+  
 
   <!-- Thin divider below header -->
-  <div style="position:absolute; top:27mm; left:30mm; right:30mm; border-top:0.5px solid #ccc;"></div>
+  
 
   <!-- "This is to certify..." -->
-  <p style="position:absolute; top:29mm; left:0; right:0; text-align:center; font-size:8.5pt; letter-spacing:2px; color:#444; text-transform:uppercase;">
-    This is to certify that the manuscript titled
-  </p>
+  
 
   <!-- ═══ BODY — flows from fixed top, no flex centering ═══ -->
-  <div style="position:absolute; top:36mm; left:30mm; right:30mm; text-align:center;">
-    <p style="font-size:15pt; font-weight:bold; color:#800000; line-height:1.35; margin-bottom:4mm;">
-      &ldquo;${esc(rawTitle)}&rdquo;
-    </p>
-    <p style="font-style:italic; font-size:8.5pt; color:#555; margin-bottom:1.5mm;">authored by</p>
-    <p style="font-size:11pt; font-weight:bold; color:#111; margin-bottom:4mm; line-height:1.3;">${esc(authorsLine)}</p>
-    <p style="font-size:9pt; color:#111; margin-bottom:3mm; line-height:1.4;">
-      has been accepted and published in the <em>${esc(JOURNAL_DISPLAY_NAME)}</em>.
-    </p>
-    <p style="font-size:9.5pt; font-weight:bold; color:#800000; margin-bottom:2mm;">DOI: ${esc(doiDisplay)}</p>
-    <p style="font-size:8pt; color:#666; margin-bottom:1.5mm;">ISSN: ${esc(issn)} &nbsp;|&nbsp; Volume ${esc(volume)} &nbsp;|&nbsp; Issue ${esc(issue)}</p>
-    <p style="font-style:italic; font-size:8pt; color:#666;">Published: ${esc(publishedDate)}</p>
-  </div>
+  
 
   <!-- ═══ BOTTOM ROW ═══ -->
   <!-- Signature (bottom-left) -->
-  <div style="position:absolute; bottom:8mm; left:26mm; display:flex; flex-direction:column; align-items:flex-start;">
-    ${signatureBase64 && signatureBase64.startsWith('data:image')
-      ? `<img src="${signatureBase64}" alt="sig" style="max-width:115px; max-height:38px; margin-bottom:1mm; object-fit:contain;"/>`
-      : ''}
-    <div style="width:155px; border-top:1.5px solid #555; margin-bottom:1.5mm;"></div>
-    <span style="font-size:9pt; font-weight:bold; color:#111; text-transform:uppercase; letter-spacing:0.5px;">${secretaryName}</span>
-    <span style="font-size:7pt; color:#666;">Secretary, Editorial Board</span>
-  </div>
+  
 
   <!-- QR + Cert ID (bottom-right): Scan label → QR → Certificate ID -->
-  <div style="position:absolute; bottom:6mm; right:26mm; display:flex; flex-direction:column; align-items:center; gap:1mm;">
-    <span style="font-size:6pt; color:#666; letter-spacing:0.5px;">Scan to verify</span>
-    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width:62px; height:62px;"/>` : ''}
-    <div style="background:#800000; color:#fff; font-size:5.5pt; font-weight:bold; padding:1.5px 7px; border-radius:2px; white-space:nowrap; letter-spacing:0.3px; margin-top:0.5mm;">
-      Certificate ID: ${esc(certificateId)}
-    </div>
-  </div>
+  
 
 </div>
 </body>
@@ -4677,10 +4836,11 @@ async function generatePublicationCertificatePDF(
   });
   try {
     const certPage = await browser.newPage();
+    await certPage.setViewport({ width: 1209, height: 852, deviceScaleFactor: 1 });
     await certPage.setContent(html, { waitUntil: 'networkidle0' });
     const pdfBuffer = await certPage.pdf({
-      width: '297mm',
-      height: '210mm',
+      width: '1209px',
+      height: '852px',
       printBackground: true,
       margin: { top: 0, bottom: 0, left: 0, right: 0 },
     });

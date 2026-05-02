@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, CreditCard, Loader2, CheckCircle2, ShieldUser, Copy, Clock, AlertCircle, ChevronRight, Zap } from 'lucide-react';
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
+import { openPaystackInline } from './paystackInline';
 import { friendlyError } from '../utils/friendlyError';
 
 declare global {
@@ -209,11 +210,11 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
     setInlineRef(reference);
     setNeedsNewReference(false);
 
-    if (gateway === 'paystack' && window.PaystackPop && data?.publicKey) {
+    if (gateway === 'paystack' && data?.publicKey) {
       const fallbackAmount = Number(data?.amount_naira ?? paymentAmount ?? amount ?? 0);
       const amountKobo = Number(data?.amount_kobo ?? data?.amount ?? 0) || Math.round(fallbackAmount * 100);
       const email = data?.email || data?.customer?.email || '';
-      const handler = window.PaystackPop.setup({
+      const opened = openPaystackInline({
         key: data.publicKey,
         email,
         amount: amountKobo,
@@ -235,11 +236,11 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
           setNeedsNewReference(true);
           addToast('Payment window closed. Generate a new checkout to retry.', 'info');
         },
-        callback: () => {
+        onSuccess: () => {
           void verifyPaymentStatus(true, reference);
         }
       });
-      handler.openIframe();
+      if (!opened) addToast('Unable to open Paystack checkout. Please retry.', 'error');
       return;
     }
 

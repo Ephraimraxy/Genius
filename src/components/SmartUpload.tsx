@@ -4,6 +4,7 @@ import { UploadCloud, FileText, CheckCircle2, Loader2, AlertCircle, Trash2, Arro
 import FilePreviewModal from './FilePreviewModal';
 import { openPaymentPopup } from './paymentPopup';
 import { subscribePaymentReturn } from './paymentChannel';
+import { openPaystackInline } from './paystackInline';
 import { friendlyError } from '../utils/friendlyError';
 
 declare global {
@@ -554,11 +555,11 @@ export default function SmartUpload({
     setInlineRef(reference);
     setNeedsNewReference(false);
 
-    if (selectedGateway === 'paystack' && window.PaystackPop && data?.publicKey) {
+    if (selectedGateway === 'paystack' && data?.publicKey) {
       const fallbackAmount = Number(data?.amount_naira ?? price ?? 0);
       const amountKobo = Number(data?.amount_kobo ?? data?.amount ?? 0) || Math.round(fallbackAmount * 100);
       const email = data?.email || data?.customer?.email || '';
-      const handler = window.PaystackPop.setup({
+      const opened = openPaystackInline({
         key: data.publicKey,
         email,
         amount: amountKobo,
@@ -580,11 +581,11 @@ export default function SmartUpload({
           setNeedsNewReference(true);
           addToast('Payment window closed. Generate a new checkout to retry.', 'info');
         },
-        callback: () => {
+        onSuccess: () => {
           verifyPaymentOnce(false, reference);
         }
       });
-      handler.openIframe();
+      if (!opened) addToast('Unable to open Paystack checkout. Please retry.', 'error');
       return;
     }
 
