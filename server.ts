@@ -4588,13 +4588,13 @@ async function generatePublicationCertificatePDF(
   .logo-right { right: 252px; }
   .cert-title {
     position: absolute;
-    top: 92px;
+    top: 96px;
     left: 0;
     right: 0;
     text-align: center;
-    font-size: 36px;
+    font-size: 30px;
     line-height: 1;
-    letter-spacing: 8px;
+    letter-spacing: 5px;
     font-weight: 900;
     color: #8b0000;
   }
@@ -4689,7 +4689,7 @@ async function generatePublicationCertificatePDF(
   }
   .signature-line {
     width: 190px;
-    border-top: 2px solid #111;
+    border-top: 2px solid transparent;
     margin: 0 auto 8px;
   }
   .secretary-name {
@@ -4728,12 +4728,12 @@ async function generatePublicationCertificatePDF(
   }
   .cert-id {
     position: absolute;
-    right: 34px;
-    bottom: 13px;
-    width: 185px;
+    right: 12px;
+    bottom: 14px;
+    width: 174px;
     text-align: center;
     color: #fff;
-    font-size: 12px;
+    font-size: 11.5px;
     line-height: 1.12;
     font-weight: 900;
   }
