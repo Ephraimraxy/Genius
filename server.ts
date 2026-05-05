@@ -1057,6 +1057,26 @@ const isWithinPageWindow = (pageCount: number, pageWindow: any) => {
   return pageCount >= min && pageCount <= max;
 };
 
+const clampText = (value: any, max = 1200) => {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+};
+
+const normalizeQuickPublishStages = (stages: any[]) => {
+  if (!Array.isArray(stages)) return [];
+  return stages.slice(0, 20).map((stage: any) => ({
+    id: clampText(stage?.id, 80),
+    label: clampText(stage?.label, 140),
+    description: clampText(stage?.description, 300),
+    status: clampText(stage?.status, 40),
+    summary: stage?.summary ? clampText(stage.summary, 800) : undefined,
+    error: stage?.error ? clampText(stage.error, 800) : undefined,
+    details: stage?.details && typeof stage.details === 'object' ? stage.details : undefined,
+    startedAt: stage?.startedAt ? clampText(stage.startedAt, 80) : undefined,
+    completedAt: stage?.completedAt ? clampText(stage.completedAt, 80) : undefined,
+  })).filter(stage => stage.id && stage.label);
+};
+
 const buildCertificateId = (paperId: number | string, publishedAt?: string | Date | null) => {
   const year = new Date(publishedAt || new Date()).getFullYear();
   return `${JOURNAL_SHORT_NAME}-CERT-${year}-${String(paperId).padStart(6, '0')}`;
@@ -4010,6 +4030,36 @@ app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.put('/api/papers/:id/pipeline-results', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const stages = normalizeQuickPublishStages(req.body?.stages || []);
+    const source = clampText(req.body?.source || 'quick_publish', 80);
+
+    const result = await pool.query(
+      'SELECT id, user_id, metadata FROM papers WHERE id = $1',
+      [id]
+    );
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    if (paper.user_id !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const metadata = safeJsonParse<any>(paper.metadata, {});
+    metadata.quickPublishPipeline = {
+      source,
+      recordedAt: new Date().toISOString(),
+      stages,
+    };
+
+    await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [JSON.stringify(metadata), id]);
+    res.json({ success: true, stageCount: stages.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to record pipeline results' });
+  }
+});
+
 app.get('/api/papers/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
@@ -6709,6 +6759,183 @@ async function generateAcceptanceLetterPDF(researcherName: string, manuscriptTit
   return Buffer.from(pdfBytes);
 }
 
+async function generateQuickPublishReportPDF(paper: any): Promise<Buffer> {
+  const metadata = safeJsonParse<any>(paper.metadata, {});
+  const pipeline = metadata.quickPublishPipeline || {};
+  const stages = Array.isArray(pipeline.stages) ? pipeline.stages : [];
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const width = 595;
+  const height = 842;
+  const margin = 48;
+  const maxWidth = width - margin * 2;
+  const maroon = rgb(0.5, 0, 0);
+  const black = rgb(0.08, 0.1, 0.16);
+  const gray = rgb(0.38, 0.43, 0.5);
+  const green = rgb(0.03, 0.5, 0.32);
+  const red = rgb(0.75, 0.07, 0.2);
+  const amber = rgb(0.75, 0.42, 0.05);
+  let page = pdfDoc.addPage([width, height]);
+  let y = height - margin;
+
+  const addPage = () => {
+    page = pdfDoc.addPage([width, height]);
+    y = height - margin;
+  };
+
+  const ensureSpace = (needed: number) => {
+    if (y - needed < margin) addPage();
+  };
+
+  const drawWrapped = (text: any, x: number, size = 10, usedFont = font, color = black, lineHeight = 14, maxW = maxWidth) => {
+    const clean = sanitizePdfText(String(text || ''));
+    const words = clean.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return;
+    let line = '';
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (usedFont.widthOfTextAtSize(next, size) > maxW && line) {
+        ensureSpace(lineHeight);
+        page.drawText(line, { x, y, size, font: usedFont, color });
+        y -= lineHeight;
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    if (line) {
+      ensureSpace(lineHeight);
+      page.drawText(line, { x, y, size, font: usedFont, color });
+      y -= lineHeight;
+    }
+  };
+
+  const drawMeta = (label: string, value: any) => {
+    const cleanValue = sanitizePdfText(String(value || 'Not recorded'));
+    ensureSpace(16);
+    page.drawText(label, { x: margin, y, size: 9, font: fontBold, color: gray });
+    page.drawText(cleanValue, { x: margin + 110, y, size: 9, font, color: black });
+    y -= 16;
+  };
+
+  const statusColor = (status: string) => {
+    const lower = String(status || '').toLowerCase();
+    if (lower === 'passed') return green;
+    if (lower === 'failed') return red;
+    if (lower === 'skipped') return amber;
+    return gray;
+  };
+
+  page.drawText('Quick Publish Test Results', { x: margin, y, size: 20, font: fontBold, color: maroon });
+  y -= 28;
+  drawWrapped(paper.title || 'Untitled manuscript', margin, 13, fontBold, black, 18);
+  y -= 8;
+  drawMeta('Researcher', paper.researcher_name || paper.researcher_email || 'Researcher');
+  drawMeta('Manuscript ID', `#${paper.id}`);
+  drawMeta('Status', paper.status || 'Unknown');
+  drawMeta('DOI', paper.doi || metadata.doi || 'Pending');
+  drawMeta('Recorded', pipeline.recordedAt ? new Date(pipeline.recordedAt).toLocaleString('en-GB') : 'Not recorded');
+  drawMeta('Generated', new Date().toLocaleString('en-GB'));
+  y -= 12;
+
+  if (metadata.pageWindow) {
+    const pageWindow = metadata.pageWindow;
+    drawWrapped(`Page count window: expected ${pageWindow.min}-${pageWindow.max} pages. Source count: ${metadata.sourcePageCount || 'unknown'}. Final count: ${metadata.pageCount || 'unknown'}.`, margin, 10, font, gray, 14);
+    if (metadata.pageCountPublishOverride) {
+      const override = metadata.pageCountPublishOverride;
+      drawWrapped(`Override recorded: published anyway after page count mismatch. Actual draft pages: ${override.actualPageCount || 'unknown'}. Approved at: ${override.allowedAt || 'unknown'}.`, margin, 10, fontBold, amber, 14);
+    }
+    y -= 8;
+  }
+
+  page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: 1, color: rgb(0.85, 0.87, 0.9) });
+  y -= 24;
+
+  if (stages.length === 0) {
+    drawWrapped('No Quick Publish stage results have been recorded for this manuscript yet.', margin, 11, font, gray, 16);
+  } else {
+    stages.forEach((stage: any, index: number) => {
+      ensureSpace(92);
+      const blockTop = y + 10;
+      page.drawRectangle({
+        x: margin,
+        y: blockTop - 78,
+        width: maxWidth,
+        height: 84,
+        borderColor: rgb(0.86, 0.88, 0.92),
+        borderWidth: 1,
+        color: rgb(0.98, 0.99, 1)
+      });
+      page.drawText(`${index + 1}. ${sanitizePdfText(stage.label || stage.id || 'Stage')}`, {
+        x: margin + 14,
+        y,
+        size: 12,
+        font: fontBold,
+        color: black
+      });
+      const status = sanitizePdfText(String(stage.status || 'unknown')).toUpperCase();
+      page.drawText(status, {
+        x: width - margin - fontBold.widthOfTextAtSize(status, 9) - 14,
+        y: y + 1,
+        size: 9,
+        font: fontBold,
+        color: statusColor(stage.status)
+      });
+      y -= 18;
+      drawWrapped(stage.summary || stage.error || stage.description || 'No result summary recorded.', margin + 14, 10, font, stage.error ? red : gray, 14, maxWidth - 28);
+      if (stage.completedAt) {
+        drawWrapped(`Completed: ${new Date(stage.completedAt).toLocaleString('en-GB')}`, margin + 14, 8, font, gray, 12, maxWidth - 28);
+      }
+      if (stage.details?.code === 'PAGE_COUNT_MISMATCH') {
+        drawWrapped(`Mismatch details: expected ${stage.details.pageWindow?.min || stage.details.expectedMin}-${stage.details.pageWindow?.max || stage.details.expectedMax} pages, got ${stage.details.pageCount || stage.details.actualPageCount}.`, margin + 14, 9, fontBold, amber, 12, maxWidth - 28);
+      }
+      y -= 16;
+    });
+  }
+
+  const pages = pdfDoc.getPages();
+  pages.forEach((p, index) => {
+    const footer = `Genius Research Portal - Quick Publish Report - Page ${index + 1} of ${pages.length}`;
+    p.drawText(footer, {
+      x: margin,
+      y: 24,
+      size: 7,
+      font,
+      color: gray
+    });
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
+
+app.get('/api/papers/:id/pipeline-report', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const result = await pool.query(
+      `SELECT p.*, u.name as researcher_name, u.email as researcher_email
+       FROM papers p
+       JOIN users u ON p.user_id = u.id
+       WHERE p.id = $1`,
+      [id]
+    );
+    const paper = result.rows[0];
+    if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    if (paper.user_id !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const pdfBuffer = await generateQuickPublishReportPDF(paper);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Quick_Publish_Report_${paper.id}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error: any) {
+    console.error('Pipeline report generation error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate pipeline report' });
+  }
+});
+
 // ===== PDF Generation: Formatted Manuscript (Server-Side) =====
 async function generateFormattedManuscriptPDF(formattedHtml: string, branding: any): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
@@ -7097,6 +7324,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
+    const allowPageCountMismatch = req.body?.allowPageCountMismatch === true;
 
     if (paper.status === 'published' && paper.doi) {
       const existingUrl = `https://doi.org/${paper.doi}`;
@@ -7203,18 +7431,41 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       const draftPageCount = draftPdf.getPageCount();
 
       if (!isWithinPageWindow(draftPageCount, pageWindow)) {
+        const mismatchDetails = {
+          code: 'PAGE_COUNT_MISMATCH',
+          expectedMin: pageWindow.min,
+          expectedMax: pageWindow.max,
+          actualPageCount: draftPageCount,
+          sourcePageCount,
+          detectedAt: new Date().toISOString()
+        };
         const updatedMetadata = {
           ...metadata,
           sourcePageCount,
           pageWindow,
           pageCount: draftPageCount,
-          pageCountWithinWindow: false
+          pageCountWithinWindow: false,
+          lastPageCountMismatch: mismatchDetails
         };
-        await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [JSON.stringify(updatedMetadata), paperId]);
-        return res.status(400).json({
-          error: `Page count mismatch: expected ${pageWindow.min}-${pageWindow.max} pages, got ${draftPageCount}.`,
-          pageCount: draftPageCount,
-          pageWindow
+
+        if (!allowPageCountMismatch) {
+          await pool.query('UPDATE papers SET metadata = $1 WHERE id = $2', [JSON.stringify(updatedMetadata), paperId]);
+          return res.status(400).json({
+            code: 'PAGE_COUNT_MISMATCH',
+            error: `Page count mismatch: expected ${pageWindow.min}-${pageWindow.max} pages, got ${draftPageCount}.`,
+            pageCount: draftPageCount,
+            pageWindow,
+            canPublishAnyway: true
+          });
+        }
+
+        Object.assign(metadata, updatedMetadata, {
+          pageCountPublishOverride: {
+            ...mismatchDetails,
+            allowedAt: new Date().toISOString(),
+            allowedBy: userId,
+            reason: 'researcher_publish_anyway'
+          }
         });
       }
 
@@ -7377,7 +7628,8 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
       publishedAt,
       certificateId,
       pdfUrl: `/api/papers/${paperId}/published-pdf`,
-      certificateUrl: `/api/papers/${paperId}/certificate`
+      certificateUrl: `/api/papers/${paperId}/certificate`,
+      pageCountOverride: metadata.pageCountPublishOverride || null
     });
 
   } catch (error: any) {
@@ -8700,9 +8952,9 @@ app.put('/api/admin/papers/:id/status', authenticateToken, async (req: any, res)
   }
 });
 
-// Permanently delete a paper and all its associated data (super_admin only)
+// Permanently delete a paper and all its associated data (admin only)
 app.delete('/api/admin/papers/:id', authenticateToken, async (req: any, res) => {
-  if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Only super admins can permanently delete publications.' });
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Only admins can permanently delete publications.' });
   try {
     const { id } = idParamSchema.parse(req.params);
     const paperCheck = await pool.query('SELECT id, title, volume, issue, status FROM papers WHERE id = $1', [id]);

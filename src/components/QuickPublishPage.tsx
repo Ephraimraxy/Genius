@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Zap, Loader2, CheckCircle2, AlertCircle, Download,
@@ -29,7 +29,22 @@ interface PhaseState {
   status: PhaseStatus;
   summary?: string;
   error?: string;
+  details?: any;
+  startedAt?: string;
+  completedAt?: string;
 }
+
+type PhaseOutcome = {
+  success: boolean;
+  summary?: string;
+  error?: string;
+  details?: any;
+  publishData?: any;
+};
+
+type ExecutePhaseOptions = {
+  allowPageCountMismatch?: boolean;
+};
 
 const PHASE_DEFS: Omit<PhaseState, 'status'>[] = [
   {
@@ -91,12 +106,57 @@ export default function QuickPublishPage({
   const [started, setStarted] = useState(false);
   const [publicationResult, setPublicationResult] = useState<any>(null);
   const [previewMode, setPreviewMode] = useState<'none' | 'certificate' | 'manuscript'>('none');
+  const phasesRef = useRef(phases);
 
   const updatePhase = useCallback((id: string, updates: Partial<PhaseState>) => {
     setPhases(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
   }, []);
 
-  const executePhase = async (phaseId: string, paperId: number): Promise<{ success: boolean; summary?: string; error?: string; publishData?: any }> => {
+  useEffect(() => {
+    phasesRef.current = phases;
+  }, [phases]);
+
+  const persistPipelineResults = useCallback(async () => {
+    if (!activePaperId || !token) return;
+    const stages = phasesRef.current.map(({ id, label, description, status, summary, error, details, startedAt, completedAt }) => ({
+      id,
+      label,
+      description,
+      status,
+      summary,
+      error,
+      details,
+      startedAt,
+      completedAt,
+    }));
+
+    await fetch(`/api/papers/${activePaperId}/pipeline-results`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ source: 'quick_publish', stages }),
+    }).catch(() => undefined);
+  }, [activePaperId, token]);
+
+  useEffect(() => {
+    if (!started || !activePaperId || !token) return;
+
+    const timer = window.setTimeout(() => {
+      persistPipelineResults().catch(() => {
+        // Report persistence should never interrupt the active publishing pipeline.
+      });
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [phases, started, activePaperId, token, persistPipelineResults]);
+
+  const executePhase = async (
+    phaseId: string,
+    paperId: number,
+    options: ExecutePhaseOptions = {}
+  ): Promise<PhaseOutcome> => {
     try {
       switch (phaseId) {
         case 'plagiarism': {
@@ -108,7 +168,7 @@ export default function QuickPublishPage({
           const data = await res.json();
           const score: number = data.report?.plagiarismScore ?? 0;
           if (score > 40) throw new Error(`High similarity detected (${score}%). Review your source attribution.`);
-          return { success: true, summary: `${score}% similarity — within acceptable range` };
+          return { success: true, summary: `${score}% similarity — within acceptable range`, details: { plagiarismScore: score } };
         }
 
         case 'keywords': {
@@ -119,7 +179,7 @@ export default function QuickPublishPage({
           if (!res.ok) throw new Error('Keyword validation service unavailable');
           const data = await res.json();
           const count = Array.isArray(data.keywords) ? data.keywords.length : null;
-          return { success: true, summary: count ? `${count} keywords validated and refined` : 'Keywords validated' };
+          return { success: true, summary: count ? `${count} keywords validated and refined` : 'Keywords validated', details: { keywordCount: count, keywords: data.keywords || [] } };
         }
 
         case 'peer_review': {
@@ -131,7 +191,7 @@ export default function QuickPublishPage({
           const data = await res.json();
           const score: number | null = data.score ?? data.overall_score ?? null;
           if (score !== null && score < 60) throw new Error(`Reviewer score: ${score}/100 — below the 60-point acceptance threshold`);
-          return { success: true, summary: score !== null ? `Reviewer score: ${score}/100 — Accepted` : 'Reviewer evaluation passed' };
+          return { success: true, summary: score !== null ? `Reviewer score: ${score}/100 — Accepted` : 'Reviewer evaluation passed', details: { score } };
         }
 
         case 'writing': {
@@ -143,7 +203,7 @@ export default function QuickPublishPage({
           if (!res.ok) throw new Error('Writing enhancement service unavailable');
           const data = await res.json();
           const count = Array.isArray(data.suggestions) ? data.suggestions.length : null;
-          return { success: true, summary: count ? `${count} enhancement suggestions applied` : 'Writing polished successfully' };
+          return { success: true, summary: count ? `${count} enhancement suggestions applied` : 'Writing polished successfully', details: { suggestionCount: count } };
         }
 
         case 'integrity': {
@@ -156,7 +216,7 @@ export default function QuickPublishPage({
           const critical = (data.report?.structureIssues || []).filter((i: any) => i?.severity === 'critical' || i?.type === 'critical').length;
           const total = data.report?.structureIssues?.length ?? 0;
           if (critical > 3) throw new Error(`${critical} critical structural issues detected — manuscript may need revision`);
-          return { success: true, summary: total > 0 ? `${total} minor issues noted — within publication tolerance` : 'All integrity checks passed' };
+          return { success: true, summary: total > 0 ? `${total} minor issues noted — within publication tolerance` : 'All integrity checks passed', details: { criticalIssues: critical, totalIssues: total } };
         }
 
         case 'formatting': {
@@ -192,7 +252,7 @@ export default function QuickPublishPage({
             }
           }
           if (sseError) throw new Error(sseError || 'APA 7th formatting pipeline failed');
-          return { success: true, summary: 'APA 7th edition layout applied successfully' };
+          return { success: true, summary: 'APA 7th edition layout applied successfully', details: { style: 'apa7' } };
         }
 
         case 'publication': {
@@ -205,18 +265,27 @@ export default function QuickPublishPage({
 
           const publishRes = await fetch(`/api/publish/${paperId}`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+              allowPageCountMismatch: options.allowPageCountMismatch === true,
+            }),
           });
-          const publishData = await publishRes.json();
-          if (!publishRes.ok) throw new Error(publishData?.error || 'Publication broadcast failed — please retry');
-          return { success: true, summary: `DOI assigned: ${publishData.doi || 'Processing...'}`, publishData };
+          const publishData = await publishRes.json().catch(() => ({}));
+          if (!publishRes.ok) {
+            return {
+              success: false,
+              error: friendlyError(new Error(publishData?.error || 'Publication broadcast failed — please retry'), 'generic'),
+              details: publishData,
+            };
+          }
+          return { success: true, summary: `DOI assigned: ${publishData.doi || 'Processing...'}`, details: publishData, publishData };
         }
 
         default:
           return { success: false, error: 'Unknown phase' };
       }
     } catch (err: any) {
-      return { success: false, error: friendlyError(err, 'generic') };
+      return { success: false, error: friendlyError(err, 'generic'), details: { rawError: String(err?.message || err || '') } };
     }
   };
 
@@ -227,26 +296,45 @@ export default function QuickPublishPage({
     for (let i = startIdx; i < PHASE_DEFS.length; i++) {
       const phase = PHASE_DEFS[i];
       setCurrentIdx(i);
-      updatePhase(phase.id, { status: 'running', error: undefined, summary: undefined });
+      updatePhase(phase.id, {
+        status: 'running',
+        error: undefined,
+        summary: undefined,
+        details: undefined,
+        startedAt: new Date().toISOString(),
+        completedAt: undefined,
+      });
 
       const outcome = await executePhase(phase.id, activePaperId);
 
       if (outcome.success) {
-        updatePhase(phase.id, { status: 'passed', summary: outcome.summary });
+        updatePhase(phase.id, {
+          status: 'passed',
+          summary: outcome.summary,
+          details: outcome.details,
+          completedAt: new Date().toISOString(),
+        });
         if (phase.id === 'publication' && outcome.publishData) {
           setPublicationResult(outcome.publishData);
           addToast('Publication complete! Certificate dispatched to your email.', 'success');
+          await new Promise(resolve => window.setTimeout(resolve, 500));
+          await persistPipelineResults();
           onComplete();
         }
       } else {
-        updatePhase(phase.id, { status: 'failed', error: outcome.error });
+        updatePhase(phase.id, {
+          status: 'failed',
+          error: outcome.error,
+          details: outcome.details,
+          completedAt: new Date().toISOString(),
+        });
         setIsRunning(false);
         return; // Stop and wait for user action (Retry or Continue Anyway)
       }
     }
 
     setIsRunning(false);
-  }, [activePaperId, token, updatePhase, addToast, onComplete]);
+  }, [activePaperId, token, updatePhase, addToast, onComplete, persistPipelineResults]);
 
   const handleStart = () => {
     setStarted(true);
@@ -261,8 +349,64 @@ export default function QuickPublishPage({
   };
 
   const handleContinueAnyway = (idx: number) => {
-    updatePhase(PHASE_DEFS[idx].id, { status: 'skipped' });
+    const phase = phases[idx];
+    updatePhase(PHASE_DEFS[idx].id, {
+      status: 'skipped',
+      summary: phase?.error ? `Skipped after issue: ${phase.error}` : 'Skipped by researcher',
+      completedAt: new Date().toISOString(),
+    });
     runFrom(idx + 1);
+  };
+
+  const isPageCountMismatchFailure = (phase: PhaseState) => (
+    phase.id === 'publication' &&
+    phase.status === 'failed' &&
+    (
+      phase.details?.code === 'PAGE_COUNT_MISMATCH' ||
+      String(phase.error || '').toLowerCase().includes('page count mismatch')
+    )
+  );
+
+  const handlePublishAnyway = async (idx: number) => {
+    if (!activePaperId) return;
+
+    setIsRunning(true);
+    setCurrentIdx(idx);
+    const phase = PHASE_DEFS[idx];
+    updatePhase(phase.id, {
+      status: 'running',
+      error: undefined,
+      summary: 'Publishing with page-count override...',
+      startedAt: new Date().toISOString(),
+      completedAt: undefined,
+    });
+
+    const outcome = await executePhase('publication', activePaperId, { allowPageCountMismatch: true });
+
+    if (outcome.success) {
+      updatePhase(phase.id, {
+        status: 'passed',
+        summary: outcome.summary || 'Published with page-count override',
+        details: outcome.details,
+        completedAt: new Date().toISOString(),
+      });
+      if (outcome.publishData) {
+        setPublicationResult(outcome.publishData);
+        addToast('Publication complete. Page-count override recorded in the report.', 'success');
+        await new Promise(resolve => window.setTimeout(resolve, 500));
+        await persistPipelineResults();
+        onComplete();
+      }
+    } else {
+      updatePhase(phase.id, {
+        status: 'failed',
+        error: outcome.error,
+        details: outcome.details,
+        completedAt: new Date().toISOString(),
+      });
+    }
+
+    setIsRunning(false);
   };
 
   const allDone = phases.every(p => p.status === 'passed' || p.status === 'skipped');
@@ -354,6 +498,7 @@ export default function QuickPublishPage({
             const Icon = phase.icon;
             const isFailed = phase.status === 'failed';
             const isActive = phase.status === 'running';
+            const canPublishAnyway = isPageCountMismatchFailure(phase);
 
             return (
               <motion.div
@@ -414,7 +559,7 @@ export default function QuickPublishPage({
                             animate={{ opacity: 1, height: 'auto' }}
                             className="mt-4 px-4 py-3 bg-amber-100/60 rounded-xl"
                           >
-                            <p className="text-amber-800 text-sm font-semibold">Skipped by researcher — {phase.error}</p>
+                            <p className="text-amber-800 text-sm font-semibold">{phase.summary}</p>
                           </motion.div>
                         )}
                       </AnimatePresence>
@@ -439,6 +584,15 @@ export default function QuickPublishPage({
                               >
                                 <RefreshCw size={14} /> Retry
                               </button>
+                              {canPublishAnyway && (
+                                <button
+                                  onClick={() => handlePublishAnyway(idx)}
+                                  disabled={isRunning}
+                                  className="flex items-center gap-2 px-5 py-2.5 bg-[#800000] hover:bg-[#6f0000] text-white rounded-xl font-black uppercase tracking-widest text-xs transition-all disabled:opacity-50"
+                                >
+                                  <Zap size={14} fill="currentColor" /> Publish Anyway
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleContinueAnyway(idx)}
                                 disabled={isRunning}

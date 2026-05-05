@@ -7,8 +7,6 @@ import {
   ChevronLeft,
   Eye,
   FileText,
-  FileBadge,
-  ShieldCheck,
   Trash2,
   AlertTriangle,
   Loader2
@@ -38,11 +36,11 @@ export default function PublicationRecords({ profile }: { profile: any }) {
   const [previewPub, setPreviewPub] = useState<Publication | null>(null);
   const [acceptancePub, setAcceptancePub] = useState<Publication | null>(null);
   const [certificatePub, setCertificatePub] = useState<Publication | null>(null);
+  const [pipelinePub, setPipelinePub] = useState<Publication | null>(null);
   const [deletingPub, setDeletingPub] = useState<Publication | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
-  const isSuperAdmin = profile?.user?.role === 'super_admin';
   const isAdmin = profile?.user?.role === 'super_admin' || profile?.user?.role === 'admin';
 
   useEffect(() => {
@@ -160,6 +158,11 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     (p.issn?.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const hasPipelineReport = (pub: Publication) => (
+    Array.isArray(pub.metadata?.quickPublishPipeline?.stages) &&
+    pub.metadata.quickPublishPipeline.stages.length > 0
+  );
+
   if (certificatePub) {
     return (
       <div className="space-y-6 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[85vh] flex flex-col">
@@ -201,6 +204,30 @@ export default function PublicationRecords({ profile }: { profile: any }) {
             onClose={() => setAcceptancePub(null)}
             file={`/api/papers/${acceptancePub.id}/acceptance-letter`}
             fileName={`Acceptance_Letter_${acceptancePub.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`}
+            isInline={true}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (pipelinePub) {
+    return (
+      <div className="space-y-6 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between shrink-0">
+          <button
+            onClick={() => setPipelinePub(null)}
+            className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm"
+          >
+            <ChevronLeft size={18} /> Back to Records
+          </button>
+        </div>
+        <div className="flex-1 rounded-[2.5rem] relative">
+          <FilePreviewModal
+            isOpen={true}
+            onClose={() => setPipelinePub(null)}
+            file={`/api/papers/${pipelinePub.id}/pipeline-report`}
+            fileName={`Quick_Publish_Report_${pipelinePub.id}.pdf`}
             isInline={true}
           />
         </div>
@@ -490,7 +517,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                         <button 
                            onClick={() => setPreviewPub(pub)}
                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
-                           title="Preview Manuscript">
+                           title="View Publication">
                            <Eye size={18} />
                         </button>
                         
@@ -500,8 +527,8 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                               setAcceptancePub(pub);
                             }}
                             className="p-2 text-slate-400 hover:text-[#800000] hover:bg-red-50 rounded-xl transition-all"
-                            title="Download Acceptance Letter">
-                            <FileBadge size={18} />
+                            title="View Acceptance Letter">
+                            <Eye size={18} />
                           </button>
                         )}
 
@@ -510,11 +537,20 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                             onClick={() => setCertificatePub(pub)}
                             className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
                             title="View Publication Certificate">
-                            <ShieldCheck size={18} />
+                            <Eye size={18} />
                           </button>
                         )}
 
-                        {isSuperAdmin && (
+                        {hasPipelineReport(pub) && (
+                          <button
+                            onClick={() => setPipelinePub(pub)}
+                            className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all"
+                            title="View Quick Publish Test Results">
+                            <Eye size={18} />
+                          </button>
+                        )}
+
+                        {isAdmin && (
                           <button
                             onClick={() => { setDeletingPub(pub); setDeleteConfirmText(''); setDeleteError(''); }}
                             className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
