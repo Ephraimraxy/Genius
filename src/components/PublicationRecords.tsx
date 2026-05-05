@@ -7,6 +7,9 @@ import {
   ChevronLeft,
   Eye,
   FileText,
+  FileBadge,
+  ShieldCheck,
+  ClipboardCheck,
   Trash2,
   AlertTriangle,
   Loader2
@@ -156,11 +159,6 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     (p.researcher_name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (p.doi?.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (p.issn?.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
-  const hasPipelineReport = (pub: Publication) => (
-    Array.isArray(pub.metadata?.quickPublishPipeline?.stages) &&
-    pub.metadata.quickPublishPipeline.stages.length > 0
   );
 
   if (certificatePub) {
@@ -528,7 +526,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                             }}
                             className="p-2 text-slate-400 hover:text-[#800000] hover:bg-red-50 rounded-xl transition-all"
                             title="View Acceptance Letter">
-                            <Eye size={18} />
+                            <FileBadge size={18} />
                           </button>
                         )}
 
@@ -537,18 +535,16 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                             onClick={() => setCertificatePub(pub)}
                             className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
                             title="View Publication Certificate">
-                            <Eye size={18} />
+                            <ShieldCheck size={18} />
                           </button>
                         )}
 
-                        {hasPipelineReport(pub) && (
-                          <button
-                            onClick={() => setPipelinePub(pub)}
-                            className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all"
-                            title="View Quick Publish Test Results">
-                            <Eye size={18} />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => setPipelinePub(pub)}
+                          className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all"
+                          title="View Quick Publish Test Results">
+                          <ClipboardCheck size={18} />
+                        </button>
 
                         {isAdmin && (
                           <button

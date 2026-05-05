@@ -5374,7 +5374,6 @@ app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
     const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
-    if (paper.is_locked) return res.status(403).json({ error: 'Manuscript is locked for final archival' });
 
     const fullText = paper.content;
     const aiChunk = fullText.substring(offset, offset + 4000);
@@ -5407,9 +5406,10 @@ app.post('/api/enhance/:id/commit', authenticateToken, async (req: any, res) => 
     const { id } = idParamSchema.parse(req.params);
     const { original, improved } = req.body;
 
-    const result = await pool.query('SELECT content FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const result = await pool.query('SELECT content, is_locked FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    if (paper.is_locked) return res.status(403).json({ error: 'Manuscript is locked for final archival' });
 
     // Simple string replacement for the commit
     const newContent = paper.content.replace(original, improved);
