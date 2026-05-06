@@ -1150,11 +1150,16 @@ async function bootstrapDB() {
 
       ALTER TABLE student_categories ADD COLUMN IF NOT EXISTS is_paid_entry BOOLEAN DEFAULT FALSE;
       ALTER TABLE student_categories ADD COLUMN IF NOT EXISTS entry_fee INTEGER DEFAULT 0;
+      ALTER TABLE student_categories ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic';
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic';
       ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
+      ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic';
       ALTER TABLE exams ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
+      ALTER TABLE exams ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic';
       ALTER TABLE resources ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id);
+      ALTER TABLE resources ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic';
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_code TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_balance INTEGER DEFAULT 0;
@@ -1271,6 +1276,7 @@ async function bootstrapDB() {
       -- GAP 4: Question pool support
       ALTER TABLE exams ADD COLUMN IF NOT EXISTS is_pool BOOLEAN DEFAULT FALSE;
       ALTER TABLE exams ADD COLUMN IF NOT EXISTS pool_size INTEGER DEFAULT 0;
+      ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic';
 
       -- GAP 1: Per-student question salting stored in exam_slots
       ALTER TABLE exam_slots ADD COLUMN IF NOT EXISTS question_order JSONB;
@@ -1646,6 +1652,12 @@ async function initDB() {
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES student_categories(id)'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS is_suspended BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS phone TEXT'); } catch (e) { }
+  try { await pool.query("ALTER TABLE student_categories ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
+  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
+  try { await pool.query("ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
+  try { await pool.query("ALTER TABLE resources ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
+  try { await pool.query("ALTER TABLE exams ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
+  try { await pool.query("ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query(`CREATE TABLE IF NOT EXISTS pending_registrations (
     email TEXT PRIMARY KEY,
     portal_type TEXT NOT NULL,
@@ -1773,16 +1785,20 @@ async function initDB() {
     `CREATE INDEX IF NOT EXISTS idx_users_tenant_id      ON users (tenant_id)`,
     `CREATE INDEX IF NOT EXISTS idx_users_role           ON users (role)`,
     `CREATE INDEX IF NOT EXISTS idx_users_email          ON users (email)`,
+    `CREATE INDEX IF NOT EXISTS idx_users_tenant_hub     ON users (tenant_id, hub_scope)`,
     // students_roster — tenant-scoped queries on every dashboard load
     `CREATE INDEX IF NOT EXISTS idx_roster_tenant_id     ON students_roster (tenant_id)`,
     `CREATE INDEX IF NOT EXISTS idx_roster_matric        ON students_roster (matric_number)`,
     `CREATE INDEX IF NOT EXISTS idx_roster_category      ON students_roster (category_id)`,
     `CREATE INDEX IF NOT EXISTS idx_roster_email_status  ON students_roster (email_status)`,
+    `CREATE INDEX IF NOT EXISTS idx_roster_tenant_hub    ON students_roster (tenant_id, hub_scope)`,
     // resources — lecturer material queries
     `CREATE INDEX IF NOT EXISTS idx_resources_tenant_id  ON resources (tenant_id)`,
     `CREATE INDEX IF NOT EXISTS idx_resources_category   ON resources (category_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_resources_tenant_hub ON resources (tenant_id, hub_scope)`,
     // exams / assignments
     `CREATE INDEX IF NOT EXISTS idx_exams_tenant_id      ON exams (tenant_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_exams_tenant_hub     ON exams (tenant_id, hub_scope)`,
     `CREATE INDEX IF NOT EXISTS idx_submissions_exam_id  ON assignment_submissions (exam_id)`,
     `CREATE INDEX IF NOT EXISTS idx_submissions_student  ON assignment_submissions (student_id)`,
     // transactions — payment lookups
@@ -1895,6 +1911,40 @@ if (!process.env.PIN_PEPPER) {
 }
 const hashPin = (pin: string) => bcrypt.hash(pin + PIN_PEPPER, 10);
 const verifyPin = (pin: string, hash: string) => bcrypt.compare(pin + PIN_PEPPER, hash);
+
+type HubScope = 'academic' | 'professional';
+
+const normalizeHubScope = (value: any): HubScope => {
+  const raw = String(value || '').trim().toLowerCase();
+  return raw === 'professional' || raw === 'pro' || raw === 'pro_hub' ? 'professional' : 'academic';
+};
+
+const getRequestHubScope = (req: any): HubScope =>
+  normalizeHubScope(req.body?.hub_scope ?? req.body?.hub ?? req.query?.hub_scope ?? req.query?.hub);
+
+const getUserHubScope = (req: any): HubScope =>
+  normalizeHubScope(req.user?.hub_scope ?? req.user?.hubScope ?? req.user?.hub);
+
+const hubDisplayName = (hubScope: HubScope) =>
+  hubScope === 'professional' ? 'Professional Hub' : 'Academic';
+
+const generateProfessionalMatricNumber = async (tenantId: number, workspaceId?: string | null): Promise<string> => {
+  const safeWorkspace = String(workspaceId || tenantId).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || String(tenantId);
+  const year = new Date().getFullYear();
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const serial = String(Date.now()).slice(-5) + String(Math.floor(Math.random() * 900 + 100));
+    const matric = `PRO-${safeWorkspace}-${year}-${serial}`;
+    const exists = await pool.query(
+      `SELECT 1 FROM students_roster WHERE matric_number = $1
+       UNION ALL
+       SELECT 1 FROM users WHERE matric_number = $1 AND role = 'student'
+       LIMIT 1`,
+      [matric]
+    );
+    if (exists.rows.length === 0) return matric;
+  }
+  return `PRO-${safeWorkspace}-${year}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+};
 
 // Middleware: Authenticate JWT
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -2306,7 +2356,10 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     const tenantId = tResult.rows[0].id;
 
     const rosterRes = await pool.query(
-      'SELECT category_id, is_suspended FROM students_roster WHERE UPPER(matric_number) = $1 AND tenant_id = $2 ORDER BY id DESC LIMIT 1',
+      `SELECT category_id, is_suspended, COALESCE(hub_scope, 'academic') as hub_scope
+       FROM students_roster
+       WHERE UPPER(matric_number) = $1 AND tenant_id = $2
+       ORDER BY id DESC LIMIT 1`,
       [normalizedMatric, tenantId]
     );
     if (rosterRes.rows[0]?.is_suspended) {
@@ -2316,12 +2369,13 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
         code: 'ACCOUNT_SUSPENDED'
       });
     }
+    const loginHubScope = normalizeHubScope(rosterRes.rows[0]?.hub_scope);
 
     // 1. Find user (Student)
-    let query = 'SELECT * FROM users WHERE UPPER(matric_number) = $1 AND role = \'student\'';
-    let params = [normalizedMatric];
+    let query = 'SELECT * FROM users WHERE UPPER(matric_number) = $1 AND role = \'student\' AND COALESCE(hub_scope, \'academic\') = $2';
+    let params: any[] = [normalizedMatric, loginHubScope];
     if (tenantId) {
-      query += ' AND tenant_id = $2';
+      query += ' AND tenant_id = $3';
       params.push(tenantId);
     }
 
@@ -2345,7 +2399,15 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
     if (!validPin) return res.status(401).json({ error: 'Invalid matric number or PIN' });
 
     // 4. Generate Token
-    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: 'student', tenant_id: user.tenant_id, category_id: user.category_id }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: 'student',
+      tenant_id: user.tenant_id,
+      category_id: user.category_id,
+      hub_scope: loginHubScope
+    }, JWT_SECRET, { expiresIn: '7d' });
 
     // 4. Resolve Category and Check for Entry Fee requirement (Source of Truth: students_roster)
     let accessBlocked = false;
@@ -2379,6 +2441,8 @@ app.post('/api/auth/student/login', authLimiter, async (req, res) => {
         tenant_id: user.tenant_id,
         matricNumber: user.matric_number, // Aliased for frontend
         matric_number: user.matric_number,
+        hub_scope: loginHubScope,
+        hubScope: loginHubScope,
         accessBlocked,
         entryFee
       }
@@ -7643,7 +7707,7 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
     const userId = req.user.id;
 
     // Always fetch fresh user data from database (not stale JWT)
-    const userResult = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number, level, credit_balance FROM users WHERE id = $1', [userId]);
+    const userResult = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number, level, credit_balance, category_id, hub_scope, is_suspended FROM users WHERE id = $1', [userId]);
     let freshUser = userResult.rows[0];
     if (!freshUser) return res.status(404).json({ error: 'User not found' });
 
@@ -7681,6 +7745,7 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
     let entryFee = 0;
 
     if (freshUser.role === 'student' && freshUser.tenant_id) {
+      const studentHubScope = normalizeHubScope(freshUser.hub_scope || req.user?.hub_scope);
       // Check suspension
       if (freshUser.is_suspended) {
         return res.status(403).json({ error: 'Your account has been suspended. Contact your lecturer.' });
@@ -7688,8 +7753,10 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
 
       // Resolve current matric number and category from roster (Source of Truth for Workspace)
       const rosterRes = await pool.query(
-        'SELECT matric_number, category_id, is_suspended FROM students_roster WHERE email = $1 AND tenant_id = $2',
-        [freshUser.email, freshUser.tenant_id]
+        `SELECT matric_number, category_id, is_suspended, COALESCE(hub_scope, 'academic') as hub_scope
+         FROM students_roster
+         WHERE email = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+        [freshUser.email, freshUser.tenant_id, studentHubScope]
       );
 
       if (rosterRes.rows.length > 0 && rosterRes.rows[0].is_suspended) {
@@ -7704,15 +7771,17 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
         currentCatId = rosterRes.rows[0].category_id;
 
         // Ensure user record is synced with roster
-        if (freshUser.matric_number !== currentMatric || freshUser.category_id !== currentCatId) {
-          await pool.query('UPDATE users SET matric_number = $1, category_id = $2 WHERE id = $3', [currentMatric, currentCatId, userId]);
+        if (freshUser.matric_number !== currentMatric || freshUser.category_id !== currentCatId || normalizeHubScope(freshUser.hub_scope) !== studentHubScope) {
+          await pool.query('UPDATE users SET matric_number = $1, category_id = $2, hub_scope = $3 WHERE id = $4', [currentMatric, currentCatId, studentHubScope, userId]);
           freshUser.matric_number = currentMatric;
           freshUser.category_id = currentCatId;
+          freshUser.hub_scope = studentHubScope;
         }
       }
 
       // Alias for frontend compatibility
       freshUser.matricNumber = currentMatric;
+      freshUser.hubScope = studentHubScope;
 
       // Enforce Payment Gate using the roster-resolved category
       if (currentCatId) {
@@ -7832,10 +7901,11 @@ app.put('/api/profile', authenticateToken, async (req: any, res) => {
     }
 
     // Fetch and return updated profile (Full sync with hardened fields)
-    const updatedUserRes = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number FROM users WHERE id = $1', [userId]);
+    const updatedUserRes = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number, hub_scope FROM users WHERE id = $1', [userId]);
     const updatedUser = updatedUserRes.rows[0];
     if (updatedUser) {
       updatedUser.matricNumber = updatedUser.matric_number;
+      updatedUser.hubScope = normalizeHubScope(updatedUser.hub_scope);
     }
     res.json({ success: true, user: updatedUser });
   } catch (error) {
@@ -10812,9 +10882,14 @@ app.put('/api/admin/storage-usage/:tenantId', authenticateToken, async (req: any
 
 app.get('/api/resources', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
+    const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
     const result = await pool.query(
-      'SELECT id, type, name, status, created_at, is_available, price, is_paid, category_id, ai_fitness_status, ai_fitness_reason FROM resources WHERE tenant_id = $1 ORDER BY created_at DESC',
-      [req.tenant_id]
+      `SELECT id, type, name, status, created_at, is_available, price, is_paid, category_id,
+              ai_fitness_status, ai_fitness_reason, COALESCE(hub_scope, 'academic') as hub_scope
+       FROM resources
+       WHERE tenant_id = $1 AND COALESCE(hub_scope, 'academic') = $2
+       ORDER BY created_at DESC`,
+      [req.tenant_id, hubScope]
     );
     res.json(result.rows);
   } catch (err: any) {
@@ -10824,9 +10899,11 @@ app.get('/api/resources', authenticateToken, checkSubscription, async (req: any,
 
 app.get('/api/resources/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
+    const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
     const result = await pool.query(
-      'SELECT * FROM resources WHERE id = $1 AND tenant_id = $2',
-      [req.params.id, req.tenant_id]
+      `SELECT * FROM resources
+       WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [req.params.id, req.tenant_id, hubScope]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Resource not found' });
     res.json(result.rows[0]);
@@ -10838,13 +10915,22 @@ app.get('/api/resources/:id', authenticateToken, checkSubscription, async (req: 
 // Download Resource File (Roster CSV, Material Content, etc)
 app.get('/api/resources/:id/download', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
+    const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
     const result = await pool.query(
-      'SELECT name, type, content FROM resources WHERE id = $1 AND tenant_id = $2',
-      [req.params.id, req.tenant_id]
+      `SELECT name, type, content, category_id FROM resources
+       WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [req.params.id, req.tenant_id, hubScope]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    if (req.user.role === 'student') {
+      const resourceCategoryId = result.rows[0].category_id;
+      if (resourceCategoryId && String(resourceCategoryId) !== String(req.user.category_id || '')) {
+        return res.status(403).json({ error: 'Resource is not available to your hub or category.' });
+      }
     }
 
     const { name, type, content } = result.rows[0];
@@ -10872,8 +10958,9 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
 
     // Re-query with file storage fields
     const fullResult = await pool.query(
-      'SELECT name, type, content, file_blob, file_url, mime_type FROM resources WHERE id = $1 AND tenant_id = $2',
-      [req.params.id, req.tenant_id]
+      `SELECT name, type, content, file_blob, file_url, mime_type FROM resources
+       WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [req.params.id, req.tenant_id, hubScope]
     );
     const row = fullResult.rows[0];
 
@@ -10911,9 +10998,11 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
 // Text-only preview (for PPTX / unsupported binary formats)
 app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
+    const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
     const result = await pool.query(
-      'SELECT name, content, file_url, mime_type FROM resources WHERE id = $1 AND tenant_id = $2',
-      [req.params.id, req.tenant_id]
+      `SELECT name, content, file_url, mime_type FROM resources
+       WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [req.params.id, req.tenant_id, hubScope]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const row = result.rows[0];
@@ -10972,6 +11061,7 @@ app.get('/api/resources/:id/text', authenticateToken, checkSubscription, async (
 
 app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
+    const hubScope = getRequestHubScope(req);
     const result = await pool.query(
       `SELECT
          e.id,
@@ -11008,9 +11098,9 @@ app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req:
            CASE WHEN e.material_id IS NULL THEN 0 ELSE 1 END
          ) AS linked_material_count
        FROM exams e
-       WHERE e.tenant_id = $1
+       WHERE e.tenant_id = $1 AND COALESCE(e.hub_scope, 'academic') = $2
        ORDER BY e.created_at DESC`,
-      [req.tenant_id]
+      [req.tenant_id, hubScope]
     );
     res.json(result.rows);
   } catch (err: any) {
@@ -11073,6 +11163,7 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
   try {
     if (!req.file) return res.status(400).json({ error: 'No file provided.' });
     const { type, name, categoryName, categoryId, isPaidEntry, entryFee } = req.body;
+    const hubScope = getRequestHubScope(req);
     if (!type || !name) return res.status(400).json({ error: 'Missing required fields' });
 
     // ── Storage quota check ─────────────────────────────────────────────────
@@ -11158,13 +11249,17 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
     // Handle category
     let final_category_id = categoryId ? parseInt(categoryId) : null;
     if (categoryName && !final_category_id) {
-      const catCheck = await pool.query('SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
+      const catCheck = await pool.query(
+        `SELECT id FROM student_categories
+         WHERE tenant_id = $1 AND name = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+        [req.tenant_id, categoryName.trim(), hubScope]
+      );
       if (catCheck.rows.length > 0) {
         final_category_id = catCheck.rows[0].id;
       } else {
         const catRes = await pool.query(
-          'INSERT INTO student_categories (tenant_id, name, is_paid_entry, entry_fee) VALUES ($1, $2, $3, $4) RETURNING id',
-          [req.tenant_id, categoryName.trim(), !!isPaidEntry, parseInt(entryFee) || 0]
+          'INSERT INTO student_categories (tenant_id, name, is_paid_entry, entry_fee, hub_scope) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+          [req.tenant_id, categoryName.trim(), !!isPaidEntry, parseInt(entryFee) || 0, hubScope]
         );
         final_category_id = catRes.rows[0].id;
       }
@@ -11182,8 +11277,8 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
     const fileSizeBytes = req.file.size || 0;
     fs.unlink(req.file.path, () => {});
     const result = await pool.query(
-      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type, file_url, file_size_bytes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
-      [req.tenant_id, type, name, contentJson, 'ready', final_category_id, resourceFileBlob, mimeType, resourceFileUrl, fileSizeBytes]
+      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type, file_url, file_size_bytes, hub_scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
+      [req.tenant_id, type, name, contentJson, 'ready', final_category_id, resourceFileBlob, mimeType, resourceFileUrl, fileSizeBytes, hubScope]
     );
     const newResourceId = result.rows[0].id;
 
@@ -11208,18 +11303,24 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
 app.post('/api/resources/upload', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
     const { type, name, content, categoryName, categoryId, isPaidEntry, entryFee } = req.body;
+    const hubScope = getRequestHubScope(req);
+    const isProfessionalHub = hubScope === 'professional';
     if (!type || !name || !content) return res.status(400).json({ error: 'Missing required fields' });
 
     // 1. Handle Category (Find or Create)
     let final_category_id = categoryId;
     if (categoryName && !final_category_id) {
-      const catCheck = await pool.query('SELECT id FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
+      const catCheck = await pool.query(
+        `SELECT id FROM student_categories
+         WHERE tenant_id = $1 AND name = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+        [req.tenant_id, categoryName.trim(), hubScope]
+      );
       if (catCheck.rows.length > 0) {
         final_category_id = catCheck.rows[0].id;
       } else {
         const catRes = await pool.query(
-          'INSERT INTO student_categories (tenant_id, name, is_paid_entry, entry_fee) VALUES ($1, $2, $3, $4) RETURNING id',
-          [req.tenant_id, categoryName.trim(), !!isPaidEntry, parseInt(entryFee) || 0]
+          'INSERT INTO student_categories (tenant_id, name, is_paid_entry, entry_fee, hub_scope) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+          [req.tenant_id, categoryName.trim(), !!isPaidEntry, parseInt(entryFee) || 0, hubScope]
         );
         final_category_id = catRes.rows[0].id;
       }
@@ -11229,8 +11330,8 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         `UPDATE student_categories 
              SET is_paid_entry = CASE WHEN entry_fee = 0 THEN $1 ELSE is_paid_entry END,
                  entry_fee = CASE WHEN entry_fee = 0 THEN $2 ELSE entry_fee END
-             WHERE id = $3 AND tenant_id = $4`,
-        [!!isPaidEntry, parseInt(entryFee) || 0, final_category_id, req.tenant_id]
+             WHERE id = $3 AND tenant_id = $4 AND COALESCE(hub_scope, 'academic') = $5`,
+        [!!isPaidEntry, parseInt(entryFee) || 0, final_category_id, req.tenant_id, hubScope]
       );
     }
 
@@ -11269,6 +11370,7 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
       const uploadUpdated: {matric: string, name: string, changes: string[]}[] = [];
       const uploadConflicts: {matric: string, name: string, reason: string}[] = [];
       const uploadFailed: {matric: string, reason: string}[] = [];
+      const storedStudents: any[] = [];
 
       // Deduplicate within the file itself (by matric, then by email)
       const seenMatrics = new Set<string>();
@@ -11276,8 +11378,8 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
       const deduped = sanitizedStudents.filter((s: any) => {
         const m = (s.matricNumber || '').toLowerCase();
         const e = (s.email || '').toLowerCase();
-        if (!m || !e) return true; // validation will catch these
-        if (seenMatrics.has(m)) {
+        if ((!m && !isProfessionalHub) || !e) return true; // validation will catch these
+        if (!isProfessionalHub && seenMatrics.has(m)) {
           uploadConflicts.push({ matric: s.matricNumber || '?', name: s.name || '?', reason: 'Duplicate in uploaded file (same matric appears more than once)' });
           return false;
         }
@@ -11285,19 +11387,26 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
           uploadConflicts.push({ matric: s.matricNumber || '?', name: s.name || '?', reason: 'Duplicate in uploaded file (same email appears more than once)' });
           return false;
         }
-        seenMatrics.add(m);
+        if (m) seenMatrics.add(m);
         seenEmails.add(e);
         return true;
       });
 
       for (const s of deduped) {
-        const matricNumber = s.matricNumber;
+        let matricNumber = s.matricNumber;
         const email = s.email;
         const studentName = s.name || matricNumber;
         const studentPhone = (s.phone || '').replace(/\D/g, '');
 
-        if (!matricNumber || !email) {
-          uploadFailed.push({ matric: matricNumber || '?', reason: 'Missing matric or email' });
+        if (isProfessionalHub && !matricNumber) {
+          matricNumber = await generateProfessionalMatricNumber(req.tenant_id, workspaceId);
+        }
+
+        if (!email || !studentName || (!isProfessionalHub && !matricNumber)) {
+          uploadFailed.push({
+            matric: matricNumber || '?',
+            reason: isProfessionalHub ? 'Missing name or email' : 'Missing matric or email'
+          });
           continue;
         }
 
@@ -11309,8 +11418,9 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
 
         // Check if matric already in roster for this tenant
         const existingMatric = await pool.query(
-          'SELECT id, email, name, category_id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2',
-          [matricNumber, req.tenant_id]
+          `SELECT id, email, name, category_id FROM students_roster
+           WHERE matric_number = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+          [matricNumber, req.tenant_id, hubScope]
         );
 
         if (existingMatric.rows.length > 0) {
@@ -11323,10 +11433,13 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
             if (oldName !== studentName) changes.push(`Name: "${oldName}" → "${studentName}"`);
             if (final_category_id && String(oldCategoryId) !== String(final_category_id)) changes.push(`Category updated`);
             await pool.query(
-              'UPDATE students_roster SET name = $1, category_id = COALESCE($2, category_id) WHERE matric_number = $3 AND tenant_id = $4',
-              [studentName, final_category_id, matricNumber, req.tenant_id]
+              `UPDATE students_roster
+               SET name = $1, category_id = COALESCE($2, category_id)
+               WHERE matric_number = $3 AND tenant_id = $4 AND COALESCE(hub_scope, 'academic') = $5`,
+              [studentName, final_category_id, matricNumber, req.tenant_id, hubScope]
             );
             uploadUpdated.push({ matric: matricNumber, name: studentName, changes });
+            storedStudents.push({ name: studentName, email, matricNumber, phone: studentPhone || undefined });
           } else {
             // Same matric but different email — conflict, skip
             uploadConflicts.push({ matric: matricNumber, name: studentName, reason: `Matric ${matricNumber} already registered with a different email (${existingEmail})` });
@@ -11336,8 +11449,9 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
 
         // Check if email already used by a different matric in this tenant
         const existingEmail = await pool.query(
-          'SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2',
-          [email, req.tenant_id]
+          `SELECT matric_number FROM students_roster
+           WHERE email = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+          [email, req.tenant_id, hubScope]
         );
         if (existingEmail.rows.length > 0) {
           uploadConflicts.push({ matric: matricNumber, name: studentName, reason: `Email ${email} already belongs to matric ${existingEmail.rows[0].matric_number}` });
@@ -11349,33 +11463,39 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         const hashedPin = await hashPin(autoPin);
 
         await pool.query(
-          "INSERT INTO students_roster (tenant_id, matric_number, name, email, phone, pin_hash, category_id, email_status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')",
-          [req.tenant_id, matricNumber, studentName, email, studentPhone || null, hashedPin, final_category_id]
+          "INSERT INTO students_roster (tenant_id, matric_number, name, email, phone, pin_hash, category_id, hub_scope, email_status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')",
+          [req.tenant_id, matricNumber, studentName, email, studentPhone || null, hashedPin, final_category_id, hubScope]
         );
 
-        const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+        const userCheck = await pool.query(
+          `SELECT id FROM users
+           WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $3`,
+          [matricNumber, req.tenant_id, hubScope]
+        );
         if (userCheck.rows.length === 0) {
           await pool.query(
-            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-            [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id]
+            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, hub_scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+            [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, hubScope]
           );
         } else {
-          await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, final_category_id]);
+          await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3), hub_scope = $4 WHERE id = $2', [hashedPin, userCheck.rows[0].id, final_category_id, hubScope]);
         }
 
         // Send onboarding email and track status
         try {
           const feeInt = parseInt(entryFee as string) || 0;
           const fullWorkspaceLabel = `${workspaceName} (${workspaceId})`;
+          const portalBranding = isProfessionalHub ? 'Genius Professional Hub' : 'Genius Academic Portal';
+          const enrollmentLabel = categoryName || hubDisplayName(hubScope);
           await sendResendEmail({
-            fromName: 'Genius Academic Portal',
+            fromName: portalBranding,
             to: email,
             subject: `[Genius] Welcome ${studentName} — Your Access Credentials`,
             html: `
 <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px; margin: 0 auto; line-height: 1.5;">
-  <h2 style="color: #1a237e; margin-top: 0;">Welcome to Genius Academy</h2>
+  <h2 style="color: #1a237e; margin-top: 0;">Welcome to ${isProfessionalHub ? 'Genius Professional Hub' : 'Genius Academy'}</h2>
   <p>Hi <b>${studentName}</b>,</p>
-  <p>You have been enrolled in the <b>${categoryName || 'Academic'}</b> batch at <b>${workspaceName}</b>. Your account is ready!</p>
+  <p>You have been enrolled in the <b>${enrollmentLabel}</b> batch at <b>${workspaceName}</b>. Your account is ready!</p>
   <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin: 25px 0;">
     <h3 style="margin-top: 0; color: #0f172a; font-size: 16px; text-transform: uppercase;">Your Access Credentials</h3>
     <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
@@ -11393,8 +11513,12 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
   <div style="margin-top: 40px; border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #94a3b8; font-size: 12px;">&copy; 2026 Genius Academic Publishing. All rights reserved.</div>
 </div>`
           });
-          await pool.query("UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
+          await pool.query(
+            "UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+            [matricNumber, req.tenant_id, hubScope]
+          );
           uploadAdded.push({ matric: matricNumber, name: studentName });
+          storedStudents.push({ name: studentName, email, matricNumber, phone: studentPhone || undefined });
           // SMS — fire-and-forget, never blocks or fails the upload
           if (studentPhone && studentPhone.length >= 10 && twilioClient && process.env.TWILIO_PHONE_NUMBER) {
             const feeInt2 = parseInt(entryFee as string) || 0;
@@ -11402,29 +11526,36 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
             twilioClient.messages.create({
               from: process.env.TWILIO_PHONE_NUMBER,
               to: toE164Nigerian(studentPhone),
-              body: `Genius Academy: Hi ${studentName.split(' ')[0]}, enrolled! WS: ${workspaceId} | Matric: ${matricNumber} | PIN: ${autoPin}.${accessLine} genius-portal.com`,
+              body: `${isProfessionalHub ? 'Genius Pro Hub' : 'Genius Academy'}: Hi ${studentName.split(' ')[0]}, enrolled! WS: ${workspaceId} | ID: ${matricNumber} | PIN: ${autoPin}.${accessLine} genius-portal.com`,
             }).catch((e: any) => console.error('SMS to student failed:', e));
           }
         } catch (emailErr) {
           console.error('Batch email failed for', email, emailErr);
-          await pool.query("UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
+          await pool.query(
+            "UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+            [matricNumber, req.tenant_id, hubScope]
+          );
           uploadAdded.push({ matric: matricNumber, name: studentName }); // Still added, just email failed
+          storedStudents.push({ name: studentName, email, matricNumber, phone: studentPhone || undefined });
         }
       }
 
       // Attach import summary to response (stored for later use in the 4. Save block)
       (req as any)._rosterSummary = { added: uploadAdded, updated: uploadUpdated, conflicts: uploadConflicts, failed: uploadFailed };
+      (req as any)._rosterStoredStudents = storedStudents.length > 0 ? storedStudents : (Array.isArray(content) ? content : []);
     }
 
     // 4. Save the Resource Record (using potentially sanitized content)
     const rawStudents = Array.isArray(content) ? content : [];
+    const rosterStoredContent = (req as any)._rosterStoredStudents || rawStudents;
     const result = await pool.query(
-      'INSERT INTO resources (tenant_id, type, name, content, status, category_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [req.tenant_id, type, name, JSON.stringify(Array.isArray(content) ? (type === 'roster' ? rawStudents.map((s: any) => ({
+      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, hub_scope) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [req.tenant_id, type, name, JSON.stringify(Array.isArray(content) ? (type === 'roster' ? rosterStoredContent.map((s: any) => ({
         name: typeof s.name === 'string' ? s.name.replace(/\0/g, '') : s.name,
         email: typeof s.email === 'string' ? s.email.replace(/\0/g, '') : s.email,
+        phone: typeof s.phone === 'string' ? s.phone.replace(/\0/g, '') : s.phone,
         matricNumber: typeof s.matricNumber === 'string' ? s.matricNumber.replace(/\0/g, '') : s.matricNumber
-      })) : content) : content), 'ready', final_category_id]
+      })) : content) : content), 'ready', final_category_id, hubScope]
     );
 
     const rosterSummary = (req as any)._rosterSummary;
@@ -11452,10 +11583,17 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
 
 app.delete('/api/resources/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
   try {
-    const row = await pool.query('SELECT file_url, file_size_bytes FROM resources WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    const hubScope = getRequestHubScope(req);
+    const row = await pool.query(
+      "SELECT file_url, file_size_bytes FROM resources WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+      [req.params.id, req.tenant_id, hubScope]
+    );
     const fileUrl: string | null = row.rows[0]?.file_url || null;
     const fileSizeBytes: number = parseInt(row.rows[0]?.file_size_bytes) || 0;
-    await pool.query('DELETE FROM resources WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    await pool.query(
+      "DELETE FROM resources WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+      [req.params.id, req.tenant_id, hubScope]
+    );
     if (fileUrl) deleteFromR2(fileUrl); // fire-and-forget, non-fatal
     if (fileSizeBytes > 0) {
       await pool.query(
@@ -11475,9 +11613,11 @@ app.put('/api/resources/:id/settings', authenticateToken, checkSubscription, asy
   try {
     const { id } = req.params;
     const { price, is_available, is_paid } = req.body;
+    const hubScope = getRequestHubScope(req);
     await pool.query(
-      'UPDATE resources SET price = $1, is_available = $2, is_paid = $3 WHERE id = $4 AND tenant_id = $5',
-      [price, is_available, is_paid, id, req.tenant_id]
+      `UPDATE resources SET price = $1, is_available = $2, is_paid = $3
+       WHERE id = $4 AND tenant_id = $5 AND COALESCE(hub_scope, 'academic') = $6`,
+      [price, is_available, is_paid, id, req.tenant_id, hubScope]
     );
     res.json({ success: true });
   } catch (err: any) {
@@ -11491,9 +11631,11 @@ app.put('/api/exams/:id/settings', authenticateToken, checkSubscription, async (
   try {
     const { id } = req.params;
     const { price, is_available, is_paid } = req.body;
+    const hubScope = getRequestHubScope(req);
     await pool.query(
-      'UPDATE exams SET price = $1, is_available = $2, is_paid = $3 WHERE id = $4 AND tenant_id = $5',
-      [price, is_available, is_paid, id, req.tenant_id]
+      `UPDATE exams SET price = $1, is_available = $2, is_paid = $3
+       WHERE id = $4 AND tenant_id = $5 AND COALESCE(hub_scope, 'academic') = $6`,
+      [price, is_available, is_paid, id, req.tenant_id, hubScope]
     );
     res.json({ success: true });
   } catch (err: any) {
@@ -11696,14 +11838,16 @@ app.post('/api/attendance/mark', authenticateToken, async (req: any, res) => {
 app.get('/api/student/attendance', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getUserHubScope(req);
     const result = await pool.query(
       `SELECT ar.id, ar.session_id, ar.marked_at,
               s.title as topic, s.course_code, s.session_date, s.is_paid, s.price
        FROM attendance_records ar
        JOIN attendance_sessions s ON s.id = ar.session_id
        WHERE ar.student_id = $1 AND ar.tenant_id = $2
+       AND COALESCE(s.hub_scope, 'academic') = $3
        ORDER BY s.session_date DESC, ar.marked_at DESC`,
-      [req.user.id, req.tenant_id]
+      [req.user.id, req.tenant_id, hubScope]
     );
     const records = result.rows.map((r: any) => ({
       session_id: r.session_id,
@@ -11757,13 +11901,14 @@ app.get('/api/attendance', authenticateToken, checkSubscription, async (req: any
 app.get('/api/courses/roster', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getRequestHubScope(req);
     const result = await pool.query(
       `SELECT sr.*, sc.name as category_name
        FROM students_roster sr
        LEFT JOIN student_categories sc ON sc.id = sr.category_id
-       WHERE sr.tenant_id = $1
+       WHERE sr.tenant_id = $1 AND COALESCE(sr.hub_scope, 'academic') = $2
        ORDER BY sr.name ASC`,
-      [req.tenant_id]
+      [req.tenant_id, hubScope]
     );
     res.json(result.rows);
   } catch (error) {
@@ -11775,7 +11920,13 @@ app.get('/api/courses/roster', authenticateToken, checkSubscription, async (req:
 app.get('/api/courses/categories', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    const result = await pool.query('SELECT * FROM student_categories WHERE tenant_id = $1 ORDER BY name ASC', [req.tenant_id]);
+    const hubScope = getRequestHubScope(req);
+    const result = await pool.query(
+      `SELECT * FROM student_categories
+       WHERE tenant_id = $1 AND COALESCE(hub_scope, 'academic') = $2
+       ORDER BY name ASC`,
+      [req.tenant_id, hubScope]
+    );
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch categories' });
@@ -11788,6 +11939,7 @@ app.put('/api/courses/categories/:id', authenticateToken, checkSubscription, asy
   try {
     const { id } = req.params;
     const { is_paid_entry, entry_fee } = req.body;
+    const hubScope = getRequestHubScope(req);
 
     // Check if any student has already successfully paid for this category
     const paidCheck = await pool.query(
@@ -11807,8 +11959,10 @@ app.put('/api/courses/categories/:id', authenticateToken, checkSubscription, asy
 
     // No payments yet — allow the update freely
     await pool.query(
-      `UPDATE student_categories SET is_paid_entry = $1, entry_fee = $2 WHERE id = $3 AND tenant_id = $4`,
-      [is_paid_entry, entry_fee, id, req.tenant_id]
+      `UPDATE student_categories
+       SET is_paid_entry = $1, entry_fee = $2
+       WHERE id = $3 AND tenant_id = $4 AND COALESCE(hub_scope, 'academic') = $5`,
+      [is_paid_entry, entry_fee, id, req.tenant_id, hubScope]
     );
     res.json({ success: true, message: 'Category fee updated successfully' });
   } catch (err: any) {
@@ -11823,17 +11977,29 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
   try {
     const clean = (val: any) => typeof val === 'string' ? val.replace(/\0/g, '').trim() : val;
     const b = req.body;
-    const matricNumber = clean(b.matricNumber || b.regNumber || b.matricNo || b.matric);
+    const hubScope = getRequestHubScope(req);
+    let matricNumber = clean(b.matricNumber || b.regNumber || b.matricNo || b.matric);
     const name = clean(b.name || b.studentName || b.fullName || b.Name);
     const email = clean(b.email || b.studentEmail || b.emailAddress || b.Email);
     const course = clean(b.course || b.department || b.program);
     const categoryName = clean(b.categoryName);
 
-    if (!matricNumber || !email || !name) return res.status(400).json({ error: 'Matric Number, Name, and Email are required.' });
+    const tenantRes = await pool.query('SELECT workspace_id, name FROM tenants WHERE id = $1', [req.tenant_id]);
+    const workspaceId = tenantRes.rows[0]?.workspace_id || 'N/A';
+    const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
+    if (hubScope === 'professional' && !matricNumber) {
+      matricNumber = await generateProfessionalMatricNumber(req.tenant_id, workspaceId);
+    }
+
+    if (!matricNumber || !email || !name) return res.status(400).json({ error: hubScope === 'professional' ? 'Name and Email are required.' : 'Matric Number, Name, and Email are required.' });
     if (!email.includes('@') || email.length < 5) return res.status(400).json({ error: 'Invalid email address.' });
 
     // 1. Check if student already in roster for this tenant
-    const existing = await pool.query('SELECT id FROM students_roster WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+    const existing = await pool.query(
+      `SELECT id FROM students_roster
+       WHERE matric_number = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [matricNumber, req.tenant_id, hubScope]
+    );
     if (existing.rows.length > 0) return res.status(400).json({ error: 'Student already in your roster.' });
 
     // 2. Generate fresh PIN (never stored plain)
@@ -11843,37 +12009,41 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     // 3. Handle Category Logic (Price Lock)
     let category_id = null;
     if (categoryName) {
-      const catCheck = await pool.query('SELECT id, entry_fee FROM student_categories WHERE tenant_id = $1 AND name = $2', [req.tenant_id, categoryName.trim()]);
+      const catCheck = await pool.query(
+        `SELECT id, entry_fee FROM student_categories
+         WHERE tenant_id = $1 AND name = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+        [req.tenant_id, categoryName.trim(), hubScope]
+      );
       if (catCheck.rows.length > 0) {
         category_id = catCheck.rows[0].id;
         // Optional: If categoryName provided but no fees set, we could potentially update it, 
         // but the upload/single-add payload doesn't usually carry fee info for existing categories here.
         // We stick to the Price Lock in the dedicated PIT and Bulk Upload.
       } else {
-        const catInsert = await pool.query('INSERT INTO student_categories (tenant_id, name) VALUES ($1, $2) RETURNING id', [req.tenant_id, categoryName.trim()]);
+        const catInsert = await pool.query('INSERT INTO student_categories (tenant_id, name, hub_scope) VALUES ($1, $2, $3) RETURNING id', [req.tenant_id, categoryName.trim(), hubScope]);
         category_id = catInsert.rows[0].id;
       }
     }
 
     // 4. Add to roster with hashed PIN
-    const tenantRes = await pool.query('SELECT workspace_id, name FROM tenants WHERE id = $1', [req.tenant_id]);
-    const workspaceId = tenantRes.rows[0]?.workspace_id || 'N/A';
-    const workspaceName = tenantRes.rows[0]?.name || 'Academic Portal';
-
     await pool.query(
-      "INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id, email_status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')",
-      [req.tenant_id, matricNumber, name, email, course || '', hashedPin, category_id]
+      "INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id, hub_scope, email_status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')",
+      [req.tenant_id, matricNumber, name, email, course || '', hashedPin, category_id, hubScope]
     );
 
     // 5. Create or Link User account
-    const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2', [matricNumber, req.tenant_id]);
+    const userCheck = await pool.query(
+      `SELECT id FROM users
+       WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $3`,
+      [matricNumber, req.tenant_id, hubScope]
+    );
     if (userCheck.rows.length === 0) {
       await pool.query(
-        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id]
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, hub_scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id, hubScope]
       );
     } else {
-      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, category_id]);
+      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3), hub_scope = $4 WHERE id = $2', [hashedPin, userCheck.rows[0].id, category_id, hubScope]);
     }
 
     // 6. Send email with auto-generated PIN
@@ -11912,10 +12082,16 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
 </div>
         `
       });
-      await pool.query("UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
+      await pool.query(
+        "UPDATE students_roster SET email_status = 'sent' WHERE matric_number = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+        [matricNumber, req.tenant_id, hubScope]
+      );
     } catch (emailErr) {
       console.error('Onboarding email failed:', emailErr);
-      await pool.query("UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2", [matricNumber, req.tenant_id]);
+      await pool.query(
+        "UPDATE students_roster SET email_status = 'failed' WHERE matric_number = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+        [matricNumber, req.tenant_id, hubScope]
+      );
     }
 
     res.json({ success: true, message: 'Student added and credentials sent.' });
@@ -11948,14 +12124,18 @@ app.post('/api/student/setup-pin', authLimiter, async (req, res) => {
     );
 
     // 3. Ensure linking/creation of global User account
-    const userCheck = await pool.query('SELECT id FROM users WHERE matric_number = $1 AND role = \'student\' LIMIT 1', [matric]);
+    const studentHubScope = normalizeHubScope(student.hub_scope);
+    const userCheck = await pool.query(
+      'SELECT id FROM users WHERE matric_number = $1 AND role = \'student\' AND COALESCE(hub_scope, \'academic\') = $2 LIMIT 1',
+      [matric, studentHubScope]
+    );
     if (userCheck.rows.length === 0) {
       await pool.query(
-        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [student.email, student.name, hashedPin, 'student', student.tenant_id, matric, student.category_id]
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, hub_scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [student.email, student.name, hashedPin, 'student', student.tenant_id, matric, student.category_id, studentHubScope]
       );
     } else {
-      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3) WHERE id = $2', [hashedPin, userCheck.rows[0].id, student.category_id]);
+      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3), hub_scope = $4 WHERE id = $2', [hashedPin, userCheck.rows[0].id, student.category_id, studentHubScope]);
     }
 
     res.json({ success: true, message: 'PIN set successfully. You can now log in.' });
@@ -12177,6 +12357,7 @@ app.get('/api/student/materials/:id/preview', authenticateToken, async (req: any
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = req.params;
+    const hubScope = getUserHubScope(req);
     const result = await pool.query(
       `SELECT r.id, r.name, r.type, r.is_paid, r.price, r.content,
        EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'material_access'
@@ -12184,8 +12365,9 @@ app.get('/api/student/materials/:id/preview', authenticateToken, async (req: any
        FROM resources r
        JOIN users u ON u.id = $1
        WHERE r.id = $2 AND r.tenant_id = $3 AND r.is_available = true
+       AND COALESCE(r.hub_scope, 'academic') = $4
        AND (r.category_id IS NULL OR r.category_id = u.category_id)`,
-      [req.user.id, id, req.tenant_id]
+      [req.user.id, id, req.tenant_id, hubScope]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Material not found' });
     const mat = result.rows[0];
@@ -12225,20 +12407,27 @@ app.put('/api/courses/roster/:id', authenticateToken, checkSubscription, async (
   try {
     const { id } = req.params;
     const { name, email, matric_number } = req.body;
+    const hubScope = getRequestHubScope(req);
     if (!name || !email || !matric_number) return res.status(400).json({ error: 'name, email, and matric_number are required' });
 
     // Get current matric to find linked user
-    const existingRes = await pool.query('SELECT matric_number FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    const existingRes = await pool.query(
+      `SELECT matric_number FROM students_roster
+       WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [id, req.tenant_id, hubScope]
+    );
     if (existingRes.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
     const oldMatric = existingRes.rows[0].matric_number;
 
     await pool.query(
-      'UPDATE students_roster SET name=$1, email=$2, matric_number=$3 WHERE id=$4 AND tenant_id=$5',
-      [name, email, matric_number, id, req.tenant_id]
+      `UPDATE students_roster SET name=$1, email=$2, matric_number=$3
+       WHERE id=$4 AND tenant_id=$5 AND COALESCE(hub_scope, 'academic') = $6`,
+      [name, email, matric_number, id, req.tenant_id, hubScope]
     );
     await pool.query(
-      "UPDATE users SET name=$1, email=$2, matric_number=$3 WHERE matric_number=$4 AND tenant_id=$5 AND role='student'",
-      [name, email, matric_number, oldMatric, req.tenant_id]
+      `UPDATE users SET name=$1, email=$2, matric_number=$3
+       WHERE matric_number=$4 AND tenant_id=$5 AND role='student' AND COALESCE(hub_scope, 'academic') = $6`,
+      [name, email, matric_number, oldMatric, req.tenant_id, hubScope]
     );
 
     res.json({ success: true });
@@ -12252,24 +12441,33 @@ app.delete('/api/courses/roster/:id', authenticateToken, checkSubscription, asyn
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = req.params;
+    const hubScope = getRequestHubScope(req);
 
     // 1. Get student info first to handle user account cleanup
-    const studentRes = await pool.query('SELECT matric_number FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    const studentRes = await pool.query(
+      `SELECT matric_number FROM students_roster
+       WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [id, req.tenant_id, hubScope]
+    );
     if (studentRes.rows.length === 0) return res.status(404).json({ error: 'Student not found in your roster' });
     const matric = studentRes.rows[0].matric_number;
 
     // 2. Delete from users (clear all FK dependencies first)
-    await pool.query("DELETE FROM attendance_records WHERE student_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
-    await pool.query("DELETE FROM transactions WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
-    await pool.query("DELETE FROM exam_answers WHERE student_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
-    await pool.query("DELETE FROM exam_results WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
-    await pool.query("DELETE FROM reviews WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
-    await pool.query("DELETE FROM chat_messages WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
-    await pool.query("DELETE FROM profiles WHERE user_id IN (SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student')", [matric, req.tenant_id]);
-    await pool.query('DELETE FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = \'student\'', [matric, req.tenant_id]);
+    const scopedStudentUserSql = "SELECT id FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $3";
+    await pool.query(`DELETE FROM attendance_records WHERE student_id IN (${scopedStudentUserSql})`, [matric, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM transactions WHERE user_id IN (${scopedStudentUserSql})`, [matric, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM exam_answers WHERE student_id IN (${scopedStudentUserSql})`, [matric, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM exam_results WHERE user_id IN (${scopedStudentUserSql})`, [matric, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM reviews WHERE user_id IN (${scopedStudentUserSql})`, [matric, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM chat_messages WHERE user_id IN (${scopedStudentUserSql})`, [matric, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM profiles WHERE user_id IN (${scopedStudentUserSql})`, [matric, req.tenant_id, hubScope]);
+    await pool.query("DELETE FROM users WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $3", [matric, req.tenant_id, hubScope]);
 
     // 3. Delete from roster
-    await pool.query('DELETE FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    await pool.query(
+      "DELETE FROM students_roster WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+      [id, req.tenant_id, hubScope]
+    );
 
     res.json({ success: true, message: 'Student removed from workspace successfully' });
   } catch (err: any) {
@@ -12283,11 +12481,22 @@ app.put('/api/courses/roster/:id/suspend', authenticateToken, checkSubscription,
   try {
     const { id } = req.params;
     const { suspend } = req.body; // true = suspend, false = unsuspend
-    const row = await pool.query('SELECT matric_number FROM students_roster WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    const hubScope = getRequestHubScope(req);
+    const row = await pool.query(
+      `SELECT matric_number FROM students_roster
+       WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [id, req.tenant_id, hubScope]
+    );
     if (row.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
     const matric = row.rows[0].matric_number;
-    await pool.query('UPDATE students_roster SET is_suspended = $1 WHERE id = $2 AND tenant_id = $3', [!!suspend, id, req.tenant_id]);
-    await pool.query("UPDATE users SET is_suspended = $1 WHERE matric_number = $2 AND tenant_id = $3 AND role = 'student'", [!!suspend, matric, req.tenant_id]);
+    await pool.query(
+      "UPDATE students_roster SET is_suspended = $1 WHERE id = $2 AND tenant_id = $3 AND COALESCE(hub_scope, 'academic') = $4",
+      [!!suspend, id, req.tenant_id, hubScope]
+    );
+    await pool.query(
+      "UPDATE users SET is_suspended = $1 WHERE matric_number = $2 AND tenant_id = $3 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $4",
+      [!!suspend, matric, req.tenant_id, hubScope]
+    );
     res.json({ success: true, is_suspended: !!suspend });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to update suspension status' });
@@ -12299,17 +12508,25 @@ app.post('/api/courses/roster/bulk-suspend', authenticateToken, checkSubscriptio
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { ids, suspend } = req.body; // ids: number[], suspend: boolean
+    const hubScope = getRequestHubScope(req);
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
     const safeIds = ids.map(Number).filter(Boolean);
     // Get matric numbers for linked user update
     const rows = await pool.query(
-      `SELECT matric_number FROM students_roster WHERE id = ANY($1) AND tenant_id = $2`,
-      [safeIds, req.tenant_id]
+      `SELECT matric_number FROM students_roster
+       WHERE id = ANY($1) AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [safeIds, req.tenant_id, hubScope]
     );
     const matrics = rows.rows.map((r: any) => r.matric_number);
-    await pool.query(`UPDATE students_roster SET is_suspended = $1 WHERE id = ANY($2) AND tenant_id = $3`, [!!suspend, safeIds, req.tenant_id]);
+    await pool.query(
+      `UPDATE students_roster SET is_suspended = $1 WHERE id = ANY($2) AND tenant_id = $3 AND COALESCE(hub_scope, 'academic') = $4`,
+      [!!suspend, safeIds, req.tenant_id, hubScope]
+    );
     if (matrics.length > 0) {
-      await pool.query(`UPDATE users SET is_suspended = $1 WHERE matric_number = ANY($2) AND tenant_id = $3 AND role = 'student'`, [!!suspend, matrics, req.tenant_id]);
+      await pool.query(
+        `UPDATE users SET is_suspended = $1 WHERE matric_number = ANY($2) AND tenant_id = $3 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $4`,
+        [!!suspend, matrics, req.tenant_id, hubScope]
+      );
     }
     res.json({ success: true, updated: safeIds.length });
   } catch (err: any) {
@@ -12322,9 +12539,13 @@ app.post('/api/courses/roster/:id/resend', authenticateToken, checkSubscription,
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = req.params;
+    const hubScope = getRequestHubScope(req);
     const studentRes = await pool.query(
-      'SELECT sr.*, sc.name as category_name FROM students_roster sr LEFT JOIN student_categories sc ON sc.id = sr.category_id WHERE sr.id = $1 AND sr.tenant_id = $2',
-      [id, req.tenant_id]
+      `SELECT sr.*, sc.name as category_name
+       FROM students_roster sr
+       LEFT JOIN student_categories sc ON sc.id = sr.category_id
+       WHERE sr.id = $1 AND sr.tenant_id = $2 AND COALESCE(sr.hub_scope, 'academic') = $3`,
+      [id, req.tenant_id, hubScope]
     );
     if (!studentRes.rows.length) return res.status(404).json({ error: 'Student not found' });
     const s = studentRes.rows[0];
@@ -12338,7 +12559,10 @@ app.post('/api/courses/roster/:id/resend', authenticateToken, checkSubscription,
     const plainPin = String(Math.floor(1000 + Math.random() * 9000));
     const freshHash = await hashPin(plainPin);
     await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE id = $2', [freshHash, s.id]);
-    await pool.query("UPDATE users SET password = $1 WHERE matric_number = $2 AND tenant_id = $3 AND role = 'student'", [freshHash, s.matric_number, req.tenant_id]);
+    await pool.query(
+      "UPDATE users SET password = $1 WHERE matric_number = $2 AND tenant_id = $3 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $4",
+      [freshHash, s.matric_number, req.tenant_id, hubScope]
+    );
 
     await pool.query("UPDATE students_roster SET email_status = 'pending' WHERE id = $1", [id]);
     await sendResendEmail({
@@ -12372,10 +12596,15 @@ app.post('/api/courses/roster/bulk-resend', authenticateToken, checkSubscription
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { categoryId } = req.body;
-    const whereExtra = categoryId ? ' AND sr.category_id = $2' : '';
-    const params: any[] = categoryId ? [req.tenant_id, categoryId] : [req.tenant_id];
+    const hubScope = getRequestHubScope(req);
+    const whereExtra = categoryId ? ' AND sr.category_id = $3' : '';
+    const params: any[] = categoryId ? [req.tenant_id, hubScope, categoryId] : [req.tenant_id, hubScope];
     const studentRes = await pool.query(
-      `SELECT sr.* FROM students_roster sr WHERE sr.tenant_id = $1 AND (sr.email_status = 'failed' OR sr.email_status = 'pending')${whereExtra} ORDER BY sr.name ASC`,
+      `SELECT sr.* FROM students_roster sr
+       WHERE sr.tenant_id = $1
+       AND COALESCE(sr.hub_scope, 'academic') = $2
+       AND (sr.email_status = 'failed' OR sr.email_status = 'pending')${whereExtra}
+       ORDER BY sr.name ASC`,
       params
     );
 
@@ -12390,7 +12619,10 @@ app.post('/api/courses/roster/bulk-resend', authenticateToken, checkSubscription
       const plainPin = String(Math.floor(1000 + Math.random() * 9000));
       const freshHash = await hashPin(plainPin);
       await pool.query('UPDATE students_roster SET pin_hash = $1 WHERE id = $2', [freshHash, s.id]);
-      await pool.query("UPDATE users SET password = $1 WHERE matric_number = $2 AND tenant_id = $3 AND role = 'student'", [freshHash, s.matric_number, req.tenant_id]);
+      await pool.query(
+        "UPDATE users SET password = $1 WHERE matric_number = $2 AND tenant_id = $3 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $4",
+        [freshHash, s.matric_number, req.tenant_id, hubScope]
+      );
       try {
         await sendResendEmail({
           fromName: 'Genius Academic Portal',
@@ -12424,9 +12656,13 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = req.params;
+    const hubScope = getRequestHubScope(req);
 
     // 1. Verify category belongs to tenant
-    const catCheck = await pool.query('SELECT id FROM student_categories WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    const catCheck = await pool.query(
+      "SELECT id FROM student_categories WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+      [id, req.tenant_id, hubScope]
+    );
     if (catCheck.rows.length === 0) return res.status(404).json({ error: 'Category not found' });
 
     // 2. Delete attendance sessions linked to this category (records cascade via ON DELETE CASCADE)
@@ -12434,22 +12670,23 @@ app.delete('/api/courses/categories/:id', authenticateToken, checkSubscription, 
     await pool.query('DELETE FROM attendance_sessions WHERE category_id = $1 AND tenant_id = $2', [id, req.tenant_id]);
 
     // 3. Delete all students in this category (clear remaining FK dependencies first)
-    await pool.query("DELETE FROM transactions WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
-    await pool.query("DELETE FROM exam_answers WHERE student_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
-    await pool.query("DELETE FROM exam_slots WHERE student_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
-    await pool.query("DELETE FROM exam_results WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
-    await pool.query("DELETE FROM reviews WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
-    await pool.query("DELETE FROM chat_messages WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
-    await pool.query("DELETE FROM attendance_records WHERE student_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
-    await pool.query("DELETE FROM profiles WHERE user_id IN (SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student')", [id, req.tenant_id]);
-    await pool.query("DELETE FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student'", [id, req.tenant_id]);
-    await pool.query('DELETE FROM students_roster WHERE category_id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    const scopedCategoryUsersSql = "SELECT id FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $3";
+    await pool.query(`DELETE FROM transactions WHERE user_id IN (${scopedCategoryUsersSql})`, [id, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM exam_answers WHERE student_id IN (${scopedCategoryUsersSql})`, [id, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM exam_slots WHERE student_id IN (${scopedCategoryUsersSql})`, [id, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM exam_results WHERE user_id IN (${scopedCategoryUsersSql})`, [id, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM reviews WHERE user_id IN (${scopedCategoryUsersSql})`, [id, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM chat_messages WHERE user_id IN (${scopedCategoryUsersSql})`, [id, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM attendance_records WHERE student_id IN (${scopedCategoryUsersSql})`, [id, req.tenant_id, hubScope]);
+    await pool.query(`DELETE FROM profiles WHERE user_id IN (${scopedCategoryUsersSql})`, [id, req.tenant_id, hubScope]);
+    await pool.query("DELETE FROM users WHERE category_id = $1 AND tenant_id = $2 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $3", [id, req.tenant_id, hubScope]);
+    await pool.query("DELETE FROM students_roster WHERE category_id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3", [id, req.tenant_id, hubScope]);
 
     // 4. Delete resources referencing this category (resources_category_id_fkey)
-    await pool.query('DELETE FROM resources WHERE category_id = $1', [id]);
+    await pool.query("DELETE FROM resources WHERE category_id = $1 AND COALESCE(hub_scope, 'academic') = $2", [id, hubScope]);
 
     // 5. Delete the category itself
-    await pool.query('DELETE FROM student_categories WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    await pool.query("DELETE FROM student_categories WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3", [id, req.tenant_id, hubScope]);
 
     res.json({ success: true, message: 'Batch category and all associated student records deleted successfully' });
   } catch (err: any) {
@@ -12744,6 +12981,7 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
       material_id, material_ids, difficulty, blooms_level, max_attempts, is_pool, pool_size,
       submission_type, due_date, allow_late
     } = req.body;
+    const hubScope = getRequestHubScope(req);
 
     const allMaterialIds = normalizeMaterialIds(material_ids, material_id);
 
@@ -12761,8 +12999,9 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
         const materialsRes = await client.query(
           `SELECT id
            FROM resources
-           WHERE tenant_id = $1 AND type = 'material' AND id = ANY($2::int[])`,
-          [req.tenant_id, allMaterialIds]
+           WHERE tenant_id = $1 AND type = 'material' AND id = ANY($2::int[])
+           AND COALESCE(hub_scope, 'academic') = $3`,
+          [req.tenant_id, allMaterialIds, hubScope]
         );
         const validIdSet = new Set<number>(materialsRes.rows.map((row: any) => Number(row.id)));
         verifiedMaterialIds = allMaterialIds.filter(id => validIdSet.has(id));
@@ -12777,14 +13016,14 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
         `INSERT INTO exams (tenant_id, title, description, duration, type, category_id,
           start_date, end_date, timer_mode, questions_count, batch_size, instructions,
           material_id, difficulty, blooms_level, ai_generated, max_attempts, is_pool, pool_size,
-          submission_type, due_date, allow_late)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id`,
+          submission_type, due_date, allow_late, hub_scope)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
         [req.tenant_id, title, description, duration || 60, type || 'test', category_id || null,
          start_date || null, end_date || null, timer_mode || 'whole',
          qCount, batch_size || 10, instructions || null,
          primaryMaterialId, difficulty || 'medium', blooms_level || 'mixed',
          verifiedMaterialIds.length > 0, parseInt(max_attempts) || 1, isPool, poolSz,
-         submission_type || 'mcq', due_date || null, !!allow_late]
+         submission_type || 'mcq', due_date || null, !!allow_late, hubScope]
       );
       examId = result.rows[0].id;
 
@@ -12814,13 +13053,15 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
 app.get('/api/exams/:id/slots', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getRequestHubScope(req);
     const slots = await pool.query(
       `SELECT es.*, u.name as student_name, u.email as student_email
        FROM exam_slots es
        LEFT JOIN users u ON u.id = es.student_id
-       WHERE es.exam_id = $1 AND es.tenant_id = $2
+       JOIN exams e ON e.id = es.exam_id
+       WHERE es.exam_id = $1 AND es.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3
        ORDER BY es.scheduled_at ASC`,
-      [req.params.id, req.tenant_id]
+      [req.params.id, req.tenant_id, hubScope]
     );
     res.json(slots.rows);
   } catch (error) {
@@ -12833,11 +13074,12 @@ app.post('/api/exams/:id/slots/:slotId/resend', authenticateToken, async (req: a
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id: examId, slotId } = req.params;
+    const hubScope = getRequestHubScope(req);
     const slotRes = await pool.query(
       `SELECT es.*, e.title, e.type, e.duration, e.instructions
        FROM exam_slots es JOIN exams e ON e.id = es.exam_id
-       WHERE es.id = $1 AND es.exam_id = $2 AND es.tenant_id = $3`,
-      [slotId, examId, req.tenant_id]
+       WHERE es.id = $1 AND es.exam_id = $2 AND es.tenant_id = $3 AND COALESCE(e.hub_scope, 'academic') = $4`,
+      [slotId, examId, req.tenant_id, hubScope]
     );
     if (slotRes.rows.length === 0) return res.status(404).json({ error: 'Slot not found' });
     const slot = slotRes.rows[0];
@@ -12885,7 +13127,11 @@ app.post('/api/exams/:id/slots/:slotId/resend', authenticateToken, async (req: a
 app.delete('/api/exams/:id', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    await pool.query('DELETE FROM exams WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    const hubScope = getRequestHubScope(req);
+    await pool.query(
+      "DELETE FROM exams WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+      [req.params.id, req.tenant_id, hubScope]
+    );
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete' });
@@ -12898,12 +13144,13 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
   try {
     const { published_status } = req.body; // 'published' | 'draft'
     const examId = parseInt(req.params.id);
+    const hubScope = getRequestHubScope(req);
 
     // ── UNPUBLISH: simple toggle back to draft ──
     if (published_status !== 'published') {
       await pool.query(
-        'UPDATE exams SET published_status = $1, is_available = FALSE WHERE id = $2 AND tenant_id = $3',
-        ['draft', examId, req.tenant_id]
+        "UPDATE exams SET published_status = $1, is_available = FALSE WHERE id = $2 AND tenant_id = $3 AND COALESCE(hub_scope, 'academic') = $4",
+        ['draft', examId, req.tenant_id, hubScope]
       );
       return res.json({ success: true, message: 'Moved back to draft.' });
     }
@@ -12913,8 +13160,9 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
       `SELECT id, title, type, material_id, questions_count, difficulty, blooms_level,
               is_pool, pool_size, duration, timer_mode, batch_size, instructions,
               start_date, end_date, category_id, submission_type
-       FROM exams WHERE id = $1 AND tenant_id = $2`,
-      [examId, req.tenant_id]
+              , COALESCE(hub_scope, 'academic') as hub_scope
+       FROM exams WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
+      [examId, req.tenant_id, hubScope]
     );
     if (examRow.rows.length === 0) return res.status(404).json({ error: 'Assessment not found.' });
     const exam = examRow.rows[0];
@@ -13036,9 +13284,13 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
     const existingSlots = await pool.query('SELECT COUNT(*) FROM exam_slots WHERE exam_id = $1', [examId]);
     if (parseInt(existingSlots.rows[0].count) === 0 && exam.start_date && exam.end_date && exam.category_id) {
       try {
+        const examHubScope = normalizeHubScope(exam.hub_scope);
         const studentsRes = await pool.query(
-          `SELECT id, name, email FROM users WHERE tenant_id = $1 AND category_id = $2 AND role = 'student' ORDER BY id`,
-          [req.tenant_id, exam.category_id]
+          `SELECT id, name, email FROM users
+           WHERE tenant_id = $1 AND category_id = $2 AND role = 'student'
+           AND COALESCE(hub_scope, 'academic') = $3
+           ORDER BY id`,
+          [req.tenant_id, exam.category_id, examHubScope]
         );
         const students = studentsRes.rows;
         if (students.length > 0) {
@@ -13122,6 +13374,12 @@ app.post('/api/assignments/:id/submit', authenticateToken, upload.single('file')
     const examRes = await pool.query('SELECT * FROM exams WHERE id = $1 AND tenant_id = $2 AND type = $3', [id, req.tenant_id, 'assignment']);
     if (examRes.rows.length === 0) return res.status(404).json({ error: 'Assignment not found' });
     const exam = examRes.rows[0];
+    if (normalizeHubScope(exam.hub_scope) !== getUserHubScope(req)) {
+      return res.status(403).json({ error: 'This assignment is not available in your hub.' });
+    }
+    if (exam.category_id && String(exam.category_id) !== String(req.user.category_id || '')) {
+      return res.status(403).json({ error: 'This assignment is not available to your category.' });
+    }
 
     if (!exam.is_available || exam.published_status !== 'published') return res.status(403).json({ error: 'Assignment is not open for submissions' });
 
@@ -13173,10 +13431,14 @@ app.post('/api/assignments/:id/submit', authenticateToken, upload.single('file')
 app.get('/api/assignments/:id/submissions', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getRequestHubScope(req);
     const subs = await pool.query(
       `SELECT s.id, s.student_name, s.student_email, s.submission_type, s.content, s.file_name, s.grade, s.feedback, s.submitted_at
-       FROM assignment_submissions s WHERE s.exam_id = $1 AND s.tenant_id = $2 ORDER BY s.submitted_at DESC`,
-      [req.params.id, req.tenant_id]
+       FROM assignment_submissions s
+       JOIN exams e ON e.id = s.exam_id
+       WHERE s.exam_id = $1 AND s.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3
+       ORDER BY s.submitted_at DESC`,
+      [req.params.id, req.tenant_id, hubScope]
     );
     res.json(subs.rows);
   } catch (error) {
@@ -13189,9 +13451,14 @@ app.put('/api/assignments/submissions/:subId/grade', authenticateToken, async (r
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { grade, feedback } = req.body;
+    const hubScope = getRequestHubScope(req);
     await pool.query(
-      'UPDATE assignment_submissions SET grade = $1, feedback = $2, graded_at = NOW() WHERE id = $3 AND tenant_id = $4',
-      [grade, feedback, req.params.subId, req.tenant_id]
+      `UPDATE assignment_submissions s
+       SET grade = $1, feedback = $2, graded_at = NOW()
+       FROM exams e
+       WHERE s.id = $3 AND s.tenant_id = $4 AND e.id = s.exam_id
+       AND COALESCE(e.hub_scope, 'academic') = $5`,
+      [grade, feedback, req.params.subId, req.tenant_id, hubScope]
     );
 
     // GAP 10: fetch submission details and email the student
@@ -13199,8 +13466,8 @@ app.put('/api/assignments/submissions/:subId/grade', authenticateToken, async (r
       `SELECT s.student_email, s.student_name, e.title as assignment_title
        FROM assignment_submissions s
        LEFT JOIN exams e ON e.id = s.exam_id
-       WHERE s.id = $1 AND s.tenant_id = $2`,
-      [req.params.subId, req.tenant_id]
+       WHERE s.id = $1 AND s.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3`,
+      [req.params.subId, req.tenant_id, hubScope]
     );
     if (subRes.rows.length > 0) {
       const { student_email, student_name, assignment_title } = subRes.rows[0];
@@ -13241,9 +13508,13 @@ app.put('/api/assignments/submissions/:subId/grade', authenticateToken, async (r
 // Download submission file
 app.get('/api/assignments/submissions/:subId/file', authenticateToken, async (req: any, res) => {
   try {
+    const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
     const result = await pool.query(
-      'SELECT file_blob, file_url, file_name, mime_type FROM assignment_submissions WHERE id = $1 AND tenant_id = $2',
-      [req.params.subId, req.tenant_id]
+      `SELECT s.file_blob, s.file_url, s.file_name, s.mime_type
+       FROM assignment_submissions s
+       JOIN exams e ON e.id = s.exam_id
+       WHERE s.id = $1 AND s.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3`,
+      [req.params.subId, req.tenant_id, hubScope]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'File not found' });
     const { file_blob, file_url, file_name, mime_type } = result.rows[0];
@@ -13272,10 +13543,11 @@ app.post('/api/attendance/sessions', authenticateToken, async (req: any, res) =>
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { title, course_code, category_id, session_date, is_paid, price } = req.body;
+    const hubScope = getRequestHubScope(req);
     const result = await pool.query(
-      `INSERT INTO attendance_sessions (tenant_id, title, course_code, category_id, session_date, is_paid, price)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [req.tenant_id, title, course_code || null, category_id || null, session_date, !!is_paid, parseInt(price) || 0]
+      `INSERT INTO attendance_sessions (tenant_id, title, course_code, category_id, session_date, is_paid, price, hub_scope)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [req.tenant_id, title, course_code || null, category_id || null, session_date, !!is_paid, parseInt(price) || 0, hubScope]
     );
     res.json({ success: true, id: result.rows[0].id });
   } catch (error: any) {
@@ -13286,13 +13558,15 @@ app.post('/api/attendance/sessions', authenticateToken, async (req: any, res) =>
 // Lecturer: Get all sessions
 app.get('/api/attendance/sessions', authenticateToken, async (req: any, res) => {
   try {
+    const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
     const result = await pool.query(
       `SELECT s.*, sc.name as category_name,
        (SELECT COUNT(*) FROM attendance_records r WHERE r.session_id = s.id) as present_count
        FROM attendance_sessions s
        LEFT JOIN student_categories sc ON sc.id = s.category_id
-       WHERE s.tenant_id = $1 ORDER BY s.session_date DESC`,
-      [req.tenant_id]
+       WHERE s.tenant_id = $1 AND COALESCE(s.hub_scope, 'academic') = $2
+       ORDER BY s.session_date DESC`,
+      [req.tenant_id, hubScope]
     );
     res.json(result.rows);
   } catch (error) {
@@ -13305,6 +13579,7 @@ app.put('/api/attendance/sessions/:id', authenticateToken, async (req: any, res)
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const fields = req.body;
+    const hubScope = getRequestHubScope(req);
     const sets: string[] = [];
     const vals: any[] = [];
     let idx = 1;
@@ -13314,8 +13589,8 @@ app.put('/api/attendance/sessions/:id', authenticateToken, async (req: any, res)
       }
     }
     if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
-    vals.push(req.params.id, req.tenant_id);
-    await pool.query(`UPDATE attendance_sessions SET ${sets.join(',')} WHERE id = $${idx++} AND tenant_id = $${idx}`, vals);
+    vals.push(req.params.id, req.tenant_id, hubScope);
+    await pool.query(`UPDATE attendance_sessions SET ${sets.join(',')} WHERE id = $${idx++} AND tenant_id = $${idx++} AND COALESCE(hub_scope, 'academic') = $${idx}`, vals);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Update failed' });
@@ -13326,7 +13601,11 @@ app.put('/api/attendance/sessions/:id', authenticateToken, async (req: any, res)
 app.delete('/api/attendance/sessions/:id', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
-    await pool.query('DELETE FROM attendance_sessions WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]);
+    const hubScope = getRequestHubScope(req);
+    await pool.query(
+      "DELETE FROM attendance_sessions WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+      [req.params.id, req.tenant_id, hubScope]
+    );
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Delete failed' });
@@ -13337,11 +13616,14 @@ app.delete('/api/attendance/sessions/:id', authenticateToken, async (req: any, r
 app.get('/api/attendance/sessions/:id/records', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getRequestHubScope(req);
     const records = await pool.query(
       `SELECT r.*, u.name, u.email FROM attendance_records r
        LEFT JOIN users u ON u.id = r.student_id
-       WHERE r.session_id = $1 AND r.tenant_id = $2 ORDER BY r.marked_at ASC`,
-      [req.params.id, req.tenant_id]
+       JOIN attendance_sessions s ON s.id = r.session_id
+       WHERE r.session_id = $1 AND r.tenant_id = $2 AND COALESCE(s.hub_scope, 'academic') = $3
+       ORDER BY r.marked_at ASC`,
+      [req.params.id, req.tenant_id, hubScope]
     );
     res.json(records.rows);
   } catch (error) {
@@ -13353,13 +13635,14 @@ app.get('/api/attendance/sessions/:id/records', authenticateToken, async (req: a
 app.get('/api/attendance/sessions/:id/records/pdf', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getRequestHubScope(req);
     const sessionRes = await pool.query(
       `SELECT s.*, t.name as tenant_name, sc.name as category_name
        FROM attendance_sessions s
        JOIN tenants t ON t.id = s.tenant_id
        LEFT JOIN student_categories sc ON sc.id = s.category_id
-       WHERE s.id = $1 AND s.tenant_id = $2`,
-      [req.params.id, req.tenant_id]
+       WHERE s.id = $1 AND s.tenant_id = $2 AND COALESCE(s.hub_scope, 'academic') = $3`,
+      [req.params.id, req.tenant_id, hubScope]
     );
     if (sessionRes.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
     const session = sessionRes.rows[0];
@@ -13459,6 +13742,7 @@ app.get('/api/attendance/sessions/:id/records/pdf', authenticateToken, async (re
 app.get('/api/student/attendance/pdf', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getUserHubScope(req);
     const result = await pool.query(
       `SELECT ar.student_name, ar.matric_number, ar.marked_at,
               s.title as session_title, s.course_code, s.session_date, s.is_paid, s.price,
@@ -13467,8 +13751,9 @@ app.get('/api/student/attendance/pdf', authenticateToken, async (req: any, res) 
        JOIN attendance_sessions s ON s.id = ar.session_id
        JOIN tenants t ON t.id = ar.tenant_id
        WHERE ar.student_id = $1 AND ar.tenant_id = $2
+       AND COALESCE(s.hub_scope, 'academic') = $3
        ORDER BY ar.marked_at DESC`,
-      [req.user.id, req.tenant_id]
+      [req.user.id, req.tenant_id, hubScope]
     );
     const rows = result.rows;
     const studentName = rows[0]?.student_name || req.user.name || 'Student';
@@ -13534,6 +13819,7 @@ app.get('/api/student/attendance/pdf', authenticateToken, async (req: any, res) 
 app.get('/api/student/attendance/open-sessions', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getUserHubScope(req);
     const sessions = await pool.query(
       `SELECT s.id, s.title, s.course_code, s.session_date, s.is_paid, s.price,
               EXISTS(
@@ -13541,9 +13827,12 @@ app.get('/api/student/attendance/open-sessions', authenticateToken, async (req: 
                 WHERE r.session_id = s.id AND r.student_id = $2
               ) AS already_marked
        FROM attendance_sessions s
+       JOIN users u ON u.id = $2
        WHERE s.tenant_id = $1 AND s.is_open = true
+       AND COALESCE(s.hub_scope, 'academic') = $3
+       AND (s.category_id IS NULL OR s.category_id = u.category_id)
        ORDER BY s.created_at DESC`,
-      [req.tenant_id, req.user.id]
+      [req.tenant_id, req.user.id, hubScope]
     );
     res.json(sessions.rows);
   } catch (error: any) {
@@ -13556,7 +13845,12 @@ app.post('/api/attendance/sessions/:id/mark', authenticateToken, async (req: any
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const session = await pool.query(
-      'SELECT * FROM attendance_sessions WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenant_id]
+      `SELECT s.* FROM attendance_sessions s
+       JOIN users u ON u.id = $3
+       WHERE s.id = $1 AND s.tenant_id = $2
+       AND COALESCE(s.hub_scope, 'academic') = $4
+       AND (s.category_id IS NULL OR s.category_id = u.category_id)`,
+      [req.params.id, req.tenant_id, req.user.id, getUserHubScope(req)]
     );
     if (!session.rows.length) return res.status(404).json({ error: 'Session not found' });
     const s = session.rows[0];
@@ -13573,7 +13867,10 @@ app.post('/api/attendance/sessions/:id/mark', authenticateToken, async (req: any
     const dup = await pool.query('SELECT id FROM attendance_records WHERE session_id = $1 AND student_id = $2', [req.params.id, req.user.id]);
     if (dup.rows.length) return res.status(409).json({ error: 'Already marked for this session' });
 
-    const userRes = await pool.query('SELECT matric_number FROM students_roster WHERE tenant_id = $1 AND email = $2 LIMIT 1', [req.tenant_id, req.user.email]);
+    const userRes = await pool.query(
+      "SELECT matric_number FROM students_roster WHERE tenant_id = $1 AND email = $2 AND COALESCE(hub_scope, 'academic') = $3 LIMIT 1",
+      [req.tenant_id, req.user.email, getUserHubScope(req)]
+    );
     const matric = userRes.rows[0]?.matric_number || '';
 
     await pool.query(
@@ -13611,15 +13908,16 @@ app.post('/api/exams/:id/questions', authenticateToken, checkSubscription, async
 app.get('/api/student/performance-stats', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getUserHubScope(req);
     // 1. Get all exam results for this student
     const results = await pool.query(
       `SELECT er.*, e.title as course, e.type, 
        (SELECT SUM(points) FROM questions WHERE exam_id = e.id) as max_points
        FROM exam_results er
        JOIN exams e ON er.exam_id = e.id
-       WHERE er.user_id = $1
+       WHERE er.user_id = $1 AND COALESCE(e.hub_scope, 'academic') = $2
        ORDER BY er.submitted_at DESC`,
-      [req.user.id]
+      [req.user.id, hubScope]
     );
 
     // 2. Calculate Stats
@@ -13636,11 +13934,14 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
     // Global Rank (Relative to other students in the same tenant)
     const rankResult = await pool.query(
       `SELECT user_id, AVG(score::numeric) as avg_score
-       FROM exam_results
-       WHERE tenant_id = $1
+       FROM exam_results er
+       JOIN exams e ON e.id = er.exam_id
+       JOIN users u ON u.id = er.user_id
+       WHERE er.tenant_id = $1 AND COALESCE(e.hub_scope, 'academic') = $2
+       AND COALESCE(u.hub_scope, 'academic') = $2
        GROUP BY user_id
        ORDER BY avg_score DESC`,
-      [req.tenant_id]
+      [req.tenant_id, hubScope]
     );
     const rankIndex = rankResult.rows ? rankResult.rows.findIndex((r: any) => r.user_id === req.user.id) : -1;
     const globalRank = rankIndex !== -1 ? `#${rankIndex + 1}` : 'N/A';
@@ -13694,8 +13995,11 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
 
     // 6. Attendance count
     const attendanceRes = await pool.query(
-      'SELECT COUNT(*) as count FROM attendance_records WHERE student_id = $1 AND tenant_id = $2',
-      [req.user.id, req.tenant_id]
+      `SELECT COUNT(*) as count
+       FROM attendance_records ar
+       JOIN attendance_sessions s ON s.id = ar.session_id
+       WHERE ar.student_id = $1 AND ar.tenant_id = $2 AND COALESCE(s.hub_scope, 'academic') = $3`,
+      [req.user.id, req.tenant_id, hubScope]
     );
     const attendanceCount = parseInt(attendanceRes.rows[0]?.count || '0');
 
@@ -13721,6 +14025,7 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
 app.get('/api/student/assessments', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getUserHubScope(req);
     const assessments = await pool.query(
       `SELECT e.*, 
        (SELECT COUNT(*) FROM questions WHERE exam_id = e.id) as "totalQuestions",
@@ -13729,9 +14034,10 @@ app.get('/api/student/assessments', authenticateToken, async (req: any, res) => 
        FROM exams e 
        JOIN users u ON u.id = $1
        WHERE e.tenant_id = $2 AND e.is_available = true 
+       AND COALESCE(e.hub_scope, 'academic') = $3
        AND (e.category_id IS NULL OR e.category_id = u.category_id)
        ORDER BY e.created_at DESC`,
-      [req.user.id, req.tenant_id]
+      [req.user.id, req.tenant_id, hubScope]
     );
 
     const formatted = assessments.rows.map(a => ({
@@ -13760,14 +14066,18 @@ app.get('/api/student/assessments', authenticateToken, async (req: any, res) => 
 app.get('/api/student/videos', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getUserHubScope(req);
     const result = await pool.query(
       `SELECT r.id, r.name, r.file_url, r.is_paid, r.price, r.created_at,
        EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'video_access'
               AND (metadata->>'resource_id')::int = r.id AND status = 'success') as "hasPaid"
        FROM resources r
+       JOIN users u ON u.id = $1
        WHERE r.tenant_id = $2 AND r.type = 'video' AND r.is_available = true
+       AND COALESCE(r.hub_scope, 'academic') = $3
+       AND (r.category_id IS NULL OR r.category_id = u.category_id)
        ORDER BY r.created_at DESC`,
-      [req.user.id, req.tenant_id]
+      [req.user.id, req.tenant_id, hubScope]
     );
     res.json({ success: true, videos: result.rows });
   } catch (error: any) {
@@ -13780,15 +14090,17 @@ app.get('/api/student/videos', authenticateToken, async (req: any, res) => {
 app.get('/api/student/materials', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getUserHubScope(req);
     const result = await pool.query(
       `SELECT r.*,
        EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'material_access' AND (metadata->>'resource_id')::int = r.id AND status = 'success') as "hasPaid"
        FROM resources r
        JOIN users u ON u.id = $1
        WHERE r.tenant_id = $2 AND r.type = 'material' AND r.is_available = true
+       AND COALESCE(r.hub_scope, 'academic') = $3
        AND (r.category_id IS NULL OR r.category_id = u.category_id)
        ORDER BY r.created_at DESC`,
-      [req.user.id, req.tenant_id]
+      [req.user.id, req.tenant_id, hubScope]
     );
     res.json({ success: true, materials: result.rows || [] });
   } catch (error) {
@@ -13803,6 +14115,15 @@ app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
     if (examResult.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
 
     const exam = examResult.rows[0];
+    if (req.user.role === 'student') {
+      const userHubScope = getUserHubScope(req);
+      if (normalizeHubScope(exam.hub_scope) !== userHubScope) {
+        return res.status(403).json({ error: 'This assessment is not available in your hub.' });
+      }
+      if (exam.category_id && String(exam.category_id) !== String(req.user.category_id || '')) {
+        return res.status(403).json({ error: 'This assessment is not available to your category.' });
+      }
+    }
 
     // Enforce payment gate on backend — prevents API-level bypass
     if (exam.is_paid && req.user.role === 'student') {
@@ -13952,6 +14273,12 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
     const examRes = await pool.query('SELECT * FROM exams WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
     if (examRes.rows.length === 0) return res.status(404).json({ error: 'Exam not found' });
     const exam = examRes.rows[0];
+    if (normalizeHubScope(exam.hub_scope) !== getUserHubScope(req)) {
+      return res.status(403).json({ error: 'This assessment is not available in your hub.' });
+    }
+    if (exam.category_id && String(exam.category_id) !== String(req.user.category_id || '')) {
+      return res.status(403).json({ error: 'This assessment is not available to your category.' });
+    }
 
     // GAP 7: Max attempts check
     const maxAttempts = parseInt(exam.max_attempts) || 1;
@@ -14039,15 +14366,17 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
 app.get('/api/exams/:id/results', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getRequestHubScope(req);
     const results = await pool.query(
       `SELECT er.id, er.user_id, u.name as student_name, u.email as student_email,
               er.score, er.grade, er.total_earned, er.total_possible,
               er.risk_score, er.violations, er.attempt_number, er.submitted_at
        FROM exam_results er
        LEFT JOIN users u ON u.id = er.user_id
-       WHERE er.exam_id = $1 AND er.tenant_id = $2
+       JOIN exams e ON e.id = er.exam_id
+       WHERE er.exam_id = $1 AND er.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3
        ORDER BY er.submitted_at DESC`,
-      [req.params.id, req.tenant_id]
+      [req.params.id, req.tenant_id, hubScope]
     );
     res.json(results.rows);
   } catch (err: any) {
@@ -14059,14 +14388,16 @@ app.get('/api/exams/:id/results', authenticateToken, async (req: any, res) => {
 app.get('/api/exams/:id/answers/:studentId', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getRequestHubScope(req);
     const rows = await pool.query(
       `SELECT ea.question_id, q.text as question_text, ea.submitted_answer,
               ea.correct_answer, ea.is_correct, ea.points_earned, q.points as max_points
        FROM exam_answers ea
        LEFT JOIN questions q ON q.id = ea.question_id
-       WHERE ea.exam_id = $1 AND ea.student_id = $2 AND ea.tenant_id = $3
+       JOIN exams e ON e.id = ea.exam_id
+       WHERE ea.exam_id = $1 AND ea.student_id = $2 AND ea.tenant_id = $3 AND COALESCE(e.hub_scope, 'academic') = $4
        ORDER BY ea.id`,
-      [req.params.id, req.params.studentId, req.tenant_id]
+      [req.params.id, req.params.studentId, req.tenant_id, hubScope]
     );
     res.json(rows.rows);
   } catch (err: any) {
@@ -14078,13 +14409,18 @@ app.get('/api/exams/:id/answers/:studentId', authenticateToken, async (req: any,
 app.delete('/api/exams/:id/results/:studentId', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getRequestHubScope(req);
     await pool.query(
-      'DELETE FROM exam_results WHERE exam_id = $1 AND user_id = $2 AND tenant_id = $3',
-      [req.params.id, req.params.studentId, req.tenant_id]
+      `DELETE FROM exam_results er USING exams e
+       WHERE er.exam_id = $1 AND er.user_id = $2 AND er.tenant_id = $3
+       AND e.id = er.exam_id AND COALESCE(e.hub_scope, 'academic') = $4`,
+      [req.params.id, req.params.studentId, req.tenant_id, hubScope]
     );
     await pool.query(
-      'DELETE FROM exam_answers WHERE exam_id = $1 AND student_id = $2 AND tenant_id = $3',
-      [req.params.id, req.params.studentId, req.tenant_id]
+      `DELETE FROM exam_answers ea USING exams e
+       WHERE ea.exam_id = $1 AND ea.student_id = $2 AND ea.tenant_id = $3
+       AND e.id = ea.exam_id AND COALESCE(e.hub_scope, 'academic') = $4`,
+      [req.params.id, req.params.studentId, req.tenant_id, hubScope]
     );
     await pool.query(
       `UPDATE exam_slots SET status = 'pending', submitted_at = NULL, question_order = NULL, option_orders = NULL
@@ -14201,22 +14537,27 @@ app.get('/api/transcripts/exam/:examId', authenticateToken, async (req: any, res
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { examId } = req.params;
+    const hubScope = getRequestHubScope(req);
     const tenantRes = await pool.query('SELECT name FROM tenants WHERE id = $1', [req.tenant_id]);
     const tenantName = tenantRes.rows[0]?.name || 'Institution';
 
-    const examRes = await pool.query('SELECT title, type, duration, questions_count FROM exams WHERE id = $1 AND tenant_id = $2', [examId, req.tenant_id]);
+    const examRes = await pool.query(
+      "SELECT title, type, duration, questions_count FROM exams WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+      [examId, req.tenant_id, hubScope]
+    );
     if (!examRes.rows.length) return res.status(404).json({ error: 'Exam not found' });
     const exam = examRes.rows[0];
 
     const results = await pool.query(
       `SELECT er.score, er.grade, er.total_earned, er.total_possible, er.risk_score, er.violations, er.attempt_number, er.submitted_at,
               u.name as student_name, u.email as student_email,
-              (SELECT matric_number FROM students_roster WHERE email = u.email AND tenant_id = $2 LIMIT 1) as matric
+              (SELECT matric_number FROM students_roster WHERE email = u.email AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3 LIMIT 1) as matric
        FROM exam_results er
        LEFT JOIN users u ON u.id = er.user_id
-       WHERE er.exam_id = $1 AND er.tenant_id = $2
+       JOIN exams e ON e.id = er.exam_id
+       WHERE er.exam_id = $1 AND er.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3
        ORDER BY er.score::int DESC, u.name`,
-      [examId, req.tenant_id]
+      [examId, req.tenant_id, hubScope]
     );
     const rows = results.rows;
 
@@ -14281,14 +14622,21 @@ app.get('/api/transcripts/student/:studentId', authenticateToken, async (req: an
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { studentId } = req.params;
+    const hubScope = getRequestHubScope(req);
     const tenantRes = await pool.query('SELECT name FROM tenants WHERE id = $1', [req.tenant_id]);
     const tenantName = tenantRes.rows[0]?.name || 'Institution';
 
-    const studentRes = await pool.query('SELECT name, email FROM users WHERE id = $1 AND tenant_id = $2', [studentId, req.tenant_id]);
+    const studentRes = await pool.query(
+      "SELECT name, email FROM users WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
+      [studentId, req.tenant_id, hubScope]
+    );
     if (!studentRes.rows.length) return res.status(404).json({ error: 'Student not found' });
     const student = studentRes.rows[0];
 
-    const matricRes = await pool.query('SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2 LIMIT 1', [student.email, req.tenant_id]);
+    const matricRes = await pool.query(
+      "SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3 LIMIT 1",
+      [student.email, req.tenant_id, hubScope]
+    );
     const matric = matricRes.rows[0]?.matric_number || '—';
 
     // MCQ exam results
@@ -14297,9 +14645,9 @@ app.get('/api/transcripts/student/:studentId', authenticateToken, async (req: an
               e.title, e.type, e.duration, e.questions_count
        FROM exam_results er
        LEFT JOIN exams e ON e.id = er.exam_id
-       WHERE er.user_id = $1 AND er.tenant_id = $2
+       WHERE er.user_id = $1 AND er.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3
        ORDER BY er.submitted_at DESC`,
-      [studentId, req.tenant_id]
+      [studentId, req.tenant_id, hubScope]
     );
 
     // Assignment submissions
@@ -14307,9 +14655,9 @@ app.get('/api/transcripts/student/:studentId', authenticateToken, async (req: an
       `SELECT s.grade, s.feedback, s.submitted_at, s.graded_at, e.title
        FROM assignment_submissions s
        LEFT JOIN exams e ON e.id = s.exam_id
-       WHERE s.student_id = $1 AND s.tenant_id = $2
+       WHERE s.student_id = $1 AND s.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3
        ORDER BY s.submitted_at DESC`,
-      [studentId, req.tenant_id]
+      [studentId, req.tenant_id, hubScope]
     );
 
     const now = new Date().toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' });
@@ -14372,9 +14720,13 @@ app.get('/api/transcripts/student/:studentId', authenticateToken, async (req: an
 app.get('/api/transcripts/my', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    const hubScope = getUserHubScope(req);
     const tenantRes = await pool.query('SELECT name FROM tenants WHERE id = $1', [req.tenant_id]);
     const tenantName = tenantRes.rows[0]?.name || 'Institution';
-    const matricRes = await pool.query('SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2 LIMIT 1', [req.user.email, req.tenant_id]);
+    const matricRes = await pool.query(
+      "SELECT matric_number FROM students_roster WHERE email = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3 LIMIT 1",
+      [req.user.email, req.tenant_id, hubScope]
+    );
     const matric = matricRes.rows[0]?.matric_number || '—';
 
     const examResults = await pool.query(
@@ -14382,18 +14734,18 @@ app.get('/api/transcripts/my', authenticateToken, async (req: any, res) => {
               e.title, e.type, e.duration, e.questions_count
        FROM exam_results er
        LEFT JOIN exams e ON e.id = er.exam_id
-       WHERE er.user_id = $1 AND er.tenant_id = $2
+       WHERE er.user_id = $1 AND er.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3
        ORDER BY er.submitted_at DESC`,
-      [req.user.id, req.tenant_id]
+      [req.user.id, req.tenant_id, hubScope]
     );
 
     const assignments = await pool.query(
       `SELECT s.grade, s.feedback, s.submitted_at, e.title
        FROM assignment_submissions s
        LEFT JOIN exams e ON e.id = s.exam_id
-       WHERE s.student_id = $1 AND s.tenant_id = $2
+       WHERE s.student_id = $1 AND s.tenant_id = $2 AND COALESCE(e.hub_scope, 'academic') = $3
        ORDER BY s.submitted_at DESC`,
-      [req.user.id, req.tenant_id]
+      [req.user.id, req.tenant_id, hubScope]
     );
 
     // If ?format=json, return raw data for the student portal to display inline

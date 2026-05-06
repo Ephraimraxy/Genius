@@ -24,6 +24,7 @@ import GlobalLoader from './components/GlobalLoader';
 import AcademicManagement from './components/AcademicManagement';
 import LecturerSettings from './components/LecturerSettings';
 import ResourceHub from './components/ResourceHub';
+import ProHub from './components/ProHub';
 import ToastSystem, { useToasts } from './components/ToastSystem';
 import StudentAuth from './components/StudentAuth';
 import StudentDashboard from './components/StudentDashboard';
@@ -44,7 +45,7 @@ import CertificateVerify from './components/CertificateVerify';
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'quick_publish' | 'apa_validation' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures' | 'paymentEvents' | 'servicesSettings';
+export type Tab = 'dashboard' | 'upload' | 'quick_publish' | 'apa_validation' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'proHub' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures' | 'paymentEvents' | 'servicesSettings';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -73,6 +74,7 @@ const TAB_LABELS: Record<Tab, string> = {
   attendance: 'Attendance Management',
   exams: 'Exam Records',
   storage: 'Resource Hub',
+  proHub: 'Pro Hub',
   materials: 'Lecture Materials',
   lectureRecords: 'Manage Records',
   videoLectures: 'Video Lectures',
@@ -592,6 +594,7 @@ export default function App() {
             case 'materials': return <AcademicManagement mode="materials" addToast={addToast} token={token} />;
             case 'lectureRecords': return <AcademicManagement mode="records" addToast={addToast} token={token} />;
             case 'storage': return <ResourceHub addToast={addToast} token={token} />;
+            case 'proHub': return <ProHub addToast={addToast} token={token} />;
             case 'videoLectures': return <VideoLectures addToast={addToast} token={token} />;
             case 'tokenStatus': return <TokenStatusView token={token} addToast={addToast} profile={profile} />;
             case 'transactions': return <TransactionHistory profile={profile} mode="lecturer" />;

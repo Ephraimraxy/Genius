@@ -44,9 +44,13 @@ interface Resource {
 interface ResourceHubProps {
     addToast: (msg: string, type: ToastType) => void;
     token: string | null;
+    hub?: 'academic' | 'professional';
+    initialUploadType?: 'roster' | 'material' | 'audio';
 }
 
-export default function ResourceHub({ addToast, token }: ResourceHubProps) {
+export default function ResourceHub({ addToast, token, hub = 'academic', initialUploadType = 'roster' }: ResourceHubProps) {
+    const isProfessionalHub = hub === 'professional';
+    const withHub = (url: string) => `${url}${url.includes('?') ? '&' : '?'}hub=${hub}`;
     const [resources, setResources] = useState<Resource[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [editingPrice, setEditingPrice] = useState<{id: number, val: string} | null>(null);
@@ -56,7 +60,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const [audioAnalysis, setAudioAnalysis] = useState<FileAnalysis | null>(null);
     const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
     const audioXhrRef = useRef<XMLHttpRequest | null>(null);
-    const [uploadType, setUploadType] = useState<'roster' | 'material' | 'audio'>('roster');
+    const [uploadType, setUploadType] = useState<'roster' | 'material' | 'audio'>(initialUploadType);
     const [fileHandle, setFileHandle] = useState<File | null>(null);
     const [previewFile, setPreviewFile] = useState<File | string | null>(null);
     const [previewName, setPreviewName] = useState<string>('');
@@ -108,7 +112,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         fetchResources();
         fetchCategories();
         fetchTenantInfo();
-    }, []);
+    }, [hub, token]);
 
     const fetchTenantInfo = async () => {
         try {
@@ -124,7 +128,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
 
     const fetchCategories = async () => {
         try {
-            const res = await fetch('/api/courses/categories', {
+            const res = await fetch(withHub('/api/courses/categories'), {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -137,7 +141,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const fetchResources = async () => {
         setIsLoading(true);
         try {
-            const res = await fetch('/api/resources', {
+            const res = await fetch(withHub('/api/resources'), {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -152,7 +156,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         setShowRosterViewer(true);
         setRosterLoading(true);
         try {
-            const res = await fetch('/api/courses/roster', { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(withHub('/api/courses/roster'), { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setRosterStudents(Array.isArray(data) ? data : []);
         } catch { addToast('Failed to load roster', 'error'); }
@@ -162,7 +166,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const resendOne = async (studentId: number) => {
         setResendingId(studentId);
         try {
-            const res = await fetch(`/api/courses/roster/${studentId}/resend`, {
+            const res = await fetch(withHub(`/api/courses/roster/${studentId}/resend`), {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -180,7 +184,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const bulkResend = async (categoryId?: number) => {
         setBulkResending(true);
         try {
-            const res = await fetch('/api/courses/roster/bulk-resend', {
+            const res = await fetch(withHub('/api/courses/roster/bulk-resend'), {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ categoryId })
@@ -189,7 +193,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             if (data.success) {
                 addToast(`Resent to ${data.sent}/${data.total} student(s)`, 'success');
                 // Refresh roster list
-                const r2 = await fetch('/api/courses/roster', { headers: { 'Authorization': `Bearer ${token}` } });
+                const r2 = await fetch(withHub('/api/courses/roster'), { headers: { 'Authorization': `Bearer ${token}` } });
                 setRosterStudents(await r2.json());
             } else {
                 addToast(friendlyError({ message: data.error }, 'generic'), 'error');
@@ -201,7 +205,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const deleteStudent = async (id: number) => {
         setDeletingId(id);
         try {
-            const res = await fetch(`/api/courses/roster/${id}`, {
+            const res = await fetch(withHub(`/api/courses/roster/${id}`), {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -224,7 +228,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         let done = 0;
         for (const id of ids) {
             try {
-                await fetch(`/api/courses/roster/${id}`, {
+                await fetch(withHub(`/api/courses/roster/${id}`), {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -241,7 +245,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         setSuspendingId(student.id);
         const newState = !student.is_suspended;
         try {
-            const res = await fetch(`/api/courses/roster/${student.id}/suspend`, {
+            const res = await fetch(withHub(`/api/courses/roster/${student.id}/suspend`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ suspend: newState })
@@ -261,7 +265,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         if (selectedIds.size === 0) return;
         setBulkSuspending(true);
         try {
-            const res = await fetch('/api/courses/roster/bulk-suspend', {
+            const res = await fetch(withHub('/api/courses/roster/bulk-suspend'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ ids: Array.from(selectedIds), suspend })
@@ -282,7 +286,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         if (!editingStudent) return;
         setIsSavingEdit(true);
         try {
-            const res = await fetch(`/api/courses/roster/${editingStudent.id}`, {
+            const res = await fetch(withHub(`/api/courses/roster/${editingStudent.id}`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ name: editName, email: editEmail, matric_number: editMatric })
@@ -376,6 +380,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 formData.append('file', fileHandle);
                 formData.append('type', 'audio');
                 formData.append('name', fileHandle.name);
+                formData.append('hub', hub);
                 if (selectedCatId) formData.append('categoryId', String(selectedCatId));
                 if (newCatName) formData.append('categoryName', newCatName);
                 if (isPaidEntry) formData.append('isPaidEntry', 'true');
@@ -417,7 +422,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                     xhr.ontimeout = () => reject(new Error('Upload timed out. Try a smaller file or check your connection.'));
                     xhr.timeout = 20 * 60 * 1000;
 
-                    xhr.open('POST', '/api/resources/upload/file');
+                    xhr.open('POST', withHub('/api/resources/upload/file'));
                     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
                     xhr.send(formData);
                 });
@@ -445,25 +450,32 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             reader.onload = async (e) => {
                 const rawContent = e.target?.result as string;
                 const lines = rawContent.split('\n');
-                const finalContent = lines.map(line => {
-                    const parts = line.split(',').map(p => p.trim());
-                    if (parts.length >= 4) {
-                        return { name: parts[0], matricNumber: parts[1], email: parts[2], phone: parts[3] };
+                    const finalContent = lines.map((line, index) => {
+                        const parts = line.split(',').map(p => p.trim());
+                        const first = (parts[0] || '').toLowerCase();
+                        if (index === 0 && ['full name', 'name', 'student name'].includes(first)) return null;
+                        if (isProfessionalHub) {
+                            if (parts.length >= 3) return { name: parts[0], email: parts[1], phone: parts[2] };
+                            if (parts.length === 2) return { name: parts[0], email: parts[1] };
+                            return null;
+                        }
+                        if (parts.length >= 4) {
+                            return { name: parts[0], matricNumber: parts[1], email: parts[2], phone: parts[3] };
                     } else if (parts.length === 3) {
                         return { name: parts[0], matricNumber: parts[1], email: parts[2] };
                     } else if (parts.length === 2) {
                         return { name: parts[0], matricNumber: parts[0], email: parts[1] };
                     }
                     return null;
-                }).filter(s => s && (s as any).matricNumber && (s as any).email);
+                    }).filter(s => s && (isProfessionalHub ? (s as any).name && (s as any).email : (s as any).matricNumber && (s as any).email));
 
                 try {
-                    const res = await fetch('/api/resources/upload', {
+                    const res = await fetch(withHub('/api/resources/upload'), {
                         method: 'POST',
                         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             type: 'roster', name: fileHandle.name, content: finalContent,
-                            categoryId: selectedCatId, categoryName: newCatName, isPaidEntry, entryFee
+                            categoryId: selectedCatId, categoryName: newCatName, isPaidEntry, entryFee, hub
                         })
                     });
                     const data = await res.json();
@@ -495,12 +507,13 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             formData.append('file', fileHandle);
             formData.append('type', uploadType);
             formData.append('name', fileHandle.name);
+            formData.append('hub', hub);
             if (selectedCatId) formData.append('categoryId', String(selectedCatId));
             if (newCatName) formData.append('categoryName', newCatName);
             if (isPaidEntry !== undefined) formData.append('isPaidEntry', String(isPaidEntry));
             if (entryFee !== undefined) formData.append('entryFee', String(entryFee));
 
-            const res = await fetch('/api/resources/upload/file', {
+            const res = await fetch(withHub('/api/resources/upload/file'), {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formData
@@ -522,7 +535,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
 
     const deleteResource = async (id: number) => {
         try {
-            const res = await fetch(`/api/resources/${id}`, {
+            const res = await fetch(withHub(`/api/resources/${id}`), {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -539,7 +552,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         // Optimistic local update — no re-fetch, prevents input losing focus/state
         setResources(prev => prev.map(r => r.id === id ? { ...r, ...settings } : r));
         try {
-            const res = await fetch(`/api/resources/${id}/settings`, {
+            const res = await fetch(withHub(`/api/resources/${id}/settings`), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -561,7 +574,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
     const updateCategoryFee = async (id: number, is_paid: boolean, fee: number) => {
         setIsUpdatingCategory(id);
         try {
-            const res = await fetch(`/api/courses/categories/${id}`, {
+            const res = await fetch(withHub(`/api/courses/categories/${id}`), {
                 method: 'PUT',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -583,7 +596,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
         if (!deleteCatTarget) return;
         setIsDeletingCat(true);
         try {
-            const res = await fetch(`/api/courses/categories/${deleteCatTarget.id}`, {
+            const res = await fetch(withHub(`/api/courses/categories/${deleteCatTarget.id}`), {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -606,10 +619,14 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
                     <h2 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-                        Genius Resource Hub <Database className="text-blue-600" size={28} />
+                        {isProfessionalHub ? 'Professional Resource Hub' : 'Genius Resource Hub'} <Database className="text-blue-600" size={28} />
                     </h2>
                     <div className="flex items-center gap-2 mt-1">
-                        <p className="text-slate-500 font-medium">Global storage for your rosters and lecture notes. Upload once, use everywhere.</p>
+                        <p className="text-slate-500 font-medium">
+                            {isProfessionalHub
+                                ? 'Separate storage for professional-course students, materials, audio records, tests, assignments, and exams.'
+                                : 'Global storage for your rosters and lecture notes. Upload once, use everywhere.'}
+                        </p>
                         {workspaceId && (
                             <div className="ml-4 px-3 py-1 bg-blue-600 text-white rounded-lg flex items-center gap-2 shadow-lg shadow-blue-200 animate-pulse">
                                 <ShieldCheck size={14} />
@@ -631,7 +648,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                 <div className="lg:col-span-1 space-y-6">
                     <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
                          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full blur-[80px] -mr-16 -mt-16 opacity-30"></div>
-                         <h3 className="text-xl font-bold mb-6 relative z-10">Global Upload</h3>
+                         <h3 className="text-xl font-bold mb-6 relative z-10">{isProfessionalHub ? 'Professional Upload' : 'Global Upload'}</h3>
                          
                          <div className="space-y-4 relative z-10">
                             <div className="flex p-1 bg-white/10 rounded-2xl border border-white/10">
@@ -648,7 +665,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                         }}
                                         className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${uploadType === t ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white'}`}
                                     >
-                                        {t === 'roster' ? 'Student Data' : t === 'material' ? 'Lecture Material' : 'Audio Record'}
+                                        {t === 'roster' ? (isProfessionalHub ? 'Pro Students' : 'Student Data') : t === 'material' ? 'Lecture Material' : 'Audio Record'}
                                     </button>
                                 ))}
                             </div>
@@ -673,7 +690,10 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                 )}
                                 {uploadType === 'roster' && !fileHandle && (
                                     <p className="text-[10px] text-white/40 mt-2 text-center">
-                                        4 columns: <span className="text-white/60 font-bold">Full Name, Matric, Email, Phone</span>
+                                        {isProfessionalHub ? '3 columns: ' : '4 columns: '}
+                                        <span className="text-white/60 font-bold">
+                                            {isProfessionalHub ? 'Full Name, Email, Phone' : 'Full Name, Matric, Email, Phone'}
+                                        </span>
                                     </p>
                                 )}
                                 {uploadType === 'audio' && !fileHandle && (
@@ -944,7 +964,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                             )}
                                             <button 
                                                 onClick={() => {
-                                                    setPreviewFile(`/api/resources/${item.id}/download`); // Assuming this endpoint exists or just use a placeholder
+                                                    setPreviewFile(withHub(`/api/resources/${item.id}/download`));
                                                     setPreviewName(item.name);
                                                     setIsPreviewOpen(true);
                                                 }}
@@ -954,7 +974,7 @@ export default function ResourceHub({ addToast, token }: ResourceHubProps) {
                                             </button>
                                             <button 
                                                 onClick={() => {
-                                                    fetch(`/api/resources/${item.id}/download`, {
+                                                    fetch(withHub(`/api/resources/${item.id}/download`), {
                                                         headers: { 'Authorization': `Bearer ${token}` }
                                                     })
                                                     .then(res => res.blob())

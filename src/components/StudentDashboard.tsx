@@ -163,6 +163,11 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                     <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-lg text-xs font-bold uppercase tracking-wider font-mono">
                         {profile?.user?.matricNumber || 'MATRIC NOT FOUND'}
                     </span>
+                    {(profile?.user?.hubScope === 'professional' || profile?.user?.hub_scope === 'professional') && (
+                        <span className="px-3 py-1 bg-slate-900 text-white rounded-lg text-xs font-black uppercase tracking-wider">
+                            Professional Hub
+                        </span>
+                    )}
                     <span className="text-slate-500 font-medium text-sm">
                         • {profile?.user?.email}
                     </span>

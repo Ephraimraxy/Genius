@@ -32,7 +32,8 @@ import {
   CheckCircle2,
   Loader2,
   CalendarDays,
-  ServerCog
+  ServerCog,
+  Briefcase
 } from 'lucide-react';
 import { Tab } from '../App';
 
@@ -127,6 +128,7 @@ export default function Sidebar({
   const lecturerNavItems: { id: Tab; label: string; icon: React.ComponentType<any> | React.ReactNode; section?: string }[] = [
     { id: 'dashboard', label: 'Workspace Stats', icon: <img src="/gmijp-logo.png" alt="Logo" className="w-5 h-5 object-contain rounded-full bg-white p-0.5" />, section: 'Management' },
     { id: 'storage', label: 'Resource Hub', icon: Database },
+    { id: 'proHub', label: 'Pro Hub', icon: Briefcase },
     { id: 'lectureRecords', label: 'Manage Records', icon: Volume2, section: 'Academic' },
     { id: 'videoLectures', label: 'Video Lectures', icon: Video },
     { id: 'attendance', label: 'Attendance', icon: ClipboardList },

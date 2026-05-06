@@ -52,9 +52,12 @@ interface AcademicManagementProps {
     mode: 'attendance' | 'tests' | 'assignments' | 'exams' | 'materials' | 'records';
     addToast: (msg: string, type: ToastType) => void;
     token: string | null;
+    hub?: 'academic' | 'professional';
 }
 
-export default function AcademicManagement({ mode, addToast, token }: AcademicManagementProps) {
+export default function AcademicManagement({ mode, addToast, token, hub = 'academic' }: AcademicManagementProps) {
+    const isProfessionalHub = hub === 'professional';
+    const withHub = (url: string) => `${url}${url.includes('?') ? '&' : '?'}hub=${hub}`;
     const [isProcessing, setIsProcessing] = useState(false);
     const [showResourceSelector, setShowResourceSelector] = useState(false);
     const [hubResources, setHubResources] = useState<Resource[]>([]);
@@ -138,17 +141,17 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     useEffect(() => {
         if (token) {
-            fetch('/api/courses/categories', { headers: { 'Authorization': `Bearer ${token}` } })
+            fetch(withHub('/api/courses/categories'), { headers: { 'Authorization': `Bearer ${token}` } })
                 .then(res => res.json())
                 .then(data => { if(Array.isArray(data)) setCategories(data); })
                 .catch(console.error);
         }
-    }, [token]);
+    }, [token, hub]);
 
     const fetchRecords = async () => {
         setIsLoadingRecords(true);
         try {
-            const res = await fetch('/api/academic/tests', {
+            const res = await fetch(withHub('/api/academic/tests'), {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -171,7 +174,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     const fetchHubResourceContent = async (id: number) => {
         try {
-            const res = await fetch(`/api/resources/${id}`, {
+            const res = await fetch(withHub(`/api/resources/${id}`), {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -186,7 +189,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const fetchHubResources = async (type: 'roster' | 'material' | 'audio') => {
         setIsLoadingHub(true);
         try {
-            const res = await fetch('/api/resources', {
+            const res = await fetch(withHub('/api/resources'), {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -203,7 +206,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         } else if (mode === 'materials') {
             fetchHubResources('material');
         }
-    }, [mode]);
+    }, [mode, hub]);
 
     const handleOpenSelector = () => {
         const type = mode === 'attendance' ? 'roster' : 'material';
@@ -293,10 +296,11 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                 blooms_level: assessBlooms,
                 max_attempts: parseInt(assessMaxAttempts) || 1,
                 is_pool: assessIsPool,
-                pool_size: assessIsPool ? parseInt(assessPoolSize) || 40 : 0
+                pool_size: assessIsPool ? parseInt(assessPoolSize) || 40 : 0,
+                hub
             };
 
-            const res = await fetch('/api/exams', {
+            const res = await fetch(withHub('/api/exams'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(body)
@@ -325,7 +329,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const loadSlots = async (examId: number) => {
         setViewingSlotsFor(examId);
         try {
-            const res = await fetch(`/api/exams/${examId}/slots`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(withHub(`/api/exams/${examId}/slots`), { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setAssessSlots(Array.isArray(data) ? data : []);
         } catch {
@@ -336,7 +340,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const resendSlotNotification = async (examId: number, slotId: number) => {
         setResendingSlotId(slotId);
         try {
-            const res = await fetch(`/api/exams/${examId}/slots/${slotId}/resend`, {
+            const res = await fetch(withHub(`/api/exams/${examId}/slots/${slotId}/resend`), {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
             });
@@ -358,7 +362,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             message: 'Delete this record? This cannot be undone.',
             onConfirm: async () => {
                 try {
-                    await fetch(`/api/exams/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                    await fetch(withHub(`/api/exams/${id}`), { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
                     addToast('Deleted', 'info');
                     fetchRecords();
                 } catch { addToast('Delete failed', 'error'); }
@@ -371,7 +375,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         if (publishingId !== null) return; // prevent double-click
         setPublishingId(id);
         try {
-            const res = await fetch(`/api/exams/${id}/publish`, {
+            const res = await fetch(withHub(`/api/exams/${id}/publish`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ published_status: next }),
@@ -398,7 +402,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     const fetchAttendSessions = async () => {
         try {
-            const res = await fetch('/api/attendance/sessions', { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(withHub('/api/attendance/sessions'), { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setAttendSessions(Array.isArray(data) ? data : []);
         } catch { console.error('Failed to fetch attendance sessions'); }
@@ -408,10 +412,10 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         e.preventDefault();
         if (!attendTitle.trim() || !attendDate) return addToast('Title and date are required', 'error');
         try {
-            const res = await fetch('/api/attendance/sessions', {
+            const res = await fetch(withHub('/api/attendance/sessions'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ title: attendTitle, course_code: attendCourseCode, category_id: attendCategoryId || null, session_date: attendDate, is_paid: attendIsPaid, price: parseInt(attendPrice) || 0 })
+                body: JSON.stringify({ title: attendTitle, course_code: attendCourseCode, category_id: attendCategoryId || null, session_date: attendDate, is_paid: attendIsPaid, price: parseInt(attendPrice) || 0, hub })
             });
             if (res.ok) {
                 addToast('Session created', 'success');
@@ -423,7 +427,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     const updateAttendSession = async (id: number, fields: any) => {
         try {
-            await fetch(`/api/attendance/sessions/${id}`, {
+            await fetch(withHub(`/api/attendance/sessions/${id}`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(fields)
@@ -437,7 +441,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             message: 'Delete this attendance session?',
             onConfirm: async () => {
                 try {
-                    await fetch(`/api/attendance/sessions/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                    await fetch(withHub(`/api/attendance/sessions/${id}`), { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
                     addToast('Session deleted', 'info');
                     fetchAttendSessions();
                 } catch { addToast('Delete failed', 'error'); }
@@ -448,7 +452,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const loadRollCall = async (sessionId: number) => {
         setViewingRollFor(sessionId);
         try {
-            const res = await fetch(`/api/attendance/sessions/${sessionId}/records`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(withHub(`/api/attendance/sessions/${sessionId}/records`), { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setRollRecords(Array.isArray(data) ? data : []);
         } catch { addToast('Failed to load roll call', 'error'); }
@@ -457,7 +461,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const loadSubmissions = async (examId: number) => {
         setViewingSubsFor(examId);
         try {
-            const res = await fetch(`/api/assignments/${examId}/submissions`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(withHub(`/api/assignments/${examId}/submissions`), { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setSubmissions(Array.isArray(data) ? data : []);
         } catch { addToast('Failed to load submissions', 'error'); }
@@ -465,7 +469,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     const gradeSubmission = async (subId: number) => {
         try {
-            await fetch(`/api/assignments/submissions/${subId}/grade`, {
+            await fetch(withHub(`/api/assignments/submissions/${subId}/grade`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ grade: gradeInput, feedback: feedbackInput })
@@ -480,7 +484,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const loadExamResults = async (examId: number) => {
         setViewingResultsFor(examId);
         try {
-            const res = await fetch(`/api/exams/${examId}/results`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(withHub(`/api/exams/${examId}/results`), { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setExamResults(Array.isArray(data) ? data : []);
         } catch { addToast('Failed to load results', 'error'); }
@@ -489,7 +493,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
     const loadStudentAnswers = async (examId: number, studentId: number, name: string) => {
         setViewingAnswersFor({ examId, studentId, name });
         try {
-            const res = await fetch(`/api/exams/${examId}/answers/${studentId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(withHub(`/api/exams/${examId}/answers/${studentId}`), { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setStudentAnswers(Array.isArray(data) ? data : []);
         } catch { addToast('Failed to load answers', 'error'); }
@@ -500,7 +504,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
             message: "Clear this student's result? They will be able to retake.",
             onConfirm: async () => {
                 try {
-                    await fetch(`/api/exams/${examId}/results/${studentId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+                    await fetch(withHub(`/api/exams/${examId}/results/${studentId}`), { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
                     addToast('Result cleared', 'success');
                     loadExamResults(examId);
                 } catch { addToast('Failed to clear result', 'error'); }
@@ -514,7 +518,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
 
     const updateSettings = async (itemId: number, isResource: boolean, settings: { price: number; is_available: boolean; is_paid: boolean }) => {
         try {
-            const endpoint = isResource ? `/api/resources/${itemId}/settings` : `/api/exams/${itemId}/settings`;
+            const endpoint = withHub(isResource ? `/api/resources/${itemId}/settings` : `/api/exams/${itemId}/settings`);
             const res = await fetch(endpoint, {
                 method: 'PUT',
                 headers: {
@@ -548,6 +552,10 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
         };
         const current = titles[mode];
         const Icon = current.icon;
+        const title = isProfessionalHub ? `Professional ${current.title}` : current.title;
+        const desc = isProfessionalHub
+            ? 'This professional hub is separated from the normal academic workspace.'
+            : current.desc;
 
         return (
             <div className="mb-10">
@@ -556,8 +564,8 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                         <Icon size={28} />
                     </div>
                     <div>
-                        <h2 className="text-3xl font-black text-slate-900 tracking-tight">{current.title}</h2>
-                        <p className="text-slate-500 font-medium">{current.desc}</p>
+                        <h2 className="text-3xl font-black text-slate-900 tracking-tight">{title}</h2>
+                        <p className="text-slate-500 font-medium">{desc}</p>
                     </div>
                 </div>
             </div>
@@ -771,7 +779,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                                     onClick={async () => {
                                         setIsDownloadingRoll(true);
                                         try {
-                                            const res = await fetch(`/api/attendance/sessions/${viewingRollFor}/records/pdf`, {
+                                            const res = await fetch(withHub(`/api/attendance/sessions/${viewingRollFor}/records/pdf`), {
                                                 headers: { 'Authorization': `Bearer ${token}` }
                                             });
                                             if (!res.ok) throw new Error('Failed to generate PDF');
@@ -1140,7 +1148,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                                         onClick={() => {
                                             const t = localStorage.getItem('token') || '';
                                             const a = document.createElement('a');
-                                            a.href = `/api/transcripts/exam/${viewingResultsFor}?token=${encodeURIComponent(t)}`;
+                                            a.href = withHub(`/api/transcripts/exam/${viewingResultsFor}?token=${encodeURIComponent(t)}`);
                                             (a as any).setAttribute('download', `class-report-${viewingResultsFor}.pdf`);
                                             document.body.appendChild(a);
                                             a.click();
@@ -1178,7 +1186,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                                                 onClick={() => {
                                                     const t = localStorage.getItem('token') || '';
                                                     const a = document.createElement('a');
-                                                    a.href = `/api/transcripts/student/${r.user_id}?token=${encodeURIComponent(t)}`;
+                                                    a.href = withHub(`/api/transcripts/student/${r.user_id}?token=${encodeURIComponent(t)}`);
                                                     (a as any).setAttribute('download', `transcript-${r.student_name?.replace(/\s+/g,'-') || r.user_id}.pdf`);
                                                     document.body.appendChild(a);
                                                     a.click();
@@ -1487,7 +1495,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                                             <div className="flex items-center gap-2">
                                                 {s.grade && <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-black rounded-lg">{s.grade}</span>}
                                                 {s.file_name && (
-                                                    <a href={`/api/assignments/submissions/${s.id}/file`} target="_blank"
+                                                    <a href={withHub(`/api/assignments/submissions/${s.id}/file`)} target="_blank"
                                                         className="px-3 py-1 bg-blue-50 text-blue-600 text-xs font-black rounded-lg hover:bg-blue-100 transition-all flex items-center gap-1">
                                                         <DownloadIcon size={12} /> {s.file_name}
                                                     </a>
@@ -1608,7 +1616,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             </div>
                             <button 
                                 onClick={() => {
-                                    setPreviewFile(`/api/resources/${item.id}/download`);
+                                    setPreviewFile(withHub(`/api/resources/${item.id}/download`));
                                     setPreviewName(item.name);
                                     setIsPreviewOpen(true);
                                 }}
@@ -1694,7 +1702,7 @@ export default function AcademicManagement({ mode, addToast, token }: AcademicMa
                             </div>
                             <button 
                                 onClick={() => {
-                                    setPreviewFile(`/api/resources/${item.id}/download`);
+                                    setPreviewFile(withHub(`/api/resources/${item.id}/download`));
                                     setPreviewName(item.name);
                                     setIsPreviewOpen(true);
                                 }}
