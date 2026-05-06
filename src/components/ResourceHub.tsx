@@ -15,6 +15,7 @@ import {
     Download,
     Mic,
     Volume2,
+    Video,
     Eye,
     AlertCircle,
     Wifi,
@@ -30,9 +31,11 @@ import FilePreviewModal from './FilePreviewModal';
 import { ToastType } from './ToastSystem';
 import { analyzeFile, FileAnalysis, formatFileSize } from '../utils/fileValidation';
 
+type ResourceType = 'roster' | 'material' | 'audio' | 'video';
+
 interface Resource {
     id: number;
-    type: 'roster' | 'material' | 'audio';
+    type: ResourceType;
     name: string;
     status: 'ready' | 'failed' | 'pending' | 'short';
     created_at: string;
@@ -45,7 +48,7 @@ interface ResourceHubProps {
     addToast: (msg: string, type: ToastType) => void;
     token: string | null;
     hub?: 'academic' | 'professional';
-    initialUploadType?: 'roster' | 'material' | 'audio';
+    initialUploadType?: ResourceType;
 }
 
 export default function ResourceHub({ addToast, token, hub = 'academic', initialUploadType = 'roster' }: ResourceHubProps) {
@@ -60,7 +63,7 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
     const [audioAnalysis, setAudioAnalysis] = useState<FileAnalysis | null>(null);
     const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
     const audioXhrRef = useRef<XMLHttpRequest | null>(null);
-    const [uploadType, setUploadType] = useState<'roster' | 'material' | 'audio'>(initialUploadType);
+    const [uploadType, setUploadType] = useState<ResourceType>(initialUploadType);
     const [fileHandle, setFileHandle] = useState<File | null>(null);
     const [previewFile, setPreviewFile] = useState<File | string | null>(null);
     const [previewName, setPreviewName] = useState<string>('');
@@ -323,16 +326,17 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        const isMediaUpload = uploadType === 'audio' || uploadType === 'video';
         setFileHandle(file);
         setAudioAnalysis(null);
         setAudioUploadError(null);
         setUploadProgress(0);
         setUploadStatusMsg('');
 
-        if (uploadType === 'audio') {
+        if (isMediaUpload) {
             // Small delay for visual "analysing" feedback
             setTimeout(() => {
-                const analysis = analyzeFile(file, 'audio');
+                const analysis = analyzeFile(file, uploadType);
                 setAudioAnalysis(analysis);
                 if (analysis.error) {
                     setAudioUploadError(analysis.error);
@@ -343,6 +347,7 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
 
     const processUpload = async () => {
         if (!fileHandle) return;
+        const isMediaUpload = uploadType === 'audio' || uploadType === 'video';
 
         // For roster, we must first ensure category is selected
         if (uploadType === 'roster' && !showBatchModal && !selectedCatId && !newCatName) {
@@ -350,15 +355,15 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
             return;
         }
 
-        // Validate audio before uploading
-        if (uploadType === 'audio') {
+        // Validate media before uploading
+        if (isMediaUpload) {
             if (audioAnalysis?.error) {
                 addToast(audioAnalysis.error, 'error');
                 return;
             }
             if (!audioAnalysis) {
                 // run analysis now if not yet done
-                const analysis = analyzeFile(fileHandle, 'audio');
+                const analysis = analyzeFile(fileHandle, uploadType);
                 setAudioAnalysis(analysis);
                 if (analysis.error) {
                     setAudioUploadError(analysis.error);
@@ -374,11 +379,11 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
         setUploadStatusMsg('Preparing upload...');
 
         // ─── AUDIO: Upload directly to R2 via XHR for progress tracking ───
-        if (uploadType === 'audio') {
+        if (isMediaUpload) {
             try {
                 const formData = new FormData();
                 formData.append('file', fileHandle);
-                formData.append('type', 'audio');
+                formData.append('type', uploadType);
                 formData.append('name', fileHandle.name);
                 formData.append('hub', hub);
                 if (selectedCatId) formData.append('categoryId', String(selectedCatId));
@@ -409,18 +414,18 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                             try {
                                 const err = JSON.parse(xhr.responseText);
                                 if (err.error) msg = err.error;
-                                else if (xhr.status === 413) msg = 'File is too large. Maximum is 500 MB for audio.';
-                                else if (xhr.status === 415) msg = 'File format rejected by server. Try converting to MP3 or WAV.';
+                                else if (xhr.status === 413) msg = uploadType === 'video' ? 'File is too large. Maximum is 2 GB for video.' : 'File is too large. Maximum is 500 MB for audio.';
+                                else if (xhr.status === 415) msg = uploadType === 'video' ? 'File format rejected by server. Try converting to MP4.' : 'File format rejected by server. Try converting to MP3 or WAV.';
                                 else if (xhr.status === 500) msg = 'Server error during upload. Please try again.';
                             } catch {
-                                if (xhr.status === 413) msg = 'File is too large. Maximum is 500 MB for audio.';
+                                if (xhr.status === 413) msg = uploadType === 'video' ? 'File is too large. Maximum is 2 GB for video.' : 'File is too large. Maximum is 500 MB for audio.';
                             }
                             reject(new Error(msg));
                         }
                     };
                     xhr.onerror = () => reject(new Error('Network error — check your internet connection.'));
                     xhr.ontimeout = () => reject(new Error('Upload timed out. Try a smaller file or check your connection.'));
-                    xhr.timeout = 20 * 60 * 1000;
+                    xhr.timeout = (uploadType === 'video' ? 30 : 20) * 60 * 1000;
 
                     xhr.open('POST', withHub('/api/resources/upload/file'));
                     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -520,7 +525,7 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
             });
             const data = await res.json();
             if (data.success) {
-                addToast('Material uploaded successfully', 'success');
+                addToast(`${uploadType === 'video' ? 'Video' : 'Material'} uploaded successfully`, 'success');
                 fetchResources();
                 setFileHandle(null);
             } else {
@@ -651,8 +656,8 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                          <h3 className="text-xl font-bold mb-6 relative z-10">{isProfessionalHub ? 'Professional Upload' : 'Global Upload'}</h3>
                          
                          <div className="space-y-4 relative z-10">
-                            <div className="flex p-1 bg-white/10 rounded-2xl border border-white/10">
-                                {(['roster', 'material', 'audio'] as const).map(t => (
+                            <div className="grid grid-cols-2 p-1 bg-white/10 rounded-2xl border border-white/10 gap-1">
+                                {(['roster', 'material', 'audio', 'video'] as const).map(t => (
                                     <button
                                         key={t}
                                         onClick={() => {
@@ -663,29 +668,33 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                                             setUploadProgress(0);
                                             setUploadStatusMsg('');
                                         }}
-                                        className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${uploadType === t ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white'}`}
+                                        className={`py-3 px-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${uploadType === t ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white'}`}
                                     >
-                                        {t === 'roster' ? (isProfessionalHub ? 'Pro Students' : 'Student Data') : t === 'material' ? 'Lecture Material' : 'Audio Record'}
+                                        {t === 'roster' ? (isProfessionalHub ? 'Pro Students' : 'Student Data') : t === 'material' ? 'Material' : t === 'audio' ? 'Audio' : 'Video'}
                                     </button>
                                 ))}
                             </div>
 
                             <div className={`border-2 border-dashed rounded-[2rem] p-8 text-center transition-all cursor-pointer relative group
-                                ${audioAnalysis?.error && uploadType === 'audio' ? 'border-rose-400/50 bg-rose-900/10' :
-                                  audioAnalysis && !audioAnalysis.error && uploadType === 'audio' ? 'border-indigo-400/60 bg-indigo-900/10' :
+                                ${audioAnalysis?.error && (uploadType === 'audio' || uploadType === 'video') ? 'border-rose-400/50 bg-rose-900/10' :
+                                  audioAnalysis && !audioAnalysis.error && (uploadType === 'audio' || uploadType === 'video') ? 'border-indigo-400/60 bg-indigo-900/10' :
                                   'border-white/20 hover:border-blue-400 hover:bg-white/5'}`}>
                                 <input
                                     type="file"
                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                    accept={uploadType === 'roster' ? '.csv' : uploadType === 'audio' ? '.mp3,.wav,.flac,.aac,.ogg,.opus,.m4a,.wma,.aiff,.aif,.amr,.webm,.caf' : '.pdf,.docx,.doc,.pptx'}
+                                    accept={uploadType === 'roster' ? '.csv' : uploadType === 'audio' ? '.mp3,.wav,.flac,.aac,.ogg,.opus,.m4a,.wma,.aiff,.aif,.amr,.webm,.caf,audio/*' : uploadType === 'video' ? '.mp4,.mov,.mkv,.webm,.avi,.flv,.wmv,.m4v,.3gp,.ogv,.mpeg,.mpg,video/*' : '.pdf,.docx,.doc,.pptx'}
                                     onChange={handleFileUpload}
                                     disabled={isUploading}
                                 />
-                                <Upload className={`mx-auto mb-3 transition-colors ${audioAnalysis?.error && uploadType === 'audio' ? 'text-rose-400' : audioAnalysis && uploadType === 'audio' ? 'text-indigo-400' : 'text-white/30 group-hover:text-blue-400'}`} size={28} />
+                                {uploadType === 'video' ? (
+                                    <Video className={`mx-auto mb-3 transition-colors ${audioAnalysis?.error ? 'text-rose-400' : audioAnalysis ? 'text-indigo-400' : 'text-white/30 group-hover:text-blue-400'}`} size={28} />
+                                ) : (
+                                    <Upload className={`mx-auto mb-3 transition-colors ${audioAnalysis?.error && uploadType === 'audio' ? 'text-rose-400' : audioAnalysis && uploadType === 'audio' ? 'text-indigo-400' : 'text-white/30 group-hover:text-blue-400'}`} size={28} />
+                                )}
                                 <p className="font-bold text-sm">
                                     {fileHandle ? fileHandle.name : 'Choose File'}
                                 </p>
-                                {fileHandle && uploadType === 'audio' && (
+                                {fileHandle && (uploadType === 'audio' || uploadType === 'video') && (
                                     <p className="text-[10px] text-white/50 mt-1">{formatFileSize(fileHandle.size)}</p>
                                 )}
                                 {uploadType === 'roster' && !fileHandle && (
@@ -701,7 +710,12 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                                         MP3, WAV, FLAC, AAC, OGG, M4A, OPUS and more
                                     </p>
                                 )}
-                                {fileHandle && uploadType !== 'audio' && (
+                                {uploadType === 'video' && !fileHandle && (
+                                    <p className="text-[10px] text-white/40 mt-2">
+                                        MP4, MOV, MKV, WEBM, AVI and other lecture video formats
+                                    </p>
+                                )}
+                                {fileHandle && uploadType !== 'audio' && uploadType !== 'video' && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -716,9 +730,9 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                                 )}
                             </div>
 
-                            {/* Audio analysis feedback panel */}
+                            {/* Media analysis feedback panel */}
                             <AnimatePresence>
-                                {uploadType === 'audio' && fileHandle && audioAnalysis && !isUploading && (
+                                {(uploadType === 'audio' || uploadType === 'video') && fileHandle && audioAnalysis && !isUploading && (
                                     <motion.div
                                         initial={{ opacity: 0, y: 6 }}
                                         animate={{ opacity: 1, y: 0 }}
@@ -755,9 +769,9 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                                 )}
                             </AnimatePresence>
 
-                            {/* Audio upload progress */}
+                            {/* Media upload progress */}
                             <AnimatePresence>
-                                {uploadType === 'audio' && isUploading && (
+                                {(uploadType === 'audio' || uploadType === 'video') && isUploading && (
                                     <motion.div
                                         initial={{ opacity: 0, y: 4 }}
                                         animate={{ opacity: 1, y: 0 }}
@@ -781,9 +795,9 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                                 )}
                             </AnimatePresence>
 
-                            {/* Audio upload error */}
+                            {/* Media upload error */}
                             <AnimatePresence>
-                                {uploadType === 'audio' && audioUploadError && !isUploading && !audioAnalysis?.error && (
+                                {(uploadType === 'audio' || uploadType === 'video') && audioUploadError && !isUploading && !audioAnalysis?.error && (
                                     <motion.div
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: 1 }}
@@ -801,13 +815,13 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
 
                             <button
                                 onClick={processUpload}
-                                disabled={!fileHandle || isUploading || (uploadType === 'audio' && !!audioAnalysis?.error)}
-                                className={`w-full ${uploadType === 'audio' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'} text-white font-black py-4 rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-xl flex items-center justify-center gap-2`}
+                                disabled={!fileHandle || isUploading || ((uploadType === 'audio' || uploadType === 'video') && !!audioAnalysis?.error)}
+                                className={`w-full ${uploadType === 'audio' || uploadType === 'video' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'} text-white font-black py-4 rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-xl flex items-center justify-center gap-2`}
                             >
-                                {isUploading ? <RefreshCw className="animate-spin" size={20} /> : (uploadType === 'audio' ? <Mic size={20} /> : <ShieldCheck size={20} />)}
+                                {isUploading ? <RefreshCw className="animate-spin" size={20} /> : (uploadType === 'audio' ? <Mic size={20} /> : uploadType === 'video' ? <Video size={20} /> : <ShieldCheck size={20} />)}
                                 {isUploading
-                                    ? (uploadType === 'audio' ? `Uploading ${uploadProgress}%...` : 'Sanitizing...')
-                                    : (uploadType === 'audio' ? (audioUploadError ? 'Retry Upload' : 'Upload Audio') : 'Upload & Sanitize')}
+                                    ? ((uploadType === 'audio' || uploadType === 'video') ? `Uploading ${uploadProgress}%...` : 'Sanitizing...')
+                                    : (uploadType === 'audio' ? (audioUploadError ? 'Retry Upload' : 'Upload Audio') : uploadType === 'video' ? (audioUploadError ? 'Retry Upload' : 'Upload Video') : 'Upload & Sanitize')}
                             </button>
                             {uploadType === 'roster' && (
                                 <button
@@ -897,10 +911,12 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                                             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm ${
                                                 item.type === 'roster' ? 'bg-indigo-50 text-indigo-600' : 
                                                 item.type === 'audio' ? 'bg-rose-50 text-rose-600' :
+                                                item.type === 'video' ? 'bg-violet-50 text-violet-600' :
                                                 'bg-amber-50 text-amber-600'
                                             }`}>
                                                 {item.type === 'roster' ? <Users size={24} /> : 
                                                  item.type === 'audio' ? <Volume2 size={24} /> : 
+                                                 item.type === 'video' ? <Video size={24} /> :
                                                  <FileText size={24} />}
                                             </div>
                                             <div>
@@ -910,7 +926,7 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                                                     <div className="w-1 h-1 bg-slate-300 rounded-full"></div>
                                                     <span className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1 ${item.status === 'ready' ? 'text-emerald-600' : 'text-rose-500'}`}>
                                                         {item.status === 'ready' ? <CheckCircle size={10} /> : <AlertTriangle size={10} />}
-                                                        {item.status === 'ready' ? 'Sanitized & Ready' : (item.status === 'failed' ? 'Checks Failed' : 'Resource Flagged')}
+                                                        {item.status === 'ready' ? (item.type === 'audio' || item.type === 'video' ? 'Uploaded & Ready' : 'Sanitized & Ready') : (item.status === 'failed' ? 'Checks Failed' : 'Resource Flagged')}
                                                     </span>
                                                 </div>
                                             </div>

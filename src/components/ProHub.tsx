@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Briefcase, Users, BookOpen, Mic, ClipboardCheck, FileUp, GraduationCap, CalendarDays } from 'lucide-react';
+import { Briefcase, Users, BookOpen, Mic, Video, ClipboardCheck, FileUp, GraduationCap, CalendarDays } from 'lucide-react';
 import ResourceHub from './ResourceHub';
 import AcademicManagement from './AcademicManagement';
 import { ToastType } from './ToastSystem';
@@ -9,12 +9,13 @@ interface ProHubProps {
   token: string | null;
 }
 
-type ProHubSection = 'students' | 'materials' | 'records' | 'tests' | 'assignments' | 'exams' | 'attendance';
+type ProHubSection = 'students' | 'materials' | 'records' | 'videos' | 'tests' | 'assignments' | 'exams' | 'attendance';
 
 const sections: Array<{ id: ProHubSection; label: string; icon: React.ComponentType<any> }> = [
   { id: 'students', label: 'Students', icon: Users },
   { id: 'materials', label: 'Materials', icon: BookOpen },
   { id: 'records', label: 'Audio', icon: Mic },
+  { id: 'videos', label: 'Videos', icon: Video },
   { id: 'tests', label: 'Tests', icon: ClipboardCheck },
   { id: 'assignments', label: 'Assignments', icon: FileUp },
   { id: 'exams', label: 'Exams', icon: GraduationCap },
@@ -26,7 +27,10 @@ export default function ProHub({ addToast, token }: ProHubProps) {
 
   const renderSection = () => {
     if (section === 'students') {
-      return <ResourceHub addToast={addToast} token={token} hub="professional" initialUploadType="roster" />;
+      return <div key="pro-students"><ResourceHub addToast={addToast} token={token} hub="professional" initialUploadType="roster" /></div>;
+    }
+    if (section === 'videos') {
+      return <div key="pro-videos"><ResourceHub addToast={addToast} token={token} hub="professional" initialUploadType="video" /></div>;
     }
     return <AcademicManagement mode={section} addToast={addToast} token={token} hub="professional" />;
   };
