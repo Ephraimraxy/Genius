@@ -21,7 +21,7 @@ interface GeniusPaymentModalProps {
   courseId: string;
   token: string | null;
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
-  type?: 'attendance' | 'material' | 'assessment' | 'audio' | 'portal_entry' | 'republish';
+  type?: 'attendance' | 'material' | 'assessment' | 'audio' | 'portal_entry' | 'program' | 'republish';
   onPaymentReference?: (ref: string) => void; // Called with the reference just before onSuccess for republish
 }
 
@@ -111,6 +111,9 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
       } else if (type === 'portal_entry') {
         endpoint = '/api/payment/portal-entry/initialize';
         body = { amount, gateway: selectedGateway, mode: 'inline' };
+      } else if (type === 'program') {
+        endpoint = '/api/payment/program/initialize';
+        body = { amount, program_id: parseInt(courseId), gateway: selectedGateway, mode: 'inline' };
       } else if (type === 'republish') {
         endpoint = '/api/payment/initialize';
         body = { amount, type: 'republish', gateway: selectedGateway, mode: 'inline' };
@@ -503,7 +506,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
           </div>
           
           <h2 className="text-3xl md:text-4xl font-black mb-4 tracking-tight leading-tight relative z-10">
-            {type === 'portal_entry' ? 'Portal Access' : type === 'attendance' ? 'Sign Attendance' : type === 'material' ? 'Unlock Material' : type === 'audio' ? 'Unlock Audio' : type === 'republish' ? 'Republish Manuscript' : 'Unlock Assessment'}
+            {type === 'portal_entry' ? 'Portal Access' : type === 'attendance' ? 'Sign Attendance' : type === 'material' ? 'Unlock Material' : type === 'audio' ? 'Unlock Audio' : type === 'program' ? 'Enroll Program' : type === 'republish' ? 'Republish Manuscript' : 'Unlock Assessment'}
           </h2>
           <p className="text-red-100 mb-8 font-medium leading-relaxed relative z-10 text-sm">
             Pay the required token to access <span className="font-bold text-white">{courseName}</span>.
@@ -632,7 +635,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                   <h3 className="text-2xl font-black text-slate-900">Payment Details</h3>
                   <p className="text-slate-500 text-sm font-medium">
                     Via <span className="font-bold text-[#800000]">{gateway === 'kora' ? 'Kora' : 'Paystack'}</span>
-                    {' — '}Complete payment to {type === 'attendance' ? "log today's attendance" : type === 'republish' ? 'trigger republication' : "gain instant access"}.
+                    {' — '}Complete payment to {type === 'attendance' ? "log today's attendance" : type === 'program' ? 'unlock this professional program' : type === 'republish' ? 'trigger republication' : "gain instant access"}.
                   </p>
                 </div>
                 {/* Live Countdown Timer */}
@@ -654,7 +657,7 @@ export default function GeniusPaymentModal({ onClose, onSuccess, amount, courseN
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{type === 'attendance' ? 'Course' : type === 'material' ? 'Material ID' : type === 'republish' ? 'Paper ID' : 'Assessment ID'}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{type === 'attendance' ? 'Course' : type === 'material' ? 'Material ID' : type === 'program' ? 'Program ID' : type === 'republish' ? 'Paper ID' : 'Assessment ID'}</p>
                   <p className="font-bold text-slate-700">{courseId}</p>
                 </div>
               </div>

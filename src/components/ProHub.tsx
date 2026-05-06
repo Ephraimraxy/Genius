@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Briefcase, Users, BookOpen, Mic, Video, ClipboardCheck, FileUp, GraduationCap, CalendarDays } from 'lucide-react';
+import { Briefcase, Users, BookOpen, Mic, Video, ClipboardCheck, FileUp, GraduationCap, Layers3 } from 'lucide-react';
 import ResourceHub from './ResourceHub';
 import AcademicManagement from './AcademicManagement';
+import ProfessionalProgramManager from './ProfessionalProgramManager';
 import { ToastType } from './ToastSystem';
 
 interface ProHubProps {
@@ -9,9 +10,10 @@ interface ProHubProps {
   token: string | null;
 }
 
-type ProHubSection = 'students' | 'materials' | 'records' | 'videos' | 'tests' | 'assignments' | 'exams' | 'attendance';
+type ProHubSection = 'programs' | 'students' | 'materials' | 'records' | 'videos' | 'tests' | 'assignments' | 'exams';
 
 const sections: Array<{ id: ProHubSection; label: string; icon: React.ComponentType<any> }> = [
+  { id: 'programs', label: 'Programs', icon: Layers3 },
   { id: 'students', label: 'Students', icon: Users },
   { id: 'materials', label: 'Materials', icon: BookOpen },
   { id: 'records', label: 'Audio', icon: Mic },
@@ -19,13 +21,15 @@ const sections: Array<{ id: ProHubSection; label: string; icon: React.ComponentT
   { id: 'tests', label: 'Tests', icon: ClipboardCheck },
   { id: 'assignments', label: 'Assignments', icon: FileUp },
   { id: 'exams', label: 'Exams', icon: GraduationCap },
-  { id: 'attendance', label: 'Attendance', icon: CalendarDays },
 ];
 
 export default function ProHub({ addToast, token }: ProHubProps) {
-  const [section, setSection] = useState<ProHubSection>('students');
+  const [section, setSection] = useState<ProHubSection>('programs');
 
   const renderSection = () => {
+    if (section === 'programs') {
+      return <ProfessionalProgramManager addToast={addToast} token={token} />;
+    }
     if (section === 'students') {
       return <div key="pro-students"><ResourceHub addToast={addToast} token={token} hub="professional" initialUploadType="roster" /></div>;
     }

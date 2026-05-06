@@ -522,6 +522,7 @@ export default function App() {
     const isAdmin = role === 'super_admin' || role === 'admin';
     const isLecturer = role === 'tenant_admin';
     const isStudent = role === 'student';
+    const isProfessionalStudent = isStudent && (profile?.user?.hubScope === 'professional' || profile?.user?.hub_scope === 'professional');
 
   const renderContent = () => {
     if (token && !profile) {
@@ -576,7 +577,9 @@ export default function App() {
     if (isStudent && activeTab !== 'profile') {
         switch (activeTab) {
             case 'performance': return <StudentPerformance profile={profile} onNavigate={setActiveTab} />;
-            case 'attendance': return <StudentAttendancePage token={token!} addToast={addToast} onNavigate={setActiveTab} />;
+            case 'attendance': return isProfessionalStudent
+                ? <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view="dashboard" token={token} confirm={confirm} />
+                : <StudentAttendancePage token={token!} addToast={addToast} onNavigate={setActiveTab} />;
             case 'guidelines': return <SecurityGuidelines onNavigate={setActiveTab} />;
             case 'materials': return <StudentMaterialView addToast={addToast} token={token} />;
             default: return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} confirm={confirm} />;

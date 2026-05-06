@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BookOpen, FileText, Download, Lock, CheckCircle, Search, Loader2, Volume2, Play, X, Eye, Video } from 'lucide-react';
 import { ToastType } from './ToastSystem';
@@ -14,16 +14,31 @@ interface Material {
     price: number;
     is_paid: boolean;
     hasPaid: boolean;
+    professional_program_id?: number | null;
+    professional_course_id?: number | null;
+    program_name?: string | null;
+    course_title?: string | null;
+    program_price?: number;
 }
 
 interface VideoItem {
     id: number;
     name: string;
     file_url: string | null;
+    stream_url?: string | null;
     is_paid: boolean;
     price: number;
     hasPaid: boolean;
     created_at: string;
+    professional_program_id?: number | null;
+    professional_course_id?: number | null;
+    program_name?: string | null;
+    course_title?: string | null;
+    completion_ratio?: number;
+    watched_seconds?: number;
+    duration_seconds?: number;
+    last_position_seconds?: number;
+    completed?: boolean;
 }
 
 interface StudentMaterialViewProps {
@@ -49,6 +64,9 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
 
     // Video player state
     const [activeVideo, setActiveVideo] = useState<VideoItem | null>(null);
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const lastVideoTimeRef = useRef(0);
+    const lastProgressSentRef = useRef(0);
 
     // Preview state
     const [previewItem, setPreviewItem] = useState<{ name: string; text: string; wordCount: number; price: number } | null>(null);
@@ -93,8 +111,7 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
 
     const handleDownload = async (material: Material) => {
         if (material.is_paid && !material.hasPaid) {
-            setSelectedMaterial(material);
-            setShowPaymentModal(true);
+            beginPayment(material);
             return;
         }
         if (downloadingId === material.id) return; // prevent double-click
@@ -127,10 +144,26 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
         }
     };
 
+    const beginPayment = (item: Material | VideoItem) => {
+        setSelectedMaterial({
+            id: item.professional_program_id || item.id,
+            name: item.professional_program_id ? (item.program_name || 'Professional Program') : item.name,
+            type: (item as any).type || 'video',
+            created_at: item.created_at,
+            is_available: true,
+            price: item.professional_program_id ? Number((item as any).program_price ?? item.price ?? 0) : Number(item.price || 0),
+            is_paid: true,
+            hasPaid: false,
+            professional_program_id: item.professional_program_id || null,
+            program_name: item.program_name || null,
+            program_price: (item as any).program_price ?? item.price,
+        });
+        setShowPaymentModal(true);
+    };
+
     const handleAudioPlay = async (material: Material) => {
         if (material.is_paid && !material.hasPaid) {
-            setSelectedMaterial(material);
-            setShowPaymentModal(true);
+            beginPayment(material);
             return;
         }
         try {
@@ -143,6 +176,54 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
             setActiveAudio({ url, name: material.name });
         } catch (err: any) {
             addToast(friendlyError(err, 'generic'), 'error');
+        }
+    };
+
+    const openVideo = (video: VideoItem) => {
+        if (video.is_paid && !video.hasPaid) {
+            beginPayment(video);
+            return;
+        }
+        lastVideoTimeRef.current = Number(video.last_position_seconds || 0);
+        lastProgressSentRef.current = 0;
+        setActiveVideo(video);
+    };
+
+    const videoSource = (video: VideoItem) => {
+        if (video.file_url) return video.file_url;
+        const streamUrl = video.stream_url || `/api/student/videos/${video.id}/stream`;
+        return `${streamUrl}${streamUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`;
+    };
+
+    const reportVideoProgress = async (video: HTMLVideoElement | null, force = false) => {
+        if (!activeVideo?.professional_program_id || !video || !token) return;
+        const current = Math.max(0, Number(video.currentTime || 0));
+        const duration = Math.max(0, Number(video.duration || activeVideo.duration_seconds || 0));
+        const last = Math.max(0, Number(lastVideoTimeRef.current || 0));
+        const forwardDelta = current - last;
+        if (!force && (Date.now() - lastProgressSentRef.current < 5000 || forwardDelta <= 0.75)) return;
+        lastVideoTimeRef.current = current;
+        if (forwardDelta <= 0 || forwardDelta > 15) return;
+        lastProgressSentRef.current = Date.now();
+        try {
+            const res = await fetch(`/api/student/videos/${activeVideo.id}/progress`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ start: last, end: current, currentTime: current, duration })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.progress) {
+                setVideos(prev => prev.map(item => item.id === activeVideo.id ? {
+                    ...item,
+                    completion_ratio: Number(data.progress.completion_ratio || item.completion_ratio || 0),
+                    watched_seconds: Number(data.progress.watched_seconds || item.watched_seconds || 0),
+                    duration_seconds: Number(data.progress.duration_seconds || item.duration_seconds || 0),
+                    last_position_seconds: Number(data.progress.last_position_seconds || current),
+                    completed: !!data.progress.completed
+                } : item));
+            }
+        } catch {
+            // Non-blocking; playback should not be interrupted by telemetry retries.
         }
     };
 
@@ -376,13 +457,37 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
                                             <X size={20} />
                                         </button>
                                     </div>
-                                    {activeVideo.file_url ? (
+                                    {activeVideo.file_url || activeVideo.stream_url ? (
+                                        <>
+                                        {Number(activeVideo.last_position_seconds || 0) > 3 && (
+                                            <div className="px-6 py-3 bg-slate-800/80 border-b border-white/10 flex items-center justify-between gap-3">
+                                                <p className="text-xs font-bold text-slate-300">
+                                                    Resume point: {Math.floor(Number(activeVideo.last_position_seconds || 0) / 60)}m {Math.floor(Number(activeVideo.last_position_seconds || 0) % 60)}s
+                                                </p>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => { if (videoRef.current) videoRef.current.currentTime = Number(activeVideo.last_position_seconds || 0); }} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase">Resume</button>
+                                                    <button onClick={() => { if (videoRef.current) videoRef.current.currentTime = 0; lastVideoTimeRef.current = 0; }} className="px-3 py-1.5 bg-white/10 text-white rounded-lg text-[10px] font-black uppercase">Restart</button>
+                                                </div>
+                                            </div>
+                                        )}
                                         <video
-                                            src={activeVideo.file_url}
+                                            ref={videoRef}
+                                            src={videoSource(activeVideo)}
                                             controls
+                                            controlsList="nodownload"
+                                            disablePictureInPicture
                                             autoPlay
+                                            onLoadedMetadata={(event) => {
+                                                const resumeAt = Number(activeVideo.last_position_seconds || 0);
+                                                const el = event.currentTarget;
+                                                if (resumeAt > 3 && resumeAt < el.duration - 3) el.currentTime = resumeAt;
+                                            }}
+                                            onTimeUpdate={(event) => reportVideoProgress(event.currentTarget)}
+                                            onPause={(event) => reportVideoProgress(event.currentTarget, true)}
+                                            onEnded={(event) => reportVideoProgress(event.currentTarget, true)}
                                             className="w-full max-h-[70vh]"
                                         />
+                                        </>
                                     ) : (
                                         <div className="flex items-center justify-center h-48 text-slate-400">
                                             Video not available
@@ -413,20 +518,24 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
                                 </div>
                                 <div className="p-6">
                                     <h4 className="font-black text-slate-900 mb-1 leading-tight">{vid.name}</h4>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">
-                                        {new Date(vid.created_at).toLocaleDateString()}
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-3">
+                                        {vid.course_title || new Date(vid.created_at).toLocaleDateString()}
                                     </p>
+                                    {vid.professional_program_id && (
+                                        <div className="mb-4">
+                                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                <div className={`h-full ${vid.completed ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${Math.round(Number(vid.completion_ratio || 0) * 100)}%` }} />
+                                            </div>
+                                            <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                                {vid.completed ? 'Completed' : `${Math.round(Number(vid.completion_ratio || 0) * 100)}% watched - 80% required`}
+                                            </p>
+                                        </div>
+                                    )}
                                     <button
-                                        onClick={() => {
-                                            if (vid.is_paid && !vid.hasPaid) {
-                                                addToast('Purchase required to watch this video', 'info');
-                                                return;
-                                            }
-                                            setActiveVideo(vid);
-                                        }}
+                                        onClick={() => openVideo(vid)}
                                         className={`w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 font-black uppercase tracking-[0.12em] text-xs transition-all ${vid.is_paid && !vid.hasPaid ? 'bg-slate-900 text-white hover:bg-black' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                                     >
-                                        {vid.is_paid && !vid.hasPaid ? <><Lock size={14} /> Unlock Video</> : <><Play size={14} /> Watch Now</>}
+                                        {vid.is_paid && !vid.hasPaid ? <><Lock size={14} /> Enroll Program</> : <><Play size={14} /> {Number(vid.last_position_seconds || 0) > 3 ? 'Resume' : 'Watch Now'}</>}
                                     </button>
                                 </div>
                             </motion.div>
@@ -467,7 +576,7 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
                                     onClick={() => {
                                         setPreviewItem(null);
                                         const mat = materials.find(m => m.name === previewItem.name);
-                                        if (mat) { setSelectedMaterial(mat); setShowPaymentModal(true); }
+                                        if (mat) beginPayment(mat);
                                     }}
                                     className="shrink-0 bg-amber-600 text-white px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider hover:bg-amber-700 transition-colors flex items-center gap-2"
                                 >
@@ -493,9 +602,10 @@ export default function StudentMaterialView({ addToast, token }: StudentMaterial
                             setShowPaymentModal(false);
                             setSelectedMaterial(null);
                             fetchMaterials();
-                            addToast('Access Unlocked! You can now download.', 'success');
+                            fetchVideos();
+                            addToast('Access unlocked.', 'success');
                         }}
-                        type="material"
+                        type={selectedMaterial.professional_program_id ? 'program' : selectedMaterial.type === 'audio' ? 'audio' : 'material'}
                     />
                 )}
             </AnimatePresence>

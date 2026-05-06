@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, Calendar, Clock, CheckCircle2, AlertCircle, Download, Loader2 } from 'lucide-react';
-import { ToastType, useToasts } from './ToastSystem';
+import { BookOpen, Calendar, Clock, CheckCircle2, AlertCircle, Download, Loader2, Award, CreditCard } from 'lucide-react';
+import { ToastType } from './ToastSystem';
 import ExamProctoringModal from './ExamProctoringModal';
 import ActiveExamSession from './ActiveExamSession';
 import GeniusPaymentModal from './GeniusPaymentModal';
@@ -40,6 +40,9 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
     const [accessBlocked, setAccessBlocked] = useState(profile?.user?.accessBlocked || false);
     const [entryFee, setEntryFee] = useState(profile?.user?.entryFee || 0);
     const [showPortalPayment, setShowPortalPayment] = useState(false);
+    const [proHub, setProHub] = useState<any | null>(null);
+    const [showProgramPayment, setShowProgramPayment] = useState(false);
+    const isProfessionalStudent = profile?.user?.hubScope === 'professional' || profile?.user?.hub_scope === 'professional';
 
     // Unified Data Management (Genius Real-System Pattern)
     useEffect(() => {
@@ -56,6 +59,13 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                     setExams(data.assessments);
                 } else {
                     addToast("Failed to sync Genius records.", "error");
+                }
+                if (isProfessionalStudent) {
+                    const proRes = await fetch('/api/student/pro-hub', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const proData = await proRes.json();
+                    if (proRes.ok) setProHub(proData);
                 }
             } catch (err) {
                 addToast("Network error syncing records.", "error");
@@ -205,6 +215,54 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                 </div>
             </header>
 
+            {isProfessionalStudent && proHub?.program && (
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-slate-900 text-white rounded-[2rem] p-6 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-6"
+                >
+                    <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center shrink-0">
+                            <Award size={23} className="text-emerald-300" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300 mb-1">Professional Program</p>
+                            <h3 className="text-xl font-black">{proHub.program.name}</h3>
+                            <p className="text-sm text-slate-300 font-medium mt-1">
+                                {proHub.completion?.completedCourses || 0}/{proHub.completion?.courseCount || 0} courses complete - {proHub.completion?.percent || 0}% progress
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="min-w-40">
+                            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-400" style={{ width: `${proHub.completion?.percent || 0}%` }} />
+                            </div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">80% video watch required</p>
+                        </div>
+                        {!proHub.program.hasPaid && Number(proHub.program.price || 0) > 0 ? (
+                            <button onClick={() => setShowProgramPayment(true)} className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                                <CreditCard size={15} /> Pay {Number(proHub.program.price || 0).toLocaleString()}
+                            </button>
+                        ) : proHub.completion?.isComplete ? (
+                            <a href={`/api/student/pro-hub/programs/${proHub.program.id}/certificate?token=${encodeURIComponent(token || '')}`} className="px-5 py-3 bg-white text-slate-900 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                                <Award size={15} /> Certificate
+                            </a>
+                        ) : (
+                            <button onClick={() => onNavigate('materials')} className="px-5 py-3 bg-white/10 hover:bg-white/15 text-white rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                                <BookOpen size={15} /> Continue Learning
+                            </button>
+                        )}
+                    </div>
+                </motion.div>
+            )}
+
+            {isProfessionalStudent && proHub?.unpublished && (
+                <div className="p-5 bg-amber-50 border border-amber-100 rounded-[1.5rem] text-amber-800 text-sm font-bold">
+                    Your professional program is assigned but not published yet.
+                </div>
+            )}
+
             {/* Active Exams Banner */}
             {activeExams.length > 0 && activeExams[0] && (
                 <motion.div 
@@ -236,8 +294,8 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
             <AnimatePresence>
                 {showAssessmentPaymentModal && selectedAssessmentForPayment && (
                     <GeniusPaymentModal
-                        courseName={selectedAssessmentForPayment.course}
-                        courseId={selectedAssessmentForPayment.id.toString()}
+                        courseName={selectedAssessmentForPayment.payment_type === 'program' ? (selectedAssessmentForPayment.program_name || 'Professional Program') : selectedAssessmentForPayment.course}
+                        courseId={(selectedAssessmentForPayment.payment_type === 'program' ? selectedAssessmentForPayment.program_id : selectedAssessmentForPayment.id).toString()}
                         amount={selectedAssessmentForPayment.price}
                         token={token}
                         addToast={addToast}
@@ -247,12 +305,11 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                         }}
                         onSuccess={() => {
                             setShowAssessmentPaymentModal(false);
-                            const assessment = selectedAssessmentForPayment;
                             setSelectedAssessmentForPayment(null);
                             // Refresh data
                             window.location.reload(); // Simple refresh to update hasPaid
                         }}
-                        type="assessment"
+                        type={selectedAssessmentForPayment.payment_type === 'program' ? 'program' : 'assessment'}
                     />
                 )}
             </AnimatePresence>
@@ -423,6 +480,25 @@ export default function StudentDashboard({ profile, onNavigate, addToast, view, 
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Secure Academic Gateway &copy; 2026</p>
                         </motion.div>
                     </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {showProgramPayment && proHub?.program && (
+                    <GeniusPaymentModal
+                        amount={proHub.program.price}
+                        courseId={String(proHub.program.id)}
+                        courseName={proHub.program.name}
+                        token={token}
+                        addToast={addToast}
+                        onClose={() => setShowProgramPayment(false)}
+                        onSuccess={() => {
+                            setShowProgramPayment(false);
+                            addToast('Program access unlocked.', 'success');
+                            window.location.reload();
+                        }}
+                        type="program"
+                    />
                 )}
             </AnimatePresence>
 

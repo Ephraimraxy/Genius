@@ -46,6 +46,25 @@ interface Resource {
     is_paid?: boolean;
     ai_fitness_status?: 'unchecked' | 'checking' | 'fit' | 'unfit';
     ai_fitness_reason?: string;
+    professional_program_id?: number | null;
+    professional_course_id?: number | null;
+    professional_program_name?: string | null;
+    professional_course_title?: string | null;
+}
+
+interface ProfessionalCourse {
+    id: number;
+    title: string;
+    code?: string | null;
+}
+
+interface ProfessionalProgram {
+    id: number;
+    name: string;
+    code?: string | null;
+    price: number;
+    is_published: boolean;
+    courses: ProfessionalCourse[];
 }
 
 interface AcademicManagementProps {
@@ -72,6 +91,7 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
     const [previewName, setPreviewName] = useState<string>('');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [categories, setCategories] = useState<{id: number, name: string}[]>([]);
+    const [professionalPrograms, setProfessionalPrograms] = useState<ProfessionalProgram[]>([]);
     const isAssessmentMaterialSelector = mode === 'tests' || mode === 'exams' || mode === 'assignments';
     const assessmentMaterialIds = selectedMaterialResources.map(resource => resource.id);
 
@@ -92,6 +112,8 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
     const [customDurVal, setCustomDurVal] = useState('');
     const [customDurUnit, setCustomDurUnit] = useState<'seconds'|'minutes'|'hours'|'days'>('hours');
     const [assessInstructions, setAssessInstructions] = useState('');
+    const [assessProgramId, setAssessProgramId] = useState('');
+    const [assessCourseId, setAssessCourseId] = useState('');
     const [assessSlots, setAssessSlots] = useState<any[]>([]);
     const [viewingSlotsFor, setViewingSlotsFor] = useState<number | null>(null);
     const [resendingSlotId, setResendingSlotId] = useState<number | null>(null);
@@ -134,6 +156,8 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
     const [attendDate, setAttendDate] = useState('');
     const [attendIsPaid, setAttendIsPaid] = useState(false);
     const [attendPrice, setAttendPrice] = useState('0');
+    const [attendProgramId, setAttendProgramId] = useState('');
+    const [attendCourseId, setAttendCourseId] = useState('');
     const [viewingRollFor, setViewingRollFor] = useState<number | null>(null);
     const [rollRecords, setRollRecords] = useState<any[]>([]);
     const [sessionPriceInputs, setSessionPriceInputs] = useState<Record<number, string>>({});
@@ -145,8 +169,44 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                 .then(res => res.json())
                 .then(data => { if(Array.isArray(data)) setCategories(data); })
                 .catch(console.error);
+            if (isProfessionalHub) {
+                fetch(withHub('/api/pro-hub/programs'), { headers: { 'Authorization': `Bearer ${token}` } })
+                    .then(res => res.json())
+                    .then(data => setProfessionalPrograms(data.programs || []))
+                    .catch(console.error);
+            }
         }
     }, [token, hub]);
+
+    const selectedAssessProgram = professionalPrograms.find(p => String(p.id) === String(assessProgramId));
+    const selectedAttendProgram = professionalPrograms.find(p => String(p.id) === String(attendProgramId));
+
+    const renderProfessionalScopePicker = (kind: 'assessment' | 'attendance') => {
+        if (!isProfessionalHub) return null;
+        const programId = kind === 'assessment' ? assessProgramId : attendProgramId;
+        const courseId = kind === 'assessment' ? assessCourseId : attendCourseId;
+        const program = kind === 'assessment' ? selectedAssessProgram : selectedAttendProgram;
+        const setProgram = kind === 'assessment' ? setAssessProgramId : setAttendProgramId;
+        const setCourse = kind === 'assessment' ? setAssessCourseId : setAttendCourseId;
+        return (
+            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Professional Program Scope</p>
+                <div className="grid md:grid-cols-2 gap-3">
+                    <select value={programId} onChange={e => { setProgram(e.target.value); setCourse(''); setSelectedMaterialResources([]); }}
+                        className="px-4 py-3 bg-white border border-emerald-100 rounded-xl font-bold text-sm text-slate-700 focus:outline-none focus:border-emerald-400">
+                        <option value="">Select Program</option>
+                        {professionalPrograms.map(program => <option key={program.id} value={program.id}>{program.name}</option>)}
+                    </select>
+                    <select value={courseId} onChange={e => { setCourse(e.target.value); setSelectedMaterialResources([]); }}
+                        className="px-4 py-3 bg-white border border-emerald-100 rounded-xl font-bold text-sm text-slate-700 focus:outline-none focus:border-emerald-400"
+                        disabled={!program}>
+                        <option value="">All Courses</option>
+                        {(program?.courses || []).map(course => <option key={course.id} value={course.id}>{course.title}</option>)}
+                    </select>
+                </div>
+            </div>
+        );
+    };
 
     const fetchRecords = async () => {
         setIsLoadingRecords(true);
@@ -193,7 +253,13 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
-            setHubResources(data.filter((r: Resource) => r.type === type && r.status === 'ready'));
+            setHubResources(data.filter((r: Resource) => {
+                if (!(r.type === type && r.status === 'ready')) return false;
+                if (!isProfessionalHub || type !== 'material' || !isAssessmentMaterialSelector) return true;
+                if (assessProgramId && String(r.professional_program_id || '') !== String(assessProgramId)) return false;
+                if (assessCourseId && String(r.professional_course_id || '') !== String(assessCourseId)) return false;
+                return true;
+            }));
         } catch (err) {
             addToast('Failed to fetch from Resource Hub', 'error');
         }
@@ -209,6 +275,10 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
     }, [mode, hub]);
 
     const handleOpenSelector = () => {
+        if (isProfessionalHub && isAssessmentMaterialSelector && !assessProgramId) {
+            addToast('Select a professional program before linking materials', 'error');
+            return;
+        }
         const type = mode === 'attendance' ? 'roster' : 'material';
         fetchHubResources(type);
         setShowResourceSelector(true);
@@ -243,6 +313,9 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
     const handleCreateAssessment = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!assessTitle.trim()) return addToast('Please enter an assessment title', 'error');
+        if (isProfessionalHub && !assessProgramId) {
+            return addToast('Select the professional program for this assessment', 'error');
+        }
         if ((mode === 'tests' || mode === 'exams') && assessmentMaterialIds.length === 0) {
             return addToast('Link at least one lecture material for AI question generation', 'error');
         }
@@ -297,6 +370,8 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                 max_attempts: parseInt(assessMaxAttempts) || 1,
                 is_pool: assessIsPool,
                 pool_size: assessIsPool ? parseInt(assessPoolSize) || 40 : 0,
+                professional_program_id: isProfessionalHub ? parseInt(assessProgramId) : null,
+                professional_course_id: isProfessionalHub && assessCourseId ? parseInt(assessCourseId) : null,
                 hub
             };
 
@@ -317,6 +392,7 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                 setAssessDifficulty('medium'); setAssessBlooms('mixed'); setAssessMaxAttempts('1');
                 setAssessIsPool(false); setAssessPoolSize('40');
                 setCustomStartVal(''); setCustomStartUnit('minutes'); setCustomDurVal(''); setCustomDurUnit('hours');
+                setAssessCourseId('');
             } else {
                 addToast(friendlyError({ message: data.error }, 'assessment'), 'error');
             }
@@ -411,15 +487,26 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
     const createAttendSession = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!attendTitle.trim() || !attendDate) return addToast('Title and date are required', 'error');
+        if (isProfessionalHub && !attendProgramId) return addToast('Select a professional program for attendance', 'error');
         try {
             const res = await fetch(withHub('/api/attendance/sessions'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ title: attendTitle, course_code: attendCourseCode, category_id: attendCategoryId || null, session_date: attendDate, is_paid: attendIsPaid, price: parseInt(attendPrice) || 0, hub })
+                body: JSON.stringify({
+                    title: attendTitle,
+                    course_code: attendCourseCode,
+                    category_id: isProfessionalHub ? null : (attendCategoryId || null),
+                    session_date: attendDate,
+                    is_paid: isProfessionalHub ? false : attendIsPaid,
+                    price: isProfessionalHub ? 0 : (parseInt(attendPrice) || 0),
+                    professional_program_id: isProfessionalHub ? parseInt(attendProgramId) : null,
+                    professional_course_id: isProfessionalHub && attendCourseId ? parseInt(attendCourseId) : null,
+                    hub
+                })
             });
             if (res.ok) {
                 addToast('Session created', 'success');
-                setAttendTitle(''); setAttendCourseCode(''); setAttendCategoryId(''); setAttendDate(''); setAttendIsPaid(false); setAttendPrice('0');
+                setAttendTitle(''); setAttendCourseCode(''); setAttendCategoryId(''); setAttendDate(''); setAttendIsPaid(false); setAttendPrice('0'); setAttendCourseId('');
                 fetchAttendSessions();
             }
         } catch { addToast('Failed to create session', 'error'); }
@@ -574,11 +661,12 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
 
     const renderRecordControls = (r: any) => (
         <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
-            <button onClick={() => updateSettings(r.id, false, { ...r, is_paid: !r.is_paid })}
+            {!isProfessionalHub && <button onClick={() => updateSettings(r.id, false, { ...r, is_paid: !r.is_paid })}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${r.is_paid ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
                 {r.is_paid ? 'Paid' : 'Free'}
-            </button>
-            {r.is_paid && (
+            </button>}
+            {isProfessionalHub && <span className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase bg-emerald-50 text-emerald-700">Program-priced</span>}
+            {!isProfessionalHub && r.is_paid && (
                 <div className="flex items-center gap-1">
                     <span className="text-[10px] font-black text-slate-400">₦</span>
                     <input type="number" defaultValue={r.price}
@@ -636,16 +724,17 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                                 className="px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400" />
                             <select value={attendCategoryId} onChange={e => setAttendCategoryId(e.target.value)}
                                 className="px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
-                                <option value="">All Categories</option>
+                                <option value="">{isProfessionalHub ? 'Program Students' : 'All Categories'}</option>
                                 {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
                         </div>
+                        {renderProfessionalScopePicker('attendance')}
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Session Date</label>
                             <input type="date" value={attendDate} onChange={e => setAttendDate(e.target.value)} required
                                 className="w-full mt-1 px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400" />
                         </div>
-                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                        {!isProfessionalHub && <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
                             <div className="flex items-center justify-between">
                                 <div>
                                     <p className="font-bold text-slate-700 text-sm">Paid Attendance</p>
@@ -663,7 +752,7 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                                         className="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-blue-400" />
                                 </div>
                             )}
-                        </div>
+                        </div>}
                         <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl shadow-lg shadow-blue-200 transition-all">
                             ＋ Create Session
                         </button>
@@ -858,11 +947,13 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                 className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400"
             />
 
+            {renderProfessionalScopePicker('assessment')}
+
             {/* Category + Questions Count */}
             <div className="grid grid-cols-2 gap-3">
                 <select value={assessCategoryId} onChange={e => setAssessCategoryId(e.target.value)}
                     className="px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
-                    <option value="">Target Category (All)</option>
+                    <option value="">{isProfessionalHub ? 'Program Students' : 'Target Category (All)'}</option>
                     {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                 </select>
                 <input type="number" min="5" max={isExam ? 100 : 50} value={assessQuestionsCount}
@@ -1320,13 +1411,14 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                         <input value={assessTitle} onChange={e => setAssessTitle(e.target.value)} required
                             placeholder="Assignment Title"
                             className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold focus:outline-none focus:border-blue-400" />
+                        {renderProfessionalScopePicker('assessment')}
                         <textarea value={assessInstructions} onChange={e => setAssessInstructions(e.target.value)}
                             placeholder="Full instructions / question / task description — this is what the student will read and respond to..."
                             rows={5}
                             className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-400 resize-none" />
                         <select value={assessCategoryId} onChange={e => setAssessCategoryId(e.target.value)}
                             className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 focus:outline-none focus:border-blue-400">
-                            <option value="">Target Category (All)</option>
+                            <option value="">{isProfessionalHub ? 'Program Students' : 'Target Category (All)'}</option>
                             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
 
@@ -1628,6 +1720,12 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-50">
+                            {isProfessionalHub ? (
+                                <div className="col-span-2 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Program Access</p>
+                                    <p className="text-xs text-emerald-700 font-bold mt-1">This material is unlocked through the program price set in Pro Hub.</p>
+                                </div>
+                            ) : (
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Access Policy</label>
                                 <div className="flex items-center gap-3">
@@ -1639,8 +1737,9 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                                     </button>
                                 </div>
                             </div>
+                            )}
                             
-                            {item.is_paid && (
+                            {!isProfessionalHub && item.is_paid && (
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Download Price (₦)</label>
                                     <input 
@@ -1714,6 +1813,12 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                         </div>
 
                         <div className="pt-6 border-t border-slate-50 space-y-4">
+                            {isProfessionalHub ? (
+                                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Program Access</p>
+                                    <p className="text-xs text-emerald-700 font-bold mt-1">This audio record is unlocked through the program price set in Pro Hub.</p>
+                                </div>
+                            ) : (
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Access Status</label>
                                 <div className="flex items-center gap-3">
@@ -1740,8 +1845,9 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
                                     </button>
                                 </div>
                             </div>
+                            )}
 
-                            {item.is_paid && (
+                            {!isProfessionalHub && item.is_paid && (
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Monetization (₦)</label>
                                     <div className="flex items-center gap-2">

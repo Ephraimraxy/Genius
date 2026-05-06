@@ -60,6 +60,8 @@ export default function Sidebar({
 }: SidebarProps) {
   // Nav visibility comes from the real-time settings stream — no polling needed
   const { navVisibility } = useSettings();
+  const profileRole = profile?.user?.role;
+  const isProfessionalStudentProfile = profileRole === 'student' && (profile?.user?.hubScope === 'professional' || profile?.user?.hub_scope === 'professional');
 
   // Student: open attendance sessions
   const [attendanceSessions, setAttendanceSessions] = React.useState<any[]>([]);
@@ -68,7 +70,10 @@ export default function Sidebar({
   // Fetch open attendance sessions for students (always, so panel is always visible)
   React.useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token || profile?.user?.role !== 'student') return;
+    if (!token || profileRole !== 'student' || isProfessionalStudentProfile) {
+      setAttendanceSessions([]);
+      return;
+    }
     const fetchSessions = () => {
       fetch('/api/student/attendance/open-sessions', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -80,7 +85,7 @@ export default function Sidebar({
     fetchSessions();
     const interval = setInterval(fetchSessions, 30000);
     return () => clearInterval(interval);
-  }, [profile?.user?.role]);
+  }, [profileRole, isProfessionalStudentProfile]);
 
   const handleMarkAttendance = async (sessionId: number) => {
     const token = localStorage.getItem('token');
@@ -108,6 +113,7 @@ export default function Sidebar({
   const isSuperAdmin = userRole === 'super_admin' || userRole === 'admin';
   const isLecturer = userRole === 'tenant_admin';
   const isStudent = userRole === 'student';
+  const isProfessionalStudent = isProfessionalStudentProfile;
   const isAdmin = isSuperAdmin; // Strictly Super Admin 
   const isAnyAdmin = isSuperAdmin || isLecturer;
 
@@ -164,7 +170,7 @@ export default function Sidebar({
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },
     { id: 'assignments', label: 'Assignments', icon: FileUp },
     { id: 'performance', label: 'Performance', icon: BarChart3, section: 'Records' },
-    { id: 'attendance', label: 'Attendance', icon: CalendarDays },
+    ...(!isProfessionalStudent ? [{ id: 'attendance' as Tab, label: 'Attendance', icon: CalendarDays }] : []),
     { id: 'guidelines', label: 'Guidelines', icon: Info },
   ];
 
@@ -330,7 +336,7 @@ export default function Sidebar({
         </nav>
 
         {/* ─── STUDENT: Attendance Panel (always visible) ─── */}
-        {isStudent && !isCollapsed && (
+        {isStudent && !isProfessionalStudent && !isCollapsed && (
           <div className="mx-4 mb-3 p-3 rounded-2xl border border-indigo-700/40 bg-indigo-900/30 shrink-0">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 size={13} className="text-indigo-400 shrink-0" />
@@ -381,7 +387,7 @@ export default function Sidebar({
             )}
           </div>
         )}
-        {isStudent && isCollapsed && (
+        {isStudent && !isProfessionalStudent && isCollapsed && (
           <div className="mx-2 mb-3 flex justify-center">
             <div className="relative">
               <CheckCircle2 size={20} className="text-indigo-400" />

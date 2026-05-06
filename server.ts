@@ -1658,6 +1658,83 @@ async function initDB() {
   try { await pool.query("ALTER TABLE resources ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE exams ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS professional_programs (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        code TEXT,
+        description TEXT,
+        coordinator_name TEXT,
+        price INTEGER DEFAULT 0,
+        is_published BOOLEAN DEFAULT FALSE,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  } catch (e) { }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS professional_courses (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+        program_id INTEGER REFERENCES professional_programs(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        code TEXT,
+        description TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  } catch (e) { }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS professional_certifications (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+        student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        program_id INTEGER REFERENCES professional_programs(id) ON DELETE CASCADE,
+        certificate_id TEXT UNIQUE NOT NULL,
+        issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        metadata JSONB DEFAULT '{}',
+        created_by INTEGER REFERENCES users(id),
+        UNIQUE(student_id, program_id)
+      )
+    `);
+  } catch (e) { }
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS professional_video_progress (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+        student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        resource_id INTEGER REFERENCES resources(id) ON DELETE CASCADE,
+        duration_seconds NUMERIC DEFAULT 0,
+        watched_seconds NUMERIC DEFAULT 0,
+        last_position_seconds NUMERIC DEFAULT 0,
+        watched_ranges JSONB DEFAULT '[]',
+        completion_ratio NUMERIC DEFAULT 0,
+        completed BOOLEAN DEFAULT FALSE,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(student_id, resource_id)
+      )
+    `);
+  } catch (e) { }
+  try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS professional_program_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS professional_program_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE resources ADD COLUMN IF NOT EXISTS professional_program_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE resources ADD COLUMN IF NOT EXISTS professional_course_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE exams ADD COLUMN IF NOT EXISTS professional_program_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE exams ADD COLUMN IF NOT EXISTS professional_course_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS professional_program_id INTEGER'); } catch (e) { }
+  try { await pool.query('ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS professional_course_id INTEGER'); } catch (e) { }
+  try { await pool.query("ALTER TABLE professional_video_progress ADD COLUMN IF NOT EXISTS watched_ranges JSONB DEFAULT '[]'"); } catch (e) { }
+  try { await pool.query('ALTER TABLE professional_video_progress ADD COLUMN IF NOT EXISTS completion_ratio NUMERIC DEFAULT 0'); } catch (e) { }
+  try { await pool.query('ALTER TABLE professional_programs ADD COLUMN IF NOT EXISTS price INTEGER DEFAULT 0'); } catch (e) { }
+  try { await pool.query('ALTER TABLE professional_programs ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT FALSE'); } catch (e) { }
   try { await pool.query(`CREATE TABLE IF NOT EXISTS pending_registrations (
     email TEXT PRIMARY KEY,
     portal_type TEXT NOT NULL,
@@ -1799,6 +1876,13 @@ async function initDB() {
     // exams / assignments
     `CREATE INDEX IF NOT EXISTS idx_exams_tenant_id      ON exams (tenant_id)`,
     `CREATE INDEX IF NOT EXISTS idx_exams_tenant_hub     ON exams (tenant_id, hub_scope)`,
+    `CREATE INDEX IF NOT EXISTS idx_pro_programs_tenant  ON professional_programs (tenant_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_pro_courses_program  ON professional_courses (tenant_id, program_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_pro_certs_student    ON professional_certifications (tenant_id, student_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_pro_video_progress   ON professional_video_progress (tenant_id, student_id, resource_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_roster_pro_program   ON students_roster (tenant_id, professional_program_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_resources_pro_course ON resources (tenant_id, professional_program_id, professional_course_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_exams_pro_course     ON exams (tenant_id, professional_program_id, professional_course_id)`,
     `CREATE INDEX IF NOT EXISTS idx_submissions_exam_id  ON assignment_submissions (exam_id)`,
     `CREATE INDEX IF NOT EXISTS idx_submissions_student  ON assignment_submissions (student_id)`,
     // transactions — payment lookups
@@ -1945,6 +2029,107 @@ const generateProfessionalMatricNumber = async (tenantId: number, workspaceId?: 
   }
   return `PRO-${safeWorkspace}-${year}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 };
+
+const optionalInt = (value: any): number | null => {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const buildProfessionalCertificateId = (studentId: number, programId: number, issuedAt: Date = new Date()) => {
+  const year = issuedAt.getFullYear();
+  const token = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `GPC-${year}-${String(programId).padStart(4, '0')}-${String(studentId).padStart(5, '0')}-${token}`;
+};
+
+async function getStudentProfessionalProgramId(req: any): Promise<number | null> {
+  if (req.user?.role !== 'student') return null;
+  const result = await pool.query(
+    `SELECT COALESCE(u.professional_program_id, sr.professional_program_id) AS professional_program_id
+     FROM users u
+     LEFT JOIN students_roster sr
+       ON sr.tenant_id = u.tenant_id
+      AND sr.email = u.email
+      AND sr.matric_number = u.matric_number
+      AND COALESCE(sr.hub_scope, 'academic') = COALESCE(u.hub_scope, 'academic')
+     WHERE u.id = $1 AND u.tenant_id = $2
+     LIMIT 1`,
+    [req.user.id, req.tenant_id]
+  );
+  return optionalInt(result.rows[0]?.professional_program_id);
+}
+
+async function hasProfessionalProgramAccess(userId: number, programId: number, price: number): Promise<boolean> {
+  if (!programId) return false;
+  if (Number(price || 0) <= 0) return true;
+  const paid = await pool.query(
+    `SELECT id FROM transactions
+     WHERE user_id = $1 AND type = 'program_access' AND status = 'success'
+       AND (metadata->>'program_id')::int = $2
+     LIMIT 1`,
+    [userId, programId]
+  );
+  return paid.rows.length > 0;
+}
+
+async function getPublishedProfessionalProgram(tenantId: number, programId: number) {
+  const result = await pool.query(
+    'SELECT id, name, code, price, is_published FROM professional_programs WHERE id = $1 AND tenant_id = $2',
+    [programId, tenantId]
+  );
+  return result.rows[0] || null;
+}
+
+async function assertStudentProfessionalProgramAccess(req: any, programId: number) {
+  const assignedProgramId = await getStudentProfessionalProgramId(req);
+  if (!assignedProgramId || String(assignedProgramId) !== String(programId)) {
+    const err: any = new Error('This item is not assigned to your professional program.');
+    err.status = 403;
+    throw err;
+  }
+  const program = await getPublishedProfessionalProgram(req.tenant_id, programId);
+  if (!program?.is_published) {
+    const err: any = new Error('This professional program has not been published yet.');
+    err.status = 403;
+    throw err;
+  }
+  const hasAccess = await hasProfessionalProgramAccess(req.user.id, programId, Number(program.price || 0));
+  if (!hasAccess) {
+    const err: any = new Error('Program payment required.');
+    err.status = 402;
+    err.program_id = programId;
+    err.price = Number(program.price || 0);
+    throw err;
+  }
+  return { program, assignedProgramId };
+}
+
+async function validateProfessionalProgramCourse(tenantId: number, programId: number | null, courseId: number | null) {
+  if (!programId && !courseId) return { programId: null, courseId: null };
+  if (!programId) {
+    const err: any = new Error('Select a professional program before assigning a course.');
+    err.status = 400;
+    throw err;
+  }
+  const programCheck = await pool.query('SELECT id FROM professional_programs WHERE id = $1 AND tenant_id = $2', [programId, tenantId]);
+  if (programCheck.rows.length === 0) {
+    const err: any = new Error('Professional program not found.');
+    err.status = 404;
+    throw err;
+  }
+  if (courseId) {
+    const courseCheck = await pool.query(
+      'SELECT id FROM professional_courses WHERE id = $1 AND program_id = $2 AND tenant_id = $3',
+      [courseId, programId, tenantId]
+    );
+    if (courseCheck.rows.length === 0) {
+      const err: any = new Error('Professional course not found inside this program.');
+      err.status = 404;
+      throw err;
+    }
+  }
+  return { programId, courseId };
+}
 
 // Middleware: Authenticate JWT
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -2111,7 +2296,7 @@ app.post('/api/auth/lecturer/register', authLimiter, async (req, res) => {
     const token = jwt.sign({ id: userId, email, name, role: 'tenant_admin', tenant_id: tenantId, phone }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { id: userId, email, name, role: 'tenant_admin', tenant_id: tenantId, tenantName, phone } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message, program_id: error.program_id, price: error.price });
   }
 });
 
@@ -4964,6 +5149,186 @@ async function generatePublicationCertificatePDF(
   }
 }
 
+async function generateProfessionalCertificationPDF(payload: {
+  studentName: string;
+  matricNumber: string;
+  programName: string;
+  programCode?: string | null;
+  coordinatorName?: string | null;
+  certificateId: string;
+  issuedAt: Date;
+  tenantName: string;
+  courses?: Array<{ title: string; code?: string | null }>;
+}): Promise<Buffer> {
+  const config = await getJournalConfig();
+  const coordinatorName = (payload.coordinatorName || config.journalSecretary || 'Program Coordinator')
+    .replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] || c));
+  const signatureBase64 = config.journalSignature || '';
+  const verifyUrl = buildCertificateVerificationUrl(payload.certificateId);
+  const esc = (s: string) => String(s || '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] || c));
+
+  const templatePath = path.join(process.cwd(), 'tools', 'cert.png');
+  let bgDataUrl = '';
+  try {
+    const imgBytes = fs.readFileSync(templatePath);
+    bgDataUrl = `data:image/png;base64,${imgBytes.toString('base64')}`;
+  } catch (e) {
+    console.warn('[pro-cert] cert.png not found at', templatePath, e);
+  }
+
+  const loadAsset = (names: string[]): string => {
+    const dirs = [path.join(process.cwd(), 'public'), path.join(process.cwd(), 'tools')];
+    for (const name of names) {
+      for (const dir of dirs) {
+        const p = path.join(dir, name);
+        if (fs.existsSync(p)) {
+          const ext = path.extname(p).toLowerCase();
+          const mime = ext === '.png' ? 'image/png' : ext === '.svg' ? 'image/svg+xml' : 'image/jpeg';
+          return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`;
+        }
+      }
+    }
+    return '';
+  };
+
+  const logoLeft = loadAsset(['gmijp-logo.png', 'journal-logo.png', 'ain logo.jpeg']);
+  const logoRight = loadAsset(['Nasarawa-State-University.jpg', 'university-logo.jpg']);
+  let qrDataUrl = '';
+  try {
+    qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 140, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+  } catch (e) {
+    console.warn('[pro-cert] QR generation failed:', e);
+  }
+
+  const studentFontPx = payload.studentName.length > 80 ? 34 : payload.studentName.length > 55 ? 38 : 44;
+  const programFontPx = payload.programName.length > 90 ? 27 : payload.programName.length > 60 ? 31 : 35;
+  const issuedDate = payload.issuedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const courses = (payload.courses || []).slice(0, 6);
+  const courseLine = courses.length
+    ? courses.map(c => esc(c.code ? `${c.code}: ${c.title}` : c.title)).join(' | ')
+    : 'All required professional courses and assessments';
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  @page { size: 1209px 852px; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { width: 1209px; height: 852px; overflow: hidden; background: white; }
+  .page { position: relative; width: 1209px; height: 852px; font-family: 'Times New Roman', Times, serif; color: #111; overflow: hidden; }
+  .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .logo { position: absolute; top: 132px; width: 67px; height: 67px; object-fit: contain; }
+  .logo-left { left: 230px; }
+  .logo-right { right: 252px; }
+  .cert-title {
+    position: absolute; top: 96px; left: 0; right: 0; text-align: center;
+    font-size: 30px; line-height: 1; letter-spacing: 5px; font-weight: 900; color: #8b0000;
+  }
+  .cert-subtitle {
+    position: absolute; top: 135px; left: 0; right: 0; text-align: center;
+    font-size: 16px; line-height: 1.32; letter-spacing: 2.2px; color: #555; text-transform: uppercase;
+  }
+  .certify-line {
+    position: absolute; top: 222px; left: 0; right: 0; text-align: center;
+    font-size: 20px; letter-spacing: 4px; color: #444; text-transform: uppercase;
+  }
+  .content { position: absolute; top: 258px; left: 118px; right: 118px; text-align: center; }
+  .student-name { font-size: ${studentFontPx}px; line-height: 1.12; font-weight: 900; color: #000; margin: 0 auto 18px; max-width: 980px; }
+  .matric { font-size: 17px; line-height: 1; margin-bottom: 24px; color: #555; font-weight: 700; letter-spacing: 1.2px; }
+  .completed { font-size: 18px; line-height: 1.25; margin-bottom: 13px; color: #111; }
+  .program-name { font-size: ${programFontPx}px; line-height: 1.2; font-weight: 900; color: #8b0000; margin: 0 auto 15px; max-width: 980px; }
+  .tenant { font-size: 17px; line-height: 1.25; color: #333; margin-bottom: 12px; }
+  .courses { font-size: 13px; line-height: 1.35; color: #475569; max-width: 840px; margin: 0 auto 12px; }
+  .issued { font-size: 16px; line-height: 1.25; color: #333; }
+  .signature-block { position: absolute; left: 250px; bottom: 92px; width: 250px; text-align: center; }
+  .signature-block img { display: block; width: 178px; max-height: 58px; object-fit: contain; margin: 0 auto -3px; }
+  .signature-line { width: 190px; border-top: 2px solid transparent; margin: 0 auto 8px; }
+  .coordinator-name { display: block; font-size: 20px; line-height: 1.1; font-weight: 900; color: #8b0000; text-transform: uppercase; }
+  .coordinator-role { display: block; margin-top: 7px; font-size: 16px; line-height: 1.1; color: #555; }
+  .qr-block { position: absolute; left: 758px; bottom: 88px; width: 150px; text-align: center; }
+  .qr-label { display: block; font-size: 12px; line-height: 1; font-weight: 700; color: #555; margin-bottom: 7px; }
+  .qr-block img { width: 104px; height: 104px; }
+  .cert-id { position: absolute; right: 12px; bottom: 14px; width: 174px; text-align: center; color: #fff; font-size: 11.5px; line-height: 1.12; font-weight: 900; }
+</style>
+</head>
+<body>
+<div class="page">
+  ${bgDataUrl ? `<img class="bg" src="${bgDataUrl}" alt=""/>` : ''}
+  ${logoLeft ? `<img class="logo logo-left" src="${logoLeft}" alt="Genius logo"/>` : ''}
+  ${logoRight ? `<img class="logo logo-right" src="${logoRight}" alt="Institution logo"/>` : ''}
+  <h1 class="cert-title">PROFESSIONAL CERTIFICATION</h1>
+  <div class="cert-subtitle">
+    <div>Genius Professional Hub</div>
+    <div>Academic Program Certification</div>
+  </div>
+  <div class="certify-line">This is to certify that</div>
+  <div class="content">
+    <div class="student-name">${esc(payload.studentName)}</div>
+    <div class="matric">${esc(payload.matricNumber)}</div>
+    <div class="completed">has successfully completed the professional program</div>
+    <div class="program-name">${esc(payload.programName)}</div>
+    <div class="tenant">${esc(payload.tenantName)}${payload.programCode ? ` | Program Code: ${esc(payload.programCode)}` : ''}</div>
+    <div class="courses">${courseLine}</div>
+    <div class="issued">Certified: ${esc(issuedDate)}</div>
+  </div>
+  <div class="signature-block">
+    ${signatureBase64 && signatureBase64.startsWith('data:image') ? `<img src="${signatureBase64}" alt="Signature"/>` : ''}
+    <div class="signature-line"></div>
+    <span class="coordinator-name">${coordinatorName}</span>
+    <span class="coordinator-role">Coordinator</span>
+  </div>
+  <div class="qr-block">
+    <span class="qr-label">Scan to verify</span>
+    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR"/>` : ''}
+  </div>
+  <div class="cert-id">
+    <div>Certification ID:</div>
+    <div>${esc(payload.certificateId)}</div>
+  </div>
+</div>
+</body>
+</html>`;
+
+  const executablePaths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_PATH,
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome-stable',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  ].filter(Boolean) as string[];
+
+  let activePath = executablePaths.find(p => fs.existsSync(p));
+  if (!activePath) {
+    try {
+      const { execSync } = require('child_process');
+      activePath = execSync('which chromium || which chromium-browser || which google-chrome-stable || which google-chrome', { encoding: 'utf-8' }).trim();
+    } catch (_) {}
+  }
+  if (!activePath) throw new Error('Chromium not found for professional certification generation');
+
+  const browser = await puppeteer.launch({
+    executablePath: activePath,
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote'],
+  });
+  try {
+    const certPage = await browser.newPage();
+    await certPage.setViewport({ width: 1209, height: 852, deviceScaleFactor: 1 });
+    await certPage.setContent(html, { waitUntil: 'networkidle0' });
+    const pdfBuffer = await certPage.pdf({
+      width: '1209px',
+      height: '852px',
+      printBackground: true,
+      margin: { top: 0, bottom: 0, left: 0, right: 0 },
+    });
+    return Buffer.from(pdfBuffer);
+  } finally {
+    await browser.close();
+  }
+}
+
 /* LEGACY PUBLICATION EMAIL (deprecated in favor of server-issued certificate)
 async function sendPublicationEmailLegacy(to: string, researcherName: string, manuscriptTitle: string, doi: string, url: string, pdfBuffer: Buffer) {
   try {
@@ -6588,7 +6953,37 @@ app.get('/api/verify/:certificateId', async (req: any, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ valid: false, error: 'Certificate not found or invalid.' });
+      const proCert = await pool.query(
+        `SELECT pc.certificate_id, pc.issued_at, pc.metadata,
+                u.name AS student_name, u.matric_number,
+                p.name AS program_name, p.code AS program_code,
+                t.name AS tenant_name
+         FROM professional_certifications pc
+         JOIN users u ON u.id = pc.student_id
+         JOIN professional_programs p ON p.id = pc.program_id AND p.tenant_id = pc.tenant_id
+         LEFT JOIN tenants t ON t.id = pc.tenant_id
+         WHERE pc.certificate_id = $1
+         LIMIT 1`,
+        [certificateId]
+      );
+      if (proCert.rows.length === 0) {
+        return res.status(404).json({ valid: false, error: 'Certificate not found or invalid.' });
+      }
+      const cert = proCert.rows[0];
+      return res.json({
+        valid: true,
+        type: 'professional_certification',
+        certificateId: cert.certificate_id,
+        title: cert.program_name,
+        programName: cert.program_name,
+        programCode: cert.program_code || null,
+        studentName: cert.student_name,
+        matricNumber: cert.matric_number || null,
+        institution: cert.tenant_name || null,
+        issuedAt: cert.issued_at
+          ? new Date(cert.issued_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+          : null,
+      });
     }
 
     const paper = result.rows[0];
@@ -10884,11 +11279,16 @@ app.get('/api/resources', authenticateToken, checkSubscription, async (req: any,
   try {
     const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
     const result = await pool.query(
-      `SELECT id, type, name, status, created_at, is_available, price, is_paid, category_id,
-              ai_fitness_status, ai_fitness_reason, COALESCE(hub_scope, 'academic') as hub_scope
-       FROM resources
-       WHERE tenant_id = $1 AND COALESCE(hub_scope, 'academic') = $2
-       ORDER BY created_at DESC`,
+      `SELECT r.id, r.type, r.name, r.status, r.created_at, r.is_available, r.price, r.is_paid, r.category_id,
+              r.ai_fitness_status, r.ai_fitness_reason, COALESCE(r.hub_scope, 'academic') as hub_scope,
+              r.professional_program_id, r.professional_course_id,
+              pp.name AS professional_program_name, pp.code AS professional_program_code,
+              pc.title AS professional_course_title, pc.code AS professional_course_code
+       FROM resources r
+       LEFT JOIN professional_programs pp ON pp.id = r.professional_program_id AND pp.tenant_id = r.tenant_id
+       LEFT JOIN professional_courses pc ON pc.id = r.professional_course_id AND pc.tenant_id = r.tenant_id
+       WHERE r.tenant_id = $1 AND COALESCE(r.hub_scope, 'academic') = $2
+       ORDER BY r.created_at DESC`,
       [req.tenant_id, hubScope]
     );
     res.json(result.rows);
@@ -10917,7 +11317,7 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
   try {
     const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
     const result = await pool.query(
-      `SELECT name, type, content, category_id FROM resources
+      `SELECT name, type, content, category_id, professional_program_id FROM resources
        WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
       [req.params.id, req.tenant_id, hubScope]
     );
@@ -10927,9 +11327,24 @@ app.get('/api/resources/:id/download', authenticateToken, checkSubscription, asy
     }
 
     if (req.user.role === 'student') {
+      if (hubScope === 'professional' && result.rows[0].type === 'video') {
+        return res.status(403).json({ error: 'Professional videos can be watched online only and cannot be downloaded.' });
+      }
       const resourceCategoryId = result.rows[0].category_id;
       if (resourceCategoryId && String(resourceCategoryId) !== String(req.user.category_id || '')) {
         return res.status(403).json({ error: 'Resource is not available to your hub or category.' });
+      }
+      if (hubScope === 'professional' && result.rows[0].professional_program_id) {
+        const assignedProgramId = await getStudentProfessionalProgramId(req);
+        const programId = Number(result.rows[0].professional_program_id);
+        if (String(assignedProgramId || '') !== String(programId)) {
+          return res.status(403).json({ error: 'This resource is not assigned to your professional program.' });
+        }
+        const programRes = await pool.query('SELECT price, is_published FROM professional_programs WHERE id = $1 AND tenant_id = $2', [programId, req.tenant_id]);
+        const program = programRes.rows[0];
+        if (!program?.is_published) return res.status(403).json({ error: 'This program has not been published yet.' });
+        const hasAccess = await hasProfessionalProgramAccess(req.user.id, programId, Number(program.price || 0));
+        if (!hasAccess) return res.status(402).json({ error: 'Program payment required.', program_id: programId, price: Number(program.price || 0) });
       }
     }
 
@@ -11089,6 +11504,12 @@ app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req:
          e.is_pool,
          e.pool_size,
          e.material_id,
+         e.professional_program_id,
+         e.professional_course_id,
+         pp.name AS professional_program_name,
+         pp.code AS professional_program_code,
+         pc.title AS professional_course_title,
+         pc.code AS professional_course_code,
          COALESCE(
            (SELECT json_agg(em.material_id ORDER BY em.id) FROM exam_materials em WHERE em.exam_id = e.id AND em.tenant_id = e.tenant_id),
            CASE WHEN e.material_id IS NULL THEN '[]'::json ELSE json_build_array(e.material_id) END
@@ -11098,6 +11519,8 @@ app.get('/api/academic/tests', authenticateToken, checkSubscription, async (req:
            CASE WHEN e.material_id IS NULL THEN 0 ELSE 1 END
          ) AS linked_material_count
        FROM exams e
+       LEFT JOIN professional_programs pp ON pp.id = e.professional_program_id AND pp.tenant_id = e.tenant_id
+       LEFT JOIN professional_courses pc ON pc.id = e.professional_course_id AND pc.tenant_id = e.tenant_id
        WHERE e.tenant_id = $1 AND COALESCE(e.hub_scope, 'academic') = $2
        ORDER BY e.created_at DESC`,
       [req.tenant_id, hubScope]
@@ -11165,6 +11588,13 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
     const { type, name, categoryName, categoryId, isPaidEntry, entryFee } = req.body;
     const hubScope = getRequestHubScope(req);
     if (!type || !name) return res.status(400).json({ error: 'Missing required fields' });
+    let proProgramId = hubScope === 'professional' ? optionalInt(req.body.professional_program_id ?? req.body.program_id ?? req.body.programId) : null;
+    let proCourseId = hubScope === 'professional' ? optionalInt(req.body.professional_course_id ?? req.body.course_id ?? req.body.courseId) : null;
+    if (hubScope === 'professional' && (proProgramId || proCourseId)) {
+      const validated = await validateProfessionalProgramCourse(req.tenant_id, proProgramId, proCourseId);
+      proProgramId = validated.programId;
+      proCourseId = validated.courseId;
+    }
 
     // ── Storage quota check ─────────────────────────────────────────────────
     const tenantStorageRes = await pool.query(
@@ -11277,8 +11707,9 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
     const fileSizeBytes = req.file.size || 0;
     fs.unlink(req.file.path, () => {});
     const result = await pool.query(
-      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type, file_url, file_size_bytes, hub_scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
-      [req.tenant_id, type, name, contentJson, 'ready', final_category_id, resourceFileBlob, mimeType, resourceFileUrl, fileSizeBytes, hubScope]
+      `INSERT INTO resources (tenant_id, type, name, content, status, category_id, file_blob, mime_type, file_url, file_size_bytes, hub_scope, professional_program_id, professional_course_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+      [req.tenant_id, type, name, contentJson, 'ready', final_category_id, resourceFileBlob, mimeType, resourceFileUrl, fileSizeBytes, hubScope, proProgramId, proCourseId]
     );
     const newResourceId = result.rows[0].id;
 
@@ -11306,6 +11737,13 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
     const hubScope = getRequestHubScope(req);
     const isProfessionalHub = hubScope === 'professional';
     if (!type || !name || !content) return res.status(400).json({ error: 'Missing required fields' });
+    let proProgramId = isProfessionalHub ? optionalInt(req.body.professional_program_id ?? req.body.program_id ?? req.body.programId) : null;
+    let proCourseId = isProfessionalHub ? optionalInt(req.body.professional_course_id ?? req.body.course_id ?? req.body.courseId) : null;
+    if (isProfessionalHub && (proProgramId || proCourseId)) {
+      const validated = await validateProfessionalProgramCourse(req.tenant_id, proProgramId, proCourseId);
+      proProgramId = validated.programId;
+      proCourseId = validated.courseId;
+    }
 
     // 1. Handle Category (Find or Create)
     let final_category_id = categoryId;
@@ -11434,10 +11872,19 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
             if (final_category_id && String(oldCategoryId) !== String(final_category_id)) changes.push(`Category updated`);
             await pool.query(
               `UPDATE students_roster
-               SET name = $1, category_id = COALESCE($2, category_id)
+               SET name = $1,
+                   category_id = COALESCE($2, category_id),
+                   professional_program_id = COALESCE($6, professional_program_id)
                WHERE matric_number = $3 AND tenant_id = $4 AND COALESCE(hub_scope, 'academic') = $5`,
-              [studentName, final_category_id, matricNumber, req.tenant_id, hubScope]
+              [studentName, final_category_id, matricNumber, req.tenant_id, hubScope, proProgramId]
             );
+            if (isProfessionalHub && proProgramId) {
+              await pool.query(
+                `UPDATE users SET professional_program_id = $1
+                 WHERE tenant_id = $2 AND role = 'student' AND matric_number = $3 AND email = $4 AND COALESCE(hub_scope, 'academic') = 'professional'`,
+                [proProgramId, req.tenant_id, matricNumber, email]
+              );
+            }
             uploadUpdated.push({ matric: matricNumber, name: studentName, changes });
             storedStudents.push({ name: studentName, email, matricNumber, phone: studentPhone || undefined });
           } else {
@@ -11463,8 +11910,8 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         const hashedPin = await hashPin(autoPin);
 
         await pool.query(
-          "INSERT INTO students_roster (tenant_id, matric_number, name, email, phone, pin_hash, category_id, hub_scope, email_status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')",
-          [req.tenant_id, matricNumber, studentName, email, studentPhone || null, hashedPin, final_category_id, hubScope]
+          "INSERT INTO students_roster (tenant_id, matric_number, name, email, phone, pin_hash, category_id, hub_scope, email_status, professional_program_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9)",
+          [req.tenant_id, matricNumber, studentName, email, studentPhone || null, hashedPin, final_category_id, hubScope, proProgramId]
         );
 
         const userCheck = await pool.query(
@@ -11474,11 +11921,11 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
         );
         if (userCheck.rows.length === 0) {
           await pool.query(
-            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, hub_scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-            [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, hubScope]
+            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, hub_scope, professional_program_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+            [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, hubScope, proProgramId]
           );
         } else {
-          await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3), hub_scope = $4 WHERE id = $2', [hashedPin, userCheck.rows[0].id, final_category_id, hubScope]);
+          await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3), hub_scope = $4, professional_program_id = COALESCE($5, professional_program_id) WHERE id = $2', [hashedPin, userCheck.rows[0].id, final_category_id, hubScope, proProgramId]);
         }
 
         // Send onboarding email and track status
@@ -11549,13 +11996,14 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
     const rawStudents = Array.isArray(content) ? content : [];
     const rosterStoredContent = (req as any)._rosterStoredStudents || rawStudents;
     const result = await pool.query(
-      'INSERT INTO resources (tenant_id, type, name, content, status, category_id, hub_scope) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      `INSERT INTO resources (tenant_id, type, name, content, status, category_id, hub_scope, professional_program_id, professional_course_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [req.tenant_id, type, name, JSON.stringify(Array.isArray(content) ? (type === 'roster' ? rosterStoredContent.map((s: any) => ({
         name: typeof s.name === 'string' ? s.name.replace(/\0/g, '') : s.name,
         email: typeof s.email === 'string' ? s.email.replace(/\0/g, '') : s.email,
         phone: typeof s.phone === 'string' ? s.phone.replace(/\0/g, '') : s.phone,
         matricNumber: typeof s.matricNumber === 'string' ? s.matricNumber.replace(/\0/g, '') : s.matricNumber
-      })) : content) : content), 'ready', final_category_id, hubScope]
+      })) : content) : content), 'ready', final_category_id, hubScope, proProgramId, proCourseId]
     );
 
     const rosterSummary = (req as any)._rosterSummary;
@@ -11721,6 +12169,93 @@ app.post('/api/payment/material/initialize', authenticateToken, async (req: any,
 });
 
 // Payment for Assessment Access — PaymentPoint / Kora
+app.post('/api/payment/program/initialize', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { program_id, gateway = 'paystack', mode = 'inline' } = req.body;
+    const programId = optionalInt(program_id);
+    if (!programId) return res.status(400).json({ error: 'program_id is required' });
+    if (getUserHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const assignedProgramId = await getStudentProfessionalProgramId(req);
+    if (String(assignedProgramId || '') !== String(programId)) return res.status(403).json({ error: 'This program is not assigned to your account.' });
+
+    const programRes = await pool.query(
+      'SELECT id, tenant_id, name, price, is_published FROM professional_programs WHERE id = $1 AND tenant_id = $2',
+      [programId, req.tenant_id]
+    );
+    const program = programRes.rows[0];
+    if (!program) return res.status(404).json({ error: 'Program not found.' });
+    if (!program.is_published) return res.status(403).json({ error: 'This program has not been published yet.' });
+    const amount = Number(program.price || 0);
+    const reference = `PROG-${Date.now()}-${req.user.id}-${programId}`;
+
+    const creditResult = await applyUserCredit(req.user.id, amount);
+    const redirectUrl = buildPaymentReturnUrl(reference, gateway, 'program_access');
+    let bankAccounts: any[] = [];
+    let paymentResponse: any = null;
+    const chargeAmount = creditResult.chargeAmount;
+    if (chargeAmount > 0) {
+      if (gateway === 'kora') {
+        if (mode === 'inline' || mode === 'checkout') {
+          paymentResponse = await initializeKoraCheckout(req.user, chargeAmount, reference, {
+            redirectUrl,
+            notificationUrl: `${APP_URL}/api/payment/webhook/kora`
+          });
+        } else {
+          bankAccounts = await initializeKoraVirtualAccount(req.user, chargeAmount, reference);
+        }
+      } else if (mode === 'inline') {
+        paymentResponse = buildPaystackInlinePayload(req.user, chargeAmount, reference);
+      } else {
+        paymentResponse = await initializePaystackCheckout(req.user, chargeAmount, reference, { redirectUrl });
+      }
+    }
+
+    await pool.query(
+      'INSERT INTO transactions (user_id, tenant_id, reference, amount, status, type, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [
+        req.user.id,
+        req.tenant_id,
+        reference,
+        amount,
+        chargeAmount > 0 ? 'pending' : 'success',
+        'program_access',
+        { program_id: programId, program_name: program.name, gateway, credit_used: creditResult.creditUsed, credit_applied: creditResult.creditApplied, paid_so_far: creditResult.creditUsed, remaining_amount: Math.max(amount - creditResult.creditUsed, 0) }
+      ]
+    );
+
+    if (creditResult.creditUsed > 0) {
+      await insertPaymentEvent({
+        reference,
+        gateway,
+        eventType: 'payment',
+        amount: creditResult.creditUsed,
+        eventKey: `credit:${reference}`,
+        payload: { source: 'wallet_credit', credit_used: creditResult.creditUsed }
+      });
+    }
+    if (chargeAmount === 0) await recomputeTransaction(reference, gateway);
+
+    const expiresAtDate = new Date();
+    expiresAtDate.setMinutes(expiresAtDate.getMinutes() + 30);
+    res.json({
+      reference,
+      amount,
+      amount_naira: amount,
+      bankAccounts,
+      checkout_url: typeof paymentResponse === 'string' ? paymentResponse : (paymentResponse as any)?.checkoutUrl,
+      ...(typeof paymentResponse === 'object' ? paymentResponse : {}),
+      expires_at: expiresAtDate.toISOString(),
+      credit_applied: creditResult.creditApplied,
+      credit_used: creditResult.creditUsed,
+      remaining_amount: Math.max(amount - creditResult.creditUsed, 0)
+    });
+  } catch (err: any) {
+    console.error('Program payment init error:', err);
+    res.status(500).json({ error: 'Payment could not be initialized. Please try again or contact support.' });
+  }
+});
+
 app.post('/api/payment/assessment/initialize', authenticateToken, async (req: any, res) => {
   const { exam_id, amount, gateway = 'paystack', mode = 'inline' } = req.body;
   if (!exam_id || !amount) return res.status(400).json({ error: 'exam_id and amount are required' });
@@ -11839,11 +12374,17 @@ app.get('/api/student/attendance', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const hubScope = getUserHubScope(req);
+    if (hubScope === 'professional') return res.json({ success: true, records: [] });
     const result = await pool.query(
       `SELECT ar.id, ar.session_id, ar.marked_at,
-              s.title as topic, s.course_code, s.session_date, s.is_paid, s.price
+              s.title as topic, s.course_code, s.session_date, s.is_paid, s.price,
+              s.professional_program_id, s.professional_course_id,
+              pp.name AS professional_program_name,
+              pc.title AS professional_course_title
        FROM attendance_records ar
        JOIN attendance_sessions s ON s.id = ar.session_id
+       LEFT JOIN professional_programs pp ON pp.id = s.professional_program_id AND pp.tenant_id = s.tenant_id
+       LEFT JOIN professional_courses pc ON pc.id = s.professional_course_id AND pc.tenant_id = s.tenant_id
        WHERE ar.student_id = $1 AND ar.tenant_id = $2
        AND COALESCE(s.hub_scope, 'academic') = $3
        ORDER BY s.session_date DESC, ar.marked_at DESC`,
@@ -11903,9 +12444,12 @@ app.get('/api/courses/roster', authenticateToken, checkSubscription, async (req:
   try {
     const hubScope = getRequestHubScope(req);
     const result = await pool.query(
-      `SELECT sr.*, sc.name as category_name
+      `SELECT sr.*, sc.name as category_name,
+              pp.name AS professional_program_name,
+              pp.code AS professional_program_code
        FROM students_roster sr
        LEFT JOIN student_categories sc ON sc.id = sr.category_id
+       LEFT JOIN professional_programs pp ON pp.id = sr.professional_program_id AND pp.tenant_id = sr.tenant_id
        WHERE sr.tenant_id = $1 AND COALESCE(sr.hub_scope, 'academic') = $2
        ORDER BY sr.name ASC`,
       [req.tenant_id, hubScope]
@@ -11934,6 +12478,537 @@ app.get('/api/courses/categories', authenticateToken, checkSubscription, async (
 });
 
 // ─── FIX 9: Category fee editable until first payment is made ────────
+const normalizeWatchRanges = (existing: any, start: number, end: number, duration: number) => {
+  const ranges: Array<[number, number]> = Array.isArray(existing)
+    ? existing
+        .map((range: any) => [Number(range?.[0]), Number(range?.[1])] as [number, number])
+        .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && b > a)
+    : [];
+  const safeDuration = Math.max(Number(duration) || 0, 0);
+  const safeStart = Math.max(0, Math.min(Number(start) || 0, safeDuration || Number(start) || 0));
+  const safeEnd = Math.max(safeStart, Math.min(Number(end) || safeStart, safeDuration || Number(end) || safeStart));
+  if (safeEnd - safeStart > 0.5) ranges.push([safeStart, safeEnd]);
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (!last || range[0] > last[1] + 1) merged.push(range);
+    else last[1] = Math.max(last[1], range[1]);
+  }
+  return merged.map(([a, b]) => [Number(a.toFixed(2)), Number(b.toFixed(2))]);
+};
+
+const watchedSecondsFromRanges = (ranges: Array<[number, number]>) =>
+  ranges.reduce((sum, [a, b]) => sum + Math.max(0, b - a), 0);
+
+async function getProfessionalProgramCompletion(tenantId: number, studentId: number, programId: number) {
+  const [programRes, coursesRes] = await Promise.all([
+    pool.query('SELECT * FROM professional_programs WHERE id = $1 AND tenant_id = $2', [programId, tenantId]),
+    pool.query(
+      `SELECT c.id, c.title, c.code, c.sort_order,
+              COUNT(DISTINCT e.id) AS assessment_count,
+              COUNT(DISTINCT CASE WHEN er.id IS NOT NULL THEN e.id WHEN sub.id IS NOT NULL AND COALESCE(sub.grade, '') <> '' THEN e.id ELSE NULL END) AS completed_assessments,
+              ROUND(AVG(NULLIF(er.score, '')::numeric), 1) AS avg_score,
+              COUNT(DISTINCT r.id) AS content_count,
+              COUNT(DISTINCT CASE WHEN r.type = 'video' THEN r.id ELSE NULL END) AS video_count,
+              COUNT(DISTINCT CASE WHEN r.type = 'video' AND vp.completed = TRUE THEN r.id ELSE NULL END) AS completed_videos
+       FROM professional_courses c
+       LEFT JOIN exams e ON e.professional_course_id = c.id AND e.professional_program_id = c.program_id AND e.tenant_id = c.tenant_id AND COALESCE(e.hub_scope, 'academic') = 'professional' AND e.is_available = TRUE
+       LEFT JOIN exam_results er ON er.exam_id = e.id AND er.user_id = $2 AND er.tenant_id = c.tenant_id
+       LEFT JOIN assignment_submissions sub ON sub.exam_id = e.id AND sub.student_id = $2 AND sub.tenant_id = c.tenant_id
+       LEFT JOIN resources r ON r.professional_course_id = c.id AND r.professional_program_id = c.program_id AND r.tenant_id = c.tenant_id AND COALESCE(r.hub_scope, 'academic') = 'professional' AND r.is_available = TRUE
+       LEFT JOIN professional_video_progress vp ON vp.resource_id = r.id AND vp.student_id = $2 AND vp.tenant_id = c.tenant_id
+       WHERE c.tenant_id = $1 AND c.program_id = $3
+       GROUP BY c.id
+       ORDER BY c.sort_order ASC, c.created_at ASC`,
+      [tenantId, studentId, programId]
+    )
+  ]);
+  const program = programRes.rows[0] || null;
+  const courses = coursesRes.rows.map((course: any) => {
+    const assessmentCount = parseInt(course.assessment_count || '0', 10);
+    const completedAssessments = parseInt(course.completed_assessments || '0', 10);
+    const contentCount = parseInt(course.content_count || '0', 10);
+    const videoCount = parseInt(course.video_count || '0', 10);
+    const completedVideos = parseInt(course.completed_videos || '0', 10);
+    return {
+      ...course,
+      assessment_count: assessmentCount,
+      completed_assessments: completedAssessments,
+      content_count: contentCount,
+      video_count: videoCount,
+      completed_videos: completedVideos,
+      is_complete: (contentCount > 0 || assessmentCount > 0) && (assessmentCount === 0 || completedAssessments >= assessmentCount) && (videoCount === 0 || completedVideos >= videoCount),
+      avg_score: course.avg_score !== null ? Number(course.avg_score) : null
+    };
+  });
+  const completedCourses = courses.filter((course: any) => course.is_complete).length;
+  const courseCount = courses.length;
+  return {
+    program,
+    courses,
+    courseCount,
+    completedCourses,
+    percent: courseCount > 0 ? Math.round((completedCourses / courseCount) * 100) : 0,
+    isComplete: courseCount > 0 && completedCourses === courseCount,
+    missingCourses: courses.filter((course: any) => !course.is_complete)
+  };
+}
+
+async function generateProfessionalCertificationForStudent(tenantId: number, studentId: number, programId: number, createdBy: number | null) {
+  const studentRes = await pool.query(
+    `SELECT u.id, u.name, u.email, u.matric_number,
+            COALESCE(u.professional_program_id, sr.professional_program_id) AS professional_program_id,
+            COALESCE(sr.matric_number, u.matric_number) AS roster_matric
+     FROM users u
+     LEFT JOIN students_roster sr ON sr.tenant_id = u.tenant_id AND sr.email = u.email AND sr.matric_number = u.matric_number AND COALESCE(sr.hub_scope, 'academic') = COALESCE(u.hub_scope, 'academic')
+     WHERE u.id = $1 AND u.tenant_id = $2 AND u.role = 'student' AND COALESCE(u.hub_scope, 'academic') = 'professional'
+     LIMIT 1`,
+    [studentId, tenantId]
+  );
+  if (studentRes.rows.length === 0) {
+    const err: any = new Error('Professional student not found.');
+    err.status = 404;
+    throw err;
+  }
+  const student = studentRes.rows[0];
+  if (String(student.professional_program_id || '') !== String(programId)) {
+    const err: any = new Error('This student is not assigned to the selected professional program.');
+    err.status = 403;
+    throw err;
+  }
+  const completion = await getProfessionalProgramCompletion(tenantId, studentId, programId);
+  if (!completion.program) {
+    const err: any = new Error('Professional program not found.');
+    err.status = 404;
+    throw err;
+  }
+  if (!completion.isComplete) {
+    const err: any = new Error('Certification unlocks after all courses have completed assessments and required videos reach at least 80% watched.');
+    err.status = 409;
+    err.completion = completion;
+    throw err;
+  }
+  let cert = await pool.query('SELECT * FROM professional_certifications WHERE tenant_id = $1 AND student_id = $2 AND program_id = $3 LIMIT 1', [tenantId, studentId, programId]);
+  if (cert.rows.length === 0) {
+    cert = await pool.query(
+      `INSERT INTO professional_certifications (tenant_id, student_id, program_id, certificate_id, metadata, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [tenantId, studentId, programId, buildProfessionalCertificateId(studentId, programId), JSON.stringify({ completion_percent: completion.percent, completed_courses: completion.completedCourses }), createdBy]
+    );
+  }
+  return { certificate: cert.rows[0], completion, student };
+}
+
+app.get('/api/pro-hub/programs', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (!['tenant_admin', 'student'].includes(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
+    if (hubScope !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const assignedProgramId = req.user.role === 'student' ? await getStudentProfessionalProgramId(req) : null;
+    const params: any[] = [req.tenant_id];
+    let where = 'p.tenant_id = $1';
+    if (assignedProgramId) {
+      params.push(assignedProgramId);
+      where += ` AND p.id = $${params.length}`;
+    }
+    if (req.user.role === 'student') {
+      where += ' AND p.is_published = TRUE';
+    }
+    const programsRes = await pool.query(
+      `SELECT p.*,
+              (SELECT COUNT(*) FROM professional_courses c WHERE c.program_id = p.id AND c.tenant_id = p.tenant_id) AS course_count,
+              (SELECT COUNT(*) FROM students_roster sr WHERE sr.tenant_id = p.tenant_id AND COALESCE(sr.hub_scope, 'academic') = 'professional' AND sr.professional_program_id = p.id) AS student_count,
+              (SELECT COUNT(*) FROM professional_certifications pc WHERE pc.tenant_id = p.tenant_id AND pc.program_id = p.id) AS certification_count
+       FROM professional_programs p
+       WHERE ${where}
+       ORDER BY p.created_at DESC`,
+      params
+    );
+    const programIds = programsRes.rows.map((p: any) => p.id);
+    const coursesRes = programIds.length
+      ? await pool.query(
+          `SELECT c.* FROM professional_courses c
+           WHERE c.tenant_id = $1 AND c.program_id = ANY($2::int[])
+           ORDER BY c.sort_order ASC, c.created_at ASC`,
+          [req.tenant_id, programIds]
+        )
+      : { rows: [] };
+    const resourcesRes = programIds.length
+      ? await pool.query(
+          `SELECT r.id, r.type, r.name, r.status, r.is_available, r.price, r.is_paid, r.created_at,
+                  r.professional_program_id, r.professional_course_id,
+                  pc.title AS course_title, pc.code AS course_code
+           FROM resources r
+           LEFT JOIN professional_courses pc ON pc.id = r.professional_course_id AND pc.tenant_id = r.tenant_id
+           WHERE r.tenant_id = $1 AND COALESCE(r.hub_scope, 'academic') = 'professional'
+             AND r.professional_program_id = ANY($2::int[])
+           ORDER BY r.created_at DESC`,
+          [req.tenant_id, programIds]
+        )
+      : { rows: [] };
+    const resourcesByCourse = new Map<number, any[]>();
+    for (const resource of resourcesRes.rows) {
+      const courseId = Number(resource.professional_course_id);
+      if (!courseId) continue;
+      resourcesByCourse.set(courseId, [...(resourcesByCourse.get(courseId) || []), resource]);
+    }
+    const coursesByProgram = new Map<number, any[]>();
+    for (const course of coursesRes.rows) {
+      const pid = Number(course.program_id);
+      coursesByProgram.set(pid, [...(coursesByProgram.get(pid) || []), { ...course, contents: resourcesByCourse.get(Number(course.id)) || [] }]);
+    }
+    const paidProgramIds = new Set<number>();
+    if (req.user.role === 'student' && programIds.length > 0) {
+      const paidRes = await pool.query(
+        `SELECT (metadata->>'program_id')::int AS program_id
+         FROM transactions
+         WHERE user_id = $1 AND type = 'program_access' AND status = 'success'
+           AND (metadata->>'program_id')::int = ANY($2::int[])`,
+        [req.user.id, programIds]
+      );
+      paidRes.rows.forEach((row: any) => paidProgramIds.add(Number(row.program_id)));
+    }
+    res.json({
+      success: true,
+      programs: programsRes.rows.map((program: any) => ({
+        ...program,
+        course_count: Number(program.course_count || 0),
+        student_count: Number(program.student_count || 0),
+        certification_count: Number(program.certification_count || 0),
+        hasPaid: req.user.role === 'student' ? Number(program.price || 0) <= 0 || paidProgramIds.has(Number(program.id)) : undefined,
+        courses: coursesByProgram.get(Number(program.id)) || []
+      }))
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.post('/api/pro-hub/programs', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getRequestHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const name = String(req.body.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Program name is required.' });
+    const price = Math.max(0, parseInt(String(req.body.price || '0'), 10) || 0);
+    const isPublished = Boolean(req.body.is_published ?? req.body.isPublished ?? false);
+    const result = await pool.query(
+      `INSERT INTO professional_programs (tenant_id, name, code, description, coordinator_name, price, is_published)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [
+        req.tenant_id,
+        name,
+        String(req.body.code || '').trim() || null,
+        String(req.body.description || '').trim() || null,
+        String(req.body.coordinator_name || req.body.coordinatorName || '').trim() || null,
+        price,
+        isPublished
+      ]
+    );
+    res.json({ success: true, program: result.rows[0] });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.put('/api/pro-hub/programs/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getRequestHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const id = parseInt(req.params.id, 10);
+    const name = req.body.name === undefined ? undefined : String(req.body.name || '').trim();
+    const code = req.body.code === undefined ? undefined : String(req.body.code || '').trim();
+    const description = req.body.description === undefined ? undefined : String(req.body.description || '').trim();
+    const coordinator = req.body.coordinator_name === undefined && req.body.coordinatorName === undefined
+      ? undefined
+      : String(req.body.coordinator_name || req.body.coordinatorName || '').trim();
+    const price = req.body.price === undefined ? undefined : Math.max(0, parseInt(String(req.body.price || '0'), 10) || 0);
+    const isPublished = req.body.is_published === undefined && req.body.isPublished === undefined
+      ? undefined
+      : Boolean(req.body.is_published ?? req.body.isPublished);
+
+    const result = await pool.query(
+      `UPDATE professional_programs
+       SET name = COALESCE($1, name),
+           code = COALESCE($2, code),
+           description = COALESCE($3, description),
+           coordinator_name = COALESCE($4, coordinator_name),
+           price = COALESCE($5, price),
+           is_published = COALESCE($6, is_published),
+           updated_at = NOW()
+       WHERE id = $7 AND tenant_id = $8
+       RETURNING *`,
+      [name || null, code ?? null, description ?? null, coordinator ?? null, price ?? null, isPublished ?? null, id, req.tenant_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Program not found.' });
+    res.json({ success: true, program: result.rows[0] });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.delete('/api/pro-hub/programs/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getRequestHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const id = parseInt(req.params.id, 10);
+    await pool.query('UPDATE students_roster SET professional_program_id = NULL WHERE tenant_id = $1 AND professional_program_id = $2', [req.tenant_id, id]);
+    await pool.query('UPDATE users SET professional_program_id = NULL WHERE tenant_id = $1 AND professional_program_id = $2', [req.tenant_id, id]);
+    await pool.query('UPDATE resources SET professional_program_id = NULL, professional_course_id = NULL WHERE tenant_id = $1 AND professional_program_id = $2', [req.tenant_id, id]);
+    await pool.query('UPDATE exams SET professional_program_id = NULL, professional_course_id = NULL WHERE tenant_id = $1 AND professional_program_id = $2', [req.tenant_id, id]);
+    await pool.query('DELETE FROM professional_programs WHERE id = $1 AND tenant_id = $2', [id, req.tenant_id]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.post('/api/pro-hub/programs/:id/courses', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getRequestHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const programId = parseInt(req.params.id, 10);
+    const title = String(req.body.title || '').trim();
+    if (!title) return res.status(400).json({ error: 'Course title is required.' });
+    const programCheck = await pool.query('SELECT id FROM professional_programs WHERE id = $1 AND tenant_id = $2', [programId, req.tenant_id]);
+    if (programCheck.rows.length === 0) return res.status(404).json({ error: 'Program not found.' });
+    const result = await pool.query(
+      `INSERT INTO professional_courses (tenant_id, program_id, title, code, description, sort_order)
+       VALUES ($1, $2, $3, $4, $5, COALESCE((SELECT MAX(sort_order) + 1 FROM professional_courses WHERE tenant_id = $1 AND program_id = $2), 1))
+       RETURNING *`,
+      [req.tenant_id, programId, title, String(req.body.code || '').trim() || null, String(req.body.description || '').trim() || null]
+    );
+    res.json({ success: true, course: result.rows[0] });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.delete('/api/pro-hub/courses/:courseId', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getRequestHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const courseId = parseInt(req.params.courseId, 10);
+    await pool.query('UPDATE resources SET professional_course_id = NULL WHERE tenant_id = $1 AND professional_course_id = $2', [req.tenant_id, courseId]);
+    await pool.query('UPDATE exams SET professional_course_id = NULL WHERE tenant_id = $1 AND professional_course_id = $2', [req.tenant_id, courseId]);
+    await pool.query('DELETE FROM professional_courses WHERE id = $1 AND tenant_id = $2', [courseId, req.tenant_id]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.put('/api/pro-hub/resources/:id/course', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getRequestHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const resourceId = parseInt(req.params.id, 10);
+    const programId = optionalInt(req.body.program_id ?? req.body.programId);
+    const courseId = optionalInt(req.body.course_id ?? req.body.courseId);
+    if (programId && courseId) {
+      const courseCheck = await pool.query('SELECT id FROM professional_courses WHERE id = $1 AND program_id = $2 AND tenant_id = $3', [courseId, programId, req.tenant_id]);
+      if (courseCheck.rows.length === 0) return res.status(404).json({ error: 'Course not found inside this program.' });
+    }
+    await pool.query(
+      `UPDATE resources SET professional_program_id = $1, professional_course_id = $2
+       WHERE id = $3 AND tenant_id = $4 AND COALESCE(hub_scope, 'academic') = 'professional'`,
+      [programId, courseId, resourceId, req.tenant_id]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.put('/api/pro-hub/students/:rosterId/program', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getRequestHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const rosterId = parseInt(req.params.rosterId, 10);
+    const programId = optionalInt(req.body.program_id ?? req.body.programId);
+    if (programId) {
+      const programCheck = await pool.query('SELECT id FROM professional_programs WHERE id = $1 AND tenant_id = $2', [programId, req.tenant_id]);
+      if (programCheck.rows.length === 0) return res.status(404).json({ error: 'Program not found.' });
+    }
+    const rosterRes = await pool.query(
+      `UPDATE students_roster SET professional_program_id = $1
+       WHERE id = $2 AND tenant_id = $3 AND COALESCE(hub_scope, 'academic') = 'professional'
+       RETURNING matric_number, email`,
+      [programId, rosterId, req.tenant_id]
+    );
+    if (rosterRes.rows.length === 0) return res.status(404).json({ error: 'Professional student not found.' });
+    const row = rosterRes.rows[0];
+    await pool.query(
+      `UPDATE users SET professional_program_id = $1
+       WHERE tenant_id = $2 AND role = 'student' AND matric_number = $3 AND email = $4 AND COALESCE(hub_scope, 'academic') = 'professional'`,
+      [programId, req.tenant_id, row.matric_number, row.email]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.get('/api/pro-hub/students/analytics', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getRequestHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const studentsRes = await pool.query(
+      `SELECT sr.id AS roster_id, sr.name, sr.email, sr.phone, sr.matric_number, sr.created_at, sr.email_status,
+              u.id AS user_id,
+              COALESCE(sr.professional_program_id, u.professional_program_id) AS professional_program_id,
+              p.name AS program_name, p.code AS program_code,
+              COALESCE(perf.assessment_count, 0) AS assessment_count,
+              ROUND(perf.avg_score, 1) AS avg_score,
+              cert.certificate_id, cert.issued_at
+       FROM students_roster sr
+       LEFT JOIN users u ON u.tenant_id = sr.tenant_id AND u.email = sr.email AND u.matric_number = sr.matric_number AND u.role = 'student' AND COALESCE(u.hub_scope, 'academic') = 'professional'
+       LEFT JOIN professional_programs p ON p.id = COALESCE(sr.professional_program_id, u.professional_program_id) AND p.tenant_id = sr.tenant_id
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS assessment_count, AVG(NULLIF(er.score, '')::numeric) AS avg_score
+         FROM exam_results er JOIN exams e ON e.id = er.exam_id
+         WHERE er.user_id = u.id AND er.tenant_id = sr.tenant_id AND COALESCE(e.hub_scope, 'academic') = 'professional'
+           AND (COALESCE(sr.professional_program_id, u.professional_program_id) IS NULL OR e.professional_program_id IS NULL OR e.professional_program_id = COALESCE(sr.professional_program_id, u.professional_program_id))
+       ) perf ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT certificate_id, issued_at FROM professional_certifications pc
+         WHERE pc.tenant_id = sr.tenant_id AND pc.student_id = u.id AND pc.program_id = COALESCE(sr.professional_program_id, u.professional_program_id)
+         ORDER BY issued_at DESC LIMIT 1
+       ) cert ON TRUE
+       WHERE sr.tenant_id = $1 AND COALESCE(sr.hub_scope, 'academic') = 'professional'
+       ORDER BY sr.name ASC`,
+      [req.tenant_id]
+    );
+    const students = [];
+    for (const row of studentsRes.rows) {
+      let completion: any = null;
+      if (row.user_id && row.professional_program_id) {
+        completion = await getProfessionalProgramCompletion(req.tenant_id, Number(row.user_id), Number(row.professional_program_id));
+      }
+      students.push({
+        ...row,
+        assessment_count: Number(row.assessment_count || 0),
+        avg_score: row.avg_score !== null ? Number(row.avg_score) : null,
+        completion
+      });
+    }
+    res.json({ success: true, students });
+  } catch (err: any) {
+    console.error('[Pro Hub Analytics]', err);
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.post('/api/student/videos/:id/progress', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getUserHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const resourceId = parseInt(req.params.id, 10);
+    const studentProgramId = await getStudentProfessionalProgramId(req);
+    const resourceRes = await pool.query(
+      `SELECT id, professional_program_id FROM resources
+       WHERE id = $1 AND tenant_id = $2 AND type = 'video'
+       AND COALESCE(hub_scope, 'academic') = 'professional'
+       AND is_available = TRUE`,
+      [resourceId, req.tenant_id]
+    );
+    if (resourceRes.rows.length === 0) return res.status(404).json({ error: 'Video not found.' });
+    const resourceProgramId = optionalInt(resourceRes.rows[0].professional_program_id);
+    if (!resourceProgramId) return res.status(403).json({ error: 'This video is not assigned to a published professional program.' });
+    if (String(resourceProgramId) !== String(studentProgramId || '')) return res.status(403).json({ error: 'This video is not assigned to your program.' });
+    await assertStudentProfessionalProgramAccess(req, resourceProgramId);
+    const duration = Math.max(0, Number(req.body.duration || req.body.duration_seconds || 0));
+    const currentTime = Math.max(0, Number(req.body.currentTime || req.body.current_time || 0));
+    const start = Math.max(0, Number(req.body.start ?? req.body.rangeStart ?? Math.max(0, currentTime - 2)));
+    const end = Math.max(start, Number(req.body.end ?? req.body.rangeEnd ?? currentTime));
+    const existing = await pool.query(
+      'SELECT watched_ranges FROM professional_video_progress WHERE tenant_id = $1 AND student_id = $2 AND resource_id = $3 LIMIT 1',
+      [req.tenant_id, req.user.id, resourceId]
+    );
+    const ranges = normalizeWatchRanges(existing.rows[0]?.watched_ranges || [], start, end, duration);
+    const watchedSeconds = watchedSecondsFromRanges(ranges as Array<[number, number]>);
+    const ratio = duration > 0 ? Math.min(1, watchedSeconds / duration) : 0;
+    const progress = await pool.query(
+      `INSERT INTO professional_video_progress (tenant_id, student_id, resource_id, duration_seconds, watched_seconds, last_position_seconds, watched_ranges, completion_ratio, completed, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+       ON CONFLICT (student_id, resource_id)
+       DO UPDATE SET duration_seconds = EXCLUDED.duration_seconds,
+                     watched_seconds = EXCLUDED.watched_seconds,
+                     last_position_seconds = EXCLUDED.last_position_seconds,
+                     watched_ranges = EXCLUDED.watched_ranges,
+                     completion_ratio = EXCLUDED.completion_ratio,
+                     completed = EXCLUDED.completed,
+                     updated_at = NOW()
+       RETURNING *`,
+      [req.tenant_id, req.user.id, resourceId, duration, watchedSeconds, currentTime, JSON.stringify(ranges), ratio, ratio >= 0.8]
+    );
+    res.json({ success: true, progress: progress.rows[0] });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+app.get('/api/student/pro-hub', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getUserHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    const programId = await getStudentProfessionalProgramId(req);
+    if (!programId) return res.json({ success: true, program: null, completion: null, certificates: [] });
+    const completion = await getProfessionalProgramCompletion(req.tenant_id, req.user.id, programId);
+    if (!completion.program?.is_published) {
+      return res.json({ success: true, program: null, completion: null, certificates: [], unpublished: true });
+    }
+    const hasPaid = await hasProfessionalProgramAccess(req.user.id, programId, Number(completion.program.price || 0));
+    const certs = await pool.query(
+      'SELECT certificate_id, issued_at, program_id FROM professional_certifications WHERE tenant_id = $1 AND student_id = $2 ORDER BY issued_at DESC',
+      [req.tenant_id, req.user.id]
+    );
+    res.json({ success: true, program: { ...completion.program, hasPaid }, completion, certificates: certs.rows });
+  } catch (err: any) {
+    res.status(500).json({ error: friendlyServerError(err) });
+  }
+});
+
+async function sendProfessionalCertificationPdf(req: any, res: any, studentId: number, programId: number, createdBy: number | null) {
+  const { certificate, completion, student } = await generateProfessionalCertificationForStudent(req.tenant_id, studentId, programId, createdBy);
+  const tenantRes = await pool.query('SELECT name FROM tenants WHERE id = $1', [req.tenant_id]);
+  const pdf = await generateProfessionalCertificationPDF({
+    studentName: student.name,
+    matricNumber: student.roster_matric || student.matric_number || '',
+    programName: completion.program.name,
+    programCode: completion.program.code,
+    coordinatorName: completion.program.coordinator_name,
+    certificateId: certificate.certificate_id,
+    issuedAt: new Date(certificate.issued_at || new Date()),
+    tenantName: tenantRes.rows[0]?.name || 'Professional Hub',
+    courses: completion.courses
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Professional_Certification_${certificate.certificate_id}.pdf"`);
+  res.send(pdf);
+}
+
+app.get('/api/student/pro-hub/programs/:programId/certificate', authenticateToken, async (req: any, res: any) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getUserHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    await sendProfessionalCertificationPdf(req, res, req.user.id, parseInt(req.params.programId, 10), null);
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || friendlyServerError(err), completion: err.completion });
+  }
+});
+
+app.get('/api/pro-hub/students/:studentId/programs/:programId/certificate', authenticateToken, checkSubscription, async (req: any, res: any) => {
+  if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    if (getRequestHubScope(req) !== 'professional') return res.status(403).json({ error: 'Professional Hub only.' });
+    await sendProfessionalCertificationPdf(req, res, parseInt(req.params.studentId, 10), parseInt(req.params.programId, 10), req.user.id);
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || friendlyServerError(err), completion: err.completion });
+  }
+});
+
 app.put('/api/courses/categories/:id', authenticateToken, checkSubscription, async (req: any, res: any) => {
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
@@ -11983,6 +13058,11 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     const email = clean(b.email || b.studentEmail || b.emailAddress || b.Email);
     const course = clean(b.course || b.department || b.program);
     const categoryName = clean(b.categoryName);
+    let professionalProgramId = hubScope === 'professional' ? optionalInt(b.professional_program_id ?? b.program_id ?? b.programId) : null;
+    if (professionalProgramId) {
+      const programCheck = await pool.query('SELECT id FROM professional_programs WHERE id = $1 AND tenant_id = $2', [professionalProgramId, req.tenant_id]);
+      if (programCheck.rows.length === 0) return res.status(404).json({ error: 'Professional program not found.' });
+    }
 
     const tenantRes = await pool.query('SELECT workspace_id, name FROM tenants WHERE id = $1', [req.tenant_id]);
     const workspaceId = tenantRes.rows[0]?.workspace_id || 'N/A';
@@ -12027,8 +13107,8 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
 
     // 4. Add to roster with hashed PIN
     await pool.query(
-      "INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id, hub_scope, email_status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')",
-      [req.tenant_id, matricNumber, name, email, course || '', hashedPin, category_id, hubScope]
+      "INSERT INTO students_roster (tenant_id, matric_number, name, email, course, pin_hash, category_id, hub_scope, email_status, professional_program_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9)",
+      [req.tenant_id, matricNumber, name, email, course || '', hashedPin, category_id, hubScope, professionalProgramId]
     );
 
     // 5. Create or Link User account
@@ -12039,11 +13119,11 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
     );
     if (userCheck.rows.length === 0) {
       await pool.query(
-        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, hub_scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id, hubScope]
+        'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, hub_scope, professional_program_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+        [email, name, hashedPin, 'student', req.tenant_id, matricNumber, category_id, hubScope, professionalProgramId]
       );
     } else {
-      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3), hub_scope = $4 WHERE id = $2', [hashedPin, userCheck.rows[0].id, category_id, hubScope]);
+      await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3), hub_scope = $4, professional_program_id = $5 WHERE id = $2', [hashedPin, userCheck.rows[0].id, category_id, hubScope, professionalProgramId]);
     }
 
     // 6. Send email with auto-generated PIN
@@ -12359,18 +13439,32 @@ app.get('/api/student/materials/:id/preview', authenticateToken, async (req: any
     const { id } = req.params;
     const hubScope = getUserHubScope(req);
     const result = await pool.query(
-      `SELECT r.id, r.name, r.type, r.is_paid, r.price, r.content,
+      `SELECT r.id, r.name, r.type, r.is_paid, r.price, r.content, r.professional_program_id,
+       pp.price AS program_price, pp.is_published AS program_published,
        EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'material_access'
-              AND (metadata->>'resource_id')::int = r.id AND status = 'success') as "hasPaid"
+              AND (metadata->>'resource_id')::int = r.id AND status = 'success') as "hasPaid",
+       EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'program_access'
+              AND (metadata->>'program_id')::int = r.professional_program_id AND status = 'success') as "programHasPaid"
        FROM resources r
        JOIN users u ON u.id = $1
+       LEFT JOIN students_roster sr ON sr.tenant_id = u.tenant_id AND sr.email = u.email AND sr.matric_number = u.matric_number AND COALESCE(sr.hub_scope, 'academic') = COALESCE(u.hub_scope, 'academic')
+       LEFT JOIN professional_programs pp ON pp.id = r.professional_program_id AND pp.tenant_id = r.tenant_id
        WHERE r.id = $2 AND r.tenant_id = $3 AND r.is_available = true
        AND COALESCE(r.hub_scope, 'academic') = $4
-       AND (r.category_id IS NULL OR r.category_id = u.category_id)`,
+       AND (
+         ($4 <> 'professional' AND (r.category_id IS NULL OR r.category_id = u.category_id))
+         OR ($4 = 'professional' AND r.professional_program_id = COALESCE(u.professional_program_id, sr.professional_program_id) AND pp.is_published = TRUE)
+       )`,
       [req.user.id, id, req.tenant_id, hubScope]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Material not found' });
     const mat = result.rows[0];
+    if (hubScope === 'professional') {
+      const programPrice = Number(mat.program_price || 0);
+      mat.is_paid = programPrice > 0;
+      mat.price = programPrice;
+      mat.hasPaid = programPrice <= 0 || !!mat.programHasPaid;
+    }
 
     // If free or already paid, return full content
     if (!mat.is_paid || mat.hasPaid) {
@@ -12982,6 +14076,14 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
       submission_type, due_date, allow_late
     } = req.body;
     const hubScope = getRequestHubScope(req);
+    let proProgramId = hubScope === 'professional' ? optionalInt(req.body.professional_program_id ?? req.body.program_id ?? req.body.programId) : null;
+    let proCourseId = hubScope === 'professional' ? optionalInt(req.body.professional_course_id ?? req.body.course_id ?? req.body.courseId) : null;
+    if (hubScope === 'professional') {
+      if (!proProgramId) return res.status(400).json({ error: 'Select the professional program for this assessment.' });
+      const validated = await validateProfessionalProgramCourse(req.tenant_id, proProgramId, proCourseId);
+      proProgramId = validated.programId;
+      proCourseId = validated.courseId;
+    }
 
     const allMaterialIds = normalizeMaterialIds(material_ids, material_id);
 
@@ -13000,8 +14102,15 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
           `SELECT id
            FROM resources
            WHERE tenant_id = $1 AND type = 'material' AND id = ANY($2::int[])
-           AND COALESCE(hub_scope, 'academic') = $3`,
-          [req.tenant_id, allMaterialIds, hubScope]
+           AND COALESCE(hub_scope, 'academic') = $3
+           AND (
+             $3 <> 'professional'
+             OR (
+               professional_program_id = $4
+               AND ($5::int IS NULL OR professional_course_id = $5)
+             )
+           )`,
+          [req.tenant_id, allMaterialIds, hubScope, proProgramId, proCourseId]
         );
         const validIdSet = new Set<number>(materialsRes.rows.map((row: any) => Number(row.id)));
         verifiedMaterialIds = allMaterialIds.filter(id => validIdSet.has(id));
@@ -13016,14 +14125,14 @@ app.post('/api/exams', authenticateToken, checkSubscription, async (req: any, re
         `INSERT INTO exams (tenant_id, title, description, duration, type, category_id,
           start_date, end_date, timer_mode, questions_count, batch_size, instructions,
           material_id, difficulty, blooms_level, ai_generated, max_attempts, is_pool, pool_size,
-          submission_type, due_date, allow_late, hub_scope)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
+          submission_type, due_date, allow_late, hub_scope, professional_program_id, professional_course_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING id`,
         [req.tenant_id, title, description, duration || 60, type || 'test', category_id || null,
          start_date || null, end_date || null, timer_mode || 'whole',
          qCount, batch_size || 10, instructions || null,
          primaryMaterialId, difficulty || 'medium', blooms_level || 'mixed',
          verifiedMaterialIds.length > 0, parseInt(max_attempts) || 1, isPool, poolSz,
-         submission_type || 'mcq', due_date || null, !!allow_late, hubScope]
+         submission_type || 'mcq', due_date || null, !!allow_late, hubScope, proProgramId, proCourseId]
       );
       examId = result.rows[0].id;
 
@@ -13159,7 +14268,8 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
     const examRow = await pool.query(
       `SELECT id, title, type, material_id, questions_count, difficulty, blooms_level,
               is_pool, pool_size, duration, timer_mode, batch_size, instructions,
-              start_date, end_date, category_id, submission_type
+              start_date, end_date, category_id, submission_type,
+              professional_program_id, professional_course_id
               , COALESCE(hub_scope, 'academic') as hub_scope
        FROM exams WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3`,
       [examId, req.tenant_id, hubScope]
@@ -13282,15 +14392,28 @@ app.put('/api/exams/:id/publish', authenticateToken, async (req: any, res) => {
 
     // ── Assign student slots if schedule window + category exist (and not already assigned) ──
     const existingSlots = await pool.query('SELECT COUNT(*) FROM exam_slots WHERE exam_id = $1', [examId]);
-    if (parseInt(existingSlots.rows[0].count) === 0 && exam.start_date && exam.end_date && exam.category_id) {
+    if (parseInt(existingSlots.rows[0].count) === 0 && exam.start_date && exam.end_date && (exam.category_id || exam.professional_program_id)) {
       try {
         const examHubScope = normalizeHubScope(exam.hub_scope);
+        const studentParams: any[] = [req.tenant_id, examHubScope];
+        let studentWhere = `u.tenant_id = $1 AND u.role = 'student' AND COALESCE(u.hub_scope, 'academic') = $2`;
+        if (examHubScope === 'professional' && exam.professional_program_id) {
+          studentParams.push(Number(exam.professional_program_id));
+          studentWhere += ` AND COALESCE(u.professional_program_id, sr.professional_program_id) = $${studentParams.length}`;
+        } else if (exam.category_id) {
+          studentParams.push(Number(exam.category_id));
+          studentWhere += ` AND u.category_id = $${studentParams.length}`;
+        }
         const studentsRes = await pool.query(
-          `SELECT id, name, email FROM users
-           WHERE tenant_id = $1 AND category_id = $2 AND role = 'student'
-           AND COALESCE(hub_scope, 'academic') = $3
-           ORDER BY id`,
-          [req.tenant_id, exam.category_id, examHubScope]
+          `SELECT u.id, u.name, u.email FROM users u
+           LEFT JOIN students_roster sr
+             ON sr.tenant_id = u.tenant_id
+            AND sr.email = u.email
+            AND sr.matric_number = u.matric_number
+            AND COALESCE(sr.hub_scope, 'academic') = COALESCE(u.hub_scope, 'academic')
+           WHERE ${studentWhere}
+           ORDER BY u.id`,
+          studentParams
         );
         const students = studentsRes.rows;
         if (students.length > 0) {
@@ -13379,6 +14502,11 @@ app.post('/api/assignments/:id/submit', authenticateToken, upload.single('file')
     }
     if (exam.category_id && String(exam.category_id) !== String(req.user.category_id || '')) {
       return res.status(403).json({ error: 'This assignment is not available to your category.' });
+    }
+    if (getUserHubScope(req) === 'professional') {
+      const programId = optionalInt(exam.professional_program_id);
+      if (!programId) return res.status(403).json({ error: 'This assignment is not assigned to a professional program.' });
+      await assertStudentProfessionalProgramAccess(req, programId);
     }
 
     if (!exam.is_available || exam.published_status !== 'published') return res.status(403).json({ error: 'Assignment is not open for submissions' });
@@ -13544,10 +14672,11 @@ app.post('/api/attendance/sessions', authenticateToken, async (req: any, res) =>
   try {
     const { title, course_code, category_id, session_date, is_paid, price } = req.body;
     const hubScope = getRequestHubScope(req);
+    if (hubScope === 'professional') return res.status(400).json({ error: 'Attendance is not part of Pro Hub.' });
     const result = await pool.query(
-      `INSERT INTO attendance_sessions (tenant_id, title, course_code, category_id, session_date, is_paid, price, hub_scope)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [req.tenant_id, title, course_code || null, category_id || null, session_date, !!is_paid, parseInt(price) || 0, hubScope]
+      `INSERT INTO attendance_sessions (tenant_id, title, course_code, category_id, session_date, is_paid, price, hub_scope, professional_program_id, professional_course_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+      [req.tenant_id, title, course_code || null, category_id || null, session_date, !!is_paid, parseInt(price) || 0, hubScope, null, null]
     );
     res.json({ success: true, id: result.rows[0].id });
   } catch (error: any) {
@@ -13559,14 +14688,18 @@ app.post('/api/attendance/sessions', authenticateToken, async (req: any, res) =>
 app.get('/api/attendance/sessions', authenticateToken, async (req: any, res) => {
   try {
     const hubScope = req.user.role === 'student' ? getUserHubScope(req) : getRequestHubScope(req);
+    if (hubScope === 'professional') return res.json([]);
     const result = await pool.query(
       `SELECT s.*, sc.name as category_name,
        (SELECT COUNT(*) FROM attendance_records r WHERE r.session_id = s.id) as present_count
        FROM attendance_sessions s
        LEFT JOIN student_categories sc ON sc.id = s.category_id
+       LEFT JOIN users u ON u.id = $3
+       LEFT JOIN students_roster sr ON sr.tenant_id = u.tenant_id AND sr.email = u.email AND sr.matric_number = u.matric_number AND COALESCE(sr.hub_scope, 'academic') = COALESCE(u.hub_scope, 'academic')
        WHERE s.tenant_id = $1 AND COALESCE(s.hub_scope, 'academic') = $2
+       AND ($4::boolean = FALSE OR s.professional_program_id = COALESCE(u.professional_program_id, sr.professional_program_id))
        ORDER BY s.session_date DESC`,
-      [req.tenant_id, hubScope]
+      [req.tenant_id, hubScope, req.user.id || 0, false]
     );
     res.json(result.rows);
   } catch (error) {
@@ -13580,11 +14713,12 @@ app.put('/api/attendance/sessions/:id', authenticateToken, async (req: any, res)
   try {
     const fields = req.body;
     const hubScope = getRequestHubScope(req);
+    if (hubScope === 'professional') return res.status(400).json({ error: 'Attendance is not part of Pro Hub.' });
     const sets: string[] = [];
     const vals: any[] = [];
     let idx = 1;
     for (const [k, v] of Object.entries(fields)) {
-      if (['is_open','is_paid','price','status','title','course_code','category_id','session_date'].includes(k)) {
+      if (['is_open','is_paid','price','status','title','course_code','category_id','session_date','professional_program_id','professional_course_id'].includes(k)) {
         sets.push(`${k} = $${idx++}`); vals.push(v);
       }
     }
@@ -13602,6 +14736,7 @@ app.delete('/api/attendance/sessions/:id', authenticateToken, async (req: any, r
   if (req.user.role !== 'tenant_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const hubScope = getRequestHubScope(req);
+    if (hubScope === 'professional') return res.status(400).json({ error: 'Attendance is not part of Pro Hub.' });
     await pool.query(
       "DELETE FROM attendance_sessions WHERE id = $1 AND tenant_id = $2 AND COALESCE(hub_scope, 'academic') = $3",
       [req.params.id, req.tenant_id, hubScope]
@@ -13743,6 +14878,7 @@ app.get('/api/student/attendance/pdf', authenticateToken, async (req: any, res) 
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const hubScope = getUserHubScope(req);
+    if (hubScope === 'professional') return res.status(403).json({ error: 'Attendance is not part of Pro Hub.' });
     const result = await pool.query(
       `SELECT ar.student_name, ar.matric_number, ar.marked_at,
               s.title as session_title, s.course_code, s.session_date, s.is_paid, s.price,
@@ -13820,6 +14956,7 @@ app.get('/api/student/attendance/open-sessions', authenticateToken, async (req: 
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const hubScope = getUserHubScope(req);
+    if (hubScope === 'professional') return res.json([]);
     const sessions = await pool.query(
       `SELECT s.id, s.title, s.course_code, s.session_date, s.is_paid, s.price,
               EXISTS(
@@ -13844,16 +14981,27 @@ app.get('/api/student/attendance/open-sessions', authenticateToken, async (req: 
 app.post('/api/attendance/sessions/:id/mark', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
+    if (getUserHubScope(req) === 'professional') return res.status(403).json({ error: 'Attendance is not part of Pro Hub.' });
     const session = await pool.query(
       `SELECT s.* FROM attendance_sessions s
        JOIN users u ON u.id = $3
+       LEFT JOIN students_roster sr ON sr.tenant_id = u.tenant_id AND sr.email = u.email AND sr.matric_number = u.matric_number AND COALESCE(sr.hub_scope, 'academic') = COALESCE(u.hub_scope, 'academic')
        WHERE s.id = $1 AND s.tenant_id = $2
        AND COALESCE(s.hub_scope, 'academic') = $4
-       AND (s.category_id IS NULL OR s.category_id = u.category_id)`,
+       AND (
+         $4 <> 'professional'
+         AND (s.category_id IS NULL OR s.category_id = u.category_id)
+         OR ($4 = 'professional' AND s.professional_program_id = COALESCE(u.professional_program_id, sr.professional_program_id))
+       )`,
       [req.params.id, req.tenant_id, req.user.id, getUserHubScope(req)]
     );
     if (!session.rows.length) return res.status(404).json({ error: 'Session not found' });
     const s = session.rows[0];
+    if (getUserHubScope(req) === 'professional') {
+      const programId = optionalInt(s.professional_program_id);
+      if (!programId) return res.status(403).json({ error: 'This attendance session is not assigned to a professional program.' });
+      await assertStudentProfessionalProgramAccess(req, programId);
+    }
     if (!s.is_open) return res.status(403).json({ error: 'This session is not open for attendance' });
 
     if (s.is_paid) {
@@ -13993,15 +15141,35 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
       improvement = earlier > 0 ? Math.round(((later - earlier) / earlier) * 100) : 0;
     }
 
-    // 6. Attendance count
-    const attendanceRes = await pool.query(
+    let attendanceCount = 0;
+    if (hubScope !== 'professional') {
+      const attendanceRes = await pool.query(
       `SELECT COUNT(*) as count
        FROM attendance_records ar
        JOIN attendance_sessions s ON s.id = ar.session_id
        WHERE ar.student_id = $1 AND ar.tenant_id = $2 AND COALESCE(s.hub_scope, 'academic') = $3`,
-      [req.user.id, req.tenant_id, hubScope]
-    );
-    const attendanceCount = parseInt(attendanceRes.rows[0]?.count || '0');
+        [req.user.id, req.tenant_id, hubScope]
+      );
+      attendanceCount = parseInt(attendanceRes.rows[0]?.count || '0');
+    }
+    const stats = [
+      { label: 'Avg Score', value: avgScore > 0 ? Math.round(avgScore) + '%' : 'â€”', type: 'gpa' },
+      { label: 'Assessments', value: totalExams.toString(), type: 'count' },
+      { label: 'Global Rank', value: globalRank, type: 'rank' }
+    ];
+    if (hubScope !== 'professional') {
+      stats.push({ label: 'Attendance', value: attendanceCount.toString(), type: 'attendance' });
+    }
+
+    stats[0].value = avgScore > 0 ? Math.round(avgScore) + '%' : '-';
+    return res.json({
+      success: true,
+      stats,
+      records,
+      improvement,
+      skills: skills.length > 0 ? skills : []
+    });
+    /*
 
     res.json({
       success: true,
@@ -14015,6 +15183,7 @@ app.get('/api/student/performance-stats', authenticateToken, async (req: any, re
       improvement,
       skills: skills.length > 0 ? skills : []
     });
+    */
   } catch (error) {
     console.error('Performance stats error:', error);
     res.status(500).json({ error: 'Failed to calculate performance' });
@@ -14026,6 +15195,53 @@ app.get('/api/student/assessments', authenticateToken, async (req: any, res) => 
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const hubScope = getUserHubScope(req);
+    if (hubScope === 'professional') {
+      const programId = await getStudentProfessionalProgramId(req);
+      if (!programId) return res.json({ success: true, assessments: [] });
+      const program = await getPublishedProfessionalProgram(req.tenant_id, programId);
+      if (!program?.is_published) return res.json({ success: true, assessments: [] });
+      const hasAccess = await hasProfessionalProgramAccess(req.user.id, programId, Number(program.price || 0));
+      const assessments = await pool.query(
+        `SELECT e.*,
+                pc.title AS professional_course_title,
+                pc.code AS professional_course_code,
+                pp.name AS professional_program_name,
+                (SELECT COUNT(*) FROM questions WHERE exam_id = e.id) as "totalQuestions",
+                EXISTS(SELECT 1 FROM exam_results WHERE exam_id = e.id AND user_id = $1) as completed
+         FROM exams e
+         JOIN professional_programs pp ON pp.id = e.professional_program_id AND pp.tenant_id = e.tenant_id
+         LEFT JOIN professional_courses pc ON pc.id = e.professional_course_id AND pc.tenant_id = e.tenant_id
+         WHERE e.tenant_id = $2 AND e.is_available = true
+           AND COALESCE(e.hub_scope, 'academic') = 'professional'
+           AND e.professional_program_id = $3
+           AND pp.is_published = TRUE
+         ORDER BY e.created_at DESC`,
+        [req.user.id, req.tenant_id, programId]
+      );
+      const formatted = assessments.rows.map(a => ({
+        id: a.id,
+        course: a.professional_course_title ? `${a.professional_course_title} - ${a.title}` : a.title,
+        title: a.title,
+        type: a.type || 'test',
+        duration: `${a.duration} Mins`,
+        durationMins: a.duration,
+        totalQuestions: a.totalQuestions || 0,
+        status: a.completed ? 'completed' : 'pending',
+        date: new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        start_date: a.start_date ? new Date(a.start_date).toISOString() : null,
+        end_date: a.end_date ? new Date(a.end_date).toISOString() : null,
+        is_paid: Number(program.price || 0) > 0,
+        price: Number(program.price || 0),
+        hasPaid: hasAccess,
+        payment_type: 'program',
+        program_id: programId,
+        program_name: program.name,
+        professional_program_id: a.professional_program_id,
+        professional_course_id: a.professional_course_id,
+        professional_course_title: a.professional_course_title
+      }));
+      return res.json({ success: true, assessments: formatted });
+    }
     const assessments = await pool.query(
       `SELECT e.*, 
        (SELECT COUNT(*) FROM questions WHERE exam_id = e.id) as "totalQuestions",
@@ -14063,10 +15279,84 @@ app.get('/api/student/assessments', authenticateToken, async (req: any, res) => 
 });
 
 // ─── Student video access ────────────────────────────────────────────
+app.get('/api/student/videos/:id/stream', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const hubScope = getUserHubScope(req);
+    const result = await pool.query(
+      `SELECT id, name, file_blob, file_url, mime_type, category_id, professional_program_id
+       FROM resources
+       WHERE id = $1 AND tenant_id = $2 AND type = 'video' AND is_available = TRUE
+       AND COALESCE(hub_scope, 'academic') = $3`,
+      [req.params.id, req.tenant_id, hubScope]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Video not found.' });
+    const row = result.rows[0];
+    if (hubScope === 'professional') {
+      const programId = optionalInt(row.professional_program_id);
+      if (!programId) return res.status(403).json({ error: 'This video is not assigned to a published professional program.' });
+      await assertStudentProfessionalProgramAccess(req, programId);
+    } else if (row.category_id && String(row.category_id) !== String(req.user.category_id || '')) {
+      return res.status(403).json({ error: 'Video is not available to your category.' });
+    }
+    res.setHeader('Content-Disposition', `inline; filename="${row.name}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (row.file_url) return proxyR2(req, res, row.file_url, row.mime_type || 'video/mp4', row.name);
+    if (row.file_blob) {
+      res.setHeader('Content-Type', row.mime_type || 'video/mp4');
+      return res.send(row.file_blob);
+    }
+    return res.status(404).json({ error: 'Video file not found.' });
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || friendlyServerError(err), program_id: err.program_id, price: err.price });
+  }
+});
+
 app.get('/api/student/videos', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const hubScope = getUserHubScope(req);
+    if (hubScope === 'professional') {
+      const programId = await getStudentProfessionalProgramId(req);
+      if (!programId) return res.json({ success: true, videos: [] });
+      const program = await getPublishedProfessionalProgram(req.tenant_id, programId);
+      if (!program?.is_published) return res.json({ success: true, videos: [] });
+      const hasAccess = await hasProfessionalProgramAccess(req.user.id, programId, Number(program.price || 0));
+      const result = await pool.query(
+        `SELECT r.id, r.name, r.is_available, r.created_at,
+                r.professional_program_id, r.professional_course_id,
+                pc.title AS course_title, pc.code AS course_code,
+                $4::boolean AS "hasPaid",
+                ($5::int > 0) AS is_paid,
+                $5::int AS price,
+                pp.name AS program_name,
+                pp.price AS program_price,
+                vp.duration_seconds, vp.watched_seconds, vp.last_position_seconds, vp.completion_ratio, vp.completed
+         FROM resources r
+         JOIN professional_programs pp ON pp.id = r.professional_program_id AND pp.tenant_id = r.tenant_id
+         LEFT JOIN professional_courses pc ON pc.id = r.professional_course_id AND pc.tenant_id = r.tenant_id
+         LEFT JOIN professional_video_progress vp ON vp.resource_id = r.id AND vp.student_id = $1 AND vp.tenant_id = r.tenant_id
+         WHERE r.tenant_id = $2 AND r.type = 'video' AND r.is_available = TRUE
+           AND COALESCE(r.hub_scope, 'academic') = 'professional'
+           AND r.professional_program_id = $3
+           AND pp.is_published = TRUE
+         ORDER BY pc.sort_order ASC NULLS LAST, r.created_at DESC`,
+        [req.user.id, req.tenant_id, programId, hasAccess, Number(program.price || 0)]
+      );
+      return res.json({
+        success: true,
+        videos: result.rows.map((row: any) => ({
+          ...row,
+          stream_url: `/api/student/videos/${row.id}/stream`,
+          file_url: null,
+          completion_ratio: Number(row.completion_ratio || 0),
+          watched_seconds: Number(row.watched_seconds || 0),
+          duration_seconds: Number(row.duration_seconds || 0),
+          last_position_seconds: Number(row.last_position_seconds || 0),
+          completed: !!row.completed
+        }))
+      });
+    }
     const result = await pool.query(
       `SELECT r.id, r.name, r.file_url, r.is_paid, r.price, r.created_at,
        EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'video_access'
@@ -14091,12 +15381,37 @@ app.get('/api/student/materials', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'student') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const hubScope = getUserHubScope(req);
+    if (hubScope === 'professional') {
+      const programId = await getStudentProfessionalProgramId(req);
+      if (!programId) return res.json({ success: true, materials: [] });
+      const program = await getPublishedProfessionalProgram(req.tenant_id, programId);
+      if (!program?.is_published) return res.json({ success: true, materials: [] });
+      const hasAccess = await hasProfessionalProgramAccess(req.user.id, programId, Number(program.price || 0));
+      const result = await pool.query(
+        `SELECT r.*,
+                pc.title AS course_title, pc.code AS course_code,
+                pp.name AS program_name, pp.price AS program_price,
+                ($3::int > 0) AS is_paid,
+                $3::int AS price,
+                $4::boolean AS "hasPaid"
+         FROM resources r
+         JOIN professional_programs pp ON pp.id = r.professional_program_id AND pp.tenant_id = r.tenant_id
+         LEFT JOIN professional_courses pc ON pc.id = r.professional_course_id AND pc.tenant_id = r.tenant_id
+         WHERE r.tenant_id = $1 AND r.type IN ('material','audio') AND r.is_available = TRUE
+           AND COALESCE(r.hub_scope, 'academic') = 'professional'
+           AND r.professional_program_id = $2
+           AND pp.is_published = TRUE
+         ORDER BY pc.sort_order ASC NULLS LAST, r.created_at DESC`,
+        [req.tenant_id, programId, Number(program.price || 0), hasAccess]
+      );
+      return res.json({ success: true, materials: result.rows || [] });
+    }
     const result = await pool.query(
       `SELECT r.*,
        EXISTS(SELECT 1 FROM transactions WHERE user_id = $1 AND type = 'material_access' AND (metadata->>'resource_id')::int = r.id AND status = 'success') as "hasPaid"
        FROM resources r
        JOIN users u ON u.id = $1
-       WHERE r.tenant_id = $2 AND r.type = 'material' AND r.is_available = true
+       WHERE r.tenant_id = $2 AND r.type IN ('material','audio') AND r.is_available = true
        AND COALESCE(r.hub_scope, 'academic') = $3
        AND (r.category_id IS NULL OR r.category_id = u.category_id)
        ORDER BY r.created_at DESC`,
@@ -14123,10 +15438,15 @@ app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
       if (exam.category_id && String(exam.category_id) !== String(req.user.category_id || '')) {
         return res.status(403).json({ error: 'This assessment is not available to your category.' });
       }
+      if (userHubScope === 'professional') {
+        const programId = optionalInt(exam.professional_program_id);
+        if (!programId) return res.status(403).json({ error: 'This assessment is not assigned to a professional program.' });
+        await assertStudentProfessionalProgramAccess(req, programId);
+      }
     }
 
     // Enforce payment gate on backend — prevents API-level bypass
-    if (exam.is_paid && req.user.role === 'student') {
+    if (exam.is_paid && req.user.role === 'student' && getUserHubScope(req) !== 'professional') {
       const txCheck = await pool.query(
         `SELECT id FROM transactions WHERE user_id = $1 AND type = 'assessment_access'
          AND (metadata->>'exam_id')::int = $2 AND status = 'success' LIMIT 1`,
@@ -14258,8 +15578,8 @@ app.get('/api/exams/:id', authenticateToken, async (req: any, res) => {
       // Lecturer/admin sees original order
       res.json({ exam, questions: questionPool });
     }
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch exam data' });
+  } catch (error: any) {
+    res.status(error.status || 500).json({ error: error.message || 'Failed to fetch exam data', program_id: error.program_id, price: error.price });
   }
 });
 
@@ -14278,6 +15598,11 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
     }
     if (exam.category_id && String(exam.category_id) !== String(req.user.category_id || '')) {
       return res.status(403).json({ error: 'This assessment is not available to your category.' });
+    }
+    if (getUserHubScope(req) === 'professional') {
+      const programId = optionalInt(exam.professional_program_id);
+      if (!programId) return res.status(403).json({ error: 'This assessment is not assigned to a professional program.' });
+      await assertStudentProfessionalProgramAccess(req, programId);
     }
 
     // GAP 7: Max attempts check
@@ -14358,7 +15683,7 @@ app.post('/api/exams/:id/submit', authenticateToken, async (req: any, res) => {
     });
   } catch (error: any) {
     console.error('Exam submit error:', error);
-    res.status(500).json({ error: 'Failed to submit exam. Please try again.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Failed to submit exam. Please try again.', program_id: error.program_id, price: error.price });
   }
 });
 

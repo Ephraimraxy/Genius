@@ -42,6 +42,10 @@ interface Resource {
     is_available: boolean;
     is_paid: boolean;
     price: number;
+    professional_program_id?: number | null;
+    professional_course_id?: number | null;
+    professional_program_name?: string | null;
+    professional_course_title?: string | null;
 }
 
 interface ResourceHubProps {
@@ -350,7 +354,7 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
         const isMediaUpload = uploadType === 'audio' || uploadType === 'video';
 
         // For roster, we must first ensure category is selected
-        if (uploadType === 'roster' && !showBatchModal && !selectedCatId && !newCatName) {
+        if (uploadType === 'roster' && !isProfessionalHub && !showBatchModal && !selectedCatId && !newCatName) {
             setShowBatchModal(true);
             return;
         }
@@ -834,6 +838,7 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                          </div>
                     </div>
 
+                    {!isProfessionalHub ? (
                     <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
                         <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4">Batch Entry Fees</h4>
                         <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
@@ -873,13 +878,21 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                             ))}
                         </div>
                     </div>
+                    ) : (
+                    <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
+                        <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">Program Pricing</h4>
+                        <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                            Files, audio, and videos inherit access from the published program price. Use the Programs tab to assign content to courses and publish the program.
+                        </p>
+                    </div>
+                    )}
                 </div>
 
                 {/* Resource List */}
                 <div className="lg:col-span-2 space-y-6">
                     <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm">
                         <div className="flex items-center justify-between mb-8">
-                            <h3 className="text-xl font-bold text-slate-900">Academic Inventory</h3>
+                            <h3 className="text-xl font-bold text-slate-900">{isProfessionalHub ? 'Professional Inventory' : 'Academic Inventory'}</h3>
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                                 <input 
@@ -928,12 +941,18 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                                                         {item.status === 'ready' ? <CheckCircle size={10} /> : <AlertTriangle size={10} />}
                                                         {item.status === 'ready' ? (item.type === 'audio' || item.type === 'video' ? 'Uploaded & Ready' : 'Sanitized & Ready') : (item.status === 'failed' ? 'Checks Failed' : 'Resource Flagged')}
                                                     </span>
+                                                    {isProfessionalHub && item.professional_course_title && (
+                                                        <>
+                                                            <div className="w-1 h-1 bg-slate-300 rounded-full"></div>
+                                                            <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{item.professional_course_title}</span>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
 
                                         <div className="flex items-center gap-2">
-                                            {item.type !== 'roster' && (
+                                            {item.type !== 'roster' && !isProfessionalHub && (
                                                 <div className="flex items-center gap-2 mr-4 border-r pr-4 border-slate-200">
                                                     <button
                                                         onClick={() => {
