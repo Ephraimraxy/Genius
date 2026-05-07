@@ -2795,7 +2795,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       if (requestedRole === 'lecturer') mappedRole = 'tenant_admin';
 
       // Admin Priority/Restriction: Admins can ONLY login via the researcher/research portal
-      const adminEmails = ['burstbrainconcept@gmail.com', 'idfelix247@gmail.com'];
+      const adminEmails = ['burstbrainconcept@gmail.com', 'geniusmultidisciplinary@gmail.com'];
       if (requestedRole === 'lecturer' && adminEmails.includes(email)) {
         return res.status(403).json({ error: 'Admin access is restricted to the Publication portal only.' });
       }
@@ -2830,7 +2830,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
 
     // Enforce admin for specific emails
-    const superAdminWhitelist = ['burstbrainconcept@gmail.com', 'idfelix247@gmail.com'];
+    const superAdminWhitelist = ['burstbrainconcept@gmail.com', 'geniusmultidisciplinary@gmail.com'];
     if (superAdminWhitelist.includes(user.email.toLowerCase()) && user.role !== 'admin' && user.role !== 'super_admin') {
       await pool.query("UPDATE users SET role = 'super_admin' WHERE id = $1", [user.id]);
       user.role = 'super_admin';
