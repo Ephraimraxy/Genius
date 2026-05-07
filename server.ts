@@ -10743,21 +10743,51 @@ app.get('/api/chat/notifications', authenticateToken, async (req: any, res) => {
   try {
     const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
     if (isAdmin) {
-      const result = await pool.query(
+      const countResult = await pool.query(
         `SELECT COUNT(*)::int as count FROM chat_messages
          WHERE channel = 'online' AND is_read = FALSE AND sender_role NOT IN ('admin','super_admin','ai')`
       );
-      res.json({ count: result.rows[0].count });
+      const notifications = await pool.query(
+        `SELECT DISTINCT ON (cm.user_id)
+                cm.user_id,
+                u.name AS user_name,
+                u.email AS user_email,
+                cm.content,
+                cm.created_at
+         FROM chat_messages cm
+         LEFT JOIN users u ON u.id = cm.user_id
+         WHERE cm.channel = 'online'
+           AND cm.is_read = FALSE
+           AND cm.sender_role NOT IN ('admin','super_admin','ai')
+         ORDER BY cm.user_id, cm.created_at DESC
+         LIMIT 10`
+      );
+      res.json({ count: Number(countResult.rows[0]?.count || 0), notifications: notifications.rows });
     } else {
-      const result = await pool.query(
+      const countResult = await pool.query(
         `SELECT COUNT(*)::int as count FROM chat_messages
          WHERE user_id = $1 AND channel = 'online' AND is_read = FALSE AND sender_role IN ('admin','super_admin')`,
         [req.user.id]
       );
-      res.json({ count: result.rows[0].count });
+      const notifications = await pool.query(
+        `SELECT id,
+                user_id,
+                COALESCE(sender_name, 'Admin') AS user_name,
+                content,
+                created_at
+         FROM chat_messages
+         WHERE user_id = $1
+           AND channel = 'online'
+           AND is_read = FALSE
+           AND sender_role IN ('admin','super_admin')
+         ORDER BY created_at DESC
+         LIMIT 10`,
+        [req.user.id]
+      );
+      res.json({ count: Number(countResult.rows[0]?.count || 0), notifications: notifications.rows });
     }
   } catch (e) {
-    res.json({ count: 0 });
+    res.json({ count: 0, notifications: [] });
   }
 });
 

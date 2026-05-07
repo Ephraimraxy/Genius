@@ -171,6 +171,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(window.navigator.onLine);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [chatNotifications, setChatNotifications] = useState<any[]>([]);
+  const [chatNotificationCount, setChatNotificationCount] = useState(0);
   const [forcedChatThread, setForcedChatThread] = useState<number | null>(null);
 
   useEffect(() => {
@@ -187,9 +188,18 @@ export default function App() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      setChatNotifications(data);
+      if (Array.isArray(data)) {
+        setChatNotifications(data);
+        setChatNotificationCount(data.length);
+      } else {
+        const notifications = Array.isArray(data?.notifications) ? data.notifications : [];
+        setChatNotifications(notifications);
+        setChatNotificationCount(Number(data?.count || notifications.length || 0));
+      }
     } catch (err) {
       console.error('Failed to fetch chat notifications');
+      setChatNotifications([]);
+      setChatNotificationCount(0);
     }
   };
 
@@ -200,6 +210,7 @@ export default function App() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       setChatNotifications([]);
+      setChatNotificationCount(0);
     } catch (err) {
       console.error('Failed to mark all as read');
     }
@@ -752,7 +763,9 @@ export default function App() {
                 className="p-2.5 text-slate-400 hover:text-[#800000] hover:bg-[#800000]/5 rounded-xl transition-all relative"
               >
                 <Bell size={20} />
-                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
+                {chatNotificationCount > 0 && (
+                  <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
+                )}
               </button>
               
               <AnimatePresence>
@@ -766,7 +779,7 @@ export default function App() {
                     <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
                       <div className="flex flex-col">
                         <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">System Alerts</h4>
-                        {chatNotifications.length > 0 && (
+                        {chatNotificationCount > 0 && (
                           <button 
                             onClick={markAllAsRead}
                             className="text-[9px] font-black text-[#800000] uppercase tracking-widest mt-1 hover:underline"
@@ -776,7 +789,7 @@ export default function App() {
                         )}
                       </div>
                       <span className="text-[10px] font-bold text-[#800000] bg-[#800000]/5 px-2 py-1 rounded-md border border-[#800000]/10">
-                        {chatNotifications.length === 0 ? '0 New' : `${chatNotifications.length} New`}
+                        {chatNotificationCount === 0 ? '0 New' : `${chatNotificationCount} New`}
                       </span>
                     </div>
                     <div className="space-y-4">
@@ -784,9 +797,10 @@ export default function App() {
                         <button 
                           key={`chat-${idx}`}
                           onClick={() => {
-                            setForcedChatThread(isAdmin ? notif.user_id : null);
+                            const targetThread = isAdmin ? Number(notif.user_id || 0) : 0;
+                            setForcedChatThread(null);
+                            window.setTimeout(() => setForcedChatThread(targetThread), 0);
                             setIsNotificationsOpen(false);
-                            // Scroll to bottom or trigger opening handled by ChatWidget's useEffect
                           }}
                           className="w-full text-left flex gap-4 p-3 bg-indigo-50 border border-indigo-100 rounded-2xl hover:bg-indigo-100 transition-colors"
                         >
@@ -802,6 +816,26 @@ export default function App() {
                           </div>
                         </button>
                       ))}
+
+                      {chatNotifications.length === 0 && chatNotificationCount > 0 && (
+                        <button
+                          onClick={() => {
+                            setForcedChatThread(null);
+                            window.setTimeout(() => setForcedChatThread(0), 0);
+                            setIsNotificationsOpen(false);
+                          }}
+                          className="w-full text-left flex gap-4 p-3 bg-indigo-50 border border-indigo-100 rounded-2xl hover:bg-indigo-100 transition-colors"
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-[#800000] text-white flex items-center justify-center shrink-0">
+                            <MessageCircle size={18} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 truncate">{chatNotificationCount} unread support message{chatNotificationCount === 1 ? '' : 's'}</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5 truncate">Open support chat to view and reply.</p>
+                            <p className="text-[9px] font-black text-[#800000] uppercase mt-1">Open chat</p>
+                          </div>
+                        </button>
+                      )}
 
                       <div className="flex gap-4 p-3 bg-slate-50 rounded-2xl border border-slate-100">
                         <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
