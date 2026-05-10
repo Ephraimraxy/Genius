@@ -1013,6 +1013,174 @@ const normalizeAuthorNames = (authors: any): string[] => {
     .filter(Boolean);
 };
 
+const normalizeEmailKey = (email: any): string => String(email || '').trim().toLowerCase();
+const normalizePhoneKey = (phone: any): string => String(phone || '').replace(/[^\d+]/g, '').trim();
+const escapeHtml = (value: any): string => {
+  return String(value || '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] || c));
+};
+
+const getMetadataContactEmail = (metadata: any): string => {
+  return String(metadata?.contactEmail || metadata?.generalEmail || metadata?.email || '').trim();
+};
+
+const getMetadataContactPhone = (metadata: any): string => {
+  return String(metadata?.contactPhone || metadata?.generalPhone || metadata?.phone || '').trim();
+};
+
+const sanitizeAuthorContactAssignments = (authors: any, existingEmail?: any, existingPhone?: any) => {
+  if (!Array.isArray(authors)) {
+    return {
+      authors,
+      contactEmail: String(existingEmail || '').trim() || undefined,
+      contactPhone: String(existingPhone || '').trim() || undefined
+    };
+  }
+
+  const nextAuthors = authors.map((author: any) => {
+    if (!author || typeof author !== 'object' || Array.isArray(author)) return author;
+    return {
+      ...author,
+      email: String(author.email || '').trim(),
+      phone: String(author.phone || '').trim()
+    };
+  });
+
+  let contactEmail = String(existingEmail || '').trim();
+  let contactPhone = String(existingPhone || '').trim();
+
+  const liftSharedContact = (field: 'email' | 'phone', normalizer: (value: any) => string, setGeneral: (value: string) => void) => {
+    if (nextAuthors.length <= 1) return;
+    const contacts = new Map<string, { value: string; indexes: number[] }>();
+    nextAuthors.forEach((author: any, index: number) => {
+      if (!author || typeof author !== 'object' || Array.isArray(author)) return;
+      const value = String(author[field] || '').trim();
+      const key = normalizer(value);
+      if (!key) return;
+      const current = contacts.get(key) || { value, indexes: [] };
+      current.indexes.push(index);
+      contacts.set(key, current);
+    });
+
+    contacts.forEach(({ value, indexes }) => {
+      if (contacts.size !== 1 && indexes.length <= 1) return;
+      setGeneral(value);
+      indexes.forEach(index => {
+        const author = nextAuthors[index];
+        if (author && typeof author === 'object' && !Array.isArray(author)) author[field] = '';
+      });
+    });
+  };
+
+  liftSharedContact('email', normalizeEmailKey, value => { if (!contactEmail) contactEmail = value; });
+  liftSharedContact('phone', normalizePhoneKey, value => { if (!contactPhone) contactPhone = value; });
+
+  return { authors: nextAuthors, contactEmail: contactEmail || undefined, contactPhone: contactPhone || undefined };
+};
+
+const detectTitlePageContacts = (text: any) => {
+  const titlePage = String(text || '').slice(0, 5000);
+  const emails = Array.from(new Set((titlePage.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map(v => v.trim())));
+  const phones: string[] = [];
+  const phonePatterns = [
+    /(?:tel|phone|mobile|contact)\s*(?:no\.?|number)?\s*[:\-]?\s*(\+?\d[\d\s().-]{7,}\d)/gi,
+    /(?:tel|phone|mobile|contact)\s*(?:no\.?|number)?\s*[:\-]?\s*([0]\d{10})/gi
+  ];
+  for (const pattern of phonePatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(titlePage)) !== null) {
+      const phone = String(match[1] || '').trim().replace(/\s+/g, ' ');
+      if (phone && !phones.some(existing => normalizePhoneKey(existing) === normalizePhoneKey(phone))) phones.push(phone);
+    }
+  }
+  return { emails, phones };
+};
+
+const sanitizeManuscriptMetadata = (metadata: any, sourceText: any = ''): any => {
+  if (!metadata || typeof metadata !== 'object') return metadata;
+  const detected = detectTitlePageContacts(sourceText);
+  const sanitized = sanitizeAuthorContactAssignments(metadata.authors, getMetadataContactEmail(metadata), getMetadataContactPhone(metadata));
+  const next = { ...metadata, authors: sanitized.authors };
+  if (sanitized.contactEmail) next.contactEmail = sanitized.contactEmail;
+  if (sanitized.contactPhone) next.contactPhone = sanitized.contactPhone;
+
+  const authorCount = Array.isArray(next.authors) ? next.authors.length : 0;
+  if (authorCount === 1 && typeof next.authors[0] === 'string') {
+    const email = next.contactEmail || (detected.emails.length === 1 ? detected.emails[0] : '');
+    const phone = next.contactPhone || (detected.phones.length === 1 ? detected.phones[0] : '');
+    if (email || phone) {
+      next.authors[0] = { name: next.authors[0], email, phone };
+      delete next.contactEmail;
+      delete next.contactPhone;
+    }
+  }
+
+  if (authorCount === 1 && next.authors[0] && typeof next.authors[0] === 'object' && !Array.isArray(next.authors[0])) {
+    if (!next.authors[0].email && next.contactEmail) {
+      next.authors[0].email = next.contactEmail;
+      delete next.contactEmail;
+    }
+    if (!next.authors[0].phone && next.contactPhone) {
+      next.authors[0].phone = next.contactPhone;
+      delete next.contactPhone;
+    }
+  }
+
+  if (authorCount > 1) {
+    const hasAuthorEmail = next.authors.some((author: any) => author && typeof author === 'object' && normalizeEmailKey(author.email));
+    const hasAuthorPhone = next.authors.some((author: any) => author && typeof author === 'object' && normalizePhoneKey(author.phone));
+    if (!next.contactEmail && !hasAuthorEmail && detected.emails.length === 1) next.contactEmail = detected.emails[0];
+    if (!next.contactPhone && !hasAuthorPhone && detected.phones.length === 1) next.contactPhone = detected.phones[0];
+  }
+
+  return next;
+};
+
+const htmlToPlainText = (value: any): string => {
+  const text = String(value || '');
+  if (!/<[a-z][\s\S]*>/i.test(text)) return text;
+  return cheerio.load(text).text();
+};
+
+const cleanContactFrontMatter = (html: string, metadata: any = {}) => {
+  if (!html || typeof html !== 'string') return html;
+  const contactEmail = getMetadataContactEmail(metadata);
+  const contactPhone = getMetadataContactPhone(metadata);
+  const abstractMatch = html.match(/<h[1-6][^>]*>\s*(?:<[^>]+>\s*)*abstract\b/i);
+  const boundary = abstractMatch?.index ?? Math.min(html.length, 6000);
+  let front = html.slice(0, boundary);
+  const rest = html.slice(boundary);
+
+  front = front
+    .replace(/<p[^>]*>\s*(?:<strong>)?\s*(?:email|phone|general email|general phone)\s*:\s*(?:<\/strong>)?\s*<\/p>/gi, '')
+    .replace(/<p[^>]*>\s*(?:<strong>)?\s*general email\s*:\s*(?:<\/strong>)?\s*[^<]*<\/p>/gi, '')
+    .replace(/<p[^>]*>\s*(?:<strong>)?\s*general phone\s*:\s*(?:<\/strong>)?\s*[^<]*<\/p>/gi, '');
+
+  const contactLines = [
+    contactEmail ? `<p class="general-contact"><strong>General email:</strong> ${escapeHtml(contactEmail)}</p>` : '',
+    contactPhone ? `<p class="general-contact"><strong>General phone:</strong> ${escapeHtml(contactPhone)}</p>` : ''
+  ].filter(Boolean).join('\n');
+
+  return `${front}${contactLines ? `\n${contactLines}\n` : ''}${rest}`;
+};
+
+async function convertDocxToPreservedHtml(buffer: Buffer): Promise<{ html: string; text: string }> {
+  const [rawTextResult, htmlResult] = await Promise.all([
+    mammoth.extractRawText({ buffer }),
+    mammoth.convertToHtml(
+      { buffer },
+      {
+        convertImage: (mammoth.images as any).inline(async (element: any) => {
+          const imageBuffer = await element.read('base64');
+          return { src: `data:${element.contentType};base64,${imageBuffer}` };
+        })
+      } as any
+    )
+  ]);
+  const html = String(htmlResult.value || '').trim();
+  const text = String(rawTextResult.value || htmlToPlainText(html)).trim();
+  return { html: html || text, text };
+}
+
 const buildSafeFilename = (value: string, suffix = '') => {
   const safe = String(value || 'manuscript')
     .replace(/[^a-zA-Z0-9\s_-]/g, '')
@@ -3303,6 +3471,8 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     .replace(/src="\/journal-logo\.png"/g, `src="${journalLogoBase64}"`)
     .replace(/src="\/Nasarawa-State-University\.jpg"/g, `src="${nsukLogoBase64}"`);
 
+  scrubbedContent = cleanContactFrontMatter(scrubbedContent, paperMeta);
+
   // ENFORCE TIGHT REFERENCES on every PDF generation (catches old stored content + AI that ignored the prompt)
   // Works on named reference containers
   scrubbedContent = scrubbedContent.replace(
@@ -3406,6 +3576,13 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
         th { background: #f8fafc; font-weight: bold; color: #475569; }
 
         img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; border-radius: 4px; }
+        .general-contact {
+          margin: 0.25em 0 0.5em 0 !important;
+          font-size: 10.5pt;
+          color: #334155;
+          text-align: left !important;
+          text-align-last: left !important;
+        }
 
         /* ===== REFERENCES SECTION =====
            Compact, single-spaced, hanging-indent APA style.
@@ -4056,6 +4233,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
     }
 
     let textContent = '';
+    let sourcePlainText = '';
     let metadata: any = null;
     const uploadedAt = new Date().toISOString();
 
@@ -4084,17 +4262,19 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
         return res.status(400).json({ error: 'Your PDF could not be read. Please re-save it using a standard PDF export (e.g. "Save as PDF" or "Export to PDF") and try again.' });
       }
       textContent = pdfData.text;
+      sourcePlainText = pdfData.text;
       if (!metadata) metadata = {};
       metadata.sourcePageCount = pdfData.numpages;
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       let result;
       try {
-        result = await mammoth.extractRawText({ buffer: fileBuffer });
+        result = await convertDocxToPreservedHtml(fileBuffer);
       } catch (docxErr: any) {
         console.error('DOCX parse error:', docxErr?.message);
         return res.status(400).json({ error: 'The uploaded DOCX file appears to be corrupted or is not a valid Word document. Please re-save the file in Word and try again.' });
       }
-      textContent = result.value;
+      textContent = result.html;
+      sourcePlainText = result.text;
     } else {
       return res.status(400).json({ error: 'Unsupported file type. Please upload a PDF or DOCX file.' });
     }
@@ -4108,11 +4288,12 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
           messages: [
             {
               role: 'system',
-              content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (array of objects), abstract (string), keywords (string[]). ' +
+              content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (array of objects), abstract (string), keywords (string[]), contactEmail (string), contactPhone (string). ' +
                 'Each author object MUST include: name (string), department (string), faculty (string), institution (string), email (string), phone (string). ' +
-                'Examine the paper header carefully for "By", "Department", "Faculty", "Email", "Phone" or similar labels to extract these details accurately.'
+                'Examine the paper header carefully for "By", "Department", "Faculty", "Email", "Phone" or similar labels to extract these details accurately. ' +
+                'Never copy one shared email address or phone number onto every author. If the source shows only one email or phone for multiple authors, place it in top-level contactEmail/contactPhone and leave author email/phone fields empty unless distinct contacts are explicitly linked to named authors.'
             },
-            { role: 'user', content: `Extract metadata from this academic paper text:\n\n${textContent.substring(0, 15000)}` }
+            { role: 'user', content: `Extract metadata from this academic paper text:\n\n${(sourcePlainText || htmlToPlainText(textContent)).substring(0, 15000)}` }
           ]
         });
         metadata = JSON.parse(response.choices[0]?.message?.content || '{}');
@@ -4130,7 +4311,9 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
     }
 
     const journalConfig = await getJournalConfig();
-    const sourcePageCount = resolveSourcePageCount(metadata, textContent);
+    metadata = sanitizeManuscriptMetadata(metadata, sourcePlainText || htmlToPlainText(textContent));
+    const plainTextForCounts = sourcePlainText || htmlToPlainText(textContent);
+    const sourcePageCount = resolveSourcePageCount(metadata, plainTextForCounts);
     const pageWindow = buildPageWindow(sourcePageCount);
 
     if (sourcePageCount > journalConfig.maxPagesPerManuscript) {
@@ -4146,7 +4329,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       sourcePageCount,
       pageCount: sourcePageCount,
       pageWindow,
-      sourceWordCount: String(textContent || '').split(/\s+/).filter(Boolean).length,
+      sourceWordCount: String(plainTextForCounts || '').split(/\s+/).filter(Boolean).length,
       uploadedAt,
       history: [
         ...(Array.isArray(metadata?.history) ? metadata.history : []),
@@ -4253,7 +4436,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
 app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const { title, authors, abstract } = req.body;
+    const { title, authors, abstract, contactEmail, contactPhone } = req.body;
 
     const currentPaper = await pool.query('SELECT metadata, is_locked FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     if (currentPaper.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
@@ -4263,6 +4446,9 @@ app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
     if (title !== undefined) metadata.title = title;
     if (authors !== undefined) metadata.authors = authors;
     if (abstract !== undefined) metadata.abstract = abstract;
+    if (contactEmail !== undefined) metadata.contactEmail = contactEmail;
+    if (contactPhone !== undefined) metadata.contactPhone = contactPhone;
+    metadata = sanitizeManuscriptMetadata(metadata);
 
     const authorNames = Array.isArray(metadata.authors)
       ? metadata.authors.map((a: any) => typeof a === 'string' ? a : a?.name).filter(Boolean)
@@ -6486,7 +6672,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
-    const metadata = safeJsonParse<any>(paper.metadata, {});
+    let metadata = sanitizeManuscriptMetadata(safeJsonParse<any>(paper.metadata, {}), paper.content);
     const pageWindow = metadata.pageWindow || buildPageWindow(resolveSourcePageCount(metadata, paper.content));
     const targetPageCount = pageWindow.target;
 
@@ -6503,6 +6689,10 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     }
     // Save enriched affiliation back so it's persistent
     metadata.authors = metaAuthors;
+    metadata = sanitizeManuscriptMetadata(metadata, paper.content);
+    const displayMetaAuthors: any[] = Array.isArray(metadata.authors) ? metadata.authors : [];
+    const authorContactEmail = getMetadataContactEmail(metadata);
+    const authorContactPhone = getMetadataContactPhone(metadata);
 
     // Fetch branding metadata for the formatter
     const journalConfig = await getJournalConfig();
@@ -6519,17 +6709,25 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
 
     // Build author block for the first-chunk user message
     let authorBlock = paper.authors || '';
-    if (metaAuthors.length > 0) {
-      authorBlock = metaAuthors.map((a: any) => {
+    if (displayMetaAuthors.length > 0) {
+      authorBlock = displayMetaAuthors.map((a: any) => {
         const parts = [a.name];
         if (a.department) parts.push(a.department);
         if (a.faculty) parts.push(a.faculty);
         if (a.institution) parts.push(a.institution);
         if (a.email) parts.push(a.email);
+        if (a.phone) parts.push(a.phone);
         return parts.filter(Boolean).join(', ');
       }).join('\n');
     } else if (userProfile.affiliation) {
       authorBlock = `${paper.authors || userProfile.name} — ${userProfile.affiliation}`;
+    }
+    const generalContactBlock = [
+      authorContactEmail ? `General email: ${authorContactEmail}` : '',
+      authorContactPhone ? `General phone: ${authorContactPhone}` : ''
+    ].filter(Boolean).join('\n');
+    if (generalContactBlock) {
+      authorBlock = [authorBlock, generalContactBlock].filter(Boolean).join('\n');
     }
 
     // Stream SSE so Cloudflare never 524s regardless of paper length
@@ -6564,6 +6762,7 @@ CRITICAL RULES:
 10. FONTS: Use standard serif fonts for the main body.
 11. ZERO OMISSION (STRICT): You MUST prioritize content integrity. Do NOT compress or summarize to fit any length. Replicate every section, paragraph, and reference.
 12. PAGE DISCIPLINE: Avoid inflating the paper with unnecessary spacing, but ensure all text is present. Use as many <div class="paper-sheet"> blocks as needed to hold the FULL content.
+12b. SOURCE FIDELITY: When source content already contains <table>, <figure>, <img>, or formula-like text, preserve the original order and exact visible data. Do NOT recalculate table values, do NOT repeat a location/cell value into blank cells, do NOT move figures/tables after References, and do NOT append source blocks at the end of the paper.
 13. REFERENCES FORMATTING (NON-NEGOTIABLE): The References section MUST be formatted as a compact, single-spaced list. Each reference entry is ONE paragraph tag: <p class="reference">...</p>. Rules:
     a. NO blank lines or extra margin between individual reference entries. They flow one immediately after another.
     b. Use a hanging indent: padding-left:2.9em; text-indent:-2.9em; on each <p class="reference">.
@@ -6611,6 +6810,7 @@ EXAMPLE of correct reference output:
 
     // Stitch chunks — paper-sheet divs flow naturally end-to-end
     let formattedHtml = formattedParts.join('\n');
+    formattedHtml = cleanContactFrontMatter(formattedHtml, metadata);
 
     // POST-PROCESS: Enforce compact references regardless of what the AI produced.
     // Find the references section and tighten every <p> inside it.

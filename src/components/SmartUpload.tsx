@@ -166,7 +166,9 @@ export default function SmartUpload({
         body: JSON.stringify({
           title: editedMetadata.title,
           authors: editedMetadata.authors,
-          abstract: editedMetadata.abstract
+          abstract: editedMetadata.abstract,
+          contactEmail: editedMetadata.contactEmail || '',
+          contactPhone: editedMetadata.contactPhone || ''
         })
       });
       if (!res.ok) throw new Error('Failed to save changes');
@@ -190,7 +192,7 @@ export default function SmartUpload({
   const addAuthor = () => {
     setEditedMetadata({
       ...editedMetadata,
-      authors: [...(editedMetadata.authors || []), { name: 'New Author', email: '', department: '' }]
+      authors: [...(editedMetadata.authors || []), { name: 'New Author', email: '', phone: '', department: '' }]
     });
   };
 
@@ -1336,7 +1338,7 @@ export default function SmartUpload({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="group">
                       <div className="flex items-center justify-between mb-3">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Corresponding Authors</label>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Authors & Contacts</label>
                         {isEditing && (
                           <button onClick={addAuthor} className="text-[10px] font-black text-indigo-600 uppercase flex items-center gap-1 hover:text-indigo-500">
                              <Plus size={12} /> Add
@@ -1361,6 +1363,12 @@ export default function SmartUpload({
                                   placeholder="Email"
                                   className="flex-1 text-[10px] text-slate-500 border-none p-0 focus:ring-0"
                                 />
+                                <input
+                                  value={(typeof author !== 'string' && author.phone) || ''}
+                                  onChange={(e) => updateAuthor(idx, { phone: e.target.value })}
+                                  placeholder="Phone"
+                                  className="flex-1 text-[10px] text-slate-500 border-none p-0 focus:ring-0"
+                                />
                                 <input 
                                   value={(typeof author !== 'string' && author.department) || ''}
                                   onChange={(e) => updateAuthor(idx, { department: e.target.value })}
@@ -1376,19 +1384,43 @@ export default function SmartUpload({
                               </button>
                             </div>
                           ))}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
+                            <input
+                              value={editedMetadata?.contactEmail || ''}
+                              onChange={(e) => setEditedMetadata({ ...editedMetadata, contactEmail: e.target.value })}
+                              placeholder="General email"
+                              className="text-[10px] text-slate-600 border-none bg-transparent p-0 focus:ring-0"
+                            />
+                            <input
+                              value={editedMetadata?.contactPhone || ''}
+                              onChange={(e) => setEditedMetadata({ ...editedMetadata, contactPhone: e.target.value })}
+                              placeholder="General phone"
+                              className="text-[10px] text-slate-600 border-none bg-transparent p-0 focus:ring-0 sm:text-right"
+                            />
+                          </div>
                         </div>
                       ) : (
                         <div className="p-6 bg-slate-50 border border-slate-100 rounded-[1.5rem] group-hover:bg-white group-hover:border-indigo-200 transition-all text-slate-800 font-bold space-y-2">
                           {metadata.authors && Array.isArray(metadata.authors) ? metadata.authors.map((author: any, i: number) => (
                             <div key={i} className="flex flex-col">
                                 <span>{typeof author === 'string' ? author : author.name}</span>
-                                {typeof author !== 'string' && (author.email || author.department || author.institution) && (
-                                  <span className="text-[10px] text-slate-400 font-medium">
-                                    {[author.department, author.faculty, author.institution, author.email].filter(Boolean).join(' · ')}
-                                  </span>
+                                {typeof author !== 'string' && (author.email || author.phone || author.department || author.institution) && (
+                                  <>
+                                    <span className="text-[10px] text-slate-400 font-medium">
+                                      {[author.department, author.faculty, author.institution, author.email].filter(Boolean).join(' · ')}
+                                    </span>
+                                    {author.phone && (
+                                      <span className="text-[10px] text-slate-400 font-medium">Phone: {author.phone}</span>
+                                    )}
+                                  </>
                                 )}
                             </div>
                           )) : 'Anonymous Researcher'}
+                          {(metadata.contactEmail || metadata.contactPhone) && (
+                            <div className="pt-3 mt-3 border-t border-slate-200 text-[10px] text-slate-500 font-medium">
+                              {[metadata.contactEmail && `General email: ${metadata.contactEmail}`, metadata.contactPhone && `General phone: ${metadata.contactPhone}`].filter(Boolean).join(' | ')}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
