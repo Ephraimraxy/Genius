@@ -4,7 +4,7 @@ import {
   Zap, Loader2, CheckCircle2, AlertCircle, Download,
   ShieldCheck, ArrowRight, RefreshCw, Search,
   FileText, Eye, Sparkles, BookOpen, Users, SkipForward,
-  XCircle, Clock
+  XCircle, Clock, Upload, CloudUpload
 } from 'lucide-react';
 import { ToastType } from './ToastSystem';
 import FilePreviewModal from './FilePreviewModal';
@@ -18,6 +18,7 @@ interface QuickPublishPageProps {
   addToast: (msg: string, type?: ToastType) => void;
   onComplete: () => void;
   completeLabel?: string;
+  isAdmin?: boolean;
 }
 
 type PhaseStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
@@ -99,6 +100,7 @@ export default function QuickPublishPage({
   addToast,
   onComplete,
   completeLabel = 'Go to Publication Records',
+  isAdmin = false,
 }: QuickPublishPageProps) {
   const [phases, setPhases] = useState<PhaseState[]>(
     PHASE_DEFS.map(p => ({ ...p, status: 'pending' }))
@@ -109,6 +111,37 @@ export default function QuickPublishPage({
   const [publicationResult, setPublicationResult] = useState<any>(null);
   const [previewMode, setPreviewMode] = useState<'none' | 'certificate' | 'manuscript'>('none');
   const phasesRef = useRef(phases);
+
+  // Admin upload state
+  const [adminUploading, setAdminUploading] = useState(false);
+  const [adminDragOver, setAdminDragOver] = useState(false);
+  const adminFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAdminUpload = useCallback(async (file: File) => {
+    if (!file) return;
+    if (!['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type) && !file.name.endsWith('.docx')) {
+      addToast('Please upload a PDF or DOCX file.', 'error');
+      return;
+    }
+    setAdminUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      addToast(`Manuscript uploaded: "${data.title || 'Untitled'}"`, 'success');
+      setActivePaperId(data.id);
+    } catch (err: any) {
+      addToast(friendlyError(err?.message || 'Upload failed'), 'error');
+    } finally {
+      setAdminUploading(false);
+    }
+  }, [token, addToast, setActivePaperId]);
 
   const updatePhase = useCallback((id: string, updates: Partial<PhaseState>) => {
     setPhases(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
@@ -431,6 +464,70 @@ export default function QuickPublishPage({
   };
 
   if (!activePaperId) {
+    if (isAdmin) {
+      return (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-2xl mx-auto px-4 py-16 space-y-8">
+          <div className="text-center space-y-2">
+            <div className="flex items-center justify-center gap-3 text-[#800000] mb-2">
+              <Zap size={28} className="premium-glow" fill="currentColor" />
+              <span className="font-black uppercase tracking-[0.3em] text-xs">Quick Publish Pipeline</span>
+            </div>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Upload Manuscript</h2>
+            <p className="text-slate-500 font-medium">Upload a PDF or DOCX manuscript to begin the automated publishing pipeline. No payment required.</p>
+          </div>
+
+          <div
+            className={`relative rounded-3xl border-2 border-dashed transition-all cursor-pointer ${adminDragOver ? 'border-[#800000] bg-red-50' : 'border-slate-200 bg-slate-50 hover:border-slate-400 hover:bg-white'}`}
+            onClick={() => adminFileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setAdminDragOver(true); }}
+            onDragLeave={() => setAdminDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setAdminDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleAdminUpload(f); }}
+          >
+            <input
+              ref={adminFileInputRef}
+              type="file"
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAdminUpload(f); e.target.value = ''; }}
+            />
+            <div className="flex flex-col items-center justify-center py-16 px-8 gap-4 pointer-events-none">
+              {adminUploading ? (
+                <>
+                  <Loader2 size={48} className="text-[#800000] animate-spin" />
+                  <p className="font-semibold text-slate-700 text-lg">Uploading & extracting metadata…</p>
+                  <p className="text-slate-400 text-sm">This may take a moment</p>
+                </>
+              ) : (
+                <>
+                  <div className={`rounded-2xl p-4 ${adminDragOver ? 'bg-[#800000]' : 'bg-white shadow-md'} transition-all`}>
+                    <CloudUpload size={40} className={adminDragOver ? 'text-white' : 'text-[#800000]'} />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-slate-800 text-lg">Drop manuscript here or click to browse</p>
+                    <p className="text-slate-400 text-sm mt-1">Supports PDF and DOCX · No file size limit</p>
+                  </div>
+                  <div className="flex items-center gap-3 mt-2">
+                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-full text-xs font-semibold text-slate-500">PDF</span>
+                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-full text-xs font-semibold text-slate-500">DOCX</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="text-center">
+            <p className="text-xs text-slate-400">Or select from existing uploaded manuscripts:</p>
+            <WaitingDraftsQueue
+              expectedStatus="uploaded"
+              onSelect={setActivePaperId}
+              title=""
+              icon={Zap}
+              emptyMessage="No previously uploaded manuscripts found."
+            />
+          </div>
+        </motion.div>
+      );
+    }
     return (
       <WaitingDraftsQueue
         expectedStatus="uploaded"

@@ -4451,6 +4451,111 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
   }
 });
 
+// Admin-only upload — no payment required
+app.post('/api/admin/upload', authenticateToken, upload.single('file'), async (req: any, res) => {
+  try {
+    if (!isResearchAdminRole(req.user?.role)) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const userId = req.user.id;
+    const originalName = (req.file.originalname || '').toLowerCase();
+    if (
+      req.file.mimetype === 'application/msword' ||
+      req.file.mimetype === 'application/vnd.ms-word' ||
+      originalName.endsWith('.doc')
+    ) {
+      return res.status(400).json({ error: 'Old .doc format not supported. Please re-save as .docx and retry.' });
+    }
+
+    const fileBuffer = fs.readFileSync(req.file.path);
+    fs.unlink(req.file.path, () => {});
+
+    let textContent = '';
+    let sourcePlainText = '';
+    let metadata: any = null;
+    const uploadedAt = new Date().toISOString();
+
+    if (req.file.mimetype === 'application/pdf') {
+      metadata = await parseWithGrobid(fileBuffer);
+      let pdfData: any;
+      try { pdfData = await pdfParse(fileBuffer); } catch (e: any) {
+        return res.status(400).json({ error: 'PDF could not be read. Re-save using standard PDF export and retry.' });
+      }
+      textContent = pdfData.text;
+      sourcePlainText = pdfData.text;
+      if (!metadata) metadata = {};
+      metadata.sourcePageCount = pdfData.numpages;
+    } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      let result;
+      try { result = await convertDocxToPreservedHtml(fileBuffer); } catch (e: any) {
+        return res.status(400).json({ error: 'DOCX file appears corrupted. Re-save in Word and retry.' });
+      }
+      textContent = result.html;
+      sourcePlainText = result.text;
+    } else {
+      return res.status(400).json({ error: 'Unsupported file type. Upload PDF or DOCX.' });
+    }
+
+    if (!metadata || !metadata.title) {
+      try {
+        const response = await openai.chat.completions.create({
+          model: _activeAIModel,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (array of objects), abstract (string), keywords (string[]), contactEmail (string), contactPhone (string). ' +
+                'Each author object MUST include: name, department, faculty, institution, email, phone (all strings). ' +
+                'Never copy one shared email onto every author. If only one email exists for multiple authors, put it in top-level contactEmail.',
+            },
+            { role: 'user', content: `Extract metadata from this academic paper:\n\n${(sourcePlainText || htmlToPlainText(textContent)).substring(0, 15000)}` }
+          ]
+        });
+        const raw = response.choices[0]?.message?.content || '{}';
+        metadata = { ...safeJsonParse<any>(raw, {}), ...(metadata || {}) };
+        trackUsage(_activeAIModel, response.usage, 'metadata_extraction', userId);
+      } catch (e) {
+        if (!metadata) metadata = {};
+      }
+    }
+
+    metadata = sanitizeManuscriptMetadata(metadata || {}, textContent);
+    metadata.uploadedAt = uploadedAt;
+    const sourcePageCount = resolveSourcePageCount(metadata, textContent);
+    metadata.sourcePageCount = sourcePageCount;
+
+    let paperFileUrl: string | null = null;
+    let paperFileBlob: Buffer | null = R2_ENABLED ? null : fileBuffer;
+    if (R2_ENABLED) {
+      const safeFilename = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const r2Key = `papers/manuscripts/${Date.now()}-${safeFilename}`;
+      paperFileUrl = await uploadToR2(r2Key, fileBuffer, req.file.mimetype, fileBuffer.length);
+    }
+
+    const result = await pool.query(
+      'INSERT INTO papers (user_id, title, authors, abstract, content, metadata, file_blob, file_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+      [
+        userId,
+        metadata.title || 'Untitled',
+        JSON.stringify(Array.isArray(metadata.authors) ? metadata.authors.map((a: any) => a.name || a).filter(Boolean) : []),
+        metadata.abstract || '',
+        textContent,
+        JSON.stringify(metadata),
+        paperFileBlob,
+        paperFileUrl,
+      ]
+    );
+
+    const newPaperId = result.rows[0].id;
+    res.json({ id: newPaperId, title: metadata.title, authors: metadata.authors, abstract: metadata.abstract, metadata, status: 'uploaded' });
+  } catch (error: any) {
+    console.error('[admin/upload] error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
