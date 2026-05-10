@@ -7,8 +7,10 @@ if (typeof global.DOMMatrix === 'undefined') {
 
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { Readable } from 'stream';
+import { execFile } from 'child_process';
 import express from 'express';
 
 import { createServer as createViteServer } from 'vite';
@@ -1408,6 +1410,122 @@ const docxMediaMime = (name: string): string => {
   return 'application/octet-stream';
 };
 
+const execFileAsync = (
+  file: string,
+  args: string[],
+  options: { cwd?: string; timeout?: number; env?: NodeJS.ProcessEnv } = {}
+): Promise<{ stdout: string; stderr: string }> => {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { ...options, encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error) {
+        (error as any).stdout = stdout;
+        (error as any).stderr = stderr;
+        reject(error);
+        return;
+      }
+      resolve({ stdout: String(stdout || ''), stderr: String(stderr || '') });
+    });
+  });
+};
+
+const findLibreOfficeExecutable = (): string | null => {
+  const candidates = [
+    process.env.LIBREOFFICE_PATH,
+    'soffice',
+    'libreoffice',
+    'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+    'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe'
+  ].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    if (candidate.includes('\\') || candidate.includes('/')) {
+      if (fs.existsSync(candidate)) return candidate;
+      continue;
+    }
+
+    try {
+      const finder = process.platform === 'win32' ? 'where' : 'which';
+      const output = require('child_process')
+        .execFileSync(finder, [candidate], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+        .split(/\r?\n/)
+        .map((line: string) => line.trim())
+        .find(Boolean);
+      if (output) return output;
+    } catch (_) {}
+  }
+
+  return null;
+};
+
+const extractLibreOfficeHtmlVisualAssets = async (buffer: Buffer, existingHtml = ''): Promise<RecoveredVisualAsset[]> => {
+  const soffice = findLibreOfficeExecutable();
+  if (!soffice) return [];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docx-visuals-'));
+  const inputPath = path.join(tempDir, 'input.docx');
+  const assets: RecoveredVisualAsset[] = [];
+
+  try {
+    fs.writeFileSync(inputPath, buffer);
+    await execFileAsync(
+      soffice,
+      [
+        '--headless',
+        '--invisible',
+        '--nodefault',
+        '--nofirststartwizard',
+        '--nologo',
+        '--convert-to',
+        'html',
+        '--outdir',
+        tempDir,
+        inputPath
+      ],
+      {
+        cwd: tempDir,
+        timeout: 60000,
+        env: { ...process.env, HOME: tempDir, UserInstallation: `file:///${tempDir.replace(/\\/g, '/')}/lo-profile` }
+      }
+    );
+
+    const htmlFile = fs.readdirSync(tempDir).find(file => file.toLowerCase().endsWith('.html'));
+    if (!htmlFile) return [];
+
+    const html = fs.readFileSync(path.join(tempDir, htmlFile), 'utf8');
+    const $ = cheerio.load(html, { xmlMode: false });
+    const seen = new Set<string>();
+
+    $('img').each((_idx, img) => {
+      const src = String($(img).attr('src') || '').trim();
+      if (!src || /^data:/i.test(src) || /^https?:/i.test(src)) return;
+      const imagePath = path.resolve(tempDir, src.replace(/^file:\/\//i, ''));
+      if (!imagePath.startsWith(tempDir) || !fs.existsSync(imagePath)) return;
+      const mime = docxMediaMime(imagePath);
+      if (!mime.startsWith('image/')) return;
+      const data = fs.readFileSync(imagePath);
+      const base64 = data.toString('base64');
+      const signature = base64.slice(0, 96);
+      if (!signature || seen.has(signature) || existingHtml.includes(signature)) return;
+      seen.add(signature);
+      assets.push({
+        kind: 'image',
+        html: `<img src="data:${mime};base64,${base64}" alt="Recovered manuscript figure" />`,
+        signature
+      });
+    });
+
+    if (assets.length > 0) {
+      console.log(`[DOCX visual recovery] LibreOffice rendered ${assets.length} visual asset(s)`);
+    }
+  } catch (error: any) {
+    console.warn('[DOCX visual recovery] LibreOffice render skipped:', error?.message || error);
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) {}
+  }
+
+  return assets;
+};
+
 const chartNodeText = (node: any): string => {
   if (node === null || node === undefined) return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);
@@ -1462,7 +1580,7 @@ const extractChartSeriesFromXml = (xml: string): RecoveredChart | null => {
     const plotArea = parsed?.chartSpace?.chart?.plotArea;
     if (!plotArea) return null;
 
-    const chartTypes = ['barChart', 'lineChart', 'pieChart', 'areaChart', 'scatterChart'];
+    const chartTypes = ['barChart', 'bar3DChart', 'lineChart', 'line3DChart', 'pieChart', 'pie3DChart', 'areaChart', 'area3DChart', 'scatterChart'];
     for (const type of chartTypes) {
       const chartNodes = asArray<any>(plotArea[type]);
       for (const chart of chartNodes) {
@@ -1526,7 +1644,7 @@ const renderRecoveredChartSvg = (chart: RecoveredChart): string => {
       <text x="${labelX.toFixed(1)}" y="${height - 42}" font-size="11" fill="#334155" text-anchor="end" transform="rotate(-30 ${labelX.toFixed(1)} ${height - 42})">${escapeHtml(category)}</text>`;
   }).join('');
 
-  const lines = chart.type === 'lineChart' ? chart.series.map((ser, seriesIdx) => {
+  const lines = /line/i.test(chart.type) ? chart.series.map((ser, seriesIdx) => {
     const points = ser.values.map((value, idx) => {
       const x = pad.left + (idx + 0.5) * groupW;
       const y = yFor(value);
@@ -1555,7 +1673,7 @@ const renderRecoveredChartSvg = (chart: RecoveredChart): string => {
         ${grid}
         <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${pad.top + plotH}" stroke="#94a3b8" stroke-width="1.2" />
         <line x1="${pad.left}" y1="${pad.top + plotH}" x2="${width - pad.right}" y2="${pad.top + plotH}" stroke="#94a3b8" stroke-width="1.2" />
-        ${chart.type === 'lineChart' ? lines : bars}
+        ${/line/i.test(chart.type) ? lines : bars}
       </svg>
     </div>`;
 };
@@ -1587,11 +1705,8 @@ const buildVisualAssetFromDocxTarget = async (
     const xml = await file.async('string');
     const chart = extractChartSeriesFromXml(xml);
     if (!chart) {
-      return {
-        kind: 'notice',
-        html: '<div class="figure-recovery-warning">Figure data was detected in the Word document, but it could not be reconstructed automatically. Please upload a standard DOCX or PDF export for exact figure fidelity.</div>',
-        signature: rel.target
-      };
+      console.warn(`[DOCX visual recovery] chart data could not be reconstructed: ${rel.target}`);
+      return null;
     }
     return { kind: 'chart', html: renderRecoveredChartSvg(chart), signature: rel.target };
   }
@@ -1613,6 +1728,9 @@ const buildVisualAssetFromDocxTarget = async (
 };
 
 const extractDocxVisualAssets = async (buffer: Buffer, existingHtml = ''): Promise<RecoveredVisualAsset[]> => {
+  const renderedAssets = await extractLibreOfficeHtmlVisualAssets(buffer, existingHtml);
+  if (renderedAssets.length > 0) return renderedAssets;
+
   const zip = await JSZip.loadAsync(buffer);
   const rels = await buildDocxRelationshipMap(zip);
   const assets: RecoveredVisualAsset[] = [];
@@ -1689,7 +1807,13 @@ const insertRecoveredVisuals = (html: string, assets: RecoveredVisualAsset[]): s
     if (assetIndex >= assets.length) return;
     if (hasNearbyVisual(caption)) return;
     const asset = assets[assetIndex++];
-    $(caption).after(`<figure class="academic-figure recovered-figure" data-recovered-visual="true">${asset.html}</figure>`);
+    const captionHtml = String($(caption).html() || $(caption).text() || '').trim();
+    $(caption).replaceWith(
+      `<figure class="academic-figure recovered-figure" data-recovered-visual="true">` +
+      `<figcaption class="figure-caption">${captionHtml}</figcaption>` +
+      `${asset.html}` +
+      `</figure>`
+    );
   });
 
   const root: any = $('body').length ? $('body') : $.root();
@@ -4188,6 +4312,14 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
           max-width: 100%;
           height: auto;
           margin: 0 auto;
+        }
+        .academic-figure figcaption,
+        .figure-caption {
+          display: block;
+          margin: 0 0 0.65em 0;
+          font-weight: 700;
+          text-align: left !important;
+          text-align-last: left !important;
         }
         .figure-recovery-warning {
           border: 1px dashed #cbd5e1;

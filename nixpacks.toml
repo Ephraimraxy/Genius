@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_22", "chromium", "nss", "nspr", "atk", "at-spi2-atk", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "libxkbcommon", "mesa", "expat", "glib", "dbus", "pango", "cairo", "freetype", "fontconfig", "gtk3", "cups", "alsa-lib"]
+nixPkgs = ["nodejs_22", "chromium", "libreoffice", "nss", "nspr", "atk", "at-spi2-atk", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "libxkbcommon", "mesa", "expat", "glib", "dbus", "pango", "cairo", "freetype", "fontconfig", "gtk3", "cups", "alsa-lib"]
 
 [phases.install]
 cmds = ["npm install"]
