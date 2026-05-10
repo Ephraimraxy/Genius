@@ -1,7 +1,4 @@
 node_modules/
-.npm-cache/
-tmp/
-.claude/
 build/
 dist/
 coverage/
