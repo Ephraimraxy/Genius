@@ -243,7 +243,7 @@ export default function FormattingEngine({
           line-height: 1.2;
           text-align: left !important;
         }
-        .academic-content h1 { font-size: 1.5em; margin-bottom: 0.8em; }
+        .academic-content h1 { font-size: 1.5em; margin-bottom: 0.8em; text-align: center !important; text-align-last: center !important; }
         .academic-content h2 { font-size: 1.25em; }
         .academic-content h3 { font-size: 1.1em; }
         .academic-content p {
@@ -275,6 +275,10 @@ export default function FormattingEngine({
           background-color: #f8fafc;
           font-weight: bold;
         }
+        .academic-content .formula { display: block; margin: 1em 2em; font-family: serif; }
+        .academic-content .fraction { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; margin: 0 0.2em; }
+        .academic-content .fraction .numerator { border-bottom: 1.5px solid #1e293b; padding: 0 4px 2px; text-align: center; }
+        .academic-content .fraction .denominator { padding: 2px 4px 0; text-align: center; }
         .academic-content .academic-figure {
           margin: 2.5rem 0;
           text-align: center;

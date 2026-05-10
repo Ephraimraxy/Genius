@@ -1156,12 +1156,31 @@ const cleanContactFrontMatter = (html: string, metadata: any = {}) => {
     .replace(/<p[^>]*>\s*(?:<strong>)?\s*general email\s*:\s*(?:<\/strong>)?\s*[^<]*<\/p>/gi, '')
     .replace(/<p[^>]*>\s*(?:<strong>)?\s*general phone\s*:\s*(?:<\/strong>)?\s*[^<]*<\/p>/gi, '');
 
-  const contactLines = [
-    contactEmail ? `<p class="general-contact"><strong>General email:</strong> ${escapeHtml(contactEmail)}</p>` : '',
-    contactPhone ? `<p class="general-contact"><strong>General phone:</strong> ${escapeHtml(contactPhone)}</p>` : ''
-  ].filter(Boolean).join('\n');
+  return `${front}${rest}`;
+};
 
-  return `${front}${contactLines ? `\n${contactLines}\n` : ''}${rest}`;
+const deduplicateTableColumnMerges = (html: string): string => {
+  if (!html) return html;
+  const $ = cheerio.load(html, { xmlMode: false });
+  $('table').each((_i, table) => {
+    let rows = $(table).find('tbody tr').toArray();
+    if (rows.length < 2) rows = $(table).find('tr').toArray().filter((r: any) => $(r).find('td').length > 0);
+    if (rows.length < 2) return;
+    const runValue: Record<number, string | null> = {};
+    rows.forEach((row: any, rowIdx: number) => {
+      $(row).find('td').toArray().forEach((cell: any, colIdx: number) => {
+        const text = $(cell).text().trim();
+        if (rowIdx === 0) {
+          runValue[colIdx] = text || null;
+        } else if (text && text === runValue[colIdx]) {
+          $(cell).empty();
+        } else {
+          runValue[colIdx] = text || null;
+        }
+      });
+    });
+  });
+  return $.html() as string;
 };
 
 async function convertDocxToPreservedHtml(buffer: Buffer): Promise<{ html: string; text: string }> {
@@ -3473,6 +3492,7 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     .replace(/src="\/Nasarawa-State-University\.jpg"/g, `src="${nsukLogoBase64}"`);
 
   scrubbedContent = cleanContactFrontMatter(scrubbedContent, paperMeta);
+  scrubbedContent = deduplicateTableColumnMerges(scrubbedContent);
 
   // ENFORCE TIGHT REFERENCES on every PDF generation (catches old stored content + AI that ignored the prompt)
   // Works on named reference containers
@@ -3568,7 +3588,7 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
           hyphens: none;
           page-break-after: avoid;
         }
-        .academic-content h1 { font-size: 1.6em; margin-bottom: 0.8em; border-bottom: 1.5px solid #f1f5f9; padding-bottom: 0.5em; }
+        .academic-content h1 { font-size: 1.6em; margin-bottom: 0.8em; border-bottom: 1.5px solid #f1f5f9; padding-bottom: 0.5em; text-align: center !important; text-align-last: center !important; }
         .academic-content h2 { font-size: 1.3em; border-left: 3.5px solid #800000; padding-left: 12px; }
         .academic-content h3 { font-size: 1.15em; font-style: italic; color: #475569; }
 
@@ -3577,13 +3597,10 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
         th { background: #f8fafc; font-weight: bold; color: #475569; }
 
         img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; border-radius: 4px; }
-        .general-contact {
-          margin: 0.25em 0 0.5em 0 !important;
-          font-size: 10.5pt;
-          color: #334155;
-          text-align: left !important;
-          text-align-last: left !important;
-        }
+        .formula { display: block; margin: 1em 2em; font-family: serif; }
+        .fraction { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; margin: 0 0.2em; }
+        .fraction .numerator { border-bottom: 1.5px solid #1e293b; padding: 0 4px 2px; text-align: center; }
+        .fraction .denominator { padding: 2px 4px 0; text-align: center; }
 
         /* ===== REFERENCES SECTION =====
            Compact, single-spaced, hanging-indent APA style.
@@ -6730,6 +6747,20 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     // which are saved securely to paper.content. Re-extracting file_blob overrides them.
     const sourceContent = paper.content;
 
+    // Extract embedded base64 images BEFORE sending to AI — the AI can't handle binary data
+    // and strips images. Replace them with numbered placeholders and re-inject after formatting.
+    const figureMap: Record<string, string> = {};
+    let figureIndex = 0;
+    const sourceWithPlaceholders = sourceContent.replace(
+      /<img(\s[^>]*)?src=(["'])(data:[^"']+)\2([^>]*)>/gi,
+      (_match: string, pre: string, _q: string, dataUri: string, post: string) => {
+        figureIndex++;
+        const key = `FIGURE_PLACEHOLDER_${figureIndex}`;
+        figureMap[key] = `<img${pre || ''}src="${dataUri}"${post || ''}>`;
+        return `<p class="figure-slot" data-figure="${key}">[${key}]</p>`;
+      }
+    );
+
     const styleGuidelines = getStyleGuidelines(style, branding);
 
     // Build author block for the first-chunk user message
@@ -6747,13 +6778,6 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     } else if (userProfile.affiliation) {
       authorBlock = `${paper.authors || userProfile.name} — ${userProfile.affiliation}`;
     }
-    const generalContactBlock = [
-      authorContactEmail ? `General email: ${authorContactEmail}` : '',
-      authorContactPhone ? `General phone: ${authorContactPhone}` : ''
-    ].filter(Boolean).join('\n');
-    if (generalContactBlock) {
-      authorBlock = [authorBlock, generalContactBlock].filter(Boolean).join('\n');
-    }
 
     // Stream SSE so Cloudflare never 524s regardless of paper length
     res.setHeader('Content-Type', 'text/event-stream');
@@ -6764,7 +6788,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
 
     // Split source into section-aligned chunks so no single GPT-4o call exceeds its output limit.
     // Each chunk is formatted in parallel; the final HTML is stitched before post-processing.
-    const sections = splitManuscriptSections(sourceContent);
+    const sections = splitManuscriptSections(sourceWithPlaceholders);
     const chunks = groupSectionsForFormatting(sections, 3500);
     const totalChunks = chunks.length;
     console.log(`[DEBUG] Paper ${id}: ${totalChunks} formatting chunk(s) for ~${targetPageCount} pages`);
@@ -6776,18 +6800,22 @@ ${styleGuidelines}
 
 CRITICAL RULES:
 1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the output in triple backticks (\`\`\`html).
-2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>.
+2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>. ABSOLUTE TABLE RULES (NON-NEGOTIABLE):
+   a. EMPTY CELLS STAY EMPTY: If a cell in the source is blank/empty, output an empty <td></td>. Do NOT copy the value from an adjacent or above cell into a blank cell. Example: if "Location" shows "Abuja" only in the first data row and the remaining rows are blank, output "Abuja" ONLY in the first <td> and empty <td></td> for all other rows.
+   b. COLUMN HEADERS ARE SACRED: Copy table column headers VERBATIM from the source. Do NOT rename, abbreviate, expand, or modify any column header. "Target Population" must remain "Target Population", not "Target Population Basis" or any other variant.
+   c. CELL CONTENT IS VERBATIM: Do NOT reformat, rewrite, or simplify calculations inside table cells. If a cell shows "127,900 x400 = 3,067,500", output it exactly like that — do not convert to "127,900 × 400 / 3,067,500" or any other form.
 3. ZERO OMISSION OF MAIN TEXT: You MUST preserve 100% of the actual manuscript body text, references, and acknowledgements. Do NOT truncate or summarize the core content.
-4. NO PLACEHOLDERS: Do NOT generate "[Figure]", "[Image]", or any missing media placeholders.
+4. FIGURE PLACEHOLDERS ARE SACRED: The source contains markers like [FIGURE_PLACEHOLDER_1], [FIGURE_PLACEHOLDER_2], etc. These represent actual embedded charts, graphs, and figures from the manuscript. You MUST output each placeholder EXACTLY as written (e.g., <p>[FIGURE_PLACEHOLDER_1]</p>) in the EXACT position where it appears in the source. NEVER remove, skip, move, or replace them with anything else. Their position in the paper is critical.
 5. NO RECURRING METADATA: Do NOT inject journal metadata, ISSNs, slogans, or branding blocks into the manuscript. Only format the raw academic content.
 6. STRUCTURE: Use <div class="paper-sheet"> to simulate real pages. Within each sheet, use standard HTML tags (<h1>, <h2>, <p>).
-7. NO BROKEN MEDIA: If an image or logo is referenced in the source but the path looks absolute or relative to a local system, omit it entirely. Do NOT generate <img> tags for logos.
+7. NO BROKEN MEDIA: Do NOT generate <img> tags for logos or branding. If an image src is a relative or absolute file-system path (e.g. "C:\...", "/images/..."), omit it. BUT: [FIGURE_PLACEHOLDER_N] markers must be preserved — they are NOT images, they are position markers for real manuscript figures.
 8. COPYEDITING: Fix spelling and grammatical errors, remove completely all unwanted symbols/characters, eliminate weird text indentations, and strip out unnecessary extra spaces. The text must read flawlessly as a professionally copyedited scientific manuscript.
 9. ENFORCEMENT: If you see "Genius Multidisciplinary International Journal" or "ISSN" at the top of the source, STRIP IT.
 10. FONTS: Use standard serif fonts for the main body.
 11. ZERO OMISSION (STRICT): You MUST prioritize content integrity. Do NOT compress or summarize to fit any length. Replicate every section, paragraph, and reference.
 12. PAGE DISCIPLINE: Avoid inflating the paper with unnecessary spacing, but ensure all text is present. Use as many <div class="paper-sheet"> blocks as needed to hold the FULL content.
 12b. SOURCE FIDELITY: When source content already contains <table>, <figure>, <img>, or formula-like text, preserve the original order and exact visible data. Do NOT recalculate table values, do NOT repeat a location/cell value into blank cells, do NOT move figures/tables after References, and do NOT append source blocks at the end of the paper.
+12c. FORMULAS & EQUATIONS: Reproduce mathematical formulas and equations preserving their visual layout as closely as possible. If the source shows a fraction with a numerator over a horizontal line and a denominator below (e.g. S = PS / (1 + PS(pe)²)), render it using an HTML fraction block like: <div class="formula"><span class="fraction"><span class="numerator">PS</span><span class="denominator">1+PS(pe)<sup>2</sup></span></span></div> — do NOT collapse fractions into a single inline line like "S = PS / 1 + PS(pe)²". Preserve every step of the calculation as separate lines matching the source layout.
 13. REFERENCES FORMATTING (NON-NEGOTIABLE): The References section MUST be formatted as a compact, single-spaced list. Each reference entry is ONE paragraph tag: <p class="reference">...</p>. Rules:
     a. NO blank lines or extra margin between individual reference entries. They flow one immediately after another.
     b. Use a hanging indent: padding-left:2.9em; text-indent:-2.9em; on each <p class="reference">.
@@ -6835,7 +6863,19 @@ EXAMPLE of correct reference output:
 
     // Stitch chunks — paper-sheet divs flow naturally end-to-end
     let formattedHtml = formattedParts.join('\n');
+
+    // Re-inject extracted figures: replace [FIGURE_PLACEHOLDER_N] markers with the actual <img> tags
+    if (Object.keys(figureMap).length > 0) {
+      formattedHtml = formattedHtml.replace(/\[FIGURE_PLACEHOLDER_(\d+)\]/g, (_m: string, n: string) => {
+        const key = `FIGURE_PLACEHOLDER_${n}`;
+        return figureMap[key]
+          ? `<div class="academic-figure" style="text-align:center;margin:1.5em 0;">${figureMap[key]}</div>`
+          : '';
+      });
+    }
+
     formattedHtml = cleanContactFrontMatter(formattedHtml, metadata);
+    formattedHtml = deduplicateTableColumnMerges(formattedHtml);
 
     // POST-PROCESS: Enforce compact references regardless of what the AI produced.
     // Find the references section and tighten every <p> inside it.
