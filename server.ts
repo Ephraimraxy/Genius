@@ -1728,6 +1728,49 @@ async function convertDocxToPreservedHtml(buffer: Buffer): Promise<{ html: strin
   return { html: html || text, text };
 }
 
+const bufferLooksLikeDocx = (buffer: Buffer | null | undefined): boolean => {
+  return !!buffer && buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4b;
+};
+
+const resolvePaperUploadBuffer = async (paper: any): Promise<Buffer | null> => {
+  if (paper?.file_blob) {
+    return Buffer.isBuffer(paper.file_blob) ? paper.file_blob : Buffer.from(paper.file_blob);
+  }
+
+  const fileUrl = String(paper?.file_url || '').trim();
+  if (!/^https?:\/\//i.test(fileUrl)) return null;
+
+  try {
+    const response = await fetch(fileUrl);
+    if (!response.ok) return null;
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength > 80 * 1024 * 1024) return null;
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error: any) {
+    console.warn('[DOCX visual recovery] original upload fetch failed:', error?.message || error);
+    return null;
+  }
+};
+
+const recoverSourceVisualsFromOriginalUpload = async (paper: any, sourceHtml: string): Promise<string> => {
+  if (!sourceHtml || /data-recovered-visual=(["'])true\1|recovered-chart/i.test(sourceHtml)) return sourceHtml;
+  const plain = htmlToPlainText(sourceHtml);
+  if (!/(?:fig\.?|figure)\s*\d+\s*[:.\-]/i.test(plain)) return sourceHtml;
+
+  const originalBuffer = await resolvePaperUploadBuffer(paper);
+  if (!bufferLooksLikeDocx(originalBuffer)) return sourceHtml;
+
+  try {
+    const recoveredVisuals = await extractDocxVisualAssets(originalBuffer as Buffer, sourceHtml);
+    if (recoveredVisuals.length === 0) return sourceHtml;
+    console.log(`[DOCX visual recovery] merged ${recoveredVisuals.length} missing visual asset(s) from original upload`);
+    return insertRecoveredVisuals(sourceHtml, recoveredVisuals);
+  } catch (error: any) {
+    console.warn('[DOCX visual recovery] original upload merge skipped:', error?.message || error);
+    return sourceHtml;
+  }
+};
+
 const buildSafeFilename = (value: string, suffix = '') => {
   const safe = String(value || 'manuscript')
     .replace(/[^a-zA-Z0-9\s_-]/g, '')
@@ -7417,7 +7460,8 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     // DELIBERATE OMISSION: We no longer try to extract the original file_blob here.
     // The pipeline must respect the intermediate corrections (e.g. from APA Gatekeeper)
     // which are saved securely to paper.content. Re-extracting file_blob overrides them.
-    const sourceContent = paper.content;
+    let sourceContent = paper.content;
+    sourceContent = await recoverSourceVisualsFromOriginalUpload(paper, sourceContent);
 
     // Extract embedded base64 images BEFORE sending to AI — the AI can't handle binary data
     // and strips images. Replace them with numbered placeholders and re-inject after formatting.
