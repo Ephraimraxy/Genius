@@ -1013,6 +1013,227 @@ const normalizeAuthorNames = (authors: any): string[] => {
     .filter(Boolean);
 };
 
+const normalizeEmailKey = (email: any): string => {
+  return String(email || '').trim().toLowerCase();
+};
+
+const normalizePhoneKey = (phone: any): string => {
+  return String(phone || '').replace(/[^\d+]/g, '').trim();
+};
+
+const escapeHtml = (value: any): string => {
+  return String(value || '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] || c));
+};
+
+const escapeRegExp = (value: string): string => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+const sanitizeAuthorContactAssignments = (
+  authors: any,
+  existingContactEmail?: any,
+  existingContactPhone?: any
+): { authors: any; contactEmail?: string; contactPhone?: string } => {
+  if (!Array.isArray(authors)) {
+    return {
+      authors,
+      contactEmail: String(existingContactEmail || '').trim() || undefined,
+      contactPhone: String(existingContactPhone || '').trim() || undefined
+    };
+  }
+
+  const nextAuthors = authors.map((author: any) => {
+    if (!author || typeof author !== 'object' || Array.isArray(author)) return author;
+    const nextAuthor = { ...author };
+    if (nextAuthor.email) nextAuthor.email = String(nextAuthor.email).trim();
+    if (nextAuthor.phone) nextAuthor.phone = String(nextAuthor.phone).trim();
+    return nextAuthor;
+  });
+
+  let contactEmail = String(existingContactEmail || '').trim();
+  let contactPhone = String(existingContactPhone || '').trim();
+  const authorCount = nextAuthors.length;
+
+  const sanitizeField = (
+    field: 'email' | 'phone',
+    normalizeKey: (value: any) => string,
+    setGeneralContact: (value: string) => void
+  ) => {
+    const contacts = new Map<string, { value: string; indexes: number[] }>();
+
+    nextAuthors.forEach((author: any, index: number) => {
+      if (!author || typeof author !== 'object' || Array.isArray(author)) return;
+      const value = String(author[field] || '').trim();
+      const key = normalizeKey(value);
+      if (!key) return;
+      const current = contacts.get(key) || { value, indexes: [] };
+      current.indexes.push(index);
+      contacts.set(key, current);
+    });
+
+    if (authorCount <= 1) return;
+
+    contacts.forEach(({ value, indexes }) => {
+      const isOnlyContactForMultipleAuthors = contacts.size === 1;
+      const isRepeatedAcrossAuthors = indexes.length > 1;
+      if (!isOnlyContactForMultipleAuthors && !isRepeatedAcrossAuthors) return;
+
+      setGeneralContact(value);
+      indexes.forEach(index => {
+        const author = nextAuthors[index];
+        if (author && typeof author === 'object' && !Array.isArray(author)) {
+          author[field] = '';
+        }
+      });
+    });
+  };
+
+  sanitizeField('email', normalizeEmailKey, value => {
+    if (!contactEmail) contactEmail = value;
+  });
+  sanitizeField('phone', normalizePhoneKey, value => {
+    if (!contactPhone) contactPhone = value;
+  });
+
+  return {
+    authors: nextAuthors,
+    contactEmail: contactEmail || undefined,
+    contactPhone: contactPhone || undefined
+  };
+};
+
+const getMetadataContactEmail = (metadata: any): string => {
+  return String(metadata?.contactEmail || metadata?.generalEmail || metadata?.email || '').trim();
+};
+
+const getMetadataContactPhone = (metadata: any): string => {
+  return String(metadata?.contactPhone || metadata?.generalPhone || metadata?.phone || '').trim();
+};
+
+const detectTitlePageContacts = (text: any): { emails: string[]; phones: string[] } => {
+  const titlePage = String(text || '').slice(0, 5000);
+  const emails = Array.from(new Set((titlePage.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [])
+    .map(email => email.trim())));
+
+  const phones: string[] = [];
+  const phonePatterns = [
+    /(?:tel|phone|mobile|contact)\s*(?:no\.?|number)?\s*[:\-]?\s*(\+?\d[\d\s().-]{7,}\d)/gi,
+    /(?:tel|phone|mobile|contact)\s*(?:no\.?|number)?\s*[:\-]?\s*([0]\d{10})/gi
+  ];
+  for (const pattern of phonePatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(titlePage)) !== null) {
+      const phone = String(match[1] || '').trim().replace(/\s+/g, ' ');
+      if (phone && !phones.some(existing => normalizePhoneKey(existing) === normalizePhoneKey(phone))) {
+        phones.push(phone);
+      }
+    }
+  }
+
+  return { emails, phones };
+};
+
+const sanitizeManuscriptMetadata = (metadata: any, sourceText: any = ''): any => {
+  if (!metadata || typeof metadata !== 'object') return metadata;
+  const detectedContacts = detectTitlePageContacts(sourceText);
+
+  const sanitizedContacts = sanitizeAuthorContactAssignments(
+    metadata.authors,
+    getMetadataContactEmail(metadata),
+    getMetadataContactPhone(metadata)
+  );
+  const nextMetadata = {
+    ...metadata,
+    authors: sanitizedContacts.authors
+  };
+
+  if (sanitizedContacts.contactEmail) nextMetadata.contactEmail = sanitizedContacts.contactEmail;
+  if (sanitizedContacts.contactPhone) nextMetadata.contactPhone = sanitizedContacts.contactPhone;
+
+  const authorCount = Array.isArray(nextMetadata.authors) ? nextMetadata.authors.length : 0;
+  if (authorCount === 1 && typeof nextMetadata.authors[0] === 'string') {
+    const singleEmail = nextMetadata.contactEmail || (detectedContacts.emails.length === 1 ? detectedContacts.emails[0] : '');
+    const singlePhone = nextMetadata.contactPhone || (detectedContacts.phones.length === 1 ? detectedContacts.phones[0] : '');
+    if (singleEmail || singlePhone) {
+      nextMetadata.authors[0] = {
+        name: nextMetadata.authors[0],
+        email: singleEmail,
+        phone: singlePhone
+      };
+      delete nextMetadata.contactEmail;
+      delete nextMetadata.contactPhone;
+    }
+  }
+
+  if (authorCount === 1 && nextMetadata.authors[0] && typeof nextMetadata.authors[0] === 'object' && !Array.isArray(nextMetadata.authors[0])) {
+    if (!nextMetadata.authors[0].email && !nextMetadata.contactEmail && detectedContacts.emails.length === 1) {
+      nextMetadata.authors[0].email = detectedContacts.emails[0];
+    } else if (!nextMetadata.authors[0].email && nextMetadata.contactEmail) {
+      nextMetadata.authors[0].email = nextMetadata.contactEmail;
+      delete nextMetadata.contactEmail;
+    }
+
+    if (!nextMetadata.authors[0].phone && !nextMetadata.contactPhone && detectedContacts.phones.length === 1) {
+      nextMetadata.authors[0].phone = detectedContacts.phones[0];
+    } else if (!nextMetadata.authors[0].phone && nextMetadata.contactPhone) {
+      nextMetadata.authors[0].phone = nextMetadata.contactPhone;
+      delete nextMetadata.contactPhone;
+    }
+  }
+
+  if (authorCount > 1) {
+    const hasAuthorEmail = nextMetadata.authors.some((author: any) => author && typeof author === 'object' && normalizeEmailKey(author.email));
+    const hasAuthorPhone = nextMetadata.authors.some((author: any) => author && typeof author === 'object' && normalizePhoneKey(author.phone));
+    if (!nextMetadata.contactEmail && !hasAuthorEmail && detectedContacts.emails.length === 1) {
+      nextMetadata.contactEmail = detectedContacts.emails[0];
+    }
+    if (!nextMetadata.contactPhone && !hasAuthorPhone && detectedContacts.phones.length === 1) {
+      nextMetadata.contactPhone = detectedContacts.phones[0];
+    }
+  }
+
+  return nextMetadata;
+};
+
+const dedupeRepeatedEmailsInAuthorFrontMatter = (html: string, metadata: any = {}): string => {
+  if (!html || typeof html !== 'string') return html;
+
+  const contactEmail = getMetadataContactEmail(metadata);
+  const contactPhone = getMetadataContactPhone(metadata);
+  const abstractMatch = html.match(/<h[1-6][^>]*>\s*(?:<[^>]+>\s*)*abstract\b/i);
+  const boundary = abstractMatch?.index ?? Math.min(html.length, 6000);
+  let frontMatter = html.slice(0, boundary);
+  const rest = html.slice(boundary);
+
+  if (contactEmail) {
+    frontMatter = frontMatter.replace(new RegExp(escapeRegExp(contactEmail), 'gi'), '');
+  }
+  if (contactPhone) {
+    frontMatter = frontMatter.replace(new RegExp(escapeRegExp(contactPhone), 'gi'), '');
+  }
+
+  const seenEmails = new Set<string>();
+
+  const cleanedFrontMatter = frontMatter
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, (email: string) => {
+      const key = normalizeEmailKey(email);
+      if (seenEmails.has(key)) return '';
+      seenEmails.add(key);
+      return email;
+    })
+    .replace(/,\s*(<\/(?:p|div|span|li)>)/gi, '$1')
+    .replace(/,\s*([.;])/g, '$1')
+    .replace(/\s+,/g, ',')
+    .replace(/(?:,\s*){2,}/g, ', ');
+
+  const generalContactLines = [
+    contactEmail ? `<p class="general-contact"><strong>General email:</strong> ${escapeHtml(contactEmail)}</p>` : '',
+    contactPhone ? `<p class="general-contact"><strong>General phone:</strong> ${escapeHtml(contactPhone)}</p>` : ''
+  ].filter(Boolean).join('\n');
+
+  return `${cleanedFrontMatter}${generalContactLines ? `\n${generalContactLines}\n` : ''}${rest}`;
+};
+
 const buildSafeFilename = (value: string, suffix = '') => {
   const safe = String(value || 'manuscript')
     .replace(/[^a-zA-Z0-9\s_-]/g, '')
@@ -1042,6 +1263,257 @@ const buildPageWindow = (sourcePages: number) => {
     min: Math.max(1, target - tolerance),
     max: target + tolerance
   };
+};
+
+const htmlToPlainText = (value: any): string => {
+  const text = String(value || '');
+  if (!/<[a-z][\s\S]*>/i.test(text)) return text;
+  return cheerio.load(text).text();
+};
+
+async function convertDocxToPreservedHtml(buffer: Buffer): Promise<{ html: string; text: string }> {
+  const [rawTextResult, htmlResult] = await Promise.all([
+    mammoth.extractRawText({ buffer }),
+    mammoth.convertToHtml(
+      { buffer },
+      {
+        convertImage: (mammoth.images as any).inline(async (element: any) => {
+          const imageBuffer = await element.read('base64');
+          return { src: `data:${element.contentType};base64,${imageBuffer}` };
+        })
+      } as any
+    )
+  ]);
+
+  const html = String(htmlResult.value || '').trim();
+  const text = String(rawTextResult.value || htmlToPlainText(html)).trim();
+  return { html: html || text, text };
+}
+
+type ProtectedManuscriptBlock = {
+  token: string;
+  html: string;
+  kind: 'table' | 'figure' | 'equation';
+};
+
+const protectedTokenPrefix = 'GMIJ_PRESERVE_BLOCK';
+
+const makeProtectedToken = (kind: ProtectedManuscriptBlock['kind'], index: number) => {
+  return `@@${protectedTokenPrefix}_${kind.toUpperCase()}_${index}@@`;
+};
+
+const isEquationLikeLine = (line: string): boolean => {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (trimmed.length > 140) return false;
+  if (/(^|\s)[A-Za-z]\s*=/.test(trimmed)) return true;
+  if (/^(?:=|approximately|approx\.?)/i.test(trimmed)) return true;
+  if (/[=x*/^_]/.test(trimmed) && /\d/.test(trimmed)) return true;
+  if (/^\(?[\d\s,._+\-*/=()%]+(?:pe|ps)?[\d\s,._+\-*/=()%]*$/i.test(trimmed) && /[=+\-*/]/.test(trimmed)) return true;
+  return false;
+};
+
+const protectPlainTextEquationBlocks = (content: string, blocks: ProtectedManuscriptBlock[]) => {
+  const lines = String(content || '').split(/\r?\n/);
+  const output: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    if (!isEquationLikeLine(lines[index])) {
+      output.push(lines[index]);
+      index += 1;
+      continue;
+    }
+
+    const formulaLines: string[] = [];
+    while (index < lines.length && (isEquationLikeLine(lines[index]) || (formulaLines.length > 0 && !lines[index].trim()))) {
+      formulaLines.push(lines[index]);
+      index += 1;
+      if (formulaLines.length > 0 && !lines[index - 1]?.trim() && !isEquationLikeLine(lines[index] || '')) break;
+    }
+
+    const token = makeProtectedToken('equation', blocks.length);
+    blocks.push({
+      token,
+      kind: 'equation',
+      html: `<pre class="formula-block">${escapeHtml(formulaLines.join('\n').trim())}</pre>`
+    });
+    output.push(token);
+  }
+
+  return output.join('\n');
+};
+
+const protectPlainTextTableBlocks = (content: string, blocks: ProtectedManuscriptBlock[]) => {
+  const lines = String(content || '').split(/\r?\n/);
+  const output: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const isTableStart = /^\s*Table\s+\d+/i.test(line);
+    const hasColumnGaps = /\S\s{2,}\S/.test(line);
+    const nextHasColumnGaps = /\S\s{2,}\S/.test(lines[index + 1] || '');
+
+    if (!isTableStart && !(hasColumnGaps && nextHasColumnGaps)) {
+      output.push(line);
+      index += 1;
+      continue;
+    }
+
+    const tableLines: string[] = [];
+    let blankCount = 0;
+    while (index < lines.length) {
+      const current = lines[index];
+      tableLines.push(current);
+      const trimmed = current.trim();
+      if (!trimmed) blankCount += 1;
+      else blankCount = 0;
+      index += 1;
+
+      if (/^\s*Source\b/i.test(current)) break;
+      if (blankCount >= 2) break;
+      if (tableLines.length > 2 && /^\s*(?:introduction|methodology|sampling|discussion|conclusion|references?)\b/i.test(lines[index] || '')) break;
+      if (tableLines.length > 4 && !/\S\s{2,}\S/.test(lines[index] || '') && !/^\s*(?:Total|Source)\b/i.test(lines[index] || '')) {
+        const next = lines[index + 1] || '';
+        if (!/\S\s{2,}\S/.test(next)) break;
+      }
+    }
+
+    const token = makeProtectedToken('table', blocks.length);
+    blocks.push({
+      token,
+      kind: 'table',
+      html: `<pre class="source-table-block">${escapeHtml(tableLines.join('\n').trim())}</pre>`
+    });
+    output.push(token);
+  }
+
+  return output.join('\n');
+};
+
+const insertPdfFiguresNearCaptions = (text: string, figures: string[]): string => {
+  if (figures.length === 0) return text;
+  const lines = String(text || '').split(/\r?\n/);
+  let figureIndex = 0;
+  const output: string[] = [];
+
+  for (const line of lines) {
+    output.push(line);
+    if (figureIndex < figures.length && /^\s*Figure\s+\d+/i.test(line)) {
+      output.push(figures[figureIndex]);
+      figureIndex += 1;
+    }
+  }
+
+  if (figureIndex < figures.length) {
+    output.push('\nExtracted Figures');
+    while (figureIndex < figures.length) {
+      output.push(figures[figureIndex]);
+      figureIndex += 1;
+    }
+  }
+
+  return output.join('\n');
+};
+
+async function extractPdfFigureHtmlWithPoppler(buffer: Buffer): Promise<string[]> {
+  const os = require('os');
+  const { execFile } = require('child_process');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gmij-pdf-figures-'));
+  const inputPath = path.join(tmpDir, 'source.pdf');
+  const outputPrefix = path.join(tmpDir, 'figure');
+
+  try {
+    fs.writeFileSync(inputPath, buffer);
+    await new Promise<void>((resolve) => {
+      execFile('pdfimages', ['-png', inputPath, outputPrefix], { timeout: 60000 }, () => resolve());
+    });
+
+    const images = fs.readdirSync(tmpDir)
+      .filter((name: string) => /^figure-\d+\.(?:png|jpg|jpeg|ppm|pbm)$/i.test(name))
+      .map((name: string) => path.join(tmpDir, name))
+      .filter((filePath: string) => {
+        try { return fs.statSync(filePath).size > 4096; } catch { return false; }
+      })
+      .slice(0, 12);
+
+    return images.map((filePath: string, index: number) => {
+      const ext = path.extname(filePath).toLowerCase();
+      const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
+      const data = fs.readFileSync(filePath).toString('base64');
+      return `<figure class="academic-figure preserved-figure"><img src="data:${mime};base64,${data}" alt="Extracted figure ${index + 1}" /></figure>`;
+    });
+  } catch (error: any) {
+    console.warn('[PDF] Figure extraction skipped:', error?.message || error);
+    return [];
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+const protectManuscriptBlocks = (content: string): { content: string; blocks: ProtectedManuscriptBlock[] } => {
+  const blocks: ProtectedManuscriptBlock[] = [];
+  let protectedContent = String(content || '');
+
+  if (/<[a-z][\s\S]*>/i.test(protectedContent)) {
+    const $ = cheerio.load(protectedContent, { decodeEntities: false } as any);
+
+    $('table').each((_idx, el) => {
+      const token = makeProtectedToken('table', blocks.length);
+      const tableHtml = $.html(el);
+      blocks.push({ token, kind: 'table', html: `<div class="table-wrapper preserved-table">${tableHtml}</div>` });
+      $(el).replaceWith(`<p>${token}</p>`);
+    });
+
+    $('figure, .academic-figure').each((_idx, el) => {
+      const token = makeProtectedToken('figure', blocks.length);
+      blocks.push({ token, kind: 'figure', html: $.html(el) });
+      $(el).replaceWith(`<p>${token}</p>`);
+    });
+
+    $('img').each((_idx, el) => {
+      const token = makeProtectedToken('figure', blocks.length);
+      blocks.push({ token, kind: 'figure', html: `<div class="academic-figure preserved-figure">${$.html(el)}</div>` });
+      $(el).replaceWith(`<p>${token}</p>`);
+    });
+
+    $('p, div').each((_idx, el) => {
+      const $el = $(el);
+      if ($el.find('p, div, table, figure, img').length > 0) return;
+      const text = $el.text();
+      if (!isEquationLikeLine(text)) return;
+      const token = makeProtectedToken('equation', blocks.length);
+      blocks.push({ token, kind: 'equation', html: `<pre class="formula-block">${escapeHtml(text.trim())}</pre>` });
+      $el.replaceWith(`<p>${token}</p>`);
+    });
+
+    protectedContent = $('body').html() || protectedContent;
+  } else {
+    protectedContent = protectPlainTextTableBlocks(protectedContent, blocks);
+    protectedContent = protectPlainTextEquationBlocks(protectedContent, blocks);
+  }
+
+  return { content: protectedContent, blocks };
+};
+
+const restoreProtectedManuscriptBlocks = (content: string, blocks: ProtectedManuscriptBlock[]): string => {
+  let restored = String(content || '');
+  const missing: ProtectedManuscriptBlock[] = [];
+
+  for (const block of blocks) {
+    if (restored.includes(block.token)) {
+      restored = restored.split(block.token).join(block.html);
+    } else {
+      missing.push(block);
+    }
+  }
+
+  if (missing.length > 0) {
+    restored += `\n${missing.map(block => block.html).join('\n')}`;
+  }
+
+  return restored;
 };
 
 const resolveSourcePageCount = (metadata: any, content: string) => {
@@ -3303,6 +3775,8 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     .replace(/src="\/journal-logo\.png"/g, `src="${journalLogoBase64}"`)
     .replace(/src="\/Nasarawa-State-University\.jpg"/g, `src="${nsukLogoBase64}"`);
 
+  scrubbedContent = dedupeRepeatedEmailsInAuthorFrontMatter(scrubbedContent, paperMeta);
+
   // ENFORCE TIGHT REFERENCES on every PDF generation (catches old stored content + AI that ignored the prompt)
   // Works on named reference containers
   scrubbedContent = scrubbedContent.replace(
@@ -3406,6 +3880,43 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
         th { background: #f8fafc; font-weight: bold; color: #475569; }
 
         img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; border-radius: 4px; }
+        .general-contact {
+          margin: 0.25em 0 0.5em 0 !important;
+          font-size: 10.5pt;
+          color: #334155;
+          text-align: left !important;
+          text-align-last: left !important;
+        }
+        .table-wrapper, .preserved-table {
+          width: 100%;
+          overflow: visible;
+          page-break-inside: avoid;
+        }
+        .source-table-block, .formula-block {
+          white-space: pre-wrap;
+          font-family: "Times New Roman", serif;
+          font-size: 10pt;
+          line-height: 1.35;
+          border: 1px solid #cbd5e1;
+          background: #f8fafc;
+          padding: 8px;
+          margin: 1em 0;
+          text-align: left !important;
+          text-align-last: left !important;
+          overflow-wrap: anywhere;
+        }
+        .academic-figure, .preserved-figure {
+          page-break-inside: avoid;
+          margin: 1.2em auto;
+          text-align: center !important;
+          text-align-last: center !important;
+        }
+        .academic-figure img, .preserved-figure img {
+          max-width: 100%;
+          height: auto;
+          display: block;
+          margin: 0.5em auto;
+        }
 
         /* ===== REFERENCES SECTION =====
            Compact, single-spaced, hanging-indent APA style.
@@ -4056,6 +4567,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
     }
 
     let textContent = '';
+    let sourcePlainText = '';
     let metadata: any = null;
     const uploadedAt = new Date().toISOString();
 
@@ -4084,17 +4596,23 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
         return res.status(400).json({ error: 'Your PDF could not be read. Please re-save it using a standard PDF export (e.g. "Save as PDF" or "Export to PDF") and try again.' });
       }
       textContent = pdfData.text;
+      sourcePlainText = pdfData.text;
+      const extractedFigures = await extractPdfFigureHtmlWithPoppler(fileBuffer);
+      if (extractedFigures.length > 0) {
+        textContent = insertPdfFiguresNearCaptions(textContent, extractedFigures);
+      }
       if (!metadata) metadata = {};
       metadata.sourcePageCount = pdfData.numpages;
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       let result;
       try {
-        result = await mammoth.extractRawText({ buffer: fileBuffer });
+        result = await convertDocxToPreservedHtml(fileBuffer);
       } catch (docxErr: any) {
         console.error('DOCX parse error:', docxErr?.message);
         return res.status(400).json({ error: 'The uploaded DOCX file appears to be corrupted or is not a valid Word document. Please re-save the file in Word and try again.' });
       }
-      textContent = result.value;
+      textContent = result.html;
+      sourcePlainText = result.text;
     } else {
       return res.status(400).json({ error: 'Unsupported file type. Please upload a PDF or DOCX file.' });
     }
@@ -4108,11 +4626,12 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
           messages: [
             {
               role: 'system',
-              content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (array of objects), abstract (string), keywords (string[]). ' +
+              content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (array of objects), abstract (string), keywords (string[]), contactEmail (string), contactPhone (string). ' +
                 'Each author object MUST include: name (string), department (string), faculty (string), institution (string), email (string), phone (string). ' +
-                'Examine the paper header carefully for "By", "Department", "Faculty", "Email", "Phone" or similar labels to extract these details accurately.'
+                'Examine the paper header carefully for "By", "Department", "Faculty", "Email", "Phone" or similar labels to extract these details accurately. ' +
+                'Never copy one shared email address or phone number onto every author. If the source shows only one email or phone for multiple authors, place it in top-level contactEmail/contactPhone and leave author email/phone fields empty unless distinct contacts are explicitly linked to named authors.'
             },
-            { role: 'user', content: `Extract metadata from this academic paper text:\n\n${textContent.substring(0, 15000)}` }
+            { role: 'user', content: `Extract metadata from this academic paper text:\n\n${(sourcePlainText || htmlToPlainText(textContent)).substring(0, 15000)}` }
           ]
         });
         metadata = JSON.parse(response.choices[0]?.message?.content || '{}');
@@ -4130,7 +4649,10 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
     }
 
     const journalConfig = await getJournalConfig();
-    const sourcePageCount = resolveSourcePageCount(metadata, textContent);
+    metadata = sanitizeManuscriptMetadata(metadata, sourcePlainText || htmlToPlainText(textContent));
+
+    const plainTextForCounts = sourcePlainText || htmlToPlainText(textContent);
+    const sourcePageCount = resolveSourcePageCount(metadata, plainTextForCounts);
     const pageWindow = buildPageWindow(sourcePageCount);
 
     if (sourcePageCount > journalConfig.maxPagesPerManuscript) {
@@ -4146,7 +4668,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
       sourcePageCount,
       pageCount: sourcePageCount,
       pageWindow,
-      sourceWordCount: String(textContent || '').split(/\s+/).filter(Boolean).length,
+      sourceWordCount: String(plainTextForCounts || '').split(/\s+/).filter(Boolean).length,
       uploadedAt,
       history: [
         ...(Array.isArray(metadata?.history) ? metadata.history : []),
@@ -4253,7 +4775,7 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
 app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const { title, authors, abstract } = req.body;
+    const { title, authors, abstract, contactEmail, contactPhone } = req.body;
 
     const currentPaper = await pool.query('SELECT metadata, is_locked FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     if (currentPaper.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
@@ -4263,6 +4785,9 @@ app.patch('/api/papers/:id', authenticateToken, async (req: any, res) => {
     if (title !== undefined) metadata.title = title;
     if (authors !== undefined) metadata.authors = authors;
     if (abstract !== undefined) metadata.abstract = abstract;
+    if (contactEmail !== undefined) metadata.contactEmail = contactEmail;
+    if (contactPhone !== undefined) metadata.contactPhone = contactPhone;
+    metadata = sanitizeManuscriptMetadata(metadata);
 
     const authorNames = Array.isArray(metadata.authors)
       ? metadata.authors.map((a: any) => typeof a === 'string' ? a : a?.name).filter(Boolean)
@@ -6486,7 +7011,7 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
-    const metadata = safeJsonParse<any>(paper.metadata, {});
+    let metadata = sanitizeManuscriptMetadata(safeJsonParse<any>(paper.metadata, {}), paper.content);
     const pageWindow = metadata.pageWindow || buildPageWindow(resolveSourcePageCount(metadata, paper.content));
     const targetPageCount = pageWindow.target;
 
@@ -6503,6 +7028,10 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     }
     // Save enriched affiliation back so it's persistent
     metadata.authors = metaAuthors;
+    metadata = sanitizeManuscriptMetadata(metadata, paper.content);
+    const authorContactEmail = getMetadataContactEmail(metadata);
+    const authorContactPhone = getMetadataContactPhone(metadata);
+    const displayMetaAuthors: any[] = Array.isArray(metadata.authors) ? metadata.authors : [];
 
     // Fetch branding metadata for the formatter
     const journalConfig = await getJournalConfig();
@@ -6513,23 +7042,33 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
     // DELIBERATE OMISSION: We no longer try to extract the original file_blob here.
     // The pipeline must respect the intermediate corrections (e.g. from APA Gatekeeper)
     // which are saved securely to paper.content. Re-extracting file_blob overrides them.
-    const sourceContent = paper.content;
+    const protectedSource = protectManuscriptBlocks(paper.content);
+    const sourceContent = protectedSource.content;
 
     const styleGuidelines = getStyleGuidelines(style, branding);
 
     // Build author block for the first-chunk user message
     let authorBlock = paper.authors || '';
-    if (metaAuthors.length > 0) {
-      authorBlock = metaAuthors.map((a: any) => {
+    if (displayMetaAuthors.length > 0) {
+      authorBlock = displayMetaAuthors.map((a: any) => {
         const parts = [a.name];
         if (a.department) parts.push(a.department);
         if (a.faculty) parts.push(a.faculty);
         if (a.institution) parts.push(a.institution);
         if (a.email) parts.push(a.email);
+        if (a.phone) parts.push(a.phone);
         return parts.filter(Boolean).join(', ');
       }).join('\n');
     } else if (userProfile.affiliation) {
       authorBlock = `${paper.authors || userProfile.name} — ${userProfile.affiliation}`;
+    }
+
+    const generalContactBlock = [
+      authorContactEmail ? `General email: ${authorContactEmail}` : '',
+      authorContactPhone ? `General phone: ${authorContactPhone}` : ''
+    ].filter(Boolean).join('\n');
+    if (generalContactBlock) {
+      authorBlock = [authorBlock, generalContactBlock].filter(Boolean).join('\n');
     }
 
     // Stream SSE so Cloudflare never 524s regardless of paper length
@@ -6554,6 +7093,7 @@ ${styleGuidelines}
 CRITICAL RULES:
 1. NO MARKDOWN: Output ONLY raw HTML. Do NOT wrap the output in triple backticks (\`\`\`html).
 2. TABLES: Identify ALL tabular data and render as structured <table> tags with <thead> and <tbody>.
+2b. PROTECTED SOURCE BLOCKS: Any token like @@GMIJ_PRESERVE_BLOCK_TABLE_0@@, @@GMIJ_PRESERVE_BLOCK_FIGURE_0@@, or @@GMIJ_PRESERVE_BLOCK_EQUATION_0@@ represents exact original manuscript content. Copy the token exactly where it belongs. Do not rewrite, recalculate, duplicate, summarize, or delete it.
 3. ZERO OMISSION OF MAIN TEXT: You MUST preserve 100% of the actual manuscript body text, references, and acknowledgements. Do NOT truncate or summarize the core content.
 4. NO PLACEHOLDERS: Do NOT generate "[Figure]", "[Image]", or any missing media placeholders.
 5. NO RECURRING METADATA: Do NOT inject journal metadata, ISSNs, slogans, or branding blocks into the manuscript. Only format the raw academic content.
@@ -6611,6 +7151,8 @@ EXAMPLE of correct reference output:
 
     // Stitch chunks — paper-sheet divs flow naturally end-to-end
     let formattedHtml = formattedParts.join('\n');
+    formattedHtml = restoreProtectedManuscriptBlocks(formattedHtml, protectedSource.blocks);
+    formattedHtml = dedupeRepeatedEmailsInAuthorFrontMatter(formattedHtml, metadata);
 
     // POST-PROCESS: Enforce compact references regardless of what the AI produced.
     // Find the references section and tighten every <p> inside it.
