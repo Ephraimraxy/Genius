@@ -17,6 +17,7 @@ interface QuickPublishPageProps {
   token: string | null;
   addToast: (msg: string, type?: ToastType) => void;
   onComplete: () => void;
+  completeLabel?: string;
 }
 
 type PhaseStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
@@ -97,6 +98,7 @@ export default function QuickPublishPage({
   token,
   addToast,
   onComplete,
+  completeLabel = 'Go to Publication Records',
 }: QuickPublishPageProps) {
   const [phases, setPhases] = useState<PhaseState[]>(
     PHASE_DEFS.map(p => ({ ...p, status: 'pending' }))
@@ -718,7 +720,7 @@ export default function QuickPublishPage({
                 onClick={onComplete}
                 className="flex-1 px-6 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition-all"
               >
-                Go to Publication Records <ArrowRight size={18} />
+                {completeLabel} <ArrowRight size={18} />
               </button>
             </div>
           </motion.div>

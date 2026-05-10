@@ -73,6 +73,14 @@ export default function WaitingDraftsQueue({
                       <p className="text-xs font-bold text-slate-500">
                         {new Date(draft.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                       </p>
+                      {(draft.researcher_name || draft.researcher_email) && (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                          <p className="text-xs font-bold text-slate-500 truncate">
+                            {draft.researcher_name || draft.researcher_email}
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="w-full sm:w-14 h-12 sm:h-14 bg-slate-50 group-hover:bg-indigo-600 rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-white transition-colors relative z-10 shadow-sm shrink-0">

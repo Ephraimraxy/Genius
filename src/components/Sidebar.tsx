@@ -121,6 +121,7 @@ export default function Sidebar({
   const superAdminNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
     { id: 'dashboard', label: 'Platform Stats', icon: LayoutDashboard, section: 'Overview' },
     { id: 'tenants', label: 'Tenant Directory', icon: Users, section: 'SaaS Management' },
+    { id: 'quick_publish', label: 'Quick Publish', icon: Zap },
     { id: 'globalReviews', label: 'Global Reviews', icon: ClipboardList },
     { id: 'users', label: 'User Directory', icon: Users },
     { id: 'tokenStatus', label: 'Token Tracking', icon: CreditCard },

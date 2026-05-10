@@ -249,6 +249,7 @@ const JOURNAL_DISPLAY_NAME = 'Genius Multidisciplinary International Journal';
 const JOURNAL_SHORT_NAME = 'GMIJP';
 const PARTNER_INSTITUTION_NAME = 'Nasarawa State University, Keffi';
 const PUBLICATION_STATUSES = ['uploaded', 'writing_assistant', 'formatting', 'reference_intel', 'peer_review', 'integrity_check', 'ready', 'accepted', 'published', 'doi_validation_failed', 'rejected'];
+const isResearchAdminRole = (role?: string) => role === 'admin' || role === 'super_admin';
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, '');
 
@@ -4528,9 +4529,16 @@ app.get('/api/papers/:id', authenticateToken, async (req: any, res) => {
 app.get('/api/papers/queue/:status', authenticateToken, async (req: any, res) => {
   try {
     const { status } = req.params;
+    const isAdmin = isResearchAdminRole(req.user.role);
     const result = await pool.query(
-      'SELECT id, title, created_at, status FROM papers WHERE user_id = $1 AND status = $2 ORDER BY created_at DESC',
-      [req.user.id, status]
+      isAdmin
+        ? `SELECT p.id, p.title, p.created_at, p.status, u.name as researcher_name, u.email as researcher_email
+           FROM papers p
+           LEFT JOIN users u ON p.user_id = u.id
+           WHERE p.status = $1
+           ORDER BY p.created_at DESC`
+        : 'SELECT id, title, created_at, status FROM papers WHERE user_id = $1 AND status = $2 ORDER BY created_at DESC',
+      isAdmin ? [status] : [req.user.id, status]
     );
     res.json(result.rows);
   } catch (error) {
@@ -4549,10 +4557,14 @@ app.put('/api/papers/:id/status', authenticateToken, async (req: any, res) => {
     // Automatically lock paper if it moves to final stages
     const isLocked = (status === 'accepted' || status === 'published');
 
-    await pool.query(
-      'UPDATE papers SET status = $1, is_locked = CASE WHEN $2 = true THEN true ELSE is_locked END WHERE id = $3 AND user_id = $4',
-      [status, isLocked, id, req.user.id]
+    const isAdmin = isResearchAdminRole(req.user.role);
+    const result = await pool.query(
+      isAdmin
+        ? 'UPDATE papers SET status = $1, is_locked = CASE WHEN $2 = true THEN true ELSE is_locked END WHERE id = $3 RETURNING id'
+        : 'UPDATE papers SET status = $1, is_locked = CASE WHEN $2 = true THEN true ELSE is_locked END WHERE id = $3 AND user_id = $4 RETURNING id',
+      isAdmin ? [status, isLocked, id] : [status, isLocked, id, req.user.id]
     );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Paper not found' });
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -5986,7 +5998,11 @@ app.post('/api/enhance/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const { offset = 0 } = req.body || {};
-    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const isAdmin = isResearchAdminRole(req.user.role);
+    const result = await pool.query(
+      isAdmin ? 'SELECT * FROM papers WHERE id = $1' : 'SELECT * FROM papers WHERE id = $1 AND user_id = $2',
+      isAdmin ? [id] : [id, req.user.id]
+    );
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
@@ -6367,7 +6383,11 @@ app.post('/api/recommend-journals/:id', authenticateToken, async (req: any, res)
 app.post('/api/papers/:id/refine-keywords', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const isAdmin = isResearchAdminRole(req.user.role);
+    const result = await pool.query(
+      isAdmin ? 'SELECT * FROM papers WHERE id = $1' : 'SELECT * FROM papers WHERE id = $1 AND user_id = $2',
+      isAdmin ? [id] : [id, req.user.id]
+    );
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
 
@@ -6669,15 +6689,20 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
     const { style } = z.object({ style: z.string() }).parse(req.body);
-    const result = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const isAdmin = isResearchAdminRole(req.user.role);
+    const result = await pool.query(
+      isAdmin ? 'SELECT * FROM papers WHERE id = $1' : 'SELECT * FROM papers WHERE id = $1 AND user_id = $2',
+      isAdmin ? [id] : [id, req.user.id]
+    );
     const paper = result.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    const paperOwnerId = paper.user_id || req.user.id;
     let metadata = sanitizeManuscriptMetadata(safeJsonParse<any>(paper.metadata, {}), paper.content);
     const pageWindow = metadata.pageWindow || buildPageWindow(resolveSourcePageCount(metadata, paper.content));
     const targetPageCount = pageWindow.target;
 
     // Fetch user profile affiliation to enrich author metadata
-    const userProfileRes = await pool.query('SELECT name, affiliation FROM users WHERE id = $1', [req.user.id]);
+    const userProfileRes = await pool.query('SELECT name, affiliation FROM users WHERE id = $1', [paperOwnerId]);
     const userProfile = userProfileRes.rows[0] || {};
 
     // Merge user dashboard affiliation into paper metadata authors (fills gaps from extraction)
@@ -6834,8 +6859,8 @@ EXAMPLE of correct reference output:
     // PERSISTENCE: Save the formatted content to the database so it can be used for PDF/Email generation
     const nextStatus = ['published', 'accepted', 'ready'].includes(paper.status) ? paper.status : 'formatting';
     await pool.query(
-      'UPDATE papers SET formatted_content = $1, status = $2, metadata = $3 WHERE id = $4 AND user_id = $5',
-      [formattedHtml, nextStatus, JSON.stringify({ ...metadata, pageWindow, targetPageCount }), id, req.user.id]
+      'UPDATE papers SET formatted_content = $1, status = $2, metadata = $3 WHERE id = $4',
+      [formattedHtml, nextStatus, JSON.stringify({ ...metadata, pageWindow, targetPageCount }), id]
     );
 
     res.write(`data: ${JSON.stringify({ done: true, formattedHtml, branding, pageWindow, targetPageCount })}\n\n`);
@@ -7977,10 +8002,15 @@ const scheduleDoiRetry = async (paperId: number) => {
 app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id: paperId } = idParamSchema.parse(req.params);
-    const userId = req.user.id;
-    const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [paperId, userId]);
+    const actorUserId = req.user.id;
+    const isAdmin = isResearchAdminRole(req.user.role);
+    const paperResult = await pool.query(
+      isAdmin ? 'SELECT * FROM papers WHERE id = $1' : 'SELECT * FROM papers WHERE id = $1 AND user_id = $2',
+      isAdmin ? [paperId] : [paperId, actorUserId]
+    );
     const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    const ownerUserId = paper.user_id || actorUserId;
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const allowPageCountMismatch = req.body?.allowPageCountMismatch === true;
@@ -8019,7 +8049,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     if (!ast) {
       console.log(`Autonomous Fix: Generating missing AST for paper ${paperId}...`);
       try {
-        ast = await performStructuralRewrite(paper, userId);
+        ast = await performStructuralRewrite(paper, ownerUserId);
       } catch (e: any) {
         return res.status(400).json({ error: `Structural Rewrite failed: ${e.message}. Please fix the manuscript manually.` });
       }
@@ -8122,8 +8152,8 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
           pageCountPublishOverride: {
             ...mismatchDetails,
             allowedAt: new Date().toISOString(),
-            allowedBy: userId,
-            reason: 'researcher_publish_anyway'
+            allowedBy: actorUserId,
+            reason: isAdmin ? 'admin_publish_anyway' : 'researcher_publish_anyway'
           }
         });
       }
@@ -8146,7 +8176,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
         await pool.query("UPDATE papers SET status = 'doi_validation_failed' WHERE id = $1", [paperId]);
       }
 
-      const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [userId]);
+      const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [ownerUserId]);
       if (userRes.rows[0]) {
         await sendDoiFailureEmail(userRes.rows[0].email, userRes.rows[0].name, ast.title || paper.title, e.message);
       }
@@ -8260,7 +8290,7 @@ app.post('/api/publish/:id', authenticateToken, async (req: any, res) => {
     }
 
     // 6. Final Email Notification with the PDF
-    const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [userId]);
+    const userRes = await pool.query('SELECT email, name FROM users WHERE id = $1', [ownerUserId]);
     const user = userRes.rows[0];
     if (user) {
       await sendPublicationEmail(user.email, user.name, ast.title || paper.title, {
@@ -8512,16 +8542,21 @@ app.put('/api/profile', authenticateToken, async (req: any, res) => {
 app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
   try {
     const { id } = idParamSchema.parse(req.params);
-    const userId = req.user.id;
-    const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [id, userId]);
+    const actorUserId = req.user.id;
+    const isAdmin = isResearchAdminRole(req.user.role);
+    const paperResult = await pool.query(
+      isAdmin ? 'SELECT * FROM papers WHERE id = $1' : 'SELECT * FROM papers WHERE id = $1 AND user_id = $2',
+      isAdmin ? [id] : [id, actorUserId]
+    );
     const paper = paperResult.rows[0];
     if (!paper) return res.status(404).json({ error: 'Paper not found' });
+    const paperOwnerId = paper.user_id || actorUserId;
 
     const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
     const textContent = paper.content || '';
 
     // Real Similarity Detection Algorithm
-    const existingResult = await pool.query('SELECT title, content FROM papers WHERE id != $1 AND user_id = $2', [id, userId]);
+    const existingResult = await pool.query('SELECT title, content FROM papers WHERE id != $1 AND user_id = $2', [id, paperOwnerId]);
     // Filter out papers with null/empty content to avoid toLowerCase errors
     const existingPapers = existingResult.rows.filter((ep: any) => ep.content);
 
@@ -8648,7 +8683,7 @@ app.post('/api/integrity/:id', authenticateToken, async (req: any, res) => {
       });
       let parsed: any = { mismatches: [] };
       try { parsed = JSON.parse(response.choices[0]?.message?.content || '{"mismatches":[]}'); } catch {}
-      trackUsage(_activeAIModel, response.usage, 'integrity_check', userId);
+      trackUsage(_activeAIModel, response.usage, 'integrity_check', actorUserId);
       citationMismatches = Array.isArray(parsed.mismatches) ? parsed.mismatches : (Array.isArray(parsed) ? parsed : []);
     }
 
@@ -8701,9 +8736,14 @@ app.get('/api/papers/:id/reviews', authenticateToken, async (req: any, res) => {
 
 app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any, res) => {
   const paperId = req.params.id;
-  const paperResult = await pool.query('SELECT * FROM papers WHERE id = $1 AND user_id = $2', [paperId, req.user.id]);
+  const isAdmin = isResearchAdminRole(req.user.role);
+  const paperResult = await pool.query(
+    isAdmin ? 'SELECT * FROM papers WHERE id = $1' : 'SELECT * FROM papers WHERE id = $1 AND user_id = $2',
+    isAdmin ? [paperId] : [paperId, req.user.id]
+  );
   const paper = paperResult.rows[0];
   if (!paper) return res.status(404).json({ error: 'Paper not found' });
+  const reviewUserId = paper.user_id || req.user.id;
 
   const metadata = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
   const abstract = metadata.abstract || 'No abstract provided.';
@@ -8726,7 +8766,7 @@ app.post('/api/papers/:id/reviews/simulate', authenticateToken, async (req: any,
       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
     `, [
       paperId,
-      req.user.id,
+      reviewUserId,
       'AI Reviewer (Simulated)',
       reviewData.status,
       reviewData.score,
