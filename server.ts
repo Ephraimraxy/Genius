@@ -2958,6 +2958,12 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('${{')) {
 console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'PRESENT' : 'MISSING');
 console.log('-------------------------');
 
+// Google Search Console ownership verification
+app.get('/google2793efc79655d28d.html', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send('google-site-verification: google2793efc79655d28d.html');
+});
+
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
   try {
