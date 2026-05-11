@@ -4928,6 +4928,7 @@ async function finalizeZenodoPublish(depositionId: number, zenodoToken: string, 
   if (!uploadRes.ok) throw new Error(`Zenodo Final Upload Failed: ${uploadRes.statusText}`);
 
   // 2. Update Metadata
+  const paperMeta = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : (paper.metadata || {}));
   const zenodoMetadata = {
     metadata: {
       title: ast.title || paper.title || 'Genius Publication',
@@ -4936,10 +4937,24 @@ async function finalizeZenodoPublish(depositionId: number, zenodoToken: string, 
       description: ast.abstract?.background || (typeof paper.content === 'string' ? paper.content.substring(0, 500) : "Academic research publication."),
       publication_date: new Date().toISOString().split('T')[0],
       access_right: "open",
-      creators: (ast.authors || []).map((a: any) => {
+      license: "cc-by-4.0",
+      creators: (ast.authors || metadata.authors || []).map((a: any) => {
         const name = typeof a === 'string' ? a : (a.name || 'Author');
-        return { name: name.includes(',') ? name : name.split(' ').reverse().join(', ') };
-      })
+        const affiliation = typeof a === 'object' ? [a.department, a.institution].filter(Boolean).join(', ') : '';
+        return { name: name.includes(',') ? name : name.split(' ').reverse().join(', '), ...(affiliation ? { affiliation } : {}) };
+      }),
+      journal_title: "Genius Multidisciplinary International Journal",
+      journal_issn: process.env.JOURNAL_ISSN || '2971-7760',
+      ...(paper.volume ? { journal_volume: String(paper.volume) } : {}),
+      ...(paper.issue ? { journal_issue: String(paper.issue) } : {}),
+      related_identifiers: [
+        {
+          identifier: `${APP_URL}/article/${paper.doi || ''}`,
+          relation: "isIdenticalTo",
+          scheme: "url",
+          resource_type: "publication-article"
+        }
+      ]
     }
   };
   await fetch(`${ZENODO_URL}/${depositionId}`, {
@@ -10299,60 +10314,90 @@ app.get('/article/:doi(*)', async (req, res) => {
       `).join('') + `</ol>`
     : '';
 
+  const GMIJ = 'Genius Multidisciplinary International Journal';
+  const GMIJ_ISSN = process.env.JOURNAL_ISSN || '2971-7760';
+  const pubDate = new Date(paper.published_at || paper.created_at);
+  const pubDateStr = `${pubDate.getFullYear()}/${String(pubDate.getMonth()+1).padStart(2,'0')}/${String(pubDate.getDate()).padStart(2,'0')}`;
+  const vol = String(paper.volume || metadata.volume || '').trim();
+  const iss = String(paper.issue || metadata.issue || '').trim();
+  const pdfUrl = `${APP_URL}/api/papers/${paper.id}/formatted-download`;
+  const articleUrl = `${APP_URL}/article/${paper.doi}`;
+  const authorNames = (metadata.authors || []).map((a: any) => typeof a === 'string' ? a : (a.name || '')).filter(Boolean);
+
   const html = `
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>${metadata.title} - Genius App</title>
-      <meta name="citation_title" content="${metadata.title}">
-      ${(metadata.authors || []).map((a: string) => `<meta name="citation_author" content="${a}">`).join('\n      ')}
-      <meta name="citation_publication_date" content="${new Date(paper.published_at || paper.created_at).getFullYear()}">
-      <meta name="citation_journal_title" content="Genius Open Access">
-      <meta name="citation_issn" content="${process.env.JOURNAL_ISSN || '0000-0000'}">
-      <meta name="citation_doi" content="${paper.doi}">
-      <meta name="citation_abstract" content="${metadata.abstract}">
+      <title>${escapeHtml(metadata.title || 'Article')} | ${GMIJ}</title>
+      <link rel="canonical" href="${escapeHtml(articleUrl)}">
+      <meta name="description" content="${escapeHtml((metadata.abstract || '').substring(0, 160))}">
+
+      <!-- Google Scholar citation meta tags -->
+      <meta name="citation_title" content="${escapeHtml(metadata.title || '')}">
+      ${authorNames.map((a: string) => `<meta name="citation_author" content="${escapeHtml(a)}">`).join('\n      ')}
+      <meta name="citation_publication_date" content="${pubDateStr}">
+      <meta name="citation_journal_title" content="${GMIJ}">
+      <meta name="citation_issn" content="${GMIJ_ISSN}">
+      ${vol ? `<meta name="citation_volume" content="${escapeHtml(vol)}">` : ''}
+      ${iss ? `<meta name="citation_issue" content="${escapeHtml(iss)}">` : ''}
+      <meta name="citation_doi" content="${escapeHtml(paper.doi || '')}">
+      <meta name="citation_abstract_html_url" content="${escapeHtml(articleUrl)}">
+      <meta name="citation_pdf_url" content="${escapeHtml(pdfUrl)}">
+      <meta name="citation_abstract" content="${escapeHtml((metadata.abstract || '').substring(0, 500))}">
+
+      <!-- Open Graph -->
+      <meta property="og:type" content="article">
+      <meta property="og:title" content="${escapeHtml(metadata.title || '')}">
+      <meta property="og:description" content="${escapeHtml((metadata.abstract || '').substring(0, 200))}">
+      <meta property="og:url" content="${escapeHtml(articleUrl)}">
+      <meta property="og:site_name" content="${GMIJ}">
+
       <style>
-        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; line-height: 1.6; color: #333; }
-        h1 { color: #111; font-size: 2.5rem; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
-        .authors { font-size: 1.2rem; color: #4f46e5; margin-bottom: 2rem; font-weight: 500; }
-        .abstract { background: #f8fafc; padding: 1.5rem; border-left: 4px solid #4f46e5; margin-bottom: 2rem; border-radius: 0 8px 8px 0; }
-        .abstract h3 { margin-top: 0; color: #334155; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
-        .metadata { font-size: 0.9rem; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 1rem; margin-top: 3rem; }
-        .export-links { display: flex; gap: 1rem; margin-bottom: 3rem; flex-wrap: wrap; }
-        .export-links a { background: #f1f5f9; color: #334155; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 0.9rem; transition: background 0.2s; }
-        .export-links a:hover { background: #e2e8f0; color: #0f172a; }
+        body { font-family: 'Times New Roman', Times, serif; max-width: 800px; margin: 0 auto; padding: 2rem; line-height: 1.7; color: #1a202c; }
+        h1 { color: #800000; font-size: 1.8rem; border-bottom: 2px solid #800000; padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
+        .journal-header { text-align: center; margin-bottom: 2rem; color: #4a5568; font-size: 0.85rem; letter-spacing: 0.05em; text-transform: uppercase; }
+        .authors { font-size: 1.05rem; color: #2d3748; margin-bottom: 1.5rem; font-weight: 500; }
+        .abstract { background: #fdf2f2; padding: 1.5rem; border-left: 4px solid #800000; margin-bottom: 2rem; }
+        .abstract h3 { margin-top: 0; color: #800000; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; }
+        .metadata { font-size: 0.9rem; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 1rem; margin-top: 2rem; }
+        .export-links { display: flex; gap: 0.75rem; margin-bottom: 2rem; flex-wrap: wrap; }
+        .export-links a { background: #f1f5f9; color: #334155; padding: 0.4rem 0.9rem; border-radius: 5px; text-decoration: none; font-weight: 500; font-size: 0.85rem; }
+        .export-links a:hover { background: #e2e8f0; }
         .references-list { padding-left: 1.5rem; }
-        .references-list li { margin-bottom: 1rem; color: #334155; }
-        .references-list a { color: #4f46e5; text-decoration: none; }
-        .references-list a:hover { text-decoration: underline; }
+        .references-list li { margin-bottom: 0.75rem; color: #334155; font-size: 0.95rem; }
+        .references-list a { color: #800000; text-decoration: none; }
       </style>
     </head>
     <body>
-      <h1>${metadata.title}</h1>
-      <div class="authors">${(metadata.authors || []).join(', ')}</div>
-      
+      <div class="journal-header">
+        <strong>${GMIJ}</strong><br>
+        ISSN: ${GMIJ_ISSN}${vol ? ` &nbsp;|&nbsp; Vol. ${escapeHtml(vol)}` : ''}${iss ? `, No. ${escapeHtml(iss)}` : ''}
+      </div>
+      <h1>${escapeHtml(metadata.title || 'Untitled')}</h1>
+      <div class="authors">${authorNames.map((a: string) => escapeHtml(a)).join('; ')}</div>
+
       <div class="abstract">
         <h3>Abstract</h3>
-        ${metadata.abstract}
+        <p>${escapeHtml(metadata.abstract || '')}</p>
       </div>
-      
-      <h2>Export Metadata</h2>
+
       <div class="export-links">
-        <a href="/api/papers/${paper.id}/export/crossref" download="crossref.xml">Crossref XML</a>
-        <a href="/api/papers/${paper.id}/export/jats" download="jats.xml">JATS XML</a>
+        <a href="${escapeHtml(pdfUrl)}">Download PDF</a>
         <a href="/api/papers/${paper.id}/export/bibtex" download="citation.bib">BibTeX</a>
         <a href="/api/papers/${paper.id}/export/ris" download="citation.ris">RIS</a>
       </div>
-      
+
       ${refsHtml}
-      
+
       <div class="metadata">
-        <p><strong>DOI:</strong> <a href="${doiUrl(paper.doi)}">${doiUrl(paper.doi)}</a></p>
-        <p><strong>Published:</strong> ${new Date(paper.published_at || paper.created_at).toLocaleDateString()}</p>
-        <p><strong>Publisher:</strong> Genius Open Access</p>
-        <p><strong>ISSN:</strong> ${process.env.JOURNAL_ISSN || '0000-0000'}</p>
+        <p><strong>DOI:</strong> <a href="${escapeHtml(doiUrl(paper.doi))}" style="color:#800000;">${escapeHtml(doiUrl(paper.doi))}</a></p>
+        <p><strong>Published:</strong> ${pubDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        <p><strong>Journal:</strong> ${GMIJ}</p>
+        <p><strong>ISSN:</strong> ${GMIJ_ISSN}</p>
+        ${vol ? `<p><strong>Volume:</strong> ${escapeHtml(vol)}${iss ? `, Issue ${escapeHtml(iss)}` : ''}</p>` : ''}
+        <p><strong>Publisher:</strong> Genius Academy — Nasarawa State University, Keffi, Nigeria</p>
       </div>
     </body>
     </html>
@@ -17503,40 +17548,76 @@ app.get('/article/:prefix/:suffix', async (req, res) => {
       "description": ast.abstract?.background || paper.abstract || "Academic research publication."
     };
 
-    res.send(`
-      <!DOCTYPE html>
+    const GMIJ = 'Genius Multidisciplinary International Journal';
+    const GMIJ_ISSN = process.env.JOURNAL_ISSN || '2971-7760';
+    const pubDate2 = new Date(paper.published_at || paper.created_at);
+    const pubDateStr2 = `${pubDate2.getFullYear()}/${String(pubDate2.getMonth()+1).padStart(2,'0')}/${String(pubDate2.getDate()).padStart(2,'0')}`;
+    const vol2 = String(paper.volume || meta.volume || '').trim();
+    const iss2 = String(paper.issue || meta.issue || '').trim();
+    const pdfUrl2 = `${APP_URL}/api/papers/${paper.id}/formatted-download`;
+    const articleUrl2 = `${APP_URL}/article/${doi}`;
+    const title2 = escapeHtml(ast.title || paper.title || 'Article');
+    const abstract2 = escapeHtml((jsonLd.description || '').substring(0, 500));
+
+    res.send(`<!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${ast.title || paper.title} | Genius Journal</title>
-        <meta name="description" content="${jsonLd.description.substring(0, 160)}">
+        <title>${title2} | ${GMIJ}</title>
+        <link rel="canonical" href="${escapeHtml(articleUrl2)}">
+        <meta name="description" content="${escapeHtml((jsonLd.description || '').substring(0, 160))}">
         <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
+
+        <!-- Google Scholar citation meta tags -->
+        <meta name="citation_title" content="${title2}">
+        ${authors.map((a: any) => `<meta name="citation_author" content="${escapeHtml(typeof a === 'string' ? a : (a.name || ''))}">`).join('\n        ')}
+        <meta name="citation_publication_date" content="${pubDateStr2}">
+        <meta name="citation_journal_title" content="${GMIJ}">
+        <meta name="citation_issn" content="${GMIJ_ISSN}">
+        ${vol2 ? `<meta name="citation_volume" content="${escapeHtml(vol2)}">` : ''}
+        ${iss2 ? `<meta name="citation_issue" content="${escapeHtml(iss2)}">` : ''}
+        <meta name="citation_doi" content="${escapeHtml(doi)}">
+        <meta name="citation_abstract_html_url" content="${escapeHtml(articleUrl2)}">
+        <meta name="citation_pdf_url" content="${escapeHtml(pdfUrl2)}">
+        <meta name="citation_abstract" content="${abstract2}">
+
+        <!-- Open Graph -->
+        <meta property="og:type" content="article">
+        <meta property="og:title" content="${title2}">
+        <meta property="og:description" content="${escapeHtml((jsonLd.description || '').substring(0, 200))}">
+        <meta property="og:url" content="${escapeHtml(articleUrl2)}">
+        <meta property="og:site_name" content="${GMIJ}">
+
         <style>
-          body { font-family: 'Times New Roman', Times, serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 20px; color: #1a202c; }
-          h1 { color: #800000; border-bottom: 2px solid #800000; padding-bottom: 10px; font-weight: bold; }
+          body { font-family: 'Times New Roman', Times, serif; line-height: 1.7; max-width: 800px; margin: 40px auto; padding: 20px; color: #1a202c; }
+          h1 { color: #800000; border-bottom: 2px solid #800000; padding-bottom: 10px; font-weight: bold; font-size: 1.8rem; }
+          .journal-header { text-align: center; margin-bottom: 2rem; color: #4a5568; font-size: 0.85rem; letter-spacing: 0.05em; text-transform: uppercase; }
           .meta { color: #4a5568; font-size: 0.95em; margin: 20px 0; border-left: 4px solid #800000; padding-left: 15px; }
           .abstract { background: #fdf2f2; padding: 25px; border-radius: 4px; margin: 20px 0; border: 1px solid #fee2e2; }
           .doi-link { color: #800000; text-decoration: none; font-weight: bold; }
+          .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #edf2f7; font-size: 0.85em; color: #a0aec0; }
         </style>
       </head>
       <body>
-        <div style="text-align: center; margin-bottom: 30px;">
-          <h3 style="color: #4a5568; margin-bottom: 5px;">GENIUS MULTIDISCIPLINARY INTERNATIONAL JOURNAL</h3>
-          <p style="color: #718096; font-size: 0.8em; margin: 0;">OFFICIAL RESEARCH ARCHIVE | ISSN: 2971-7760</p>
+        <div class="journal-header">
+          <strong>${GMIJ}</strong><br>
+          ISSN: ${GMIJ_ISSN}${vol2 ? ` &nbsp;|&nbsp; Vol. ${escapeHtml(vol2)}` : ''}${iss2 ? `, No. ${escapeHtml(iss2)}` : ''}
         </div>
-        <h1>${ast.title || paper.title}</h1>
+        <h1>${title2}</h1>
         <div class="meta">
-          <strong>Authors:</strong> ${authorNames}<br>
-          <strong>DOI:</strong> <a class="doi-link" href="${doiUrl(doi)}">${doiUrl(doi)}</a><br>
-          <strong>Published:</strong> ${new Date(paper.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+          <strong>Authors:</strong> ${escapeHtml(authorNames)}<br>
+          <strong>DOI:</strong> <a class="doi-link" href="${escapeHtml(doiUrl(doi))}">${escapeHtml(doiUrl(doi))}</a><br>
+          <strong>Published:</strong> ${pubDate2.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
         </div>
         <div class="abstract">
-          <h2 style="margin-top: 0; font-size: 1.2em; color: #800000;">Abstract</h2>
-          <p>${jsonLd.description}</p>
+          <h2 style="margin-top:0;font-size:1.1em;color:#800000;">Abstract</h2>
+          <p>${abstract2}</p>
         </div>
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #edf2f7; font-size: 0.85em; color: #a0aec0;">
-          <p>This scholarly article is part of the Genius Multidisciplinary Journal collection. All research published is peer-reviewed and open-access.</p>
+        <p><a href="${escapeHtml(pdfUrl2)}" style="color:#800000;font-weight:bold;">Download PDF</a></p>
+        <div class="footer">
+          <p>Published in <em>${GMIJ}</em>. All research is peer-reviewed and open-access.</p>
+          <p>Publisher: Genius Academy — Nasarawa State University, Keffi, Nigeria</p>
         </div>
       </body>
       </html>
@@ -17548,8 +17629,15 @@ app.get('/article/:prefix/:suffix', async (req, res) => {
 
 app.get('/sitemap.xml', async (req, res) => {
   try {
-    const result = await pool.query("SELECT doi FROM papers WHERE status = 'published' AND doi IS NOT NULL");
-    const urls = result.rows.map(r => `<url><loc>${APP_URL}/article/${r.doi}</loc></url>`).join("");
+    const result = await pool.query(
+      "SELECT doi, published_at, updated_at FROM papers WHERE status = 'published' AND doi IS NOT NULL ORDER BY published_at DESC"
+    );
+    const urls = result.rows.map(r => {
+      const lastmod = (r.updated_at || r.published_at)
+        ? new Date(r.updated_at || r.published_at).toISOString().split('T')[0]
+        : '';
+      return `<url><loc>${APP_URL}/article/${r.doi}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}<changefreq>monthly</changefreq><priority>0.8</priority></url>`;
+    }).join('');
     res.set('Content-Type', 'text/xml');
     res.send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
   } catch (e) {
