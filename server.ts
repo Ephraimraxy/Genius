@@ -580,7 +580,7 @@ const trackUsage = async (model: string, usage: any, purpose: string, userId?: n
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || process.env.RESEND_FROM || 'onboarding@resend.dev';
-const APP_URL = normalizeBaseUrl(process.env.APP_URL || 'https://geniusapp.com');
+const APP_URL = normalizeBaseUrl(process.env.APP_URL || 'https://genius-portal.com');
 
 // ─── Cloudflare R2 Storage ───────────────────────────────────────────────────
 const R2_ENABLED = !!(
