@@ -41,11 +41,12 @@ import QuickPublishPage from './components/QuickPublishPage';
 import PaymentEventsAdmin from './components/PaymentEventsAdmin';
 import ServicesSettings from './components/ServicesSettings';
 import CertificateVerify from './components/CertificateVerify';
+import PublicationSearch from './components/PublicationSearch';
 
 import ConfirmModal, { ConfirmConfig } from './components/ConfirmModal';
 import { Menu, LogOut, MessageCircle, Bell, Search, ShieldCheck, GraduationCap, Users, FileText, PlusCircle, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
 
-export type Tab = 'dashboard' | 'upload' | 'quick_publish' | 'apa_validation' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'proHub' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures' | 'paymentEvents' | 'servicesSettings';
+export type Tab = 'dashboard' | 'upload' | 'quick_publish' | 'apa_validation' | 'formatting' | 'writing' | 'references' | 'integrity' | 'journals' | 'reviews' | 'profile' | 'transactions' | 'records' | 'users' | 'tenants' | 'globalReviews' | 'reviewQueue' | 'settings' | 'courseManagement' | 'tests' | 'assignments' | 'performance' | 'guidelines' | 'attendance' | 'exams' | 'storage' | 'proHub' | 'materials' | 'tokenStatus' | 'lectureRecords' | 'videoLectures' | 'paymentEvents' | 'servicesSettings' | 'publicationSearch';
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
@@ -80,7 +81,8 @@ const TAB_LABELS: Record<Tab, string> = {
   videoLectures: 'Video Lectures',
   apa_validation: 'APA Rule Engine',
   paymentEvents: 'Payment Events',
-  servicesSettings: 'Services Settings'
+  servicesSettings: 'Services Settings',
+  publicationSearch: 'Search Publications'
 };
 
 const SplashScreen = ({ onComplete, themeColor = '#800000', accentColor = '#ff4d4d' }: { onComplete: () => void, themeColor?: string, accentColor?: string }) => {
@@ -642,6 +644,7 @@ export default function App() {
       case 'settings': return <AdminSettings />;
       case 'paymentEvents': return isAdmin ? <PaymentEventsAdmin /> : <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
       case 'servicesSettings': return isAdmin ? <ServicesSettings onNavigate={setActiveTab} /> : <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
+      case 'publicationSearch': return <PublicationSearch token={token} />;
       case 'profile': return <ProfileView profile={profile} addToast={addToast} onProfileUpdate={() => {
         fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } })
           .then(res => res.json())
@@ -746,14 +749,19 @@ export default function App() {
 
           <div className="flex items-center gap-3">
             {!isAdmin && (
-              <div className="hidden sm:flex items-center bg-slate-100 rounded-2xl px-4 py-2 mr-2 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+              <form
+                className="hidden sm:flex items-center bg-slate-100 rounded-2xl px-4 py-2 mr-2 border border-slate-200 focus-within:ring-2 focus-within:ring-[#800000]/20 transition-all"
+                onSubmit={e => { e.preventDefault(); const val = (e.currentTarget.elements.namedItem('q') as HTMLInputElement)?.value?.trim(); if (val) setActiveTab('publicationSearch'); }}
+              >
                 <Search size={18} className="text-slate-400" />
                 <input
+                  name="q"
                   type="text"
-                  placeholder={isLecturer ? "Search academic hub..." : isStudent ? "Search courses..." : "Search research..."}
+                  placeholder="Search publications…"
+                  onFocus={() => setActiveTab('publicationSearch')}
                   className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium"
                 />
-              </div>
+              </form>
             )}
 
 

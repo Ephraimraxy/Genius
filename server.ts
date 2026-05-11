@@ -17633,6 +17633,204 @@ app.get('/article/:prefix/:suffix', async (req, res) => {
   }
 });
 
+// ── PUBLIC SEARCH API ─────────────────────────────────────────────────────
+app.get('/api/public/search', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+    const limit = Math.min(20, Math.max(1, parseInt(String(req.query.limit || '10'), 10)));
+    const offset = (page - 1) * limit;
+
+    if (!q) return res.json({ results: [], total: 0, page, limit });
+
+    const like = `%${q}%`;
+    const result = await pool.query(
+      `SELECT id, title, authors, abstract, doi, published_at, volume, issue, metadata
+       FROM papers
+       WHERE status = 'published'
+         AND (title ILIKE $1 OR abstract ILIKE $1 OR authors::text ILIKE $1 OR metadata::text ILIKE $1)
+       ORDER BY published_at DESC
+       LIMIT $2 OFFSET $3`,
+      [like, limit, offset]
+    );
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM papers WHERE status = 'published'
+         AND (title ILIKE $1 OR abstract ILIKE $1 OR authors::text ILIKE $1 OR metadata::text ILIKE $1)`,
+      [like]
+    );
+    const total = parseInt(countResult.rows[0].count, 10);
+
+    const results = result.rows.map(p => {
+      const meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
+      const authorList = Array.isArray(meta.authors)
+        ? meta.authors.map((a: any) => typeof a === 'string' ? a : (a.name || '')).filter(Boolean)
+        : (Array.isArray(p.authors) ? p.authors : []);
+      return {
+        id: p.id,
+        title: p.title,
+        authors: authorList,
+        abstract: (p.abstract || meta.abstract || '').substring(0, 300),
+        doi: p.doi,
+        published_at: p.published_at,
+        volume: p.volume,
+        issue: p.issue,
+        url: `${APP_URL}/article/${p.doi}`,
+      };
+    });
+
+    res.json({ results, total, page, limit, pages: Math.ceil(total / limit) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PUBLIC SEARCH PAGE (server-rendered, crawlable) ───────────────────────
+app.get('/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+  const limit = 10;
+  const offset = (page - 1) * limit;
+  const GMIJ = 'Genius Multidisciplinary International Journal';
+  const GMIJ_ISSN = process.env.JOURNAL_ISSN || '2971-7760';
+
+  let results: any[] = [];
+  let total = 0;
+
+  if (q) {
+    try {
+      const like = `%${q}%`;
+      const [rows, count] = await Promise.all([
+        pool.query(
+          `SELECT id, title, authors, abstract, doi, published_at, volume, issue, metadata
+           FROM papers WHERE status = 'published'
+             AND (title ILIKE $1 OR abstract ILIKE $1 OR authors::text ILIKE $1 OR metadata::text ILIKE $1)
+           ORDER BY published_at DESC LIMIT $2 OFFSET $3`,
+          [like, limit, offset]
+        ),
+        pool.query(
+          `SELECT COUNT(*) FROM papers WHERE status = 'published'
+             AND (title ILIKE $1 OR abstract ILIKE $1 OR authors::text ILIKE $1 OR metadata::text ILIKE $1)`,
+          [like]
+        )
+      ]);
+      total = parseInt(count.rows[0].count, 10);
+      results = rows.rows.map(p => {
+        const meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
+        const authorList = Array.isArray(meta.authors)
+          ? meta.authors.map((a: any) => typeof a === 'string' ? a : (a.name || '')).filter(Boolean)
+          : [];
+        return { ...p, authorList, abstract: (p.abstract || meta.abstract || '').substring(0, 280) };
+      });
+    } catch (e) { /* return empty */ }
+  }
+
+  const totalPages = Math.ceil(total / limit);
+  const esc = escapeHtml;
+
+  const resultCards = results.map(p => `
+    <div class="result-card">
+      <a class="result-title" href="${esc(`${APP_URL}/article/${p.doi}`)}">${esc(p.title || 'Untitled')}</a>
+      <div class="result-authors">${p.authorList.map((a: string) => esc(a)).join('; ') || 'Unknown authors'}</div>
+      <div class="result-meta">
+        ${p.published_at ? `<span>${new Date(p.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}</span>` : ''}
+        ${p.volume ? `<span>Vol. ${esc(String(p.volume))}${p.issue ? `, No. ${esc(String(p.issue))}` : ''}</span>` : ''}
+        ${p.doi ? `<span>DOI: <a href="https://doi.org/${esc(p.doi)}" target="_blank">${esc(p.doi)}</a></span>` : ''}
+      </div>
+      <p class="result-abstract">${esc(p.abstract)}${p.abstract?.length >= 280 ? '…' : ''}</p>
+      <div class="result-links">
+        <a href="${esc(`${APP_URL}/article/${p.doi}`)}">View Article</a>
+        <a href="${esc(`${APP_URL}/api/papers/${p.id}/formatted-download`)}">Download PDF</a>
+      </div>
+    </div>
+  `).join('');
+
+  const pagination = totalPages > 1 ? `
+    <div class="pagination">
+      ${page > 1 ? `<a href="/search?q=${encodeURIComponent(q)}&page=${page - 1}">&larr; Previous</a>` : ''}
+      <span>Page ${page} of ${totalPages} &nbsp;|&nbsp; ${total} result${total !== 1 ? 's' : ''}</span>
+      ${page < totalPages ? `<a href="/search?q=${encodeURIComponent(q)}&page=${page + 1}">Next &rarr;</a>` : ''}
+    </div>` : (total > 0 ? `<p class="result-count">${total} result${total !== 1 ? 's' : ''} found</p>` : '');
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${q ? `${esc(q)} — Search` : 'Search Publications'} | ${GMIJ}</title>
+  <meta name="description" content="Search published research articles in the ${GMIJ}. Find papers by author name, title, keyword or DOI.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Times New Roman', Times, serif; background: #f8fafc; color: #1a202c; min-height: 100vh; }
+    header { background: #800000; color: white; padding: 1.5rem 2rem; }
+    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.9; }
+    header h2 { font-size: 1.8rem; font-weight: 900; margin-top: 0.25rem; }
+    header p { font-size: 0.8rem; opacity: 0.7; margin-top: 0.25rem; }
+    .search-bar-wrap { background: white; border-bottom: 1px solid #e2e8f0; padding: 1.25rem 2rem; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .search-form { display: flex; gap: 0.75rem; max-width: 780px; margin: 0 auto; }
+    .search-input { flex: 1; padding: 0.75rem 1.25rem; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; font-family: inherit; outline: none; transition: border 0.2s; }
+    .search-input:focus { border-color: #800000; }
+    .search-btn { padding: 0.75rem 1.75rem; background: #800000; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: background 0.2s; }
+    .search-btn:hover { background: #600000; }
+    main { max-width: 780px; margin: 2rem auto; padding: 0 1.5rem 4rem; }
+    .empty-state { text-align: center; padding: 4rem 2rem; color: #64748b; }
+    .empty-state h3 { font-size: 1.4rem; margin-bottom: 0.5rem; color: #334155; }
+    .result-card { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.25rem; transition: box-shadow 0.2s; }
+    .result-card:hover { box-shadow: 0 4px 16px rgba(128,0,0,0.08); border-color: #fca5a5; }
+    .result-title { font-size: 1.15rem; font-weight: 700; color: #800000; text-decoration: none; line-height: 1.4; display: block; margin-bottom: 0.4rem; }
+    .result-title:hover { text-decoration: underline; }
+    .result-authors { color: #4a5568; font-size: 0.9rem; margin-bottom: 0.35rem; font-style: italic; }
+    .result-meta { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.8rem; color: #718096; margin-bottom: 0.75rem; }
+    .result-meta a { color: #800000; text-decoration: none; }
+    .result-abstract { font-size: 0.92rem; color: #4a5568; line-height: 1.6; margin-bottom: 1rem; }
+    .result-links { display: flex; gap: 0.75rem; }
+    .result-links a { font-size: 0.82rem; padding: 0.35rem 0.9rem; border-radius: 5px; text-decoration: none; font-weight: 600; background: #f1f5f9; color: #334155; transition: background 0.15s; }
+    .result-links a:hover { background: #e2e8f0; }
+    .result-count { color: #64748b; font-size: 0.9rem; margin-bottom: 1.25rem; }
+    .pagination { display: flex; align-items: center; justify-content: center; gap: 1.5rem; margin-top: 2rem; font-size: 0.9rem; color: #64748b; }
+    .pagination a { color: #800000; font-weight: 700; text-decoration: none; }
+    footer { text-align: center; padding: 2rem; font-size: 0.8rem; color: #a0aec0; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>${GMIJ}</h1>
+    <h2>Publication Search</h2>
+    <p>ISSN: ${GMIJ_ISSN} &nbsp;·&nbsp; Open Access Research Archive</p>
+  </header>
+
+  <div class="search-bar-wrap">
+    <form class="search-form" method="GET" action="/search">
+      <input class="search-input" type="text" name="q" value="${esc(q)}" placeholder="Search by author name, title, keyword, or DOI…" autofocus>
+      <button class="search-btn" type="submit">Search</button>
+    </form>
+  </div>
+
+  <main>
+    ${!q ? `
+      <div class="empty-state">
+        <h3>Search Published Research</h3>
+        <p>Enter an author name, paper title, keyword, or DOI to find published articles.</p>
+      </div>
+    ` : results.length === 0 ? `
+      <div class="empty-state">
+        <h3>No results for &ldquo;${esc(q)}&rdquo;</h3>
+        <p>Try a different keyword, author name, or partial title.</p>
+      </div>
+    ` : `
+      ${pagination}
+      ${resultCards}
+      ${pagination}
+    `}
+  </main>
+
+  <footer>
+    &copy; ${new Date().getFullYear()} ${GMIJ} &nbsp;·&nbsp;
+    <a href="${APP_URL}" style="color:#800000;">genius-portal.com</a>
+  </footer>
+</body>
+</html>`);
+});
+
 app.get('/sitemap.xml', async (req, res) => {
   try {
     const result = await pool.query(
