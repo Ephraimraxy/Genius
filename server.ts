@@ -17636,12 +17636,10 @@ app.get('/article/:prefix/:suffix', async (req, res) => {
 app.get('/sitemap.xml', async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT doi, published_at, updated_at FROM papers WHERE status = 'published' AND doi IS NOT NULL ORDER BY published_at DESC"
+      "SELECT doi, published_at FROM papers WHERE status = 'published' AND doi IS NOT NULL ORDER BY published_at DESC"
     );
     const urls = result.rows.map(r => {
-      const lastmod = (r.updated_at || r.published_at)
-        ? new Date(r.updated_at || r.published_at).toISOString().split('T')[0]
-        : '';
+      const lastmod = r.published_at ? new Date(r.published_at).toISOString().split('T')[0] : '';
       return `<url><loc>${APP_URL}/article/${r.doi}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}<changefreq>monthly</changefreq><priority>0.8</priority></url>`;
     }).join('');
     res.set('Content-Type', 'text/xml');
