@@ -1161,6 +1161,120 @@ const cleanContactFrontMatter = (html: string, metadata: any = {}) => {
   return `${front}${rest}`;
 };
 
+const compactFrontMatterText = (value: any): string => (
+  String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/\s*;\s*/g, '; ')
+    .replace(/[,\s]+$/g, '')
+    .trim()
+);
+
+const frontMatterKey = (value: any): string => (
+  compactFrontMatterText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+);
+
+const joinAuthorNames = (names: string[]): string => {
+  const clean = names.map(name => compactFrontMatterText(name)).filter(Boolean);
+  if (clean.length <= 2) return clean.join(' and ');
+  return `${clean.slice(0, -1).join(', ')} and ${clean[clean.length - 1]}`;
+};
+
+const authorAffiliationText = (author: any, fallbackAffiliation = ''): string => {
+  if (!author || typeof author !== 'object' || Array.isArray(author)) return compactFrontMatterText(fallbackAffiliation);
+  const explicitAffiliations = Array.isArray(author.affiliations)
+    ? author.affiliations.map(compactFrontMatterText).filter(Boolean)
+    : [];
+  if (explicitAffiliations.length > 0) return explicitAffiliations.join('; ');
+
+  const parts = [
+    author.department,
+    author.faculty,
+    author.institution
+  ].map(compactFrontMatterText).filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : compactFrontMatterText(fallbackAffiliation);
+};
+
+const buildPublicationAuthorBlockHtml = (metadata: any = {}, fallbackAuthors: any = '', fallbackAffiliation = ''): string => {
+  const metadataAuthors = Array.isArray(metadata?.authors) ? metadata.authors : [];
+  const fallbackNames = normalizeAuthorNames(fallbackAuthors);
+  const authors = metadataAuthors.length > 0
+    ? metadataAuthors
+    : fallbackNames.map(name => ({ name }));
+  const names = authors
+    .map((author: any) => typeof author === 'string' ? author : author?.name)
+    .map(compactFrontMatterText)
+    .filter(Boolean);
+  if (names.length === 0) return '';
+
+  const affiliations = authors.map((author: any) => authorAffiliationText(author, fallbackAffiliation));
+  const uniqueAffiliations = Array.from(new Map(affiliations.filter(Boolean).map(value => [frontMatterKey(value), value])).values());
+  const sharedAffiliation = uniqueAffiliations.length === 1 ? uniqueAffiliations[0] : '';
+  const contactEmail = getMetadataContactEmail(metadata);
+  const contactPhone = getMetadataContactPhone(metadata);
+  const contactParts = [
+    contactPhone ? `<strong>Tel:</strong> ${escapeHtml(contactPhone)}` : '',
+    contactEmail ? `<strong>E-mail:</strong> ${escapeHtml(contactEmail)}` : ''
+  ].filter(Boolean);
+
+  const lines: string[] = [
+    `<p class="paper-authors-line"><strong>${escapeHtml(joinAuthorNames(names))}</strong></p>`
+  ];
+
+  if (sharedAffiliation) {
+    lines.push(`<p class="paper-affiliation-line">${escapeHtml(sharedAffiliation)}</p>`);
+  } else {
+    authors.forEach((author: any, index: number) => {
+      const affiliation = affiliations[index];
+      if (!affiliation) return;
+      const name = names[index];
+      lines.push(`<p class="paper-affiliation-line"><strong>${escapeHtml(name)}</strong>, ${escapeHtml(affiliation)}</p>`);
+    });
+  }
+
+  if (contactParts.length > 0) {
+    lines.push(`<p class="paper-contact-line">${contactParts.join('&nbsp;&nbsp; ')}</p>`);
+  }
+
+  return `<div class="author-block" style="text-align:center;text-align-last:center;margin:1.1em auto 1.8em;line-height:1.35;">${lines.join('')}</div>`;
+};
+
+const normalizeAuthorFrontMatter = (html: string, metadata: any = {}, fallbackAuthors: any = '', fallbackAffiliation = ''): string => {
+  if (!html || typeof html !== 'string') return html;
+  const authorBlock = buildPublicationAuthorBlockHtml(metadata, fallbackAuthors, fallbackAffiliation);
+  if (!authorBlock) return html;
+
+  const $ = cheerio.load(html, { xmlMode: false });
+  const title = $('h1').first();
+  if (!title.length) return html;
+  const abstract = $('h1,h2,h3,h4,h5,h6,p').toArray().find((node: any) => {
+    const text = $(node).text().replace(/\s+/g, ' ').trim().toLowerCase();
+    return text === 'abstract' || text.startsWith('abstract ');
+  });
+  if (!abstract) return html;
+
+  const titleParent = title.parent();
+  const abstractParent = $(abstract).parent();
+  if (titleParent[0] !== abstractParent[0]) {
+    title.after(authorBlock);
+    title.nextAll('.author-block').slice(1).remove();
+    return $.html() as string;
+  }
+
+  let cursor = title.next();
+  while (cursor.length && cursor[0] !== abstract) {
+    const next = cursor.next();
+    cursor.remove();
+    cursor = next;
+  }
+  title.after(authorBlock);
+
+  return $.html() as string;
+};
+
 const deduplicateTableColumnMerges = (html: string): string => {
   if (!html) return html;
   const $ = cheerio.load(html, { xmlMode: false });
@@ -4140,7 +4254,7 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
  */
 async function generateHighFidelityPaperPDF(id: number | string, overrides: Record<string, any> = {}): Promise<Buffer> {
   const paperResult = await pool.query(
-    'SELECT id, title, content, formatted_content, volume, issue, issn, doi, status, published_at, created_at, metadata, user_id FROM papers WHERE id = $1',
+    'SELECT id, title, authors, content, formatted_content, volume, issue, issn, doi, status, published_at, created_at, metadata, user_id FROM papers WHERE id = $1',
     [id]
   );
   const paper = paperResult.rows[0];
@@ -4186,6 +4300,7 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
     .replace(/src="\/Nasarawa-State-University\.jpg"/g, `src="${nsukLogoBase64}"`);
 
   scrubbedContent = cleanContactFrontMatter(scrubbedContent, paperMeta);
+  scrubbedContent = normalizeAuthorFrontMatter(scrubbedContent, paperMeta, paper.authors, resolvedInstitution || '');
   scrubbedContent = deduplicateTableColumnMerges(scrubbedContent);
   scrubbedContent = formatTargetPopulationCells(scrubbedContent);
   scrubbedContent = repairInterviewPopulationTables(scrubbedContent, paper.content || '');
@@ -4287,6 +4402,23 @@ async function generateHighFidelityPaperPDF(id: number | string, overrides: Reco
         .academic-content h1 { font-size: 1.6em; margin-bottom: 0.8em; border-bottom: 1.5px solid #f1f5f9; padding-bottom: 0.5em; text-align: center !important; text-align-last: center !important; }
         .academic-content h2 { font-size: 1.3em; border-left: 3.5px solid #800000; padding-left: 12px; }
         .academic-content h3 { font-size: 1.15em; font-style: italic; color: #475569; }
+        .author-block,
+        .author-block p,
+        .paper-authors-line,
+        .paper-affiliation-line,
+        .paper-contact-line {
+          text-align: center !important;
+          text-align-last: center !important;
+          hyphens: none !important;
+          -webkit-hyphens: none !important;
+        }
+        .author-block {
+          margin: 1.1em auto 1.8em !important;
+          line-height: 1.35 !important;
+        }
+        .author-block p {
+          margin: 0 0 0.35em 0 !important;
+        }
 
         table { width: 100%; border-collapse: collapse; margin: 1.5em 0; }
         th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left !important; }
@@ -7400,6 +7532,7 @@ function getStyleGuidelines(style: string, branding: any) {
     </div>`;
   const common = `
     - TITLE: The manuscript topic/title must be BOLD (<strong>) and at the very top.
+    - AUTHORS: Place author names centered under the title. If authors share the same department/institution, list all names on one centered line and show the shared affiliation only once below. Do NOT repeat the same affiliation after every author.
     - ABSTRACT: The Abstract content must be entirely ITALICIZED (<em> or <i>).
     - PAGINATION: You MUST wrap the content in <div class="paper-sheet"> blocks. Ensure that 100% of the text is distributed across these sheets. Do NOT omit or summarize any content to fit a page.
     - RECURSIVE HEADER: EVERY <div class="paper-sheet"> block EXCEPT THE FIRST ONE (i.e. starting from Page 2 onwards) MUST start with this EXACT HTML block:
@@ -7621,9 +7754,10 @@ app.post('/api/format/:id', authenticateToken, async (req: any, res) => {
 
     const styleGuidelines = getStyleGuidelines(style, branding);
 
-    // Build author block for the first-chunk user message
-    let authorBlock = paper.authors || '';
-    if (displayMetaAuthors.length > 0) {
+    // Build a compact title-page author block. Shared affiliations appear once.
+    const authorBlockHtml = buildPublicationAuthorBlockHtml(metadata, paper.authors || userProfile.name, userProfile.affiliation || '');
+    let authorBlock = authorBlockHtml || paper.authors || '';
+    if (!authorBlockHtml && displayMetaAuthors.length > 0) {
       authorBlock = displayMetaAuthors.map((a: any) => {
         const parts = [a.name];
         if (a.department) parts.push(a.department);
@@ -7685,6 +7819,7 @@ CRITICAL RULES:
     f. Do NOT add extra spacing, gaps, or visual separators between reference entries.
     g. URLs in references must stay on the same line as the reference text and must NOT be separated into their own paragraph.
     h. The heading "References" should use <h2> with normal heading styling above the list.
+14. TITLE PAGE AUTHOR BLOCK: Use the provided Author Block HTML exactly below the title. Keep author names centered on one line when they share one affiliation. If all authors have the same department/institution, show that affiliation only once below the names; do NOT repeat it after every author. Only list per-author affiliations when the source explicitly gives different affiliations.
 EXAMPLE of correct reference output:
 <div class="references">
   <p class="reference">Ajayi, O. (2022). <em>Human trafficking and modern slavery.</em> Lagos: Academic Press.</p>
@@ -7737,6 +7872,7 @@ EXAMPLE of correct reference output:
     }
 
     formattedHtml = cleanContactFrontMatter(formattedHtml, metadata);
+    formattedHtml = normalizeAuthorFrontMatter(formattedHtml, metadata, paper.authors || userProfile.name, userProfile.affiliation || '');
     formattedHtml = deduplicateTableColumnMerges(formattedHtml);
     formattedHtml = formatTargetPopulationCells(formattedHtml);
     formattedHtml = repairInterviewPopulationTables(formattedHtml, sourceContent);
