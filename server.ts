@@ -13306,11 +13306,11 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
   <p>You have been enrolled in the <b>${enrollmentLabel}</b> batch at <b>${workspaceName}</b>. Your account is ready!</p>
   <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin: 25px 0;">
     <h3 style="margin-top: 0; color: #0f172a; font-size: 16px; text-transform: uppercase;">Your Access Credentials</h3>
-    <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
-      <tr><td style="padding: 8px 0; color: #64748b;">Workspace ID:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${fullWorkspaceLabel}</td></tr>
-      <tr><td style="padding: 8px 0; color: #64748b;">Reg. Number:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${matricNumber}</td></tr>
-      <tr><td style="padding: 8px 0; color: #64748b;">Secure PIN:</td><td style="padding: 8px 0; text-align: right;"><span style="background: #e0e7ff; color: #3730a3; padding: 6px 12px; border-radius: 6px; font-weight: bold; letter-spacing: 2px;">${autoPin}</span></td></tr>
-      <tr><td style="padding: 8px 0; color: #64748b;">Access Mode:</td><td style="padding: 8px 0; text-align: right; font-weight: bold; color: ${isPaidEntry ? '#ef4444' : '#10b981'};">${isPaidEntry ? `Paid (₦${feeInt})` : 'Free Access'}</td></tr>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <tr><td style="padding: 7px 0; color: #64748b; white-space: nowrap; width: 120px;">Workspace ID:</td><td style="padding: 7px 0; text-align: right; font-weight: bold; word-break: break-all;">${fullWorkspaceLabel}</td></tr>
+      <tr><td style="padding: 7px 0; color: #64748b; white-space: nowrap;">Reg. Number:</td><td style="padding: 7px 0; text-align: right; font-weight: bold; word-break: break-all;">${matricNumber}</td></tr>
+      <tr><td style="padding: 7px 0; color: #64748b; white-space: nowrap;">Secure PIN:</td><td style="padding: 7px 0; text-align: right;"><span style="background: #e0e7ff; color: #3730a3; padding: 4px 10px; border-radius: 6px; font-weight: bold; letter-spacing: 2px;">${autoPin}</span></td></tr>
+      <tr><td style="padding: 7px 0; color: #64748b; white-space: nowrap;">Access Mode:</td><td style="padding: 7px 0; text-align: right; font-weight: bold; color: ${isPaidEntry ? '#ef4444' : '#10b981'};">${isPaidEntry ? `Paid (₦${feeInt})` : 'Free Access'}</td></tr>
     </table>
   </div>
   <div style="text-align: center; margin: 28px 0 16px;">
@@ -14504,11 +14504,11 @@ app.post('/api/courses/roster', authenticateToken, async (req: any, res) => {
 
   <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin: 25px 0;">
     <h3 style="margin-top: 0; color: #0f172a; font-size: 16px; text-transform: uppercase;">Your Access Credentials</h3>
-    <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
-      <tr><td style="padding: 8px 0; color: #64748b;">Workspace ID:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${fullWorkspaceLabel}</td></tr>
-      <tr><td style="padding: 8px 0; color: #64748b;">Reg. Number:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${matricNumber}</td></tr>
-      <tr><td style="padding: 8px 0; color: #64748b;">Secure PIN:</td><td style="padding: 8px 0; text-align: right;"><span style="background: #e0e7ff; color: #3730a3; padding: 6px 12px; border-radius: 6px; font-weight: bold; letter-spacing: 2px;">${autoPin}</span></td></tr>
-      <tr><td style="padding: 8px 0; color: #64748b;">Institution:</td><td style="padding: 8px 0; text-align: right; font-weight: bold;">${workspaceName}</td></tr>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <tr><td style="padding: 7px 0; color: #64748b; white-space: nowrap; width: 120px;">Workspace ID:</td><td style="padding: 7px 0; text-align: right; font-weight: bold; word-break: break-all;">${fullWorkspaceLabel}</td></tr>
+      <tr><td style="padding: 7px 0; color: #64748b; white-space: nowrap;">Reg. Number:</td><td style="padding: 7px 0; text-align: right; font-weight: bold; word-break: break-all;">${matricNumber}</td></tr>
+      <tr><td style="padding: 7px 0; color: #64748b; white-space: nowrap;">Secure PIN:</td><td style="padding: 7px 0; text-align: right;"><span style="background: #e0e7ff; color: #3730a3; padding: 4px 10px; border-radius: 6px; font-weight: bold; letter-spacing: 2px;">${autoPin}</span></td></tr>
+      <tr><td style="padding: 7px 0; color: #64748b; white-space: nowrap;">Institution:</td><td style="padding: 7px 0; text-align: right; font-weight: bold; word-break: break-all;">${workspaceName}</td></tr>
     </table>
   </div>
 
@@ -14770,10 +14770,10 @@ app.post('/api/courses/roster/bulk', authenticateToken, checkSubscription, async
             <h2 style="color:#1a237e">Welcome to Genius Academy</h2>
             <p>Hi <b>${s.name}</b>, you have been registered in the <b>${workspaceName}</b> workspace.</p>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:20px;border-radius:12px;margin:20px 0">
-              <table style="width:100%;font-size:15px">
-                <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${fullWorkspaceLabel}</td></tr>
-                <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric}</td></tr>
-                <tr><td style="color:#64748b;padding:6px 0">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${s.autoPin}</span></td></tr>
+              <table style="width:100%;font-size:13px;border-collapse:collapse">
+                <tr><td style="color:#64748b;padding:6px 0;white-space:nowrap;width:120px">Workspace ID:</td><td style="text-align:right;font-weight:bold;word-break:break-all">${fullWorkspaceLabel}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;white-space:nowrap">Reg. Number:</td><td style="text-align:right;font-weight:bold;word-break:break-all">${s.matric}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;white-space:nowrap">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 10px;border-radius:6px;font-weight:bold;letter-spacing:2px">${s.autoPin}</span></td></tr>
               </table>
             </div>
             <div style="text-align:center;margin:24px 0 12px">
@@ -15028,10 +15028,10 @@ app.post('/api/courses/roster/:id/resend', authenticateToken, checkSubscription,
         <h2 style="color:#1a237e;margin-top:0">Genius Academy — Access Reminder</h2>
         <p>Hi <b>${s.name}</b>, here are your login credentials for the <b>${workspaceName}</b> portal.</p>
         <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:20px;border-radius:12px;margin:20px 0">
-          <table style="width:100%;font-size:15px">
-            <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${fullWorkspaceLabel}</td></tr>
-            <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric_number}</td></tr>
-            <tr><td style="color:#64748b;padding:6px 0">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${plainPin}</span></td></tr>
+          <table style="width:100%;font-size:13px;border-collapse:collapse">
+            <tr><td style="color:#64748b;padding:6px 0;white-space:nowrap;width:120px">Workspace ID:</td><td style="text-align:right;font-weight:bold;word-break:break-all">${fullWorkspaceLabel}</td></tr>
+            <tr><td style="color:#64748b;padding:6px 0;white-space:nowrap">Reg. Number:</td><td style="text-align:right;font-weight:bold;word-break:break-all">${s.matric_number}</td></tr>
+            <tr><td style="color:#64748b;padding:6px 0;white-space:nowrap">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 10px;border-radius:6px;font-weight:bold;letter-spacing:2px">${plainPin}</span></td></tr>
           </table>
         </div>
         <p style="color:#d97706;font-weight:bold;text-align:center">🔒 Keep your PIN private.</p>
@@ -15087,10 +15087,10 @@ app.post('/api/courses/roster/bulk-resend', authenticateToken, checkSubscription
             <h2 style="color:#1a237e;margin-top:0">Genius Academy — Access Reminder</h2>
             <p>Hi <b>${s.name}</b>, here are your login credentials for the <b>${workspaceName}</b> portal.</p>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:20px;border-radius:12px;margin:20px 0">
-              <table style="width:100%;font-size:15px">
-                <tr><td style="color:#64748b;padding:6px 0">Workspace ID:</td><td style="text-align:right;font-weight:bold">${fullWorkspaceLabel}</td></tr>
-                <tr><td style="color:#64748b;padding:6px 0">Reg. Number:</td><td style="text-align:right;font-weight:bold">${s.matric_number}</td></tr>
-                <tr><td style="color:#64748b;padding:6px 0">PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 12px;border-radius:6px;font-weight:bold;letter-spacing:2px">${plainPin}</span></td></tr>
+              <table style="width:100%;font-size:13px;border-collapse:collapse">
+                <tr><td style="color:#64748b;padding:6px 0;white-space:nowrap;width:120px">Workspace ID:</td><td style="text-align:right;font-weight:bold;word-break:break-all">${fullWorkspaceLabel}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;white-space:nowrap">Reg. Number:</td><td style="text-align:right;font-weight:bold;word-break:break-all">${s.matric_number}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;white-space:nowrap">Secure PIN:</td><td style="text-align:right"><span style="background:#e0e7ff;color:#3730a3;padding:4px 10px;border-radius:6px;font-weight:bold;letter-spacing:2px">${plainPin}</span></td></tr>
               </table>
             </div>
             <p style="color:#d97706;font-weight:bold;text-align:center">🔒 Keep your PIN private.</p>
