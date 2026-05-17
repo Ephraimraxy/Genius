@@ -13276,19 +13276,18 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
           [req.tenant_id, matricNumber, studentName, email, studentPhone || null, hashedPin, final_category_id, hubScope, proProgramId]
         );
 
-        const userCheck = await pool.query(
-          `SELECT id FROM users
-           WHERE matric_number = $1 AND tenant_id = $2 AND role = 'student' AND COALESCE(hub_scope, 'academic') = $3`,
-          [matricNumber, req.tenant_id, hubScope]
+        await pool.query(
+          `INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, hub_scope, professional_program_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (email, role) DO UPDATE SET
+             name = EXCLUDED.name,
+             password = EXCLUDED.password,
+             matric_number = EXCLUDED.matric_number,
+             category_id = COALESCE(users.category_id, EXCLUDED.category_id),
+             hub_scope = EXCLUDED.hub_scope,
+             professional_program_id = COALESCE(EXCLUDED.professional_program_id, users.professional_program_id)`,
+          [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, hubScope, proProgramId]
         );
-        if (userCheck.rows.length === 0) {
-          await pool.query(
-            'INSERT INTO users (email, name, password, role, tenant_id, matric_number, category_id, hub_scope, professional_program_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-            [email, studentName, hashedPin, 'student', req.tenant_id, matricNumber, final_category_id, hubScope, proProgramId]
-          );
-        } else {
-          await pool.query('UPDATE users SET password = $1, category_id = COALESCE(category_id, $3), hub_scope = $4, professional_program_id = COALESCE($5, professional_program_id) WHERE id = $2', [hashedPin, userCheck.rows[0].id, final_category_id, hubScope, proProgramId]);
-        }
 
         // Send onboarding email and track status
         try {
