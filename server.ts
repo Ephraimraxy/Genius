@@ -8802,10 +8802,11 @@ async function generateFormattedManuscriptPDF(formattedHtml: string, branding: a
 
         // 2. Scale widths to fit maxWidth
         const totalNaturalWidth = naturalWidths.reduce((a, b) => a + b, 0);
+        if (colCount === 0 || totalNaturalWidth === 0) continue;
         let colWidths = naturalWidths;
         if (totalNaturalWidth > maxWidth) {
           const scale = maxWidth / totalNaturalWidth;
-          colWidths = naturalWidths.map(w => w * scale);
+          colWidths = naturalWidths.map(w => Math.max(1, w * scale));
         }
 
         // 3. Draw rows
@@ -13038,7 +13039,7 @@ app.post('/api/resources/upload/file', authenticateToken, checkSubscription, (re
     }
 
     // Handle category
-    let final_category_id = categoryId ? parseInt(categoryId) : null;
+    let final_category_id = optionalInt(categoryId);
     if (categoryName && !final_category_id) {
       const catCheck = await pool.query(
         `SELECT id FROM student_categories
@@ -13107,7 +13108,7 @@ app.post('/api/resources/upload', authenticateToken, checkSubscription, async (r
     }
 
     // 1. Handle Category (Find or Create)
-    let final_category_id = categoryId;
+    let final_category_id = optionalInt(categoryId);
     if (categoryName && !final_category_id) {
       const catCheck = await pool.query(
         `SELECT id FROM student_categories
