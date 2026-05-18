@@ -2958,6 +2958,26 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('${{')) {
 console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'PRESENT' : 'MISSING');
 console.log('-------------------------');
 
+// robots.txt — explicitly allow all crawlers including Google Scholar
+app.get('/robots.txt', (_req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send([
+    'User-agent: *',
+    'Allow: /',
+    'Allow: /article/',
+    'Allow: /search',
+    'Allow: /sitemap.xml',
+    'Disallow: /api/',
+    '',
+    'User-agent: Googlebot-Scholar',
+    'Allow: /',
+    'Allow: /article/',
+    'Allow: /api/papers/',
+    '',
+    'Sitemap: https://genius-portal.com/sitemap.xml'
+  ].join('\n'));
+});
+
 // Google Search Console ownership verification
 app.get('/google2793efc79655d28d.html', (_req, res) => {
   res.setHeader('Content-Type', 'text/html');
