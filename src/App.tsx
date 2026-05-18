@@ -749,7 +749,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {!isAdmin && (
+            {!isAdmin && !isLecturer && !isStudent && (
               <form
                 className="hidden sm:flex items-center bg-slate-100 rounded-2xl px-4 py-2 mr-2 border border-slate-200 focus-within:ring-2 focus-within:ring-[#800000]/20 transition-all"
                 onSubmit={e => {
