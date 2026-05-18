@@ -227,6 +227,7 @@ export default function App() {
   const [authIsLogin, setAuthIsLogin] = useState(true);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
+  const [navSearchQuery, setNavSearchQuery] = useState('');
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncTick, setSyncTick] = useState(0);
   const [openChatUserId, setOpenChatUserId] = useState<number | null>(null);
@@ -644,7 +645,7 @@ export default function App() {
       case 'settings': return <AdminSettings />;
       case 'paymentEvents': return isAdmin ? <PaymentEventsAdmin /> : <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
       case 'servicesSettings': return isAdmin ? <ServicesSettings onNavigate={setActiveTab} /> : <DashboardOverview onNavigate={setActiveTab} profile={profile} setActivePaperId={setActivePaperId} />;
-      case 'publicationSearch': return <PublicationSearch token={token} />;
+      case 'publicationSearch': return <PublicationSearch token={token} initialQuery={navSearchQuery} />;
       case 'profile': return <ProfileView profile={profile} addToast={addToast} onProfileUpdate={() => {
         fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } })
           .then(res => res.json())
@@ -751,14 +752,23 @@ export default function App() {
             {!isAdmin && (
               <form
                 className="hidden sm:flex items-center bg-slate-100 rounded-2xl px-4 py-2 mr-2 border border-slate-200 focus-within:ring-2 focus-within:ring-[#800000]/20 transition-all"
-                onSubmit={e => { e.preventDefault(); const val = (e.currentTarget.elements.namedItem('q') as HTMLInputElement)?.value?.trim(); if (val) setActiveTab('publicationSearch'); }}
+                onSubmit={e => {
+                  e.preventDefault();
+                  const input = e.currentTarget.elements.namedItem('q') as HTMLInputElement;
+                  const val = input?.value?.trim();
+                  if (val) {
+                    setNavSearchQuery(val);
+                    setActiveTab('publicationSearch');
+                    input.value = '';
+                    input.blur();
+                  }
+                }}
               >
                 <Search size={18} className="text-slate-400" />
                 <input
                   name="q"
                   type="text"
                   placeholder="Search publications…"
-                  onFocus={() => setActiveTab('publicationSearch')}
                   className="bg-transparent border-none outline-none text-sm ml-2 w-48 font-medium"
                 />
               </form>

@@ -16,10 +16,11 @@ interface SearchResult {
 
 interface PublicationSearchProps {
   token: string | null;
+  initialQuery?: string;
 }
 
-export default function PublicationSearch({ token }: PublicationSearchProps) {
-  const [query, setQuery] = useState('');
+export default function PublicationSearch({ token, initialQuery }: PublicationSearchProps) {
+  const [query, setQuery] = useState(initialQuery || '');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -29,6 +30,13 @@ export default function PublicationSearch({ token }: PublicationSearchProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    if (initialQuery?.trim()) {
+      setQuery(initialQuery);
+      doSearch(initialQuery, 1);
+    }
+  }, [initialQuery]);
 
   const doSearch = useCallback(async (q: string, p = 1) => {
     if (!q.trim()) return;
