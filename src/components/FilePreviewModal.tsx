@@ -10,6 +10,8 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Maximize2,
   Minimize2,
   Play,
@@ -74,6 +76,7 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
   const [excelData, setExcelData] = useState<{name: string, data: any[]}[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [textPreview, setTextPreview] = useState<string | null>(null);
   const [docxRenderBlob, setDocxRenderBlob] = useState<Blob | null>(null);
@@ -519,71 +522,103 @@ export default function FilePreviewModal({ file, fileName, isOpen, onClose, publ
             <div className="flex-1 overflow-hidden relative bg-slate-100 flex flex-col">
               {publicationDetails && (
                 <div className="shrink-0 bg-white text-slate-900 border-b-4 border-[#800000] relative overflow-hidden print:block shadow-md">
-                  <div className="px-6 md:px-10 py-8 relative z-10">
-                      {/* Top Row: Dual Logos and Journal Name */}
-                      <div className="flex items-center justify-between gap-4 w-full mb-6">
-                        {/* Left: Journal Logo */}
-                        <div className="flex items-center gap-3 shrink-0">
-                          <img src="/journal-logo.png" alt="GMIJP Logo" className="h-12 md:h-16 w-auto object-contain" />
-                          <div className="hidden md:block">
-                            <p className="text-[#800000] font-black text-[10px] uppercase tracking-wider leading-tight">Genius Multidisciplinary</p>
-                            <p className="text-slate-900 font-black text-sm md:text-base tracking-tighter">INTERNATIONAL JOURNAL</p>
-                          </div>
-                        </div>
-
-                        {/* Middle: Professional Metadata (Always visible but compact) */}
-                        <div className="flex flex-col items-center justify-center text-center px-4 flex-1">
-                          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-                            <span className="text-[#800000] font-black text-[10px] md:text-[11px] uppercase tracking-wider whitespace-nowrap">ISSN: {publicationDetails.issn || '2971-7760'}</span>
-                            <span className="text-slate-300 hidden sm:inline">|</span>
-                            <span className="text-slate-600 font-bold text-[10px] md:text-[11px] uppercase tracking-wider whitespace-nowrap">Vol: {publicationDetails.volume || '4'}</span>
-                            <span className="text-slate-300 hidden sm:inline">|</span>
-                            <span className="text-slate-600 font-bold text-[10px] md:text-[11px] uppercase tracking-wider whitespace-nowrap">No: {publicationDetails.issue || '1'}</span>
-                          </div>
-                          <p className="hidden md:block text-slate-400 font-bold text-[8px] uppercase tracking-[0.3em] mt-1">Verified Academic Record</p>
-                        </div>
-
-                        {/* Right: University Logo */}
-                        <div className="flex items-center gap-3 shrink-0">
-                          <div className="hidden md:block text-right">
-                             <p className="text-slate-900 font-black text-[10px] uppercase tracking-tight whitespace-nowrap">Nasarawa State University</p>
-                             <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest">Keffi, Nigeria</p>
-                          </div>
-                          <img src="/Nasarawa-State-University.jpg" alt="NSUK Logo" className="h-12 md:h-16 w-auto object-contain" />
-                        </div>
-                      </div>
-
-                      {/* DOI & Site Info Line (Clean horizontal bar) */}
-                      <div className="flex items-center justify-between pt-4 border-t border-slate-100 w-full mb-8">
-                        <div className="flex flex-col gap-1 items-start text-indigo-600 font-mono font-bold text-[10px] md:text-xs">
-                          <div className="flex items-center gap-2">
-                            <Globe size={12} className="shrink-0" /> {publicationDetails.doi ? (publicationDetails.doi.startsWith('10.') ? `https://doi.org/${publicationDetails.doi}` : publicationDetails.doi) : 'PENDING'}
-                          </div>
-                          {publicationDetails.date && (
-                            <div className="text-slate-500 font-sans text-[9px] md:text-[10px] uppercase tracking-widest pl-5">
-                               Published: {new Date(publicationDetails.date).toLocaleDateString('en-GB')}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-[#800000] font-black text-[9px] md:text-[10px] uppercase tracking-widest italic opacity-70">
-                          Official Publication Copy &bull; www.gmijp-edu.com
-                        </div>
-                      </div>
-
-                      {/* Title & Authors Section */}
-                      <div className="max-w-6xl mx-auto text-center md:text-left">
-                         <h2 className="text-xl md:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight leading-tight uppercase mb-3">
-                           {publicationDetails.title || fileName || 'Untitled Research'}
-                         </h2>
-                         <p className="text-slate-500 font-bold text-sm md:text-base italic">
-                           By {publicationDetails.authors || 'Genius Research Network'}
-                         </p>
-                      </div>
+                  {/* Always-visible collapsed bar + toggle */}
+                  <div
+                    className="flex items-center justify-between px-4 md:px-6 cursor-pointer select-none"
+                    style={{ minHeight: '36px', paddingTop: '6px', paddingBottom: '6px' }}
+                    onClick={() => setHeaderCollapsed(c => !c)}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <img src="/journal-logo.png" alt="GMIJP" className="h-5 w-auto object-contain shrink-0" />
+                      <span className="text-[#800000] font-black text-[10px] uppercase tracking-wider truncate">Genius Multidisciplinary International Journal</span>
+                      {headerCollapsed && (
+                        <span className="hidden sm:inline text-slate-400 font-medium text-[10px] truncate ml-2">
+                          — {publicationDetails.title || fileName || ''}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      className="ml-3 shrink-0 p-1 rounded-lg hover:bg-slate-100 transition-colors text-slate-400"
+                      title={headerCollapsed ? 'Expand header' : 'Collapse header'}
+                      onClick={e => { e.stopPropagation(); setHeaderCollapsed(c => !c); }}
+                    >
+                      {headerCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+                    </button>
                   </div>
 
-                  {/* Aesthetic backgrounds */}
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-[#800000]/5 rounded-full blur-3xl -mr-32 -mt-32" />
-                  <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl -ml-16 -mb-16" />
+                  {/* Collapsible detail */}
+                  <AnimatePresence initial={false}>
+                    {!headerCollapsed && (
+                      <motion.div
+                        key="pub-header"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.22, ease: 'easeInOut' }}
+                        style={{ overflow: 'hidden' }}
+                      >
+                        <div className="px-6 md:px-10 pb-6 pt-2 relative z-10">
+                          {/* Top Row: Dual Logos and Journal Name */}
+                          <div className="flex items-center justify-between gap-4 w-full mb-4">
+                            <div className="flex items-center gap-3 shrink-0">
+                              <img src="/journal-logo.png" alt="GMIJP Logo" className="h-10 md:h-14 w-auto object-contain" />
+                              <div className="hidden md:block">
+                                <p className="text-[#800000] font-black text-[10px] uppercase tracking-wider leading-tight">Genius Multidisciplinary</p>
+                                <p className="text-slate-900 font-black text-sm md:text-base tracking-tighter">INTERNATIONAL JOURNAL</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-center justify-center text-center px-4 flex-1">
+                              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+                                <span className="text-[#800000] font-black text-[10px] md:text-[11px] uppercase tracking-wider whitespace-nowrap">ISSN: {publicationDetails.issn || '2971-7760'}</span>
+                                <span className="text-slate-300 hidden sm:inline">|</span>
+                                <span className="text-slate-600 font-bold text-[10px] md:text-[11px] uppercase tracking-wider whitespace-nowrap">Vol: {publicationDetails.volume || '4'}</span>
+                                <span className="text-slate-300 hidden sm:inline">|</span>
+                                <span className="text-slate-600 font-bold text-[10px] md:text-[11px] uppercase tracking-wider whitespace-nowrap">No: {publicationDetails.issue || '1'}</span>
+                              </div>
+                              <p className="hidden md:block text-slate-400 font-bold text-[8px] uppercase tracking-[0.3em] mt-1">Verified Academic Record</p>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <div className="hidden md:block text-right">
+                                <p className="text-slate-900 font-black text-[10px] uppercase tracking-tight whitespace-nowrap">Nasarawa State University</p>
+                                <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest">Keffi, Nigeria</p>
+                              </div>
+                              <img src="/Nasarawa-State-University.jpg" alt="NSUK Logo" className="h-10 md:h-14 w-auto object-contain" />
+                            </div>
+                          </div>
+
+                          {/* DOI & Site Info Line */}
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-100 w-full mb-4">
+                            <div className="flex flex-col gap-1 items-start text-indigo-600 font-mono font-bold text-[10px] md:text-xs">
+                              <div className="flex items-center gap-2">
+                                <Globe size={12} className="shrink-0" /> {publicationDetails.doi ? (publicationDetails.doi.startsWith('10.') ? `https://doi.org/${publicationDetails.doi}` : publicationDetails.doi) : 'PENDING'}
+                              </div>
+                              {publicationDetails.date && (
+                                <div className="text-slate-500 font-sans text-[9px] md:text-[10px] uppercase tracking-widest pl-5">
+                                  Published: {new Date(publicationDetails.date).toLocaleDateString('en-GB')}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-[#800000] font-black text-[9px] md:text-[10px] uppercase tracking-widest italic opacity-70">
+                              Official Publication Copy &bull; www.gmijp-edu.com
+                            </div>
+                          </div>
+
+                          {/* Title & Authors */}
+                          <div className="max-w-6xl mx-auto text-center md:text-left">
+                            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight leading-tight uppercase mb-2">
+                              {publicationDetails.title || fileName || 'Untitled Research'}
+                            </h2>
+                            <p className="text-slate-500 font-bold text-sm italic">
+                              By {publicationDetails.authors || 'Genius Research Network'}
+                            </p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-[#800000]/5 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl -ml-16 -mb-16 pointer-events-none" />
                 </div>
               )}
               
