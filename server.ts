@@ -11340,7 +11340,7 @@ async function initializePaystackCheckout(user: any, amount: number, reference: 
     email: user.email,
     amount: Math.round(amount * 100), // Paystack uses kobo
     reference: reference,
-    channels: options.channels || ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer']
+    channels: options.channels || ['card', 'bank', 'ussd', 'mobile_money']
   };
 
   if (options.redirectUrl) payload.callback_url = options.redirectUrl;
