@@ -478,7 +478,7 @@ const pool = new Pool({
   statement_timeout: 30000,
 });
 
-let _activeAIModel = 'gpt-5.4';
+let _activeAIModel = 'gpt-4o';
 const _settingsConnections = new Set<any>();
 const _settingsSnapshot: Record<string, any> = {
   nav_visibility: { apa_validation: true, writing: true, formatting: true, references: true, integrity: true, reviews: true, journals: true },
@@ -486,7 +486,7 @@ const _settingsSnapshot: Record<string, any> = {
   republish_config: { enabled: false, paid: false, amount: 0 },
   pub_price: 5000,
   sub_price: 15000,
-  ai_model: 'gpt-5.4',
+  ai_model: 'gpt-4o',
 };
 
 function broadcastSettings(patch: Record<string, any>) {
@@ -2108,7 +2108,7 @@ async function getJournalConfig() {
     journalSecretary: settings.journal_secretary || 'Dr. Danjuma Namo',
     doiAutoRetryEnabled: settings.doi_auto_retry_enabled !== 'false',
     doiAutoRetryIntervalMinutes: parseInt(settings.doi_auto_retry_interval_minutes || '20', 10),
-    aiModel: settings.ai_model || 'gpt-5.4'
+    aiModel: settings.ai_model || 'gpt-4o'
   };
 }
 
@@ -2651,6 +2651,8 @@ async function initDB() {
   try { await pool.query("ALTER TABLE student_categories ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT"); } catch (e) { }
+  // Fix: replace invalid gpt-5.4 model setting with gpt-4o
+  try { await pool.query("UPDATE settings SET value = 'gpt-4o' WHERE key = 'ai_model' AND value IN ('gpt-5.4', 'gpt-5')"); } catch (e) { }
   try { await pool.query("ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE resources ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE exams ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
@@ -11057,12 +11059,12 @@ app.get('/api/settings/republish-config', authenticateToken, async (_req: any, r
   }
 });
 
-const ALLOWED_AI_MODELS = ['gpt-5.4', 'gpt-5', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini'];
+const ALLOWED_AI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o3', 'o3-mini', 'gpt-3.5-turbo'];
 
 app.get('/api/admin/config/ai-model', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
   const result = await pool.query("SELECT value FROM settings WHERE key = 'ai_model'");
-  res.json({ model: result.rows[0]?.value || 'gpt-5.4', available: ALLOWED_AI_MODELS });
+  res.json({ model: result.rows[0]?.value || 'gpt-4o', available: ALLOWED_AI_MODELS });
 });
 
 app.post('/api/admin/config/ai-model', authenticateToken, async (req: any, res) => {
