@@ -167,7 +167,7 @@ export default function Sidebar({
   // ─── STUDENT NAV (Student Center) ─────────────────────────
   const studentNavItems: { id: Tab; label: string; icon: React.ComponentType<any>; section?: string }[] = [
     { id: 'dashboard', label: 'Exams', icon: BookOpen, section: 'Course Work' },
-    { id: 'materials', label: 'Lecture Materials', icon: BookMarked },
+    { id: 'materials', label: isProfessionalStudentProfile ? 'Programs' : 'Lecture Materials', icon: BookMarked },
     { id: 'tests', label: 'Tests', icon: ClipboardCheck },
     { id: 'assignments', label: 'Assignments', icon: FileUp },
     { id: 'performance', label: 'Performance', icon: BarChart3, section: 'Records' },

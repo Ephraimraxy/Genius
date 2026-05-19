@@ -16764,14 +16764,14 @@ app.get('/api/student/materials', authenticateToken, async (req: any, res) => {
     const hubScope = getUserHubScope(req);
     if (hubScope === 'professional') {
       const programId = await getStudentProfessionalProgramId(req);
-      if (!programId) return res.json({ success: true, materials: [] });
+      if (!programId) return res.json({ success: true, materials: [], program: null });
       const program = await getPublishedProfessionalProgram(req.tenant_id, programId);
-      if (!program?.is_published) return res.json({ success: true, materials: [] });
+      if (!program?.is_published) return res.json({ success: true, materials: [], program: null });
       const hasAccess = await hasProfessionalProgramAccess(req.user.id, programId, Number(program.price || 0));
       const result = await pool.query(
         `SELECT r.*,
-                pc.title AS course_title, pc.code AS course_code,
-                pp.name AS program_name, pp.price AS program_price,
+                pc.title AS course_title, pc.code AS course_code, pc.sort_order AS course_sort_order,
+                pp.name AS program_name, pp.price AS program_price, pp.description AS program_description,
                 ($3::int > 0) AS is_paid,
                 $3::int AS price,
                 $4::boolean AS "hasPaid"
@@ -16785,7 +16785,18 @@ app.get('/api/student/materials', authenticateToken, async (req: any, res) => {
          ORDER BY pc.sort_order ASC NULLS LAST, r.created_at DESC`,
         [req.tenant_id, programId, Number(program.price || 0), hasAccess]
       );
-      return res.json({ success: true, materials: result.rows || [] });
+      return res.json({
+        success: true,
+        materials: result.rows || [],
+        program: {
+          id: programId,
+          name: program.name,
+          price: Number(program.price || 0),
+          description: program.description || null,
+          coordinator_name: program.coordinator_name || null,
+          hasPaid: hasAccess
+        }
+      });
     }
     const result = await pool.query(
       `SELECT r.*,

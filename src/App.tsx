@@ -595,7 +595,7 @@ export default function App() {
                 ? <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view="dashboard" token={token} confirm={confirm} />
                 : <StudentAttendancePage token={token!} addToast={addToast} onNavigate={setActiveTab} />;
             case 'guidelines': return <SecurityGuidelines onNavigate={setActiveTab} />;
-            case 'materials': return <StudentMaterialView addToast={addToast} token={token} />;
+            case 'materials': return <StudentMaterialView addToast={addToast} token={token} isProfessionalStudent={isProfessionalStudent} />;
             default: return <StudentDashboard profile={profile} onNavigate={setActiveTab} addToast={addToast} view={activeTab} token={token} confirm={confirm} />;
         }
     }
