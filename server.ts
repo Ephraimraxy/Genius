@@ -12278,7 +12278,7 @@ If a user sends harassment, insults, offensive content, or anything unrelated to
     const completion = await openai.chat.completions.create({
       model: _activeAIModel,
       messages,
-      max_tokens: 600,
+      max_completion_tokens: 600,
       temperature: 0.5
     });
     const aiReply = completion.choices[0]?.message?.content || "I'm sorry, I couldn't process your request. Please try again or contact our support team.";
@@ -15360,7 +15360,7 @@ ${materialText}`;
     model: _activeAIModel,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.7,
-    max_tokens: 4000,
+    max_completion_tokens: 4000,
     response_format: { type: 'json_object' }
   });
 
@@ -15416,7 +15416,7 @@ ${materialText}`;
     model: _activeAIModel,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.5,
-    max_tokens: 1400,
+    max_completion_tokens: 1400,
     response_format: { type: 'json_object' }
   });
 
