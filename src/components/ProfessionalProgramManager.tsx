@@ -5,17 +5,14 @@ import {
   BookOpen,
   CheckCircle2,
   ClipboardCheck,
-  FileText,
   FileUp,
   GraduationCap,
   Loader2,
   Plus,
   Save,
   Trash2,
+  Upload,
   Users,
-  Video,
-  Volume2,
-  X,
   BarChart3,
   Download,
   Eye
@@ -23,6 +20,7 @@ import {
 import { ToastType } from './ToastSystem';
 import { friendlyError } from '../utils/friendlyError';
 import AcademicManagement from './AcademicManagement';
+import ResourceHub from './ResourceHub';
 
 interface ProResource {
   id: number;
@@ -87,15 +85,9 @@ interface Props {
 
 const money = (value: number | string | undefined | null) => `N${Number(value || 0).toLocaleString()}`;
 
-const resourceIcon = (type: string) => {
-  if (type === 'video') return Video;
-  if (type === 'audio') return Volume2;
-  return FileText;
-};
 
 export default function ProfessionalProgramManager({ addToast, token }: Props) {
   const [programs, setPrograms] = useState<ProProgram[]>([]);
-  const [resources, setResources] = useState<ProResource[]>([]);
   const [students, setStudents] = useState<ProStudent[]>([]);
   const [analytics, setAnalytics] = useState<ProStudent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +95,7 @@ export default function ProfessionalProgramManager({ addToast, token }: Props) {
   const [selectedProgramId, setSelectedProgramId] = useState<number | null>(null);
   const [programTab, setProgramTab] = useState<'content' | 'assessments'>('content');
   const [assessmentMode, setAssessmentMode] = useState<'tests' | 'exams' | 'assignments'>('tests');
+  const [uploadCourseId, setUploadCourseId] = useState<number | null>(null);
   const [newProgram, setNewProgram] = useState({ name: '', code: '', price: '0', coordinator_name: '', description: '' });
   const [programEdits, setProgramEdits] = useState<Record<number, { price: string; coordinator_name: string; description: string }>>({});
   const [courseForms, setCourseForms] = useState<Record<number, { title: string; code: string; description: string }>>({});
@@ -114,31 +107,24 @@ export default function ProfessionalProgramManager({ addToast, token }: Props) {
     [programs, selectedProgramId]
   );
 
-  const inventory = useMemo(
-    () => resources.filter(resource => resource.type !== 'roster' && resource.status === 'ready'),
-    [resources]
-  );
 
   const fetchAll = async () => {
     if (!token) return;
     setLoading(true);
     try {
-      const [programRes, resourceRes, rosterRes, analyticsRes] = await Promise.all([
+      const [programRes, rosterRes, analyticsRes] = await Promise.all([
         fetch(withHub('/api/pro-hub/programs'), { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(withHub('/api/resources'), { headers: { Authorization: `Bearer ${token}` } }),
         fetch(withHub('/api/courses/roster'), { headers: { Authorization: `Bearer ${token}` } }),
         fetch(withHub('/api/pro-hub/students/analytics'), { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
       const programData = await programRes.json();
-      const resourceData = await resourceRes.json();
       const rosterData = await rosterRes.json();
       const analyticsData = await analyticsRes.json();
 
       if (!programRes.ok) throw new Error(programData.error || 'Failed to load professional programs');
       const nextPrograms = programData.programs || [];
       setPrograms(nextPrograms);
-      setResources(Array.isArray(resourceData) ? resourceData : []);
       setStudents(Array.isArray(rosterData) ? rosterData : []);
       setAnalytics(analyticsData.students || []);
       setProgramEdits(Object.fromEntries(nextPrograms.map((program: ProProgram) => [
@@ -263,22 +249,6 @@ export default function ProfessionalProgramManager({ addToast, token }: Props) {
       fetchAll();
     } catch (err: any) {
       addToast(friendlyError(err, 'delete'), 'error');
-    }
-  };
-
-  const assignResource = async (resourceId: number, programId: number | null, courseId: number | null) => {
-    try {
-      const res = await fetch(withHub(`/api/pro-hub/resources/${resourceId}/course`), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ program_id: programId, course_id: courseId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Content assignment failed');
-      addToast(programId && courseId ? 'Content linked to course' : 'Content removed from course', 'success');
-      fetchAll();
-    } catch (err: any) {
-      addToast(friendlyError(err, 'save'), 'error');
     }
   };
 
@@ -465,7 +435,7 @@ export default function ProfessionalProgramManager({ addToast, token }: Props) {
               <div className="flex items-center justify-between gap-4 mb-5">
                 <div>
                   <h3 className="font-black text-slate-900 flex items-center gap-2"><BookOpen size={19} className="text-blue-600" /> Courses and Content</h3>
-                  <p className="text-xs text-slate-500 font-medium">Assign uploaded files, audio, and videos to the exact course.</p>
+                  <p className="text-xs text-slate-500 font-medium">Add courses, then upload materials, audio, and videos directly into each course.</p>
                 </div>
               </div>
 
@@ -484,47 +454,39 @@ export default function ProfessionalProgramManager({ addToast, token }: Props) {
                   </div>
                 )}
                 {selectedProgram.courses.map(course => (
-                  <div key={course.id} className="border border-slate-200 rounded-2xl p-4">
-                    <div className="flex items-start justify-between gap-3 mb-4">
+                  <div key={course.id} className="border border-slate-200 rounded-2xl overflow-hidden">
+                    <div className="flex items-start justify-between gap-3 p-4">
                       <div>
                         <p className="font-black text-slate-900">{course.title}</p>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{course.code || 'No code'} - {(course.contents || []).length} content item(s)</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{course.code || 'No code'} · {(course.contents || []).length} item(s)</p>
                       </div>
-                      <button onClick={() => deleteCourse(course)} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50" title="Delete course">
-                        <Trash2 size={15} />
-                      </button>
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => setUploadCourseId(uploadCourseId === course.id ? null : course.id)}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${uploadCourseId === course.id ? 'bg-slate-900 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                        >
+                          <Upload size={12} />
+                          {uploadCourseId === course.id ? 'Close' : 'Upload Content'}
+                        </button>
+                        <button onClick={() => deleteCourse(course)} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50" title="Delete course">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="grid md:grid-cols-[1fr_150px] gap-2 mb-4">
-                      <select onChange={e => { if (e.target.value) assignResource(parseInt(e.target.value), selectedProgram.id, course.id); e.currentTarget.value = ''; }} className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none">
-                        <option value="">Add uploaded content to this course...</option>
-                        {inventory.map(resource => (
-                          <option key={resource.id} value={resource.id}>
-                            {resource.name} ({resource.type}){resource.professional_course_id ? ` - assigned to ${resource.professional_course_title || 'course'}` : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">
-                        80% video rule
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {(course.contents || []).length === 0 && <p className="text-xs text-slate-400 font-bold px-2">No content assigned yet.</p>}
-                      {(course.contents || []).map(content => {
-                        const Icon = resourceIcon(content.type);
-                        return (
-                          <div key={content.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl">
-                            <Icon size={17} className={content.type === 'video' ? 'text-violet-600' : content.type === 'audio' ? 'text-rose-600' : 'text-amber-600'} />
-                            <span className="flex-1 text-sm font-bold text-slate-800">{content.name}</span>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{content.type}</span>
-                            <button onClick={() => assignResource(content.id, null, null)} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50" title="Remove from course">
-                              <X size={14} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    {uploadCourseId === course.id && (
+                      <div className="border-t border-slate-100">
+                        <ResourceHub
+                          addToast={addToast}
+                          token={token}
+                          hub="professional"
+                          defaultProgramId={selectedProgram.id}
+                          defaultCourseId={course.id}
+                          hideRoster
+                          onUploadComplete={fetchAll}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -53,9 +53,13 @@ interface ResourceHubProps {
     token: string | null;
     hub?: 'academic' | 'professional';
     initialUploadType?: ResourceType;
+    defaultProgramId?: number | null;
+    defaultCourseId?: number | null;
+    hideRoster?: boolean;
+    onUploadComplete?: () => void;
 }
 
-export default function ResourceHub({ addToast, token, hub = 'academic', initialUploadType = 'roster' }: ResourceHubProps) {
+export default function ResourceHub({ addToast, token, hub = 'academic', initialUploadType = 'roster', defaultProgramId, defaultCourseId, hideRoster, onUploadComplete }: ResourceHubProps) {
     const isProfessionalHub = hub === 'professional';
     const withHub = (url: string) => `${url}${url.includes('?') ? '&' : '?'}hub=${hub}`;
     const [resources, setResources] = useState<Resource[]>([]);
@@ -114,6 +118,12 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
     const [bulkDeleting, setBulkDeleting] = useState(false);
     const [suspendingId, setSuspendingId] = useState<number | null>(null);
     const [bulkSuspending, setBulkSuspending] = useState(false);
+
+    const displayResources = defaultCourseId
+        ? resources.filter(r => r.professional_course_id === defaultCourseId)
+        : defaultProgramId
+        ? resources.filter(r => r.professional_program_id === defaultProgramId)
+        : resources;
 
     useEffect(() => {
         fetchResources();
@@ -394,6 +404,8 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                 if (newCatName) formData.append('categoryName', newCatName);
                 if (isPaidEntry) formData.append('isPaidEntry', 'true');
                 if (entryFee) formData.append('entryFee', String(entryFee));
+                if (defaultProgramId) formData.append('program_id', String(defaultProgramId));
+                if (defaultCourseId) formData.append('course_id', String(defaultCourseId));
 
                 await new Promise<void>((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
@@ -439,6 +451,7 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                 setUploadStatusMsg('Upload complete!');
                 addToast(`"${fileHandle.name}" uploaded successfully!`, 'success');
                 fetchResources();
+                onUploadComplete?.();
                 setFileHandle(null);
                 setAudioAnalysis(null);
                 setUploadProgress(0);
@@ -521,6 +534,8 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
             if (newCatName) formData.append('categoryName', newCatName);
             if (isPaidEntry !== undefined) formData.append('isPaidEntry', String(isPaidEntry));
             if (entryFee !== undefined) formData.append('entryFee', String(entryFee));
+            if (defaultProgramId) formData.append('program_id', String(defaultProgramId));
+            if (defaultCourseId) formData.append('course_id', String(defaultCourseId));
 
             const res = await fetch(withHub('/api/resources/upload/file'), {
                 method: 'POST',
@@ -531,6 +546,7 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
             if (data.success) {
                 addToast(`${uploadType === 'video' ? 'Video' : 'Material'} uploaded successfully`, 'success');
                 fetchResources();
+                onUploadComplete?.();
                 setFileHandle(null);
             } else {
                 addToast(friendlyError({ message: data.error }, 'upload'), 'error');
@@ -661,7 +677,7 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
                          
                          <div className="space-y-4 relative z-10">
                             <div className="grid grid-cols-2 p-1 bg-white/10 rounded-2xl border border-white/10 gap-1">
-                                {(['roster', 'material', 'audio', 'video'] as const).map(t => (
+                                {(['roster', 'material', 'audio', 'video'] as const).filter(t => !(hideRoster && t === 'roster')).map(t => (
                                     <button
                                         key={t}
                                         onClick={() => {
@@ -904,14 +920,14 @@ export default function ResourceHub({ addToast, token, hub = 'academic', initial
 
                         <div className="space-y-4">
                             <AnimatePresence mode="popLayout">
-                                {resources.length === 0 && !isLoading && (
+                                {displayResources.length === 0 && !isLoading && (
                                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20 grayscale opacity-40">
                                         <FileUp size={48} className="mx-auto mb-4" />
-                                        <p className="font-bold">No resources found in your workspace.</p>
+                                        <p className="font-bold">{defaultCourseId ? 'No content uploaded to this course yet.' : 'No resources found in your workspace.'}</p>
                                     </motion.div>
                                 )}
-                                
-                                {resources.map((item) => (
+
+                                {displayResources.map((item) => (
                                     <motion.div 
                                         key={item.id}
                                         layout
