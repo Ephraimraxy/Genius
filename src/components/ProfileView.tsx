@@ -240,7 +240,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           </div>
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Role</p>
-            <p className={`text-sm font-bold ${isAdmin ? 'text-amber-600' : isLecturer ? 'text-blue-600' : 'text-rose-600'}`}>
+            <p className={`text-sm font-bold ${isAdmin ? 'text-amber-600' : isLecturer ? 'text-blue-600' : isProfessionalStudent ? 'text-indigo-600' : 'text-rose-600'}`}>
               {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : isProfessionalStudent ? 'Professional Student' : 'Research Portal'}
             </p>
           </div>
@@ -258,7 +258,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
       </div>
 
       {/* Metrics Grid (Researcher only) */}
-      {!isAdmin && !isLecturer && (
+      {!isAdmin && !isLecturer && !isProfessionalStudent && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             { label: 'Total Citations', value: metrics.citations, icon: Quote, color: 'text-indigo-600', bg: 'bg-indigo-50' },
@@ -307,8 +307,8 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
         </div>
       )}
 
-      {/* Publications List */}
-      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
+      {/* Publications List — hidden for Pro Hub students */}
+      {!isProfessionalStudent && <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
         <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/30">
           <div className="flex items-center gap-3">
             <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center p-1 shrink-0 shadow-sm border border-slate-100 overflow-hidden">
@@ -369,7 +369,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
             </motion.div>
           ))}
         </div>
-      </div>
+      </div>}
     </motion.div>
   );
 }
