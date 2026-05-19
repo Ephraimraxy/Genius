@@ -61,17 +61,17 @@ export default function AdminSettings() {
 
   // AI Model State
   const AI_MODELS = [
-    { id: 'gpt-5.4', label: 'GPT-5.4', badge: 'Latest', desc: 'Highest capability — best formatting quality. Recommended.', color: 'emerald' },
-    { id: 'gpt-5',   label: 'GPT-5',   badge: 'Stable', desc: 'GPT-5 base — strong reasoning, slightly lower cost.', color: 'indigo' },
-    { id: 'gpt-4o',  label: 'GPT-4o',  badge: 'Legacy', desc: 'Previous generation — reliable fallback if needed.', color: 'amber' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o mini', badge: 'Economy', desc: 'Fastest and cheapest — lower quality output.', color: 'slate' },
-    { id: 'o3',      label: 'o3',       badge: 'Reasoning', desc: 'OpenAI reasoning model — best for complex analysis.', color: 'violet' },
-    { id: 'o3-mini', label: 'o3-mini',  badge: 'Reasoning', desc: 'Compact reasoning model — cost-effective for logic tasks.', color: 'violet' },
+    { id: 'gpt-4o',       label: 'GPT-4o',       badge: 'Recommended', desc: 'Best balance of quality and speed. Default model for all AI features.', color: 'emerald' },
+    { id: 'gpt-4o-mini',  label: 'GPT-4o mini',  badge: 'Economy',     desc: 'Fastest and cheapest — good for simple tasks.', color: 'slate' },
+    { id: 'gpt-4-turbo',  label: 'GPT-4 Turbo',  badge: 'Powerful',    desc: 'High-capability GPT-4 with 128k context window.', color: 'indigo' },
+    { id: 'o3',           label: 'o3',            badge: 'Reasoning',   desc: 'OpenAI reasoning model — best for complex analysis.', color: 'violet' },
+    { id: 'o3-mini',      label: 'o3-mini',       badge: 'Reasoning',   desc: 'Compact reasoning model — cost-effective for logic tasks.', color: 'violet' },
+    { id: 'gpt-3.5-turbo',label: 'GPT-3.5 Turbo',badge: 'Legacy',      desc: 'Older model — lowest cost, reduced quality.', color: 'amber' },
   ] as const;
-  const [aiModel, setAiModel] = useState<string>('gpt-5.4');
+  const [aiModel, setAiModel] = useState<string>('gpt-4o');
   const [savingAiModel, setSavingAiModel] = useState(false);
   const [savedAiModel, setSavedAiModel] = useState(false);
-  const [origAiModel, setOrigAiModel] = useState<string>('gpt-5.4');
+  const [origAiModel, setOrigAiModel] = useState<string>('gpt-4o');
 
   // Storage Plans State
   const [storagePlans, setStoragePlans] = useState<Array<{ id: number; name: string; storage_mb: number; price_kobo: number; duration_days: number; is_active: boolean }>>([]);
