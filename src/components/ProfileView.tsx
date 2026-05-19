@@ -12,6 +12,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
   const publications = scholarProfile?.publications || [];
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const isLecturer = user?.role === 'tenant_admin';
+  const isProfessionalStudent = user?.role === 'student' && (user?.hub_scope === 'professional' || user?.hubScope === 'professional');
   const creditBalance = Number(user?.credit_balance || 0);
 
   const [editName, setEditName] = useState(user?.name || '');
@@ -118,9 +119,11 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
               <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border mx-auto md:mx-0 w-fit ${
                 isAdmin
                   ? 'bg-amber-50 text-amber-600 border-amber-200'
-                  : isLecturer ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-rose-50 text-rose-600 border-rose-200'
+                  : isLecturer ? 'bg-blue-50 text-blue-600 border-blue-200'
+                  : isProfessionalStudent ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                  : 'bg-rose-50 text-rose-600 border-rose-200'
               }`}>
-                {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Research Portal'}
+                {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : isProfessionalStudent ? 'Professional Student' : 'Research Portal'}
               </span>
             </div>
 
@@ -238,7 +241,7 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Role</p>
             <p className={`text-sm font-bold ${isAdmin ? 'text-amber-600' : isLecturer ? 'text-blue-600' : 'text-rose-600'}`}>
-              {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : 'Research Portal'}
+              {isAdmin ? 'System Administrator' : isLecturer ? 'Lecturer Admin' : isProfessionalStudent ? 'Professional Student' : 'Research Portal'}
             </p>
           </div>
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
