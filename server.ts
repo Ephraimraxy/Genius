@@ -549,8 +549,12 @@ const trackUsage = async (model: string, usage: any, purpose: string, userId?: n
     let promptRate    = 0.000005;   // GPT-4o default: $5/1M input
     let completionRate = 0.000015;  // GPT-4o default: $15/1M output
 
-    if (model.includes('gpt-5.4') || model.includes('gpt-5')) {
-      promptRate = 0.000008; completionRate = 0.000024;
+    if (model === 'gpt-5.5') {
+      promptRate = 0.000005; completionRate = 0.00003;       // $5/$30 per MTok
+    } else if (model === 'gpt-5.4') {
+      promptRate = 0.0000025; completionRate = 0.000015;     // $2.50/$15 per MTok
+    } else if (model === 'gpt-5.4-mini') {
+      promptRate = 0.00000075; completionRate = 0.0000045;   // $0.75/$4.50 per MTok
     } else if (model.includes('gpt-4o-mini')) {
       promptRate = 0.0000001; completionRate = 0.0000004;
     } else if (model.includes('gpt-3.5')) {
@@ -2651,8 +2655,8 @@ async function initDB() {
   try { await pool.query("ALTER TABLE student_categories ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT"); } catch (e) { }
-  // Fix: replace invalid gpt-5.4 model setting with gpt-4o
-  try { await pool.query("UPDATE settings SET value = 'gpt-4o' WHERE key = 'ai_model' AND value IN ('gpt-5.4', 'gpt-5')"); } catch (e) { }
+  // Ensure any stale model IDs that no longer exist are reset to gpt-4o
+  try { await pool.query("UPDATE settings SET value = 'gpt-4o' WHERE key = 'ai_model' AND value NOT IN ('gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o3', 'o3-mini', 'gpt-3.5-turbo')"); } catch (e) { }
   try { await pool.query("ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE resources ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE exams ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
@@ -11059,7 +11063,7 @@ app.get('/api/settings/republish-config', authenticateToken, async (_req: any, r
   }
 });
 
-const ALLOWED_AI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o3', 'o3-mini', 'gpt-3.5-turbo'];
+const ALLOWED_AI_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o3', 'o3-mini', 'gpt-3.5-turbo'];
 
 app.get('/api/admin/config/ai-model', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });

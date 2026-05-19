@@ -61,12 +61,15 @@ export default function AdminSettings() {
 
   // AI Model State
   const AI_MODELS = [
-    { id: 'gpt-4o',       label: 'GPT-4o',       badge: 'Recommended', desc: 'Best balance of quality and speed. Default model for all AI features.', color: 'emerald' },
-    { id: 'gpt-4o-mini',  label: 'GPT-4o mini',  badge: 'Economy',     desc: 'Fastest and cheapest — good for simple tasks.', color: 'slate' },
-    { id: 'gpt-4-turbo',  label: 'GPT-4 Turbo',  badge: 'Powerful',    desc: 'High-capability GPT-4 with 128k context window.', color: 'indigo' },
-    { id: 'o3',           label: 'o3',            badge: 'Reasoning',   desc: 'OpenAI reasoning model — best for complex analysis.', color: 'violet' },
-    { id: 'o3-mini',      label: 'o3-mini',       badge: 'Reasoning',   desc: 'Compact reasoning model — cost-effective for logic tasks.', color: 'violet' },
-    { id: 'gpt-3.5-turbo',label: 'GPT-3.5 Turbo',badge: 'Legacy',      desc: 'Older model — lowest cost, reduced quality.', color: 'amber' },
+    { id: 'gpt-5.5',      label: 'GPT-5.5',       badge: 'Latest',      desc: 'Flagship frontier model — best for coding, reasoning, and complex work. $5/$30 per MTok.', color: 'emerald' },
+    { id: 'gpt-5.4',      label: 'GPT-5.4',       badge: 'Frontier',    desc: 'Affordable frontier model — strong capability at lower cost. $2.50/$15 per MTok.', color: 'blue' },
+    { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini',  badge: 'Fast',        desc: 'Strongest mini model — best for agents and high-volume tasks. $0.75/$4.50 per MTok.', color: 'cyan' },
+    { id: 'gpt-4o',       label: 'GPT-4o',         badge: 'Stable',      desc: 'Reliable multimodal model — good fallback if GPT-5 access is unavailable.', color: 'indigo' },
+    { id: 'gpt-4o-mini',  label: 'GPT-4o mini',   badge: 'Economy',     desc: 'Lightweight and cheap — suitable for simple classification tasks.', color: 'slate' },
+    { id: 'o3',           label: 'o3',             badge: 'Reasoning',   desc: 'Deep reasoning model — best for math, algorithms, and complex analysis.', color: 'violet' },
+    { id: 'o3-mini',      label: 'o3-mini',        badge: 'Reasoning',   desc: 'Compact reasoning model — cost-effective for logic tasks.', color: 'violet' },
+    { id: 'gpt-4-turbo',  label: 'GPT-4 Turbo',   badge: 'Legacy',      desc: 'Older long-context model — 128k window.', color: 'amber' },
+    { id: 'gpt-3.5-turbo',label: 'GPT-3.5 Turbo', badge: 'Legacy',      desc: 'Oldest model — lowest cost, reduced quality.', color: 'amber' },
   ] as const;
   const [aiModel, setAiModel] = useState<string>('gpt-4o');
   const [savingAiModel, setSavingAiModel] = useState(false);
@@ -1144,6 +1147,8 @@ export default function AdminSettings() {
                 const active = aiModel === m.id;
                 const colorMap: Record<string, string> = {
                   emerald: 'border-emerald-200 bg-emerald-50/60',
+                  blue:    'border-blue-200 bg-blue-50/60',
+                  cyan:    'border-cyan-200 bg-cyan-50/60',
                   indigo:  'border-indigo-200 bg-indigo-50/60',
                   amber:   'border-amber-200 bg-amber-50/60',
                   slate:   'border-slate-200 bg-slate-50',
@@ -1151,6 +1156,8 @@ export default function AdminSettings() {
                 };
                 const badgeMap: Record<string, string> = {
                   emerald: 'bg-emerald-100 text-emerald-700',
+                  blue:    'bg-blue-100 text-blue-700',
+                  cyan:    'bg-cyan-100 text-cyan-700',
                   indigo:  'bg-indigo-100 text-indigo-700',
                   amber:   'bg-amber-100 text-amber-700',
                   slate:   'bg-slate-100 text-slate-500',
