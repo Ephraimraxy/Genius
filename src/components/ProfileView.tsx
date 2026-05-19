@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink, User, Save, X, Mail, Building, Shield, FileText, CheckCircle2, Loader2, Plus, Trash2, Wallet } from 'lucide-react';
+import { MapPin, Quote, TrendingUp, Edit3, Award, ExternalLink, User, Save, X, Mail, Building, Shield, FileText, CheckCircle2, Loader2, Plus, Trash2, Wallet, Camera } from 'lucide-react';
 import { friendlyError } from '../utils/friendlyError';
 
 export default function ProfileView({ profile, addToast, onProfileUpdate }: { profile: any, addToast?: (msg: string, type?: string) => void, onProfileUpdate?: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [localAvatar, setLocalAvatar] = useState<string | null>(null);
 
   const { profile: scholarProfile, papers, user } = profile || {};
   const metrics = scholarProfile?.metrics || { citations: 0, hIndex: 0, i10Index: 0 };
@@ -67,6 +69,34 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
     }
   };
 
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      const res = await fetch('/api/profile/avatar', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok && data.avatar_url) {
+        setLocalAvatar(data.avatar_url);
+        onProfileUpdate?.();
+        addToast?.('Profile picture updated!', 'success');
+      } else {
+        addToast?.(data.error || 'Upload failed', 'error');
+      }
+    } catch {
+      addToast?.('Failed to upload image', 'error');
+    } finally {
+      setAvatarUploading(false);
+      e.target.value = '';
+    }
+  };
+
   const addInterest = () => {
     if (newInterest.trim() && !editInterests.includes(newInterest.trim())) {
       setEditInterests([...editInterests, newInterest.trim()]);
@@ -90,14 +120,23 @@ export default function ProfileView({ profile, addToast, onProfileUpdate }: { pr
 
         <div className="flex flex-col md:flex-row items-center md:items-start gap-10 relative z-10">
           {/* Avatar */}
-          <div className="relative">
-            <div className={`w-32 h-32 rounded-3xl text-white flex items-center justify-center text-4xl font-bold shadow-2xl ${
-              isAdmin ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] shadow-slate-900/30' : 
+          <div className="relative group">
+            <div className={`w-32 h-32 rounded-3xl text-white flex items-center justify-center text-4xl font-bold shadow-2xl overflow-hidden ${
+              isAdmin ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-[#800000] shadow-slate-900/30' :
               isLecturer ? 'bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-900 shadow-blue-900/30' :
               'premium-gradient shadow-[#800000]/30'
             }`}>
-              {(user?.name?.trim() || user?.email?.trim() || 'S').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
+              {(localAvatar || user?.avatar_url) ? (
+                <img src={localAvatar || user.avatar_url} alt={user?.name || 'Avatar'} className="w-full h-full object-cover" />
+              ) : (
+                (user?.name?.trim() || user?.email?.trim() || 'S').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()
+              )}
             </div>
+            {/* Upload overlay */}
+            <label className="absolute inset-0 rounded-3xl flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleAvatarUpload} disabled={avatarUploading} />
+              {avatarUploading ? <Loader2 size={28} className="text-white animate-spin" /> : <Camera size={28} className="text-white" />}
+            </label>
             <div className="absolute -bottom-2 -right-2 p-2 bg-white rounded-xl shadow-lg border border-slate-100">
               {isAdmin ? <Shield className="text-amber-500" size={20} /> : <Award className="text-amber-500" size={20} />}
             </div>

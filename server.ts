@@ -2650,6 +2650,7 @@ async function initDB() {
   try { await pool.query('ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS phone TEXT'); } catch (e) { }
   try { await pool.query("ALTER TABLE student_categories ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
+  try { await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT"); } catch (e) { }
   try { await pool.query("ALTER TABLE students_roster ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE resources ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
   try { await pool.query("ALTER TABLE exams ADD COLUMN IF NOT EXISTS hub_scope TEXT DEFAULT 'academic'"); } catch (e) { }
@@ -9376,7 +9377,7 @@ app.get('/api/profile', authenticateToken, async (req: any, res) => {
     const userId = req.user.id;
 
     // Always fetch fresh user data from database (not stale JWT)
-    const userResult = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number, level, credit_balance, category_id, hub_scope, is_suspended FROM users WHERE id = $1', [userId]);
+    const userResult = await pool.query('SELECT id, email, name, affiliation, role, tenant_id, matric_number, level, credit_balance, category_id, hub_scope, is_suspended, avatar_url FROM users WHERE id = $1', [userId]);
     let freshUser = userResult.rows[0];
     if (!freshUser) return res.status(404).json({ error: 'User not found' });
 
@@ -9580,6 +9581,31 @@ app.put('/api/profile', authenticateToken, async (req: any, res) => {
   } catch (error) {
     console.error('Profile update error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+app.post('/api/profile/avatar', authenticateToken, upload.single('avatar'), async (req: any, res: any) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No image file provided.' });
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowed.includes(req.file.mimetype)) {
+      try { fs.unlinkSync(req.file.path); } catch (_) {}
+      return res.status(415).json({ error: 'Only JPEG, PNG, WebP, or GIF images are accepted.' });
+    }
+    if (req.file.size > 5 * 1024 * 1024) {
+      try { fs.unlinkSync(req.file.path); } catch (_) {}
+      return res.status(413).json({ error: 'Image must be under 5 MB.' });
+    }
+    const ext = req.file.mimetype.split('/')[1].replace('jpeg', 'jpg');
+    const key = `avatars/${req.user.id}/${Date.now()}.${ext}`;
+    const fileStream = fs.createReadStream(req.file.path);
+    const avatarUrl = await uploadToR2(key, fileStream, req.file.mimetype, req.file.size);
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    await pool.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [avatarUrl, req.user.id]);
+    res.json({ success: true, avatar_url: avatarUrl });
+  } catch (err: any) {
+    if (req.file?.path) { try { fs.unlinkSync(req.file.path); } catch (_) {} }
+    res.status(500).json({ error: err.message || 'Avatar upload failed.' });
   }
 });
 
