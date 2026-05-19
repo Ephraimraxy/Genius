@@ -6402,32 +6402,16 @@ async function generateProfessionalCertificationPDF(payload: {
   const verifyUrl = buildCertificateVerificationUrl(payload.certificateId);
   const esc = (s: string) => String(s || '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] || c));
 
-  const templatePath = path.join(process.cwd(), 'tools', 'cert.png');
+  const templatePath = path.join(process.cwd(), 'tools', 'prohubcert.png');
   let bgDataUrl = '';
   try {
     const imgBytes = fs.readFileSync(templatePath);
     bgDataUrl = `data:image/png;base64,${imgBytes.toString('base64')}`;
   } catch (e) {
-    console.warn('[pro-cert] cert.png not found at', templatePath, e);
+    console.warn('[pro-cert] prohubcert.png not found at', templatePath, e);
+    // fall back to plain white background
   }
 
-  const loadAsset = (names: string[]): string => {
-    const dirs = [path.join(process.cwd(), 'public'), path.join(process.cwd(), 'tools')];
-    for (const name of names) {
-      for (const dir of dirs) {
-        const p = path.join(dir, name);
-        if (fs.existsSync(p)) {
-          const ext = path.extname(p).toLowerCase();
-          const mime = ext === '.png' ? 'image/png' : ext === '.svg' ? 'image/svg+xml' : 'image/jpeg';
-          return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`;
-        }
-      }
-    }
-    return '';
-  };
-
-  const logoLeft = loadAsset(['gmijp-logo.png', 'journal-logo.png', 'ain logo.jpeg']);
-  const logoRight = loadAsset(['Nasarawa-State-University.jpg', 'university-logo.jpg']);
   let qrDataUrl = '';
   try {
     qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 140, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
@@ -6435,14 +6419,14 @@ async function generateProfessionalCertificationPDF(payload: {
     console.warn('[pro-cert] QR generation failed:', e);
   }
 
-  const studentFontPx = payload.studentName.length > 80 ? 34 : payload.studentName.length > 55 ? 38 : 44;
-  const programFontPx = payload.programName.length > 90 ? 27 : payload.programName.length > 60 ? 31 : 35;
-  const issuedDate = payload.issuedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  const courses = (payload.courses || []).slice(0, 6);
-  const courseLine = courses.length
-    ? courses.map(c => esc(c.code ? `${c.code}: ${c.title}` : c.title)).join(' | ')
-    : 'All required professional courses and assessments';
+  const studentFontPx = payload.studentName.length > 80 ? 33 : payload.studentName.length > 55 ? 38 : 43;
+  const programFontPx = payload.programName.length > 90 ? 22 : payload.programName.length > 60 ? 26 : 30;
+  const issuedDate = payload.issuedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
+  const upperName = esc(payload.studentName).toUpperCase();
+  const upperProgram = esc(payload.programName).toUpperCase();
 
+  // The prohubcert.png template already has the title, subtitle, and logos pre-rendered.
+  // We only overlay the textual content in the white oval area.
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -6453,72 +6437,50 @@ async function generateProfessionalCertificationPDF(payload: {
   html, body { width: 1209px; height: 852px; overflow: hidden; background: white; }
   .page { position: relative; width: 1209px; height: 852px; font-family: 'Times New Roman', Times, serif; color: #111; overflow: hidden; }
   .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .logo { position: absolute; top: 132px; width: 67px; height: 67px; object-fit: contain; }
-  .logo-left { left: 230px; }
-  .logo-right { right: 252px; }
-  .cert-title {
-    position: absolute; top: 96px; left: 0; right: 0; text-align: center;
-    font-size: 30px; line-height: 1; letter-spacing: 5px; font-weight: 900; color: #8b0000;
-  }
-  .cert-subtitle {
-    position: absolute; top: 135px; left: 0; right: 0; text-align: center;
-    font-size: 16px; line-height: 1.32; letter-spacing: 2.2px; color: #555; text-transform: uppercase;
-  }
   .certify-line {
-    position: absolute; top: 222px; left: 0; right: 0; text-align: center;
-    font-size: 20px; letter-spacing: 4px; color: #444; text-transform: uppercase;
+    position: absolute; top: 205px; left: 0; right: 0; text-align: center;
+    font-size: 18px; letter-spacing: 4px; color: #4b5563; text-transform: uppercase; font-style: italic;
   }
-  .content { position: absolute; top: 258px; left: 118px; right: 118px; text-align: center; }
-  .student-name { font-size: ${studentFontPx}px; line-height: 1.12; font-weight: 900; color: #000; margin: 0 auto 18px; max-width: 980px; }
-  .matric { font-size: 17px; line-height: 1; margin-bottom: 24px; color: #555; font-weight: 700; letter-spacing: 1.2px; }
-  .completed { font-size: 18px; line-height: 1.25; margin-bottom: 13px; color: #111; }
-  .program-name { font-size: ${programFontPx}px; line-height: 1.2; font-weight: 900; color: #8b0000; margin: 0 auto 15px; max-width: 980px; }
-  .tenant { font-size: 17px; line-height: 1.25; color: #333; margin-bottom: 12px; }
-  .courses { font-size: 13px; line-height: 1.35; color: #475569; max-width: 840px; margin: 0 auto 12px; }
-  .issued { font-size: 16px; line-height: 1.25; color: #333; }
-  .signature-block { position: absolute; left: 250px; bottom: 92px; width: 250px; text-align: center; }
-  .signature-block img { display: block; width: 178px; max-height: 58px; object-fit: contain; margin: 0 auto -3px; }
-  .signature-line { width: 190px; border-top: 2px solid transparent; margin: 0 auto 8px; }
-  .coordinator-name { display: block; font-size: 20px; line-height: 1.1; font-weight: 900; color: #8b0000; text-transform: uppercase; }
-  .coordinator-role { display: block; margin-top: 7px; font-size: 16px; line-height: 1.1; color: #555; }
-  .qr-block { position: absolute; left: 758px; bottom: 88px; width: 150px; text-align: center; }
-  .qr-label { display: block; font-size: 12px; line-height: 1; font-weight: 700; color: #555; margin-bottom: 7px; }
-  .qr-block img { width: 104px; height: 104px; }
-  .cert-id { position: absolute; right: 12px; bottom: 14px; width: 174px; text-align: center; color: #fff; font-size: 11.5px; line-height: 1.12; font-weight: 900; }
+  .content { position: absolute; top: 240px; left: 130px; right: 130px; text-align: center; }
+  .student-name { font-size: ${studentFontPx}px; line-height: 1.1; font-weight: 900; color: #0f172a; margin: 0 auto 14px; max-width: 960px; text-transform: uppercase; }
+  .matric { font-size: 15px; line-height: 1; margin-bottom: 20px; color: #1e3a8a; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+  .completed { font-size: 17px; line-height: 1.3; margin-bottom: 12px; color: #374151; text-transform: uppercase; letter-spacing: 1px; }
+  .program-name { font-size: ${programFontPx}px; line-height: 1.25; font-weight: 900; color: #1e3a8a; margin: 0 auto 12px; max-width: 960px; }
+  .issued { font-size: 16px; line-height: 1; color: #374151; letter-spacing: 2px; text-transform: uppercase; margin-top: 10px; }
+  .signature-block { position: absolute; left: 160px; bottom: 205px; width: 240px; text-align: center; }
+  .signature-block img { display: block; width: 170px; max-height: 55px; object-fit: contain; margin: 0 auto -3px; }
+  .signature-line { width: 180px; border-top: 1.5px solid #94a3b8; margin: 0 auto 7px; }
+  .coordinator-name { display: block; font-size: 17px; line-height: 1.1; font-weight: 900; color: #1e3a8a; text-transform: uppercase; }
+  .coordinator-role { display: block; margin-top: 5px; font-size: 13px; line-height: 1.1; color: #64748b; }
+  .qr-block { position: absolute; right: 138px; bottom: 195px; width: 130px; text-align: center; }
+  .qr-label { display: block; font-size: 11px; line-height: 1; font-weight: 700; color: #64748b; margin-bottom: 6px; letter-spacing: 1px; text-transform: uppercase; }
+  .qr-block img { width: 100px; height: 100px; }
+  .cert-id { position: absolute; right: 10px; bottom: 10px; width: 180px; text-align: center; color: #fff; font-size: 10.5px; line-height: 1.3; font-weight: 900; letter-spacing: 0.5px; }
 </style>
 </head>
 <body>
 <div class="page">
   ${bgDataUrl ? `<img class="bg" src="${bgDataUrl}" alt=""/>` : ''}
-  ${logoLeft ? `<img class="logo logo-left" src="${logoLeft}" alt="Genius logo"/>` : ''}
-  ${logoRight ? `<img class="logo logo-right" src="${logoRight}" alt="Institution logo"/>` : ''}
-  <h1 class="cert-title">PROFESSIONAL CERTIFICATION</h1>
-  <div class="cert-subtitle">
-    <div>Genius Professional Hub</div>
-    <div>Academic Program Certification</div>
-  </div>
   <div class="certify-line">This is to certify that</div>
   <div class="content">
-    <div class="student-name">${esc(payload.studentName)}</div>
+    <div class="student-name">${upperName}</div>
     <div class="matric">${esc(payload.matricNumber)}</div>
-    <div class="completed">has successfully completed the professional program</div>
-    <div class="program-name">${esc(payload.programName)}</div>
-    <div class="tenant">${esc(payload.tenantName)}${payload.programCode ? ` | Program Code: ${esc(payload.programCode)}` : ''}</div>
-    <div class="courses">${courseLine}</div>
-    <div class="issued">Certified: ${esc(issuedDate)}</div>
+    <div class="completed">Has successfully completed an academy program,</div>
+    <div class="program-name">${upperProgram}</div>
+    <div class="issued">On the ${esc(issuedDate)}</div>
   </div>
   <div class="signature-block">
     ${signatureBase64 && signatureBase64.startsWith('data:image') ? `<img src="${signatureBase64}" alt="Signature"/>` : ''}
     <div class="signature-line"></div>
     <span class="coordinator-name">${coordinatorName}</span>
-    <span class="coordinator-role">Coordinator</span>
+    <span class="coordinator-role">Secretary, Editorial Board</span>
   </div>
   <div class="qr-block">
     <span class="qr-label">Scan to verify</span>
     ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR"/>` : ''}
   </div>
   <div class="cert-id">
-    <div>Certification ID:</div>
+    <div>Certificate ID:</div>
     <div>${esc(payload.certificateId)}</div>
   </div>
 </div>
@@ -14366,7 +14328,7 @@ async function sendProfessionalCertificationPdf(req: any, res: any, studentId: n
     courses: completion.courses
   });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Professional_Certification_${certificate.certificate_id}.pdf"`);
+  res.setHeader('Content-Disposition', `inline; filename="ProHub_Certificate_${certificate.certificate_id}.pdf"`);
   res.send(pdf);
 }
 

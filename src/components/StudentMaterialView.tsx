@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-    BookOpen, FileText, Download, Lock, CheckCircle, Search,
+    Award, BookOpen, FileText, Download, Lock, CheckCircle, Search,
     Loader2, Volume2, Play, X, Eye, Video, ChevronLeft,
     BookMarked, ChevronDown, ChevronUp, GraduationCap, Layers
 } from 'lucide-react';
@@ -105,6 +105,39 @@ export default function StudentMaterialView({ addToast, token, isProfessionalStu
     const [payIsCancelling, setPayIsCancelling] = useState(false);
     const [payIsConfirmed, setPayIsConfirmed] = useState(false);
     const [payNeedsNewRef, setPayNeedsNewRef] = useState(false);
+
+    const [certDownloading, setCertDownloading] = useState(false);
+
+    const handleCertDownload = async () => {
+        if (!programInfo) return;
+        setCertDownloading(true);
+        try {
+            const res = await fetch(`/api/student/pro-hub/programs/${programInfo.id}/certificate`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                const completion = data.completion;
+                const pct = completion ? Math.round(completion.percent || 0) : null;
+                addToast(pct !== null ? `Certificate unlocks at 100% completion — you are at ${pct}%.` : (data.error || 'Certificate not available yet.'), 'error');
+                return;
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Certificate_${programInfo.name.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            addToast('Certificate downloaded successfully!', 'success');
+        } catch {
+            addToast('Failed to download certificate. Please try again.', 'error');
+        } finally {
+            setCertDownloading(false);
+        }
+    };
 
     const fetchMaterials = async () => {
         setIsLoading(true);
@@ -565,14 +598,25 @@ export default function StudentMaterialView({ addToast, token, isProfessionalStu
                                 </div>
 
                                 {/* Action button */}
-                                <div className="flex gap-3">
+                                <div className="flex gap-3 flex-wrap">
                                     {isUnlocked ? (
+                                        <>
                                         <button
                                             onClick={() => setProgramView('detail')}
                                             className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-200"
                                         >
                                             <Play size={16} /> Enter Program
                                         </button>
+                                        <button
+                                            onClick={handleCertDownload}
+                                            disabled={certDownloading}
+                                            className="px-5 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-200 disabled:opacity-60"
+                                            title="Download your certificate of completion"
+                                        >
+                                            {certDownloading ? <Loader2 size={16} className="animate-spin" /> : <Award size={16} />}
+                                            Certificate
+                                        </button>
+                                        </>
                                     ) : programInfo.price > 0 ? (
                                         <>
                                             <button
