@@ -4,7 +4,9 @@ import {
   Award,
   BookOpen,
   CheckCircle2,
+  ClipboardCheck,
   FileText,
+  FileUp,
   GraduationCap,
   Loader2,
   Plus,
@@ -20,6 +22,7 @@ import {
 } from 'lucide-react';
 import { ToastType } from './ToastSystem';
 import { friendlyError } from '../utils/friendlyError';
+import AcademicManagement from './AcademicManagement';
 
 interface ProResource {
   id: number;
@@ -98,6 +101,8 @@ export default function ProfessionalProgramManager({ addToast, token }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | 'new' | null>(null);
   const [selectedProgramId, setSelectedProgramId] = useState<number | null>(null);
+  const [programTab, setProgramTab] = useState<'content' | 'assessments'>('content');
+  const [assessmentMode, setAssessmentMode] = useState<'tests' | 'exams' | 'assignments'>('tests');
   const [newProgram, setNewProgram] = useState({ name: '', code: '', price: '0', coordinator_name: '', description: '' });
   const [programEdits, setProgramEdits] = useState<Record<number, { price: string; coordinator_name: string; description: string }>>({});
   const [courseForms, setCourseForms] = useState<Record<number, { title: string; code: string; description: string }>>({});
@@ -402,6 +407,60 @@ export default function ProfessionalProgramManager({ addToast, token }: Props) {
               </div>
             </motion.div>
 
+            {/* ── Program tab switcher: Content / Assessments ── */}
+            <div className="flex gap-2 bg-white border border-slate-200 rounded-2xl p-1 w-fit shadow-sm">
+              {([
+                { key: 'content', label: 'Content', icon: BookOpen },
+                { key: 'assessments', label: 'Assessments', icon: GraduationCap },
+              ] as const).map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  onClick={() => setProgramTab(key)}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                    programTab === key ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-700'
+                  }`}
+                >
+                  <Icon size={13} /> {label}
+                </button>
+              ))}
+            </div>
+
+            {programTab === 'assessments' ? (
+              /* ── Assessments sub-view ── */
+              <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+                <div className="flex gap-0 border-b border-slate-200">
+                  {([
+                    { key: 'tests', label: 'Tests', icon: ClipboardCheck },
+                    { key: 'assignments', label: 'Assignments', icon: FileUp },
+                    { key: 'exams', label: 'Exams', icon: GraduationCap },
+                  ] as const).map(({ key, label, icon: Icon }) => (
+                    <button
+                      key={key}
+                      onClick={() => setAssessmentMode(key)}
+                      className={`flex items-center gap-2 px-5 py-3.5 text-xs font-black uppercase tracking-widest transition-all border-b-2 ${
+                        assessmentMode === key
+                          ? 'border-blue-600 text-blue-700 bg-blue-50/50'
+                          : 'border-transparent text-slate-400 hover:text-slate-700'
+                      }`}
+                    >
+                      <Icon size={13} /> {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="p-6">
+                  <div key={`${selectedProgram.id}-${assessmentMode}`}>
+                    <AcademicManagement
+                      mode={assessmentMode}
+                      addToast={addToast}
+                      token={token}
+                      hub="professional"
+                      defaultProgramId={selectedProgram.id}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+
             <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
               <div className="flex items-center justify-between gap-4 mb-5">
                 <div>
@@ -470,6 +529,7 @@ export default function ProfessionalProgramManager({ addToast, token }: Props) {
                 ))}
               </div>
             </div>
+            )} {/* closes programTab === 'content' */}
           </div>
         ) : (
           <div className="bg-white border border-slate-200 rounded-[2rem] p-16 text-center text-slate-400 font-bold">

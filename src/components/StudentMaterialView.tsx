@@ -8,6 +8,8 @@ import {
 import { ToastType } from './ToastSystem';
 import { friendlyError } from '../utils/friendlyError';
 import GeniusPaymentModal from './GeniusPaymentModal';
+import { openPaystackInline } from './paystackInline';
+import { subscribePaymentReturn } from './paymentChannel';
 
 interface Material {
     id: number;
@@ -94,6 +96,16 @@ export default function StudentMaterialView({ addToast, token, isProfessionalStu
     const [previewLoading, setPreviewLoading] = useState<number | null>(null);
     const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
+    // Pro Hub program payment (SmartUpload-style flow)
+    const [payGateway, setPayGateway] = useState<'paystack' | 'kora' | null>(null);
+    const [gatewaysStatus, setGatewaysStatus] = useState<{ paystack: boolean; kora: boolean } | null>(null);
+    const [isPaying, setIsPaying] = useState(false);
+    const [payRef, setPayRef] = useState('');
+    const [payCheckoutData, setPayCheckoutData] = useState<any>(null);
+    const [payIsCancelling, setPayIsCancelling] = useState(false);
+    const [payIsConfirmed, setPayIsConfirmed] = useState(false);
+    const [payNeedsNewRef, setPayNeedsNewRef] = useState(false);
+
     const fetchMaterials = async () => {
         setIsLoading(true);
         try {
@@ -119,7 +131,38 @@ export default function StudentMaterialView({ addToast, token, isProfessionalStu
         finally { setIsLoadingVideos(false); }
     };
 
-    useEffect(() => { fetchMaterials(); fetchVideos(); }, [token]);
+    const [assessments, setAssessments] = useState<any[]>([]);
+    const fetchAssessments = async () => {
+        if (!isProfessionalStudent) return;
+        try {
+            const res = await fetch('/api/student/assessments', { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            if (res.ok) setAssessments(data.assessments || []);
+        } catch { /* silent */ }
+    };
+
+    useEffect(() => { fetchMaterials(); fetchVideos(); fetchAssessments(); }, [token]);
+
+    // Fetch available payment gateways once on mount
+    useEffect(() => {
+        fetch('/api/payment/gateways')
+            .then(r => r.json())
+            .then(d => setGatewaysStatus(d.error ? { paystack: true, kora: true } : d))
+            .catch(() => setGatewaysStatus({ paystack: true, kora: true }));
+    }, []);
+
+    // Reset Pro Hub payment states whenever the payment modal opens
+    useEffect(() => {
+        if (showPaymentModal) {
+            setPayGateway(null);
+            setPayRef('');
+            setPayCheckoutData(null);
+            setIsPaying(false);
+            setPayIsCancelling(false);
+            setPayIsConfirmed(false);
+            setPayNeedsNewRef(false);
+        }
+    }, [showPaymentModal]);
 
     // Expand all courses by default when entering detail view
     useEffect(() => {
@@ -247,6 +290,129 @@ export default function StudentMaterialView({ addToast, token, isProfessionalStu
         } catch (err: any) { addToast(friendlyError(err, 'generic'), 'error'); }
         finally { setPreviewLoading(null); }
     };
+
+    // ── Pro Hub program payment (SmartUpload pattern) ─────────────
+    const verifyProgramPay = async (silent = false, refOverride?: string) => {
+        const ref = refOverride || payRef;
+        if (!ref || !token || payIsConfirmed) return;
+        try {
+            const res = await fetch(`/api/payment/verify/${ref}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.status === 'success' || data.status === 'consumed') {
+                setPayIsConfirmed(true);
+                setShowPaymentModal(false);
+                setSelectedMaterial(null);
+                fetchMaterials();
+                fetchVideos();
+                addToast('Program access unlocked!', 'success');
+            } else if (!silent) {
+                addToast('Payment still pending. Check again shortly.', 'info');
+            }
+        } catch { /* non-blocking */ }
+    };
+
+    const openProgramCheckout = (data: any, gw: 'paystack' | 'kora') => {
+        const reference = data?.reference;
+        if (!reference) return;
+        setPayNeedsNewRef(false);
+
+        if (gw === 'paystack' && data?.publicKey) {
+            const fallbackAmount = Number(data?.amount_naira ?? selectedMaterial?.price ?? 0);
+            const amountKobo = Number(data?.amount_kobo ?? data?.amount ?? 0) || Math.round(fallbackAmount * 100);
+            const email = data?.email || data?.customer?.email || '';
+            const opened = openPaystackInline({
+                key: data.publicKey, email,
+                amount: amountKobo,
+                currency: data.currency || 'NGN',
+                ref: reference,
+                onClose: () => {
+                    setPayNeedsNewRef(true);
+                    addToast('Payment window closed. Use the button below to retry.', 'info');
+                },
+                onSuccess: () => { void verifyProgramPay(true, reference); }
+            });
+            if (!opened) addToast('Checkout blocked — use the button below to open it.', 'info');
+            return;
+        }
+
+        if (gw === 'kora' && window.Korapay && data?.publicKey) {
+            const amountNaira = Number(data?.amount_naira ?? data?.amount ?? selectedMaterial?.price ?? 0);
+            window.Korapay.initialize({
+                key: data.publicKey, reference,
+                amount: amountNaira,
+                currency: data.currency || 'NGN',
+                customer: { email: data?.email || data?.customer?.email || '', name: data?.name || '' },
+                onClose: () => {
+                    setPayNeedsNewRef(true);
+                    addToast('Payment window closed. Use the button below to retry.', 'info');
+                },
+                onSuccess: () => { void verifyProgramPay(true, reference); }
+            });
+        }
+    };
+
+    const handleProgramPay = async () => {
+        if (!selectedMaterial || !payGateway) return;
+        const gw = payGateway;
+        setIsPaying(true);
+        setPayCheckoutData(null);
+        setPayNeedsNewRef(false);
+        try {
+            const programId = selectedMaterial.professional_program_id || selectedMaterial.id;
+            const res = await fetch('/api/payment/program/initialize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ amount: selectedMaterial.price, program_id: programId, gateway: gw, mode: 'inline' })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Payment initialization failed');
+            setPayRef(data.reference || '');
+            setPayCheckoutData(data);
+            openProgramCheckout(data, gw);
+        } catch (err: any) {
+            addToast(friendlyError(err, 'payment'), 'error');
+        } finally {
+            setIsPaying(false);
+        }
+    };
+
+    const cancelProgramPay = async () => {
+        if (!payRef || !token) return;
+        setPayIsCancelling(true);
+        try {
+            await fetch('/api/payment/abandon', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ reference: payRef, reason: 'user_cancel' })
+            });
+            setPayRef('');
+            setPayCheckoutData(null);
+            setPayGateway(null);
+            setPayNeedsNewRef(false);
+            addToast('Payment cancelled.', 'info');
+        } catch { /* silent */ }
+        finally { setPayIsCancelling(false); }
+    };
+
+    // Poll for payment confirmation silently
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (!payRef || !token || payIsConfirmed) return;
+        const iv = window.setInterval(() => void verifyProgramPay(true), 8000);
+        return () => window.clearInterval(iv);
+    }, [payRef, token, payIsConfirmed]);
+
+    // Subscribe to payment return channel for instant confirmation
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (!payRef || !token || payIsConfirmed) return;
+        return subscribePaymentReturn((msg) => {
+            if (msg.reference && msg.reference !== payRef) return;
+            void verifyProgramPay(true);
+        });
+    }, [payRef, token, payIsConfirmed]);
 
     // ── Build course groups for Pro Hub LMS view ──────────────────
     const courseGroups: {
@@ -591,6 +757,83 @@ export default function StudentMaterialView({ addToast, token, isProfessionalStu
                     )
                 )}
 
+                {/* ── Assessments section (exams, tests, assignments) ── */}
+                {programView === 'detail' && (() => {
+                    const exams = assessments.filter(a => a.type === 'exam');
+                    const tests = assessments.filter(a => a.type === 'test' || !a.type);
+                    const assignments = assessments.filter(a => a.type === 'assignment');
+                    const hasAny = exams.length > 0 || tests.length > 0 || assignments.length > 0;
+
+                    const AssessmentSection = ({ items, label, icon: Icon, color }: { items: any[]; label: string; icon: React.ElementType; color: string }) => (
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                            <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
+                                    <Icon size={15} className="text-white" />
+                                </div>
+                                <p className="font-black text-slate-900 text-sm uppercase tracking-tight">{label}</p>
+                                <span className="ml-auto text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{items.length}</span>
+                            </div>
+                            <div className="divide-y divide-slate-50">
+                                {items.map(item => (
+                                    <div key={item.id} className="flex items-center justify-between gap-4 px-6 py-3.5 hover:bg-slate-50 transition-colors">
+                                        <div className="min-w-0">
+                                            <p className="font-bold text-slate-800 text-sm truncate">{item.title || item.course}</p>
+                                            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                                                {item.professional_course_title && (
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{item.professional_course_title}</span>
+                                                )}
+                                                {item.duration && (
+                                                    <span className="text-[10px] text-slate-400 font-bold">{item.duration}</span>
+                                                )}
+                                                {item.totalQuestions > 0 && (
+                                                    <span className="text-[10px] text-slate-400 font-bold">{item.totalQuestions} questions</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {item.status === 'completed' ? (
+                                                <span className="flex items-center gap-1 text-[11px] font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
+                                                    <CheckCircle size={11} /> Done
+                                                </span>
+                                            ) : item.is_paid && !item.hasPaid ? (
+                                                <button onClick={beginProgramPayment}
+                                                    className="px-4 py-1.5 bg-slate-900 text-white rounded-lg text-[11px] font-black uppercase flex items-center gap-1.5 hover:bg-black transition-colors">
+                                                    <Lock size={11} /> Unlock
+                                                </button>
+                                            ) : (
+                                                <span className="text-[11px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">
+                                                    {item.start_date && new Date(item.start_date) > new Date() ? 'Upcoming' : 'Available'}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+
+                    return (
+                        <div className="space-y-4 mt-2">
+                            <div className="flex items-center gap-2 px-1">
+                                <div className="h-px flex-1 bg-slate-200" />
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 shrink-0">Assessments</p>
+                                <div className="h-px flex-1 bg-slate-200" />
+                            </div>
+                            {!hasAny ? (
+                                <div className="bg-slate-50 border border-slate-200 rounded-2xl px-6 py-5 text-center">
+                                    <p className="text-sm text-slate-400 font-bold">No exams, tests, or assignments scheduled for this program yet.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {exams.length > 0 && <AssessmentSection items={exams} label="Exams" icon={GraduationCap} color="bg-indigo-600" />}
+                                    {tests.length > 0 && <AssessmentSection items={tests} label="Tests" icon={BookOpen} color="bg-amber-600" />}
+                                    {assignments.length > 0 && <AssessmentSection items={assignments} label="Assignments" icon={FileText} color="bg-emerald-600" />}
+                                </>
+                            )}
+                        </div>
+                    );
+                })()}
+
                 {/* Audio mini-player (sticky) */}
                 <AnimatePresence>
                     {activeAudio && (
@@ -610,7 +853,7 @@ export default function StudentMaterialView({ addToast, token, isProfessionalStu
                 {/* Shared modals */}
                 {renderVideoModal()}
                 {renderPreviewModal()}
-                {renderPaymentModal()}
+                {renderProgramPaymentModal()}
             </div>
         );
     }
@@ -842,6 +1085,136 @@ export default function StudentMaterialView({ addToast, token, isProfessionalStu
                         </motion.div>
                     </motion.div>
                 )}
+            </AnimatePresence>
+        );
+    }
+
+    function renderProgramPaymentModal() {
+        if (!showPaymentModal || !selectedMaterial) return null;
+
+        const gwOptions = [
+            { key: 'paystack' as const, label: 'Paystack', sub: 'Card, bank transfer, USSD, and more' },
+            { key: 'kora' as const, label: 'Kora Checkout', sub: 'Card, bank transfer, pay with bank' },
+        ].filter(g => gatewaysStatus?.[g.key] !== false);
+
+        return (
+            <AnimatePresence>
+                <motion.div
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                >
+                    <motion.div
+                        initial={{ scale: 0.95, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 16 }}
+                        className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden"
+                    >
+                        {/* Header */}
+                        <div className="px-8 pt-8 pb-6 border-b border-slate-100 relative">
+                            <button
+                                onClick={() => { setShowPaymentModal(false); setSelectedMaterial(null); }}
+                                className="absolute top-5 right-5 p-2 rounded-xl hover:bg-slate-100 transition-colors"
+                            >
+                                <X size={20} className="text-slate-400" />
+                            </button>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-1">Program Enrollment</p>
+                            <h3 className="text-xl font-black text-slate-900 pr-10">{selectedMaterial.name}</h3>
+                            <div className="mt-4 bg-indigo-50 rounded-2xl px-5 py-3 inline-flex items-baseline gap-1">
+                                <span className="text-slate-400 text-sm font-bold">₦</span>
+                                <span className="text-3xl font-black text-indigo-900 tracking-tighter">
+                                    {Number(selectedMaterial.price).toLocaleString()}
+                                </span>
+                                <span className="text-slate-400 text-xs font-bold ml-1">one-time</span>
+                            </div>
+                        </div>
+
+                        <div className="px-8 py-6 space-y-4">
+                            {!payCheckoutData ? (
+                                /* ── Step 1: Gateway selection + Pay (mirrors SmartUpload) ── */
+                                !gatewaysStatus ? (
+                                    <div className="flex items-center justify-center py-6 gap-2 text-slate-400">
+                                        <Loader2 size={18} className="animate-spin" />
+                                        <span className="text-sm font-bold">Loading payment methods...</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                                            Select Payment Method
+                                        </p>
+                                        <div className="space-y-2">
+                                            {gwOptions.map(({ key, label, sub }) => (
+                                                <button
+                                                    key={key}
+                                                    onClick={() => setPayGateway(key)}
+                                                    disabled={isPaying}
+                                                    className={`w-full text-left px-4 py-3 rounded-xl border text-sm font-bold transition-all ${
+                                                        payGateway === key
+                                                            ? 'border-indigo-600 bg-indigo-50 text-indigo-900'
+                                                            : 'border-slate-200 text-slate-700 hover:border-indigo-300'
+                                                    }`}
+                                                >
+                                                    {label}
+                                                    <span className="block text-[11px] text-slate-400 font-medium mt-0.5">{sub}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {payGateway && (
+                                            <button
+                                                onClick={handleProgramPay}
+                                                disabled={isPaying}
+                                                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 disabled:opacity-60"
+                                            >
+                                                {isPaying
+                                                    ? <><Loader2 size={16} className="animate-spin" /> Opening checkout...</>
+                                                    : <><Lock size={16} /> Open {payGateway === 'kora' ? 'Kora' : 'Paystack'} Checkout</>
+                                                }
+                                            </button>
+                                        )}
+                                    </>
+                                )
+                            ) : (
+                                /* ── Step 2: After API init — reopen + cancel ── */
+                                <>
+                                    <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 text-center">
+                                        <p className="text-sm font-bold text-indigo-700 mb-4">
+                                            A secure {payGateway === 'kora' ? 'Kora' : 'Paystack'} checkout window has been opened.
+                                            Complete your payment there to unlock access.
+                                        </p>
+                                        {!payNeedsNewRef ? (
+                                            <button
+                                                onClick={() => openProgramCheckout(payCheckoutData, payGateway!)}
+                                                className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors"
+                                            >
+                                                Open Payment Gateway
+                                            </button>
+                                        ) : (
+                                            <p className="text-[11px] text-amber-600 font-bold">
+                                                This reference was used.{' '}
+                                                <button
+                                                    onClick={() => { setPayCheckoutData(null); setPayGateway(null); setPayNeedsNewRef(false); }}
+                                                    className="underline"
+                                                >
+                                                    Try again with new checkout
+                                                </button>
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center justify-center gap-2 py-1">
+                                        <Loader2 size={14} className="animate-spin text-indigo-400" />
+                                        <span className="text-xs font-bold text-slate-500">Listening for payment confirmation...</span>
+                                    </div>
+                                    <div className="text-center">
+                                        <button
+                                            onClick={cancelProgramPay}
+                                            disabled={payIsCancelling || !payRef}
+                                            className="text-[11px] font-bold text-slate-500 hover:text-rose-600 underline underline-offset-2 disabled:opacity-50"
+                                        >
+                                            {payIsCancelling ? 'Cancelling...' : 'Cancel payment'}
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </motion.div>
+                </motion.div>
             </AnimatePresence>
         );
     }

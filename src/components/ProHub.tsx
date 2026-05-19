@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Briefcase, Users, BookOpen, Mic, Video, ClipboardCheck, FileUp, GraduationCap, Layers3 } from 'lucide-react';
+import { Briefcase, Users, BookOpen, Mic, Video, Layers3 } from 'lucide-react';
 import ResourceHub from './ResourceHub';
 import AcademicManagement from './AcademicManagement';
 import ProfessionalProgramManager from './ProfessionalProgramManager';
@@ -10,7 +10,7 @@ interface ProHubProps {
   token: string | null;
 }
 
-type ProHubSection = 'programs' | 'students' | 'materials' | 'records' | 'videos' | 'tests' | 'assignments' | 'exams';
+type ProHubSection = 'programs' | 'students' | 'materials' | 'records' | 'videos';
 
 const sections: Array<{ id: ProHubSection; label: string; icon: React.ComponentType<any> }> = [
   { id: 'programs', label: 'Programs', icon: Layers3 },
@@ -18,9 +18,6 @@ const sections: Array<{ id: ProHubSection; label: string; icon: React.ComponentT
   { id: 'materials', label: 'Materials', icon: BookOpen },
   { id: 'records', label: 'Audio', icon: Mic },
   { id: 'videos', label: 'Videos', icon: Video },
-  { id: 'tests', label: 'Tests', icon: ClipboardCheck },
-  { id: 'assignments', label: 'Assignments', icon: FileUp },
-  { id: 'exams', label: 'Exams', icon: GraduationCap },
 ];
 
 export default function ProHub({ addToast, token }: ProHubProps) {

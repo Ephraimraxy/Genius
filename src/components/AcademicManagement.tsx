@@ -72,9 +72,10 @@ interface AcademicManagementProps {
     addToast: (msg: string, type: ToastType) => void;
     token: string | null;
     hub?: 'academic' | 'professional';
+    defaultProgramId?: number | null;
 }
 
-export default function AcademicManagement({ mode, addToast, token, hub = 'academic' }: AcademicManagementProps) {
+export default function AcademicManagement({ mode, addToast, token, hub = 'academic', defaultProgramId }: AcademicManagementProps) {
     const isProfessionalHub = hub === 'professional';
     const withHub = (url: string) => `${url}${url.includes('?') ? '&' : '?'}hub=${hub}`;
     const [isProcessing, setIsProcessing] = useState(false);
@@ -181,8 +182,33 @@ export default function AcademicManagement({ mode, addToast, token, hub = 'acade
     const selectedAssessProgram = professionalPrograms.find(p => String(p.id) === String(assessProgramId));
     const selectedAttendProgram = professionalPrograms.find(p => String(p.id) === String(attendProgramId));
 
+    // Pre-populate program scope when mounted from a program context
+    React.useEffect(() => {
+        if (defaultProgramId != null && String(defaultProgramId)) {
+            setAssessProgramId(String(defaultProgramId));
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [defaultProgramId]);
+
     const renderProfessionalScopePicker = (kind: 'assessment' | 'attendance') => {
         if (!isProfessionalHub) return null;
+        // When defaultProgramId is set (embedded in program view), hide the program selector
+        if (kind === 'assessment' && defaultProgramId != null) {
+            const program = selectedAssessProgram;
+            return (
+                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl space-y-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                        Program: {program?.name || '...'}
+                    </p>
+                    <select value={assessCourseId} onChange={e => { setAssessCourseId(e.target.value); setSelectedMaterialResources([]); }}
+                        className="w-full px-4 py-3 bg-white border border-emerald-100 rounded-xl font-bold text-sm text-slate-700 focus:outline-none focus:border-emerald-400"
+                        disabled={!program}>
+                        <option value="">All Courses (no specific course)</option>
+                        {(program?.courses || []).map(course => <option key={course.id} value={course.id}>{course.title}</option>)}
+                    </select>
+                </div>
+            );
+        }
         const programId = kind === 'assessment' ? assessProgramId : attendProgramId;
         const courseId = kind === 'assessment' ? assessCourseId : attendCourseId;
         const program = kind === 'assessment' ? selectedAssessProgram : selectedAttendProgram;

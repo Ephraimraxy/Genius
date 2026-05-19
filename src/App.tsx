@@ -357,6 +357,16 @@ export default function App() {
     setActiveTab(tab);
   }, [token, profile]);
 
+  // Redirect Pro Hub students to Programs tab on load (not Exams)
+  useEffect(() => {
+    if (!profile) return;
+    const isProHub = profile?.user?.role === 'student' &&
+      (profile?.user?.hubScope === 'professional' || profile?.user?.hub_scope === 'professional');
+    if (isProHub && activeTab === 'dashboard') {
+      setActiveTab('materials');
+    }
+  }, [profile?.user?.role, profile?.user?.hubScope, profile?.user?.hub_scope]);
+
   useEffect(() => {
     // Safety fallback: Force hide loader after 8 seconds if profile fails to load
     // This prevents "white screen" on slow mobile networks or API failures
