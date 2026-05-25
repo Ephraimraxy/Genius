@@ -4216,15 +4216,33 @@ async function parseWithGrobid(buffer: Buffer): Promise<any> {
       const last = $(el).find('persName > surname').text().trim();
       const email = $(el).find('email').text().trim();
 
+      let authorDepartment = '';
+      let authorInstitution = '';
       const authorAffiliations: string[] = [];
       $(el).find('affiliation > orgName').each((idx, affEl) => {
-        authorAffiliations.push($(affEl).text().trim());
+        const type = $(affEl).attr('type') || '';
+        const text = $(affEl).text().trim();
+        if (!text) return;
+        if (type === 'department' || type === 'laboratory') {
+          if (!authorDepartment) authorDepartment = text;
+        } else if (type === 'institution') {
+          if (!authorInstitution) authorInstitution = text;
+        } else {
+          authorAffiliations.push(text);
+        }
       });
+      // Build a clean affiliation string from structured parts when available
+      const structuredParts = [authorDepartment, authorInstitution].filter(Boolean);
+      if (structuredParts.length > 0 && authorAffiliations.length === 0) {
+        authorAffiliations.push(...structuredParts);
+      }
 
       if (first || last) {
         authors.push({
           name: `${first} ${last}`.trim(),
           email: email || null,
+          department: authorDepartment || '',
+          institution: authorInstitution || '',
           affiliations: authorAffiliations.length > 0 ? authorAffiliations : []
         });
       }
@@ -5230,7 +5248,8 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req: an
               role: 'system',
               content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (array of objects), abstract (string), keywords (string[]), contactEmail (string), contactPhone (string). ' +
                 'Each author object MUST include: name (string), department (string), faculty (string), institution (string), email (string), phone (string). ' +
-                'Examine the paper header carefully for "By", "Department", "Faculty", "Email", "Phone" or similar labels to extract these details accurately. ' +
+                'CRITICAL: Extract author affiliation details ONLY from the AUTHOR BLOCK at the very top of the paper (names, affiliations, emails listed directly below the title). Do NOT read department, faculty, or institution from the abstract, methodology, body text, references, or acknowledgements — those contain terms like "Educational Stress Scale" or institution names that belong to the study, not the authors. ' +
+                'If multiple authors share the same institution or department, copy those values to each of them. If a specific field (department, faculty, institution) is not explicitly written near an author\'s name in the header, set it to empty string — never guess or infer from body text. ' +
                 'Never copy one shared email address or phone number onto every author. If the source shows only one email or phone for multiple authors, place it in top-level contactEmail/contactPhone and leave author email/phone fields empty unless distinct contacts are explicitly linked to named authors.'
             },
             { role: 'user', content: `Extract metadata from this academic paper text:\n\n${(sourcePlainText || htmlToPlainText(textContent)).substring(0, 15000)}` }
@@ -5430,6 +5449,7 @@ app.post('/api/admin/upload', authenticateToken, upload.single('file'), async (r
               role: 'system',
               content: 'You are an expert academic metadata extractor. Return JSON with keys: title (string), authors (array of objects), abstract (string), keywords (string[]), contactEmail (string), contactPhone (string). ' +
                 'Each author object MUST include: name, department, faculty, institution, email, phone (all strings). ' +
+                'CRITICAL: Extract department, faculty, and institution ONLY from the AUTHOR BLOCK at the very top of the paper — the section directly below the title that lists author names and their affiliations. Do NOT extract these fields from the body text, methodology, instruments, or references. If a specific field is not explicitly stated for an author in the header, set it to empty string. If multiple authors share the same institution/department, copy those values to each. ' +
                 'Never copy one shared email onto every author. If only one email exists for multiple authors, put it in top-level contactEmail.',
             },
             { role: 'user', content: `Extract metadata from this academic paper:\n\n${(sourcePlainText || htmlToPlainText(textContent)).substring(0, 15000)}` }
@@ -10717,6 +10737,26 @@ app.put('/api/admin/papers/:id/metadata', authenticateToken, async (req: any, re
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update paper metadata' });
+  }
+});
+
+app.patch('/api/admin/papers/:id/authors', authenticateToken, async (req: any, res) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const { id } = idParamSchema.parse(req.params);
+    const { authors } = z.object({ authors: z.array(z.any()) }).parse(req.body);
+    const current = await pool.query('SELECT metadata FROM papers WHERE id = $1', [id]);
+    if (current.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
+    let metadata = safeJsonParse<any>(current.rows[0].metadata, {});
+    metadata.authors = authors;
+    metadata = sanitizeManuscriptMetadata(metadata);
+    const authorNames = Array.isArray(metadata.authors)
+      ? metadata.authors.map((a: any) => typeof a === 'string' ? a : a?.name).filter(Boolean)
+      : [];
+    await pool.query('UPDATE papers SET authors = $1, metadata = $2 WHERE id = $3', [JSON.stringify(authorNames), JSON.stringify(metadata), id]);
+    res.json({ success: true, metadata });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
