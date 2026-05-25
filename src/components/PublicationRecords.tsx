@@ -12,7 +12,12 @@ import {
   ClipboardCheck,
   Trash2,
   AlertTriangle,
-  Loader2
+  Loader2,
+  Pencil,
+  Plus,
+  X,
+  Save,
+  UserCircle
 } from 'lucide-react';
 import FilePreviewModal from './FilePreviewModal';
 
@@ -32,6 +37,23 @@ interface Publication {
   researcher_email?: string;
 }
 
+interface AuthorForm {
+  name: string;
+  department: string;
+  faculty: string;
+  institution: string;
+  email: string;
+  phone: string;
+}
+
+interface EditForm {
+  title: string;
+  abstract: string;
+  authors: AuthorForm[];
+}
+
+const BLANK_AUTHOR: AuthorForm = { name: '', department: '', faculty: '', institution: '', email: '', phone: '' };
+
 export default function PublicationRecords({ profile }: { profile: any }) {
   const [publications, setPublications] = useState<Publication[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,11 +66,18 @@ export default function PublicationRecords({ profile }: { profile: any }) {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+
+  // Edit modal state
+  const [editingPub, setEditingPub] = useState<Publication | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>({ title: '', abstract: '', authors: [] });
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
   const isAdmin = profile?.user?.role === 'super_admin' || profile?.user?.role === 'admin';
 
   useEffect(() => {
     fetchPublications();
-    
     const handleAfterPrint = () => setAcceptancePub(null);
     window.addEventListener('afterprint', handleAfterPrint);
     return () => window.removeEventListener('afterprint', handleAfterPrint);
@@ -65,6 +94,73 @@ export default function PublicationRecords({ profile }: { profile: any }) {
       console.error('Failed to fetch publications');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openEdit = (pub: Publication) => {
+    const meta = pub.metadata || {};
+    const rawAuthors: any[] = Array.isArray(meta.authors) ? meta.authors : [];
+    const authors: AuthorForm[] = rawAuthors.map((a: any) => ({
+      name: typeof a === 'string' ? a : (a.name || ''),
+      department: typeof a === 'string' ? '' : (a.department || ''),
+      faculty: typeof a === 'string' ? '' : (a.faculty || ''),
+      institution: typeof a === 'string' ? '' : (a.institution || a.affiliations?.[0] || ''),
+      email: typeof a === 'string' ? '' : (a.email || ''),
+      phone: typeof a === 'string' ? '' : (a.phone || ''),
+    }));
+    setEditForm({ title: meta.title || pub.title || '', abstract: meta.abstract || '', authors });
+    setSaveError('');
+    setSaveSuccess(false);
+    setEditingPub(pub);
+  };
+
+  const updateAuthor = (idx: number, field: keyof AuthorForm, value: string) => {
+    setEditForm(prev => {
+      const authors = [...prev.authors];
+      authors[idx] = { ...authors[idx], [field]: value };
+      return { ...prev, authors };
+    });
+  };
+
+  const addAuthor = () => {
+    setEditForm(prev => ({ ...prev, authors: [...prev.authors, { ...BLANK_AUTHOR }] }));
+  };
+
+  const removeAuthor = (idx: number) => {
+    setEditForm(prev => ({ ...prev, authors: prev.authors.filter((_, i) => i !== idx) }));
+  };
+
+  const saveEdit = async () => {
+    if (!editingPub) return;
+    setIsSaving(true);
+    setSaveError('');
+    setSaveSuccess(false);
+    try {
+      const res = await fetch(`/api/admin/papers/${editingPub.id}/authors`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          title: editForm.title,
+          abstract: editForm.abstract,
+          authors: editForm.authors
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      // Update local list
+      setPublications(prev => prev.map(p => p.id === editingPub.id
+        ? { ...p, title: editForm.title || p.title, metadata: data.metadata }
+        : p
+      ));
+      setSaveSuccess(true);
+      setTimeout(() => setEditingPub(null), 1200);
+    } catch (err: any) {
+      setSaveError(err.message || 'Failed to save changes.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -154,7 +250,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     </tr>
   );
 
-  const filteredPubs = publications.filter(p => 
+  const filteredPubs = publications.filter(p =>
     p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (p.researcher_name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (p.doi?.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -165,21 +261,12 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     return (
       <div className="space-y-6 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[85vh] flex flex-col">
         <div className="flex items-center justify-between shrink-0">
-          <button 
-            onClick={() => setCertificatePub(null)} 
-            className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm"
-          >
+          <button onClick={() => setCertificatePub(null)} className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm">
             <ChevronLeft size={18} /> Back to Records
           </button>
         </div>
         <div className="flex-1 rounded-[2.5rem] relative">
-          <FilePreviewModal
-            isOpen={true}
-            onClose={() => setCertificatePub(null)}
-            file={`/api/papers/${certificatePub.id}/certificate`}
-            fileName={`Publication_Certificate_${certificatePub.id}.pdf`}
-            isInline={true}
-          />
+          <FilePreviewModal isOpen={true} onClose={() => setCertificatePub(null)} file={`/api/papers/${certificatePub.id}/certificate`} fileName={`Publication_Certificate_${certificatePub.id}.pdf`} isInline={true} />
         </div>
       </div>
     );
@@ -189,21 +276,12 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     return (
       <div className="space-y-6 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[85vh] flex flex-col">
         <div className="flex items-center justify-between shrink-0">
-          <button 
-            onClick={() => setAcceptancePub(null)} 
-            className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm"
-          >
+          <button onClick={() => setAcceptancePub(null)} className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm">
             <ChevronLeft size={18} /> Back to Records
           </button>
         </div>
         <div className="flex-1 rounded-[2.5rem] relative">
-          <FilePreviewModal
-            isOpen={true}
-            onClose={() => setAcceptancePub(null)}
-            file={`/api/papers/${acceptancePub.id}/acceptance-letter`}
-            fileName={`Acceptance_Letter_${acceptancePub.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`}
-            isInline={true}
-          />
+          <FilePreviewModal isOpen={true} onClose={() => setAcceptancePub(null)} file={`/api/papers/${acceptancePub.id}/acceptance-letter`} fileName={`Acceptance_Letter_${acceptancePub.title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`} isInline={true} />
         </div>
       </div>
     );
@@ -213,21 +291,12 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     return (
       <div className="space-y-6 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[85vh] flex flex-col">
         <div className="flex items-center justify-between shrink-0">
-          <button
-            onClick={() => setPipelinePub(null)}
-            className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm"
-          >
+          <button onClick={() => setPipelinePub(null)} className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm">
             <ChevronLeft size={18} /> Back to Records
           </button>
         </div>
         <div className="flex-1 rounded-[2.5rem] relative">
-          <FilePreviewModal
-            isOpen={true}
-            onClose={() => setPipelinePub(null)}
-            file={`/api/papers/${pipelinePub.id}/pipeline-report`}
-            fileName={`Quick_Publish_Report_${pipelinePub.id}.pdf`}
-            isInline={true}
-          />
+          <FilePreviewModal isOpen={true} onClose={() => setPipelinePub(null)} file={`/api/papers/${pipelinePub.id}/pipeline-report`} fileName={`Quick_Publish_Report_${pipelinePub.id}.pdf`} isInline={true} />
         </div>
       </div>
     );
@@ -237,10 +306,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
     return (
       <div className="space-y-6 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[85vh] flex flex-col">
         <div className="flex items-center justify-between shrink-0">
-          <button 
-            onClick={() => setPreviewPub(null)} 
-            className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm"
-          >
+          <button onClick={() => setPreviewPub(null)} className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-600 transition-colors font-bold text-sm shadow-sm">
             <ChevronLeft size={18} /> Back to Records
           </button>
         </div>
@@ -268,6 +334,184 @@ export default function PublicationRecords({ profile }: { profile: any }) {
 
   return (
     <div className="space-y-8 pb-12">
+
+      {/* ── Edit Modal ── */}
+      <AnimatePresence>
+        {editingPub && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 24 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 24 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
+            >
+              {/* Modal header */}
+              <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100 shrink-0">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Edit Publication</h3>
+                  <p className="text-[11px] font-bold text-slate-400 mt-0.5">ID #{editingPub.id} — changes save directly to the live record</p>
+                </div>
+                <button onClick={() => setEditingPub(null)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Scrollable body */}
+              <div className="overflow-y-auto flex-1 px-8 py-6 space-y-6">
+
+                {/* Title */}
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Title</label>
+                  <input
+                    value={editForm.title}
+                    onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-[#800000] focus:ring-2 focus:ring-red-100 transition"
+                  />
+                </div>
+
+                {/* Abstract */}
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Abstract</label>
+                  <textarea
+                    value={editForm.abstract}
+                    onChange={e => setEditForm(f => ({ ...f, abstract: e.target.value }))}
+                    rows={4}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#800000] focus:ring-2 focus:ring-red-100 transition resize-none"
+                  />
+                </div>
+
+                {/* Authors */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Authors</label>
+                    <button
+                      onClick={addAuthor}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-700 text-white rounded-xl text-[11px] font-black transition-colors"
+                    >
+                      <Plus size={13} /> Add Author
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {editForm.authors.map((author, idx) => (
+                      <div key={idx} className="border border-slate-200 rounded-2xl p-4 bg-slate-50/60 relative">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-[#800000]/10 flex items-center justify-center">
+                              <UserCircle size={13} className="text-[#800000]" />
+                            </div>
+                            <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest">Author {idx + 1}</span>
+                          </div>
+                          <button
+                            onClick={() => removeAuthor(idx)}
+                            className="p-1 rounded-lg hover:bg-red-100 text-slate-300 hover:text-red-500 transition-colors"
+                            title="Remove author"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="col-span-2">
+                            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Full Name</label>
+                            <input
+                              value={author.name}
+                              onChange={e => updateAuthor(idx, 'name', e.target.value)}
+                              placeholder="e.g. Loveth Idoko"
+                              className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-[#800000] focus:ring-1 focus:ring-red-100 transition"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Department</label>
+                            <input
+                              value={author.department}
+                              onChange={e => updateAuthor(idx, 'department', e.target.value)}
+                              placeholder="e.g. Dept. of Psychology"
+                              className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#800000] focus:ring-1 focus:ring-red-100 transition"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Faculty</label>
+                            <input
+                              value={author.faculty}
+                              onChange={e => updateAuthor(idx, 'faculty', e.target.value)}
+                              placeholder="e.g. Faculty of Social Sciences"
+                              className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#800000] focus:ring-1 focus:ring-red-100 transition"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Institution</label>
+                            <input
+                              value={author.institution}
+                              onChange={e => updateAuthor(idx, 'institution', e.target.value)}
+                              placeholder="e.g. Nigerian Defence Academy, Kaduna, Nigeria"
+                              className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#800000] focus:ring-1 focus:ring-red-100 transition"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Email</label>
+                            <input
+                              value={author.email}
+                              onChange={e => updateAuthor(idx, 'email', e.target.value)}
+                              placeholder="author@example.com"
+                              className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#800000] focus:ring-1 focus:ring-red-100 transition"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Phone</label>
+                            <input
+                              value={author.phone}
+                              onChange={e => updateAuthor(idx, 'phone', e.target.value)}
+                              placeholder="+234..."
+                              className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#800000] focus:ring-1 focus:ring-red-100 transition"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {editForm.authors.length === 0 && (
+                      <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center">
+                        <p className="text-sm font-bold text-slate-400">No authors. Click "Add Author" to add one.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-8 py-5 border-t border-slate-100 shrink-0 flex items-center justify-between gap-4">
+                <div className="flex-1">
+                  {saveError && <p className="text-xs font-bold text-red-600">{saveError}</p>}
+                  {saveSuccess && <p className="text-xs font-black text-emerald-600">Saved successfully!</p>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setEditingPub(null)}
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl transition-colors text-sm"
+                    disabled={isSaving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveEdit}
+                    disabled={isSaving || saveSuccess}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-[#800000] hover:bg-[#600000] disabled:opacity-60 disabled:cursor-not-allowed text-white font-black rounded-xl transition-colors text-sm"
+                  >
+                    {isSaving ? <><Loader2 size={15} className="animate-spin" /> Saving...</> : <><Save size={15} /> Save Changes</>}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {deletingPub && (
@@ -310,9 +554,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 mb-4 font-mono"
               />
 
-              {deleteError && (
-                <p className="text-xs text-red-600 font-bold mb-4">{deleteError}</p>
-              )}
+              {deleteError && <p className="text-xs text-red-600 font-bold mb-4">{deleteError}</p>}
 
               <div className="flex gap-3">
                 <button
@@ -334,6 +576,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
           </motion.div>
         )}
       </AnimatePresence>
+
       {/* Header & Search */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -349,9 +592,9 @@ export default function PublicationRecords({ profile }: { profile: any }) {
         <div className="flex items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 w-full md:w-auto">
           <div className="flex items-center gap-3 px-4 flex-1">
             <Search size={18} className="text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Filter by title..." 
+            <input
+              type="text"
+              placeholder="Filter by title..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="bg-transparent border-none outline-none text-sm font-bold w-full"
@@ -396,9 +639,9 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Live Readiness</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Vol / Issue</th>
-                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">DOI</th>
-                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Published Date</th>
-                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">ISSN</th>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">DOI</th>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Published Date</th>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">ISSN</th>
                 <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Actions</th>
               </tr>
             </thead>
@@ -479,6 +722,7 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                         {pub.status === 'doi_validation_failed' ? 'PENDING RESOLUTION' : pub.status}
                       </span>
                     </td>
+
                     <td className="px-8 py-6">
                       <p className="text-xs font-bold text-slate-500 whitespace-nowrap">
                         {pub.volume ? `Vol ${pub.volume}` : '—'} / {pub.issue ? `No ${pub.issue}` : '—'}
@@ -505,25 +749,25 @@ export default function PublicationRecords({ profile }: { profile: any }) {
                         {pub.published_at ? new Date(pub.published_at).toLocaleDateString('en-GB') : (pub.status === 'published' ? new Date(pub.created_at).toLocaleDateString('en-GB') : '—')}
                       </p>
                     </td>
+
                     <td className="px-8 py-6">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                         {pub.issn || 'Pending'}
                       </span>
                     </td>
+
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-2">
-                        <button 
-                           onClick={() => setPreviewPub(pub)}
-                           className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
-                           title="View Publication">
-                           <Eye size={18} />
+                        <button
+                          onClick={() => setPreviewPub(pub)}
+                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                          title="View Publication">
+                          <Eye size={18} />
                         </button>
-                        
+
                         {(pub.status === 'accepted' || pub.status === 'published') && (
-                          <button 
-                            onClick={() => {
-                              setAcceptancePub(pub);
-                            }}
+                          <button
+                            onClick={() => setAcceptancePub(pub)}
                             className="p-2 text-slate-400 hover:text-[#800000] hover:bg-red-50 rounded-xl transition-all"
                             title="View Acceptance Letter">
                             <FileBadge size={18} />
@@ -548,6 +792,15 @@ export default function PublicationRecords({ profile }: { profile: any }) {
 
                         {isAdmin && (
                           <button
+                            onClick={() => openEdit(pub)}
+                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all"
+                            title="Edit Publication Metadata">
+                            <Pencil size={18} />
+                          </button>
+                        )}
+
+                        {isAdmin && (
+                          <button
                             onClick={() => { setDeletingPub(pub); setDeleteConfirmText(''); setDeleteError(''); }}
                             className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
                             title="Permanently Delete Publication">
@@ -562,7 +815,6 @@ export default function PublicationRecords({ profile }: { profile: any }) {
             </tbody>
           </table>
         </div>
-        
       </div>
     </div>
   );

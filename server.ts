@@ -10744,16 +10744,25 @@ app.patch('/api/admin/papers/:id/authors', authenticateToken, async (req: any, r
   if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: 'Unauthorized' });
   try {
     const { id } = idParamSchema.parse(req.params);
-    const { authors } = z.object({ authors: z.array(z.any()) }).parse(req.body);
+    const { authors, title, abstract } = z.object({
+      authors: z.array(z.any()),
+      title: z.string().optional(),
+      abstract: z.string().optional()
+    }).parse(req.body);
     const current = await pool.query('SELECT metadata FROM papers WHERE id = $1', [id]);
     if (current.rows.length === 0) return res.status(404).json({ error: 'Paper not found' });
     let metadata = safeJsonParse<any>(current.rows[0].metadata, {});
     metadata.authors = authors;
+    if (title !== undefined) metadata.title = title;
+    if (abstract !== undefined) metadata.abstract = abstract;
     metadata = sanitizeManuscriptMetadata(metadata);
     const authorNames = Array.isArray(metadata.authors)
       ? metadata.authors.map((a: any) => typeof a === 'string' ? a : a?.name).filter(Boolean)
       : [];
-    await pool.query('UPDATE papers SET authors = $1, metadata = $2 WHERE id = $3', [JSON.stringify(authorNames), JSON.stringify(metadata), id]);
+    await pool.query(
+      'UPDATE papers SET authors = $1, metadata = $2, title = COALESCE($3, title), abstract = COALESCE($4, abstract) WHERE id = $5',
+      [JSON.stringify(authorNames), JSON.stringify(metadata), title || null, abstract || null, id]
+    );
     res.json({ success: true, metadata });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
