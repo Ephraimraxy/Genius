@@ -2974,6 +2974,7 @@ app.get('/robots.txt', (_req, res) => {
     'Allow: /article/',
     'Allow: /search',
     'Allow: /sitemap.xml',
+    'Allow: /api/papers/',
     'Disallow: /api/',
     '',
     'User-agent: Googlebot-Scholar',
@@ -10335,7 +10336,12 @@ app.get('/api/papers/:id/ris', authenticateToken, async (req: any, res) => {
 
 // Public Article Page (Google Scholar Compatible)
 app.get('/article/:doi(*)', async (req, res) => {
-  const paperResult = await pool.query('SELECT * FROM papers WHERE doi = $1', [req.params.doi]);
+  const rawDoi = req.params.doi;
+  const doi = decodeURIComponent(rawDoi);
+  const paperResult = await pool.query(
+    'SELECT * FROM papers WHERE doi = $1 OR doi = $2 LIMIT 1',
+    [doi, rawDoi]
+  );
   const paper = paperResult.rows[0];
   if (!paper) return res.status(404).send('Article not found');
 
